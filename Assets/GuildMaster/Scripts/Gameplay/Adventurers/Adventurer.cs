@@ -14,6 +14,8 @@ using UnityEngine;
 namespace GuildMaster.Adventurers
 {
     public struct AdventurerLevelUpEvent { public Adventurer Adventurer; public int Level; }
+    /// <summary>Retreat because of low HP (not fatigue). Threat = last unit that hit us, if any.</summary>
+    public struct AdventurerRetreatedEvent { public Adventurer Adventurer; public Unit Threat; }
     public struct AdventurerSpeechEvent { public Adventurer Adventurer; public string Text; }
     public struct AdventurerStateChangedEvent { public Adventurer Adventurer; public string Label; }
 
@@ -222,6 +224,8 @@ namespace GuildMaster.Adventurers
             }
             if (HpRatio < RetreatThreshold || Data.fatigue >= 95f)
             {
+                if (HpRatio < RetreatThreshold)
+                    EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });
                 Engage.Clear();
                 Data.stress = Mathf.Min(100f, Data.stress + 15f);
                 ReturnState.Retreating = true;

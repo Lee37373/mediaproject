@@ -41,7 +41,7 @@ namespace GuildMaster.UI
         {
             var img = UIBuilder.Panel(canvas, "Inspector", UITheme.PanelBg);
             _panel = img.rectTransform;
-            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, 272));
+            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, 292));
             _title = UIBuilder.Label(_panel, "", 18, TextAnchor.UpperLeft, UITheme.Accent, FontStyle.Bold);
             _title.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(12, -8), new Vector2(-124, 26));
             _followButton = UIBuilder.Button(_panel, "추적 (F)", ToggleFocus, 96, 26, fontSize: 14);
@@ -196,6 +196,7 @@ namespace GuildMaster.UI
                 $"성격 {d.mbti} · 가치관 {d.values}\n" +
                 $"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}\n" +
                 $"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}\n" +
+                $"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}\n" +
                 $"{Muted("전리품: " + loot)}";
         }
 

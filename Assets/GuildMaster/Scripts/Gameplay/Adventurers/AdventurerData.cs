@@ -23,6 +23,7 @@ namespace GuildMaster.Adventurers
         public string mbti;
         public string values;
         public List<string> traitIds = new();
+        public List<MemoryEntry> memories = new();
         public int potions;
         public int gearTier;
         public List<ItemStack> loot = new();

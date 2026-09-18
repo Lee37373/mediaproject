@@ -55,7 +55,8 @@ namespace GuildMaster.UI
         {
             if (!Services.TryGet<LlmGateway>(out var gw)) return;
             var history = gw.History;
-            _summary.text = $"{gw.StatusText} · 완료 {gw.Completed} · 실패 {gw.Failed} · 대기 {gw.QueueCount} · 기록 {history.Count}개";
+            _summary.text = $"{gw.StatusText} · 완료 {gw.Completed} · 실패 {gw.Failed} · 대기열 {gw.QueueCount} · " +
+                            $"응답 속도 평균 {gw.HistoryAverageSeconds:0.0}s / 최근 {gw.LastSeconds:0.0}s · 기록 {history.Count}개";
 
             EnsureRows(_list, _rows, history.Count, ExchangeRow.Create);
             // Newest first.

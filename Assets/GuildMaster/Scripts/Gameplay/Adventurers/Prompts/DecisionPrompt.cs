@@ -29,7 +29,12 @@ namespace GuildMaster.Adventurers.Prompts
             "- rest: 여관에서 쉰다(체력이 낮거나 피로가 높을 때).\n" +
             "- shop: 길드에서 물약을 산다. status.can_buy_potion이 true일 때만 고른다.\n" +
             "- idle: 마을에서 기다린다(마음에 드는 의뢰가 없을 때).\n" +
-            "risk_for_me가 '무모'인 의뢰는 성격상 아주 대담한 경우가 아니면 맡지 않는다. 체력이 30% 미만이면 의뢰를 맡지 않는다.\n" +
+            "risk_for_me가 '무모'인 의뢰는 대담한 성격(용감함, 가치관 명예·모험)만 혼자 맡는다. 다른 성격은 동료가 이미 맡았을 때(members가 있을 때)만 함께 가고, 겁 많거나 안전을 중시하면 맡지 않는다. 체력이 30% 미만이면 의뢰를 맡지 않는다.\n" +
+            "모험가는 의뢰를 해야 돈과 경험을 얻는다. 기다리기만 하면 돈이 줄고 성장하지 못한다. " +
+            "risk_for_me가 '여유'나 '적당'인 의뢰가 있으면 그중 성격에 맞는 것을 맡는 것이 보통이고, " +
+            "idle은 성격상 분명한 이유가 있을 때만 고른다. status.money_status가 '부족'이면 조금 내키지 않는 의뢰라도 맡는다. " +
+            "단, 돈이 부족하다는 이유만으로 '무모' 의뢰를 맡지는 않는다.\n" +
+            "memories는 이 모험가가 직접 겪은 일이다. 판단과 대사에 자연스럽게 반영한다. 죽을 뻔했거나 동료가 쓰러진 상대는 특히 경계하고, 복수하려고 무리하지 않는다.\n" +
             "reason은 판단 이유를 한 문장으로 짧게 쓰고, say는 그 모험가가 동료에게 하는 짧은 한국어 대사 한 마디다. " +
             "반드시 JSON 한 개로만 답한다.";
 
@@ -42,6 +47,8 @@ namespace GuildMaster.Adventurers.Prompts
             public int stress;
             public int potions;
             public bool can_buy_potion;
+            /// <summary>넉넉/보통/부족 — nudges idle adventurers toward work.</summary>
+            public string money_status;
         }
 
         [Serializable]
@@ -71,6 +78,8 @@ namespace GuildMaster.Adventurers.Prompts
             public StatusDto status;
             public QuestDto[] available_quests;
             public string[] recent_events;
+            /// <summary>Selected personal memories, "[2일 14시] ..." (see AdventurerMemory).</summary>
+            public string[] memories;
         }
 
         [Serializable]
@@ -103,6 +112,7 @@ namespace GuildMaster.Adventurers.Prompts
                     stress = (int)d.stress,
                     potions = d.potions,
                     can_buy_potion = ShopUseful(a),
+                    money_status = MoneyLabel(d.gold),
                 },
                 available_quests = available.Select(q => new QuestDto
                 {
@@ -116,8 +126,11 @@ namespace GuildMaster.Adventurers.Prompts
                     members = q.Assignees.Select(t => t.TakerName).ToArray(),
                 }).ToArray(),
                 recent_events = recent,
+                memories = AdventurerMemory.SelectForPrompt(d.memories).Select(m => m.Format()).ToArray(),
             };
         }
+
+        public static string MoneyLabel(int gold) => gold < 40 ? "부족" : gold < 120 ? "보통" : "넉넉";
 
         /// <summary>
         /// Shopping only makes sense with 0–1 potions left and when the guild has stock the

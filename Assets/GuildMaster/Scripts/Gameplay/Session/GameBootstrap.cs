@@ -126,6 +126,8 @@ namespace GuildMaster.Session
             var roster = AddSystem<GuildRoster>();
             roster.Capacity = Balance.rosterCapacity;
             Services.Register(roster);
+            // Per-adventurer memories; before recruiting so the starting members remember joining.
+            Services.Register(new MemoryRecorder(clock, roster));
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)
                 roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), guildDoor + GameRandom.Shared.InsideUnitCircle());

@@ -52,6 +52,21 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void Reckless_DependsOnPersonality()
+        {
+            Assert.That(LlmDecisionMaker.RecklessAllowed("위험", 1f, "안전", false), Is.True, "not reckless");
+            Assert.That(LlmDecisionMaker.RecklessAllowed("무모", 1f, "명예", true), Is.False, "coward never");
+            Assert.That(LlmDecisionMaker.RecklessAllowed("무모", 0f, "안전", true), Is.False, "safety-minded never");
+            Assert.That(LlmDecisionMaker.RecklessAllowed("무모", -0.5f, "돈", false), Is.True, "brave trait");
+            Assert.That(LlmDecisionMaker.RecklessAllowed("무모", 0f, "모험", false), Is.True, "adventure values");
+            Assert.That(LlmDecisionMaker.RecklessAllowed("무모", 0f, "돈", false), Is.False, "ordinary alone");
+            Assert.That(LlmDecisionMaker.RecklessAllowed("무모", 0f, "돈", true), Is.True, "ordinary joining a party");
+            Assert.That(DecisionPrompt.MoneyLabel(10), Is.EqualTo("부족"));
+            Assert.That(DecisionPrompt.MoneyLabel(80), Is.EqualTo("보통"));
+            Assert.That(DecisionPrompt.MoneyLabel(200), Is.EqualTo("넉넉"));
+        }
+
+        [Test]
         public void Interpret_RejectsUnknownActionAndNull()
         {
             Assert.That(LlmDecisionMaker.TryInterpret(Dto("dance"), 1f, Ids, true, out _, out var r1), Is.False);

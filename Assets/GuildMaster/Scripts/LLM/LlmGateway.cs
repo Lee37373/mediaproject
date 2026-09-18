@@ -152,6 +152,27 @@ namespace GuildMaster.LLM
             }
         }
 
+        /// <summary>One console line per exchange: outcome, queue wait, generation time, output size.</summary>
+        public static string FormatSpeedLine(LlmExchange x)
+        {
+            int chars = x.Response?.Length ?? 0;
+            string rate = x.Ok && x.GenerateSeconds > 0.01f ? $" ({chars / x.GenerateSeconds:0.0}자/s)" : "";
+            string outcome = x.Ok ? "성공" : "실패(" + x.Error + ")";
+            return $"[LLM] #{x.Id} {x.Request?.Tag} {outcome} · 대기 {x.QueueSeconds:0.0}s · 생성 {x.GenerateSeconds:0.0}s · 응답 {chars}자{rate}";
+        }
+
+        /// <summary>Average generation seconds of the successful exchanges in the history (0 if none).</summary>
+        public float HistoryAverageSeconds
+        {
+            get
+            {
+                float sum = 0f;
+                int n = 0;
+                foreach (var x in _history) if (x.Ok) { sum += x.GenerateSeconds; n++; }
+                return n == 0 ? 0f : sum / n;
+            }
+        }
+
         /// <summary>Completes a pending request and records it in the history.</summary>
         void Finish(Pending p, LlmResult result)
         {
@@ -165,6 +186,7 @@ namespace GuildMaster.LLM
             result.Exchange = x;
             _history.Add(x);
             if (_history.Count > HistorySize) _history.RemoveAt(0);
+            if (Debug.isDebugBuild) Debug.Log(FormatSpeedLine(x));
             EventBus.Publish(new LlmExchangeEvent { Exchange = x });
             p.Tcs.TrySetResult(result);
         }

@@ -48,10 +48,11 @@ GuildMaster.Tests.EditMode
 
 ## Git
 - `main` 브랜치입니다. 커밋은 **작업 단위가 끝나 검증까지 마친 시점에 Claude가 판단해서** 합니다(2026-09-18 사용자 위임). 푸시는 요청할 때만 합니다.
+- 원격: `origin` = https://github.com/Lee37373/mediaproject (`main` 추적). 원격의 첫 커밋(Unity .gitignore 템플릿)은 병합해서 이어 붙였습니다.
 - `Assets/StreamingAssets/LlamaLib-*`(약 4GB 네이티브 바이너리)와 `*.gguf`는 `.gitignore`로 제외했습니다. LLMUnity가 다시 내려받습니다.
 
 ## 테스트와 검증 (Unity MCP)
-- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 28개가 통과합니다.
+- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 37개가 통과합니다.
 - 컴파일: 먼저 `AssetDatabase.Refresh` + `CompilationPipeline.RequestScriptCompilation`을 eval로 실행하고, 그다음 `recompile_status`와 `console`(error)로 확인합니다.
   - 컴파일 뒤 도메인 리로드 중에는 `wait_for`가 네트워크 에러를 낼 수 있습니다. 정상입니다.
 - `eval`에서는 `using`을 쓸 수 없습니다. 전체 네임스페이스를 쓰거나 `GuildMaster.Session.DebugCommands`를 쓰세요.
@@ -65,7 +66,7 @@ GuildMaster.Tests.EditMode
 - `Run In Background`는 켜져 있어야 합니다. 꺼져 있으면 에디터가 비활성일 때 게임이 멈춥니다.
 
 ## LLM (LLMUnity v3.0.3, 로컬)
-- 씬의 `LLM` 오브젝트는 사용자가 다운로드한 **Qwen3.5-4B Q4_K_M** 모델을 씁니다. CPU만 쓰고 `numGPULayers=0`입니다.
+- 씬의 `LLM` 오브젝트는 사용자가 다운로드한 **Qwen3.5-4B Q4_K_M** 모델을 씁니다. **Vulkan으로 Intel Arc 130V 내장 GPU**를 씁니다(`numGPULayers=99`, 2026-09-18). 판단 1회 생성 약 10초(CPU만 쓸 때는 약 20초).
 - **Windows 사용자 경로에 한글이 있으면 llama.cpp가 실패합니다.** 사용자명이 "이재혁"이고 `%APPDATA%`에 한글이 들어갑니다.
   - 모델은 ASCII 경로 `C:\unity\LLMModels\qwen35-4b-q4km.gguf`로 복사해 LLMManager에 등록했습니다.
   - `LlamaEnvironment`가 `LLAMA_CACHE`를 ASCII 경로로 지정합니다.

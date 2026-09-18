@@ -43,6 +43,14 @@ namespace GuildMaster.Adventurers
             if (!TryInterpret(dto, a.HpRatio, ids, DecisionPrompt.ShopUseful(a), out var decision, out var reject))
                 return Fallback(a, available, reject, result);
 
+            if (decision.Action == AdventurerAction.AcceptQuest)
+            {
+                var quest = available.FirstOrDefault(q => q.Id == decision.QuestId);
+                if (quest != null && !RecklessAllowed(DecisionPrompt.RiskLabel(a, quest), a.Traits?.DangerAversion ?? 0f,
+                        a.Data.values, quest.Assignees.Count > 0))
+                    return Fallback(a, available, "reckless", result);
+            }
+
             LlmDecisions++;
             Note(result, $"채택: {dto.action} {dto.quest_id}");
             Debug.Log($"[LLM-DECISION] {a.Data.name}({a.Data.mbti}/{a.Data.values}/{string.Join(",", a.Data.traitIds)}) " +
@@ -89,6 +97,20 @@ namespace GuildMaster.Adventurers
                 FromLLM = true,
             };
             return true;
+        }
+
+        /// <summary>
+        /// Personality gate for "무모" (reckless) quests — taking them is a character trait, not
+        /// a bug, but the model alone walks whole guilds into certain death:
+        /// cautious (danger aversion &gt; 0 or values 안전) never; bold (aversion &lt; 0 or values
+        /// 명예/모험) always; everyone else only when joining someone who already took it.
+        /// </summary>
+        public static bool RecklessAllowed(string riskLabel, float dangerAversion, string values, bool joiningParty)
+        {
+            if (riskLabel != "무모") return true;
+            if (dangerAversion > 0f || values == "안전") return false;
+            if (dangerAversion < 0f || values == "명예" || values == "모험") return true;
+            return joiningParty;
         }
 
         static void Note(LlmResult result, string note)
