@@ -112,6 +112,10 @@ namespace GuildMaster.Session
             var eco = AddSystem<EcosystemManager>();
             Services.Register(eco);
             eco.Init(db, map, GameRandom.Shared);
+            // What the guild has actually seen; UI and adventurers read this, not the simulation.
+            var intel = AddSystem<GuildIntel>();
+            intel.Init(eco, fog, clock, world);
+            Services.Register(intel);
 
             var board = AddSystem<QuestBoard>();
             board.Init(treasury, eco, clock);

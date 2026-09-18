@@ -68,12 +68,14 @@ namespace GuildMaster.Quests
             {
                 case QuestType.Hunt:
                     if (d.Species == null) return "대상 몬스터를 선택하세요.";
-                    if (_eco.IsExtinct(d.Species)) return "이미 멸종한 종입니다.";
+                    if (Services.TryGet<GuildIntel>(out var known) && !known.IsKnown(d.Species)) return "아직 확인하지 못한 몬스터입니다.";
                     if (d.Count < 1) return "토벌 수는 1 이상이어야 합니다.";
                     break;
                 case QuestType.ClearNest:
                     if (d.Nest == null) return "소탕할 둥지를 선택하세요.";
-                    if (d.Nest.IsEmpty) return "이미 비어 있는 둥지입니다.";
+                    if (!d.Nest.Discovered) return "발견하지 못한 둥지입니다.";
+                    if (Services.TryGet<GuildIntel>(out var intel) && intel.Get(d.Nest) is { Observed: true, LastCount: 0 })
+                        return "마지막 관측에서 비어 있던 둥지입니다.";
                     if (_quests.Any(q => q.IsActive && q.Type == QuestType.ClearNest && q.Nest == d.Nest)) return "이미 등록된 둥지 의뢰가 있습니다.";
                     break;
                 case QuestType.Explore:
@@ -107,12 +109,10 @@ namespace GuildMaster.Quests
                     if (q.RequiredCount >= 8 && d < DangerLevel.High) d++;
                     break;
                 case QuestType.ClearNest:
-                    d = q.Species.danger;
-                    if (q.Nest.Population >= 5 && d < DangerLevel.High) d++;
+                    d = NestDanger(q.Nest);
                     break;
                 case QuestType.Explore:
-                    foreach (var n in _eco.Nests)
-                        if (!n.IsEmpty && Vector2.Distance(n.WorldPosition, q.Point) < q.Radius + 6f && n.Species.danger > d) d = n.Species.danger;
+                    d = ExploreDanger(q.Point, q.Radius);
                     break;
                 case QuestType.Defend:
                     d = DangerLevel.Medium;
@@ -223,10 +223,40 @@ namespace GuildMaster.Quests
 
         void OnHour(HourPassedEvent e)
         {
-            // Rewards not collected in time (e.g. the adventurer died) return to the guild.
+            Services.TryGet<GuildIntel>(out var intel);
             foreach (var q in _quests.ToList())
+            {
+                // Rewards not collected in time (e.g. the adventurer died) return to the guild.
                 if (q.Status == QuestStatus.Completed && _clock.TotalHours - q.CompletedAtHour > TurnInDeadlineHours && q.Assignees.Count == 0)
                     Close(q, QuestStatus.TurnedIn, refund: true);
+                // A nest that emptied out of sight: once someone actually sees it empty, refund.
+                else if (q.IsActive && q.Type == QuestType.ClearNest && q.Nest.IsEmpty && intel != null && intel.Get(q.Nest).VisibleNow)
+                    Close(q, QuestStatus.Failed, refund: true);
+            }
+        }
+
+        // ---------------- Danger from observations only ----------------
+
+        /// <summary>Clear-nest danger: species danger, +1 when at least 5 were last observed there.</summary>
+        public static DangerLevel NestDanger(Nest nest)
+        {
+            var d = nest.Species.danger;
+            int seen = Services.TryGet<GuildIntel>(out var intel) ? intel.Get(nest).LastCount : 0;
+            return seen >= 5 && d < DangerLevel.High ? d + 1 : d;
+        }
+
+        /// <summary>Explore danger: the most dangerous discovered, not-seen-empty nest near the area.</summary>
+        public static DangerLevel ExploreDanger(Vector2 point, float radius)
+        {
+            var level = DangerLevel.Low;
+            if (!Services.TryGet<GuildIntel>(out var intel)) return level;
+            foreach (var n in intel.KnownNests)
+            {
+                var ni = intel.Get(n);
+                if (ni.Observed && ni.LastCount <= 0) continue;
+                if (Vector2.Distance(n.WorldPosition, point) < radius + 6f && n.Species.danger > level) level = n.Species.danger;
+            }
+            return level;
         }
 
         /// <summary>Removes a dead/departed taker from every quest.</summary>

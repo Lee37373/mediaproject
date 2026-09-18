@@ -63,12 +63,24 @@ namespace GuildMaster.Session
                     ? $"{e.TraderName}에게서 {name} x{e.Count} 매입 (-{e.Gold}G)"
                     : $"{e.TraderName}에게 {name} x{e.Count} 판매 (+{e.Gold}G)", LogCategory.Economy);
             });
-            EventBus.Subscribe<SpeciesExtinctEvent>(e => Add($"[생태계] {e.Species.displayName}이(가) 멸종했습니다!", LogCategory.Ecosystem));
-            EventBus.Subscribe<NestClearedEvent>(e => Add($"[생태계] {e.Nest.DisplayName}이(가) 비었습니다.", LogCategory.Ecosystem));
-            EventBus.Subscribe<NestRecolonizedEvent>(e => Add($"[생태계] {e.Nest.DisplayName}에 {e.Nest.Species.displayName}이(가) 다시 자리잡았습니다.", LogCategory.Ecosystem));
+            // Ecosystem news only when the guild could witness it (GuildIntel rule; also feeds LLM prompts).
+            // Extinction is never announced: the guild cannot know that a species is gone everywhere.
+            EventBus.Subscribe<NestClearedEvent>(e =>
+            {
+                if (Witnessed(e.Nest) || e.Killer is Adventurer)
+                    Add($"[생태계] {e.Nest.DisplayName}이(가) 비었습니다.", LogCategory.Ecosystem);
+            });
+            EventBus.Subscribe<NestRecolonizedEvent>(e =>
+            {
+                if (Witnessed(e.Nest))
+                    Add($"[생태계] {e.Nest.DisplayName}에 {e.Nest.Species.displayName}이(가) 다시 자리잡았습니다.", LogCategory.Ecosystem);
+            });
             EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {e.Nest.DisplayName}", LogCategory.Ecosystem));
             EventBus.Subscribe<DayPassedEvent>(e => Add($"{e.Day}일차가 밝았습니다.", LogCategory.Info));
         }
+
+        static bool Witnessed(Nest nest)
+            => nest.Discovered && Services.TryGet<Fog.FogOfWar>(out var fog) && fog.IsVisibleRaw(nest.Cell);
 
         public void Add(string text, LogCategory category = LogCategory.Info)
         {

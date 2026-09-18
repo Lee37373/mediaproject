@@ -100,21 +100,24 @@ namespace GuildMaster.UI
 
         void RebuildOptions()
         {
-            var eco = Services.Get<EcosystemManager>();
+            // Only species/nests the guild has seen, with observed counts (GuildIntel).
+            var intel = Services.Get<GuildIntel>();
             _speciesOptions.Clear();
-            _speciesOptions.AddRange(eco.Species.Where(s => !eco.IsExtinct(s)));
+            _speciesOptions.AddRange(intel.KnownSpecies);
             int prevSpecies = _species.value;
             _species.ClearOptions();
-            _species.AddOptions(_speciesOptions.Select(s => $"{s.displayName} (위험 {Quest.DangerLabel(s.danger)}, {eco.GetPopulation(s)}마리)").ToList());
+            _species.AddOptions(_speciesOptions.Count == 0
+                ? new List<string> { "(확인한 몬스터 없음)" }
+                : _speciesOptions.Select(s => $"{s.displayName} (위험 {Quest.DangerLabel(s.danger)}, 관측 {intel.ObservedPopulation(s)}마리)").ToList());
             _species.SetValueWithoutNotify(Mathf.Clamp(prevSpecies, 0, Mathf.Max(0, _speciesOptions.Count - 1)));
 
             var prevNest = _nest.value < _nestOptions.Count ? _nestOptions[_nest.value] : null;
             _nestOptions.Clear();
-            _nestOptions.AddRange(eco.Nests.Where(n => n.Discovered && !n.IsEmpty));
+            _nestOptions.AddRange(intel.KnownNests.Where(n => !intel.Get(n).Observed || intel.Get(n).LastCount > 0));
             _nest.ClearOptions();
             _nest.AddOptions(_nestOptions.Count == 0
                 ? new List<string> { "(발견한 둥지 없음)" }
-                : _nestOptions.Select(n => $"{n.DisplayName} ({n.Population}마리)").ToList());
+                : _nestOptions.Select(n => $"{n.DisplayName} ({intel.DescribeNest(n)})").ToList());
             int idx = prevNest != null ? _nestOptions.IndexOf(prevNest) : 0;
             _nest.SetValueWithoutNotify(Mathf.Max(0, idx));
         }
@@ -177,13 +180,9 @@ namespace GuildMaster.UI
                 case QuestType.Hunt when d.Species != null:
                     return d.Count >= 8 && d.Species.danger < DangerLevel.High ? d.Species.danger + 1 : d.Species.danger;
                 case QuestType.ClearNest when d.Nest != null:
-                    return d.Nest.Population >= 5 && d.Nest.Species.danger < DangerLevel.High ? d.Nest.Species.danger + 1 : d.Nest.Species.danger;
+                    return QuestBoard.NestDanger(d.Nest);
                 case QuestType.Explore when _pickedPoint.HasValue:
-                    var eco = Services.Get<EcosystemManager>();
-                    var level = DangerLevel.Low;
-                    foreach (var n in eco.Nests)
-                        if (!n.IsEmpty && Vector2.Distance(n.WorldPosition, d.Point) < d.Radius + 6f && n.Species.danger > level) level = n.Species.danger;
-                    return level;
+                    return QuestBoard.ExploreDanger(d.Point, d.Radius);
             }
             return null;
         }

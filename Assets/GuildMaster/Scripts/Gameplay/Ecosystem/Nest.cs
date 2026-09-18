@@ -75,7 +75,7 @@ namespace GuildMaster.Ecosystem
             _revealTimer -= Time.unscaledDeltaTime;
             if (_revealTimer > 0f) return;
             _revealTimer = 0.5f;
-            if (Services.TryGet<FogOfWar>(out var fog) && fog.IsExplored(Cell))
+            if (Services.TryGet<FogOfWar>(out var fog) && fog.IsExploredRaw(Cell))
             {
                 Discovered = true;
                 _renderer.enabled = true;

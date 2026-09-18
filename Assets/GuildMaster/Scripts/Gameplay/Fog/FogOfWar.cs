@@ -88,6 +88,11 @@ namespace GuildMaster.Fog
         public bool IsVisible(Vector2Int c) => Disabled || (InBounds(c) && _visibleStamp[c.y * _w + c.x] == _stamp);
         public bool IsVisible(Vector2 world) => IsVisible(new Vector2Int(Mathf.FloorToInt(world.x), Mathf.FloorToInt(world.y)));
         public bool IsExplored(Vector2Int c) => Disabled || (InBounds(c) && _explored[c.y * _w + c.x]);
+
+        /// <summary>Real vision regardless of the debug fog toggle (F3). Knowledge systems use these.</summary>
+        public bool IsVisibleRaw(Vector2Int c) => InBounds(c) && _visibleStamp[c.y * _w + c.x] == _stamp;
+        public bool IsVisibleRaw(Vector2 world) => IsVisibleRaw(new Vector2Int(Mathf.FloorToInt(world.x), Mathf.FloorToInt(world.y)));
+        public bool IsExploredRaw(Vector2Int c) => InBounds(c) && _explored[c.y * _w + c.x];
         bool InBounds(Vector2Int c) => c.x >= 0 && c.y >= 0 && c.x < _w && c.y < _h;
 
         /// <summary>Fraction (0..1) of explored cells inside a circle.</summary>

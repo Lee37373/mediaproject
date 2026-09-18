@@ -37,6 +37,7 @@ GuildMaster.Tests.EditMode
 - **아트 에셋은 없습니다.** 모든 스프라이트는 `Visuals/PixelArt.cs`에서 코드로 생성합니다. 교체할 때는 이 파일만 고치면 됩니다.
 - **UI는 uGUI를 코드로 조립**합니다(`UIBuilder`). 한글은 OS 폰트(맑은 고딕)를 씁니다. 레이아웃은 LayoutGroup 기반입니다.
   - 주의: `childForceExpand`가 켜진 LayoutGroup은 스스로 flexible이 됩니다. 필요하면 `Size(..., flexWidth: 0)`로 막으세요.
+- **정보 은닉**: 플레이어·NPC·UI·로그·LLM 프롬프트는 **시야로 확인한 정보만** 씁니다. 몬스터·둥지 정보는 `EcosystemManager`가 아니라 `GuildIntel`(관측 기록)에서 읽으세요.
 - **JSON은 `JsonUtility`와 snake_case DTO**를 씁니다. 게임 코드에서 Newtonsoft는 쓰지 않습니다(LLMUnity 의존성으로 설치돼 있을 뿐입니다).
 
 ## 코딩 규칙

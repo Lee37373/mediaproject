@@ -9,7 +9,7 @@ using UnityEngine.UI;
 
 namespace GuildMaster.UI
 {
-    /// <summary>Monster ecosystem report: per-species population/food and discovered nests.</summary>
+    /// <summary>Ecosystem report from the guild's own observations: known species and discovered nests.</summary>
     public class EcologyView : UIPanel
     {
         public override string Title => "생태계 보고서";
@@ -24,7 +24,7 @@ namespace GuildMaster.UI
             UIBuilder.HLayout(body, 12).childForceExpandHeight = true;
             var left = UIBuilder.Rect(body, "Species").Size(-1, -1, 1);
             UIBuilder.VLayout(left, 6, 0);
-            UIBuilder.Label(left, "종별 개체 수", 16, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 24);
+            UIBuilder.Label(left, "확인한 종 (관측 기준)", 16, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 24);
             _species = UIBuilder.ScrollList(left, out var s1);
             s1.GetComponent<RectTransform>().Size(-1, -1, -1, 1);
 
@@ -37,35 +37,35 @@ namespace GuildMaster.UI
 
         protected override void Refresh()
         {
-            var eco = Services.Get<EcosystemManager>();
-            var species = eco.Species.ToList();
-            EnsureRows(_species, _speciesRows, species.Count, p => UIBuilder.Label(p, "", 15).Size(-1, 44));
+            // Only what the guild has seen (GuildIntel), never the real simulation numbers.
+            var intel = Services.Get<GuildIntel>();
+            var species = intel.KnownSpecies.ToList();
+            EnsureRows(_species, _speciesRows, Mathf.Max(1, species.Count), p => UIBuilder.Label(p, "", 15).Size(-1, 44));
+            if (species.Count == 0)
+                _speciesRows[0].text = UIBuilder.Colored("아직 확인한 몬스터가 없습니다. 모험가를 보내 주변을 탐사하세요.", UITheme.TextMuted);
             for (int i = 0; i < species.Count; i++)
             {
                 var s = species[i];
-                int pop = eco.GetPopulation(s);
-                int cap = eco.NestsOf(s).Sum(n => n.Capacity);
-                string status = eco.IsExtinct(s) ? UIBuilder.Colored("멸종", UITheme.Bad)
-                    : pop <= 2 ? UIBuilder.Colored("멸종 위기", UITheme.Warn)
-                    : UIBuilder.Colored("안정", UITheme.Good);
-                string food = s.prey.Count > 0 ? $" · 먹이 충족도 {eco.FoodFactor(s) * 100f:0}%" : "";
-                string bar = new string('■', Mathf.Clamp(Mathf.RoundToInt(10f * pop / Mathf.Max(1, cap)), 0, 10)).PadRight(10, '□');
-                _speciesRows[i].text = $"{s.displayName} {status}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(s.danger), UITheme.Danger(s.danger))}\n" +
-                                       $"<color=#{UITheme.Hex(UITheme.TextMuted)}>{bar} {pop}/{cap}{food}</color>";
+                int nests = intel.KnownNestCount(s);
+                int seen = intel.ObservedPopulation(s);
+                string nestText = nests > 0 ? $"발견한 둥지 {nests}곳 · 관측 {seen}마리" : "둥지 위치 모름";
+                string status = nests > 0 && seen == 0 ? UIBuilder.Colored(" · 관측된 개체 없음", UITheme.Warn) : "";
+                _speciesRows[i].text = $"{s.displayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(s.danger), UITheme.Danger(s.danger))}\n" +
+                                       $"<color=#{UITheme.Hex(UITheme.TextMuted)}>{nestText}</color>{status}";
             }
 
-            var nests = eco.Nests.Where(n => n.Discovered).ToList();
-            EnsureRows(_nests, _nestRows, nests.Count, p =>
+            var nestsList = intel.KnownNests.ToList();
+            EnsureRows(_nests, _nestRows, nestsList.Count, p =>
             {
                 var b = UIBuilder.Button(p, "", null, -1, 30, UITheme.RowBg, 14);
                 b.GetComponentInChildren<Text>().alignment = TextAnchor.MiddleLeft;
                 return b;
             });
-            for (int i = 0; i < nests.Count; i++)
+            for (int i = 0; i < nestsList.Count; i++)
             {
-                var n = nests[i];
+                var n = nestsList[i];
                 var btn = _nestRows[i];
-                btn.SetLabel($"{n.DisplayName} — {(n.IsEmpty ? UIBuilder.Colored("비어 있음", UITheme.TextMuted) : $"{n.Population}/{n.Capacity}마리")}");
+                btn.SetLabel($"{n.DisplayName} — {intel.DescribeNest(n)}");
                 btn.onClick.RemoveAllListeners();
                 btn.onClick.AddListener(() => Services.Get<CameraController>().JumpTo(n.WorldPosition));
             }

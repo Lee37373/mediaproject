@@ -227,13 +227,13 @@ namespace GuildMaster.UI
 
         void ShowNest(Nest n)
         {
-            var eco = Services.Get<EcosystemManager>();
+            // Observations only (GuildIntel): live count while in view, otherwise the last sighting.
+            var intel = Services.Get<GuildIntel>();
             _title.text = n.DisplayName;
             _body.text =
-                $"개체 수 {n.Population}/{n.Capacity} · 지형 {n.Biome}\n" +
-                $"종 전체 개체 수 {eco.GetPopulation(n.Species)}{(eco.IsExtinct(n.Species) ? UIBuilder.Colored(" (멸종)", UITheme.Bad) : "")}\n" +
-                (n.Species.prey.Count > 0 ? $"먹이 충족도 {eco.FoodFactor(n.Species) * 100f:0}%\n" : "") +
-                Muted("둥지가 비면 다른 둥지의 개체가 다시 정착할 수 있습니다. 종 전체가 사라지면 멸종합니다.");
+                $"개체 수: {intel.DescribeNest(n)} · 최대 {n.Capacity} · 지형 {n.Biome}\n" +
+                $"이 종의 발견한 둥지 {intel.KnownNestCount(n.Species)}곳 · 관측 합계 {intel.ObservedPopulation(n.Species)}마리\n" +
+                Muted("시야에 들어와야 개체 수가 갱신됩니다. 둥지가 비면 다른 둥지의 개체가 다시 정착할 수 있습니다.");
         }
 
         void ShowBuilding(Building b)

@@ -40,12 +40,16 @@ namespace GuildMaster.Adventurers
             return true;
         }
 
+        /// <summary>
+        /// Where to go for a quest, using only what the guild knows: the nearest known nest of the
+        /// hunted species, otherwise a search spot in unexplored ground (see <see cref="GuildIntel"/>).
+        /// </summary>
         public static Vector2 QuestDestination(Adventurer a, Quest q)
         {
-            if (q.Type == QuestType.Hunt && Services.TryGet<EcosystemManager>(out var eco))
+            if (q.Type == QuestType.Hunt && Services.TryGet<GuildIntel>(out var intel))
             {
-                var nest = eco.FindNearestNest(a.Position, q.Species, requireMembers: true);
-                if (nest != null) return nest.WorldPosition;
+                var nest = intel.FindNearestKnownNest(a.Position, q.Species);
+                return nest != null ? nest.WorldPosition : intel.FindSearchPoint(a.Position, GameRandom.Shared);
             }
             return q.Point;
         }
@@ -223,14 +227,30 @@ namespace GuildMaster.Adventurers
         float _searchTimer;
         float _roamTimer;
         Vector2 _area;
+        /// <summary>No known nest of the target: sweeping unexplored ground instead of roaming a nest.</summary>
+        bool _scouting;
 
-        public override string Label => "사냥 중";
+        public override string Label => _scouting ? "수색 중" : "사냥 중";
 
         public override void Enter()
         {
-            _area = AdvCtx.QuestDestination(Owner, Owner.CurrentQuest);
             _searchTimer = 0f;
             _roamTimer = 0f;
+            PickArea();
+        }
+
+        void PickArea()
+        {
+            var a = Owner;
+            var q = a.CurrentQuest;
+            _scouting = false;
+            if (q.Type == QuestType.Hunt && Services.TryGet<GuildIntel>(out var intel))
+            {
+                var nest = intel.FindNearestKnownNest(a.Position, q.Species);
+                _scouting = nest == null;
+                _area = nest != null ? nest.WorldPosition : intel.FindSearchPoint(a.Position, GameRandom.Shared);
+            }
+            else _area = AdvCtx.QuestDestination(a, q);
         }
 
         bool IsQuestTarget(Unit u)
@@ -250,26 +270,36 @@ namespace GuildMaster.Adventurers
             if (_searchTimer <= 0f)
             {
                 _searchTimer = 0.6f;
-                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius * 2.5f, IsQuestTarget);
+                // Only what this adventurer can actually see.
+                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius, IsQuestTarget);
                 if (target != null)
                 {
                     a.Engage.SetTarget(target);
                     return;
                 }
-                // Current hunting ground depleted: move on to another nest of the species.
+                // Hunting ground depleted (as far as we know), or a nest got discovered while scouting.
                 var q = a.CurrentQuest;
-                if (q.Type == QuestType.Hunt && Services.TryGet<EcosystemManager>(out var eco))
+                if (q.Type == QuestType.Hunt && Services.TryGet<GuildIntel>(out var intel))
                 {
-                    var nest = eco.FindNearestNest(a.Position, q.Species, requireMembers: true);
-                    if (nest != null && Vector2.Distance(nest.WorldPosition, _area) > 2f)
+                    var nest = intel.FindNearestKnownNest(a.Position, q.Species);
+                    // Scouting: next spot once the current walk ends (reached, or no path there).
+                    bool arrived = !a.Mover.IsMoving;
+                    if (nest != null && (_scouting || Vector2.Distance(nest.WorldPosition, _area) > 2f))
                     {
+                        _scouting = false;
                         _area = nest.WorldPosition;
+                        a.Mover.SetDestination(_area, 1.5f);
+                    }
+                    else if (nest == null && (!_scouting || arrived))
+                    {
+                        _scouting = true;
+                        _area = intel.FindSearchPoint(a.Position, GameRandom.Shared);
                         a.Mover.SetDestination(_area, 1.5f);
                     }
                 }
             }
 
-            if (a.Mover.IsMoving) return;
+            if (a.Mover.IsMoving || _scouting) return;
             _roamTimer -= dt;
             if (_roamTimer > 0f) return;
             _roamTimer = GameRandom.Shared.Range(1f, 3f);
