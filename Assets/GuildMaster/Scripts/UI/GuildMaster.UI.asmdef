@@ -1,0 +1,12 @@
+{
+    "name": "GuildMaster.UI",
+    "rootNamespace": "GuildMaster.UI",
+    "references": [
+        "GuildMaster.Core",
+        "GuildMaster.LLM",
+        "GuildMaster.Gameplay",
+        "Unity.InputSystem",
+        "UnityEngine.UI"
+    ],
+    "autoReferenced": true
+}

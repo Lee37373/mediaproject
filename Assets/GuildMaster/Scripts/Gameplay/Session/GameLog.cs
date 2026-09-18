@@ -1,0 +1,82 @@
+using System.Collections.Generic;
+using GuildMaster.Adventurers;
+using GuildMaster.Core;
+using GuildMaster.Data;
+using GuildMaster.Ecosystem;
+using GuildMaster.Economy;
+using GuildMaster.Quests;
+
+namespace GuildMaster.Session
+{
+    public enum LogCategory { Info, Quest, Combat, Economy, Ecosystem, Danger }
+
+    public struct LogEntry
+    {
+        public string Time;
+        public string Text;
+        public LogCategory Category;
+    }
+
+    public struct LogAddedEvent { public LogEntry Entry; }
+
+    /// <summary>
+    /// Turns gameplay events into a readable, bounded history (shown in the UI and usable as
+    /// recent-events context for LLM prompts).
+    /// </summary>
+    public class GameLog
+    {
+        const int MaxEntries = 200;
+
+        readonly List<LogEntry> _entries = new();
+        readonly GameClock _clock;
+        readonly GameDatabase _db;
+
+        public IReadOnlyList<LogEntry> Entries => _entries;
+
+        public GameLog(GameClock clock, GameDatabase db)
+        {
+            _clock = clock;
+            _db = db;
+            EventBus.Subscribe<QuestPostedEvent>(e => Add($"의뢰 등록: {e.Quest.Title} (보상 {e.Quest.RewardGold}G / {e.Quest.RewardExp}EXP)", LogCategory.Quest));
+            EventBus.Subscribe<QuestAcceptedEvent>(e => Add($"{e.Taker.TakerName}이(가) '{e.Quest.Title}' 의뢰를 수락했습니다.", LogCategory.Quest));
+            EventBus.Subscribe<QuestAbandonedEvent>(e => Add($"{e.Taker.TakerName}이(가) '{e.Quest.Title}' 의뢰를 포기했습니다.", LogCategory.Quest));
+            EventBus.Subscribe<QuestCompletedEvent>(e => Add($"의뢰 달성: {e.Quest.Title}", LogCategory.Quest));
+            EventBus.Subscribe<QuestRewardPaidEvent>(e => Add($"{e.Taker.TakerName}에게 보상 지급: {e.Gold}G, {e.Exp}EXP", LogCategory.Quest));
+            EventBus.Subscribe<QuestClosedEvent>(e =>
+            {
+                if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
+                else if (e.Status == QuestStatus.Failed) Add($"의뢰 실패: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
+            });
+            EventBus.Subscribe<AdventurerJoinedEvent>(e => Add($"{e.Adventurer.Data.name}({AdventurerData.ClassLabel(e.Adventurer.Data.cls)})이(가) 길드에 합류했습니다.", LogCategory.Info));
+            EventBus.Subscribe<AdventurerDiedEvent>(e => Add($"{e.Adventurer.Data.name}이(가) {(e.Killer != null ? e.Killer.DisplayName + "에게" : "")} 쓰러졌습니다...", LogCategory.Danger));
+            EventBus.Subscribe<AdventurerLevelUpEvent>(e => Add($"{e.Adventurer.Data.name} 레벨 업! (Lv.{e.Level})", LogCategory.Info));
+            EventBus.Subscribe<TradeEvent>(e =>
+            {
+                var name = _db.Item(e.ItemId)?.displayName ?? e.ItemId;
+                Add(e.GuildBought
+                    ? $"{e.TraderName}에게서 {name} x{e.Count} 매입 (-{e.Gold}G)"
+                    : $"{e.TraderName}에게 {name} x{e.Count} 판매 (+{e.Gold}G)", LogCategory.Economy);
+            });
+            EventBus.Subscribe<SpeciesExtinctEvent>(e => Add($"[생태계] {e.Species.displayName}이(가) 멸종했습니다!", LogCategory.Ecosystem));
+            EventBus.Subscribe<NestClearedEvent>(e => Add($"[생태계] {e.Nest.DisplayName}이(가) 비었습니다.", LogCategory.Ecosystem));
+            EventBus.Subscribe<NestRecolonizedEvent>(e => Add($"[생태계] {e.Nest.DisplayName}에 {e.Nest.Species.displayName}이(가) 다시 자리잡았습니다.", LogCategory.Ecosystem));
+            EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {e.Nest.DisplayName}", LogCategory.Ecosystem));
+            EventBus.Subscribe<DayPassedEvent>(e => Add($"{e.Day}일차가 밝았습니다.", LogCategory.Info));
+        }
+
+        public void Add(string text, LogCategory category = LogCategory.Info)
+        {
+            var entry = new LogEntry { Time = $"{_clock.Day}일 {_clock.Hour:00}:{_clock.Minute:00}", Text = text, Category = category };
+            _entries.Add(entry);
+            if (_entries.Count > MaxEntries) _entries.RemoveAt(0);
+            EventBus.Publish(new LogAddedEvent { Entry = entry });
+        }
+
+        /// <summary>Last N entries as plain lines (for prompts).</summary>
+        public IEnumerable<string> Recent(int count)
+        {
+            for (int i = System.Math.Max(0, _entries.Count - count); i < _entries.Count; i++)
+                yield return _entries[i].Text;
+        }
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "name": "GuildMaster.LLM",
+    "rootNamespace": "GuildMaster.LLM",
+    "references": [
+        "GuildMaster.Core",
+        "undream.llmunity.Runtime"
+    ],
+    "autoReferenced": true,
+    "versionDefines": [
+        {
+            "name": "ai.undream.llm",
+            "expression": "3.0.0",
+            "define": "LLMUNITY_PRESENT"
+        }
+    ]
+}

@@ -1,0 +1,82 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+namespace GuildMaster.UI
+{
+    /// <summary>
+    /// Base for toggleable windows: builds a titled frame once, then refreshes its body
+    /// on a throttled interval while visible.
+    /// </summary>
+    public abstract class UIPanel : MonoBehaviour
+    {
+        protected RectTransform Body { get; private set; }
+        protected RectTransform Frame { get; private set; }
+        float _refreshTimer;
+
+        public bool IsOpen => gameObject.activeSelf;
+        protected virtual float RefreshInterval => 0.5f;
+
+        public abstract string Title { get; }
+
+        /// <summary>Creates the window frame at the given anchored rect and calls Build().</summary>
+        public void Create(RectTransform parent, Vector2 size, Vector2 anchoredPos)
+        {
+            var frameImg = UIBuilder.Panel(parent, $"Window:{Title}", UITheme.PanelBg);
+            Frame = frameImg.rectTransform;
+            Frame.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), anchoredPos, size);
+            transform.SetParent(Frame, false);
+            gameObject.name = GetType().Name;
+
+            var header = UIBuilder.Panel(Frame, "Header", UITheme.Header);
+            header.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), Vector2.zero, new Vector2(0, 38));
+            var title = UIBuilder.Label(header.transform, Title, 19, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold);
+            title.rectTransform.Stretch(14, 50, 0, 0);
+            var close = UIBuilder.Button(header.transform, "X", Close, 30, 30, UITheme.ButtonDanger);
+            ((RectTransform)close.transform).Anchor(new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-4, 0), new Vector2(30, 30));
+
+            Body = UIBuilder.Rect(Frame, "Body");
+            Body.Stretch(10, 10, 46, 10);
+            Build(Body);
+            Frame.gameObject.SetActive(false);
+        }
+
+        protected abstract void Build(RectTransform body);
+        protected virtual void Refresh() { }
+        protected virtual void OnOpened() { }
+
+        public void Open()
+        {
+            Frame.gameObject.SetActive(true);
+            Frame.SetAsLastSibling();
+            _refreshTimer = 0f;
+            OnOpened();
+            Refresh();
+        }
+
+        public void Close() => Frame.gameObject.SetActive(false);
+
+        public void Toggle()
+        {
+            if (Frame.gameObject.activeSelf) Close();
+            else Open();
+        }
+
+        public bool Visible => Frame != null && Frame.gameObject.activeSelf;
+
+        protected virtual void Update()
+        {
+            if (!Visible) return;
+            _refreshTimer -= Time.unscaledDeltaTime;
+            if (_refreshTimer > 0f) return;
+            _refreshTimer = RefreshInterval;
+            Refresh();
+        }
+
+        /// <summary>Re-populates a list container: ensures exactly 'count' row objects exist and returns them.</summary>
+        protected static void EnsureRows<T>(Transform content, System.Collections.Generic.List<T> rows, int count, System.Func<Transform, T> create) where T : Component
+        {
+            while (rows.Count < count) rows.Add(create(content));
+            for (int i = 0; i < rows.Count; i++) rows[i].gameObject.SetActive(i < count);
+        }
+    }
+}

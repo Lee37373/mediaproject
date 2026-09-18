@@ -1,0 +1,97 @@
+using UnityEngine;
+
+namespace GuildMaster.World
+{
+    /// <summary>
+    /// Runtime navigation grid: terrain walkability/cost plus dynamic blockers (buildings).
+    /// One tile = one world unit; cell (x,y) spans [x,x+1) x [y,y+1).
+    /// </summary>
+    public class GridMap
+    {
+        public readonly MapData Data;
+        readonly bool[] _blocked;
+
+        public int Width => Data.Width;
+        public int Height => Data.Height;
+
+        /// <summary>Incremented whenever walkability changes, so cached paths can be revalidated.</summary>
+        public int Version { get; private set; }
+
+        public GridMap(MapData data)
+        {
+            Data = data;
+            _blocked = new bool[data.Width * data.Height];
+        }
+
+        public bool InBounds(Vector2Int c) => Data.InBounds(c);
+
+        public bool IsWalkable(Vector2Int c) => IsWalkable(c.x, c.y);
+
+        public bool IsWalkable(int x, int y)
+        {
+            if (!Data.InBounds(x, y)) return false;
+            int i = y * Width + x;
+            return !_blocked[i] && MapData.IsWalkable(Data.Tiles[i]);
+        }
+
+        public float Cost(int x, int y) => MapData.MoveCost(Data.Tiles[y * Width + x]);
+
+        /// <summary>Mountains, walls and buildings fully block projectiles / sight lines.</summary>
+        public bool IsHardCover(int x, int y)
+        {
+            if (!Data.InBounds(x, y)) return true;
+            int i = y * Width + x;
+            return _blocked[i] || MapData.IsHardCover(Data.Tiles[i]);
+        }
+
+        public bool HasTree(int x, int y) => Data.HasTree(x, y);
+
+        public float Cost(Vector2Int c) => Cost(c.x, c.y);
+
+        public void SetBlocked(RectInt area, bool blocked)
+        {
+            for (int y = area.yMin; y < area.yMax; y++)
+            for (int x = area.xMin; x < area.xMax; x++)
+                if (Data.InBounds(x, y)) _blocked[y * Width + x] = blocked;
+            Version++;
+        }
+
+        public static Vector2Int WorldToCell(Vector2 world) => new(Mathf.FloorToInt(world.x), Mathf.FloorToInt(world.y));
+
+        public static Vector2 CellToWorld(Vector2Int cell) => new(cell.x + 0.5f, cell.y + 0.5f);
+
+        public bool IsInTown(Vector2Int c) => Data.TownRect.Contains(c);
+
+        public bool IsInTown(Vector2 world) => IsInTown(WorldToCell(world));
+
+        /// <summary>Spiral search for the nearest walkable cell (used when a target is inside an obstacle).</summary>
+        public bool TryFindNearestWalkable(Vector2Int origin, int maxRadius, out Vector2Int result)
+        {
+            if (IsWalkable(origin)) { result = origin; return true; }
+            for (int r = 1; r <= maxRadius; r++)
+            {
+                for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    if (Mathf.Abs(dx) != r && Mathf.Abs(dy) != r) continue;
+                    var c = new Vector2Int(origin.x + dx, origin.y + dy);
+                    if (IsWalkable(c)) { result = c; return true; }
+                }
+            }
+            result = origin;
+            return false;
+        }
+
+        /// <summary>Random walkable cell within radius (for wandering).</summary>
+        public bool TryRandomWalkableNear(Vector2Int origin, int radius, Core.GameRandom rng, out Vector2Int result, int attempts = 12)
+        {
+            for (int i = 0; i < attempts; i++)
+            {
+                var c = new Vector2Int(origin.x + rng.Range(-radius, radius + 1), origin.y + rng.Range(-radius, radius + 1));
+                if (IsWalkable(c)) { result = c; return true; }
+            }
+            result = origin;
+            return false;
+        }
+    }
+}

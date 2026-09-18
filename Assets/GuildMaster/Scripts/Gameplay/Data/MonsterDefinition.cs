@@ -1,0 +1,75 @@
+using System.Collections.Generic;
+using GuildMaster.World;
+using UnityEngine;
+
+namespace GuildMaster.Data
+{
+    public enum DangerLevel { Low, Medium, High }
+
+    public enum MonsterShape { Slime, Beast, Humanoid, Brute }
+
+    [System.Serializable]
+    public class LootEntry
+    {
+        public ItemDefinition item;
+        [Range(0f, 1f)] public float chance = 1f;
+        public int min = 1;
+        public int max = 1;
+    }
+
+    [CreateAssetMenu(menuName = "GuildMaster/Monster", fileName = "Monster")]
+    public class MonsterDefinition : ScriptableObject
+    {
+        public string id;
+        public string displayName;
+
+        [Header("Visual")]
+        public MonsterShape shape;
+        public Color bodyColor = Color.green;
+        public Color accentColor = Color.white;
+        public float scale = 1f;
+
+        [Header("Combat")]
+        public float maxHp = 20;
+        public float attack = 4;
+        public float defense;
+        public float attackRange = 1.1f;
+        public float attackCooldown = 1.2f;
+        public float moveSpeed = 2.5f;
+        public float sightRadius = 6f;
+        public DangerLevel danger;
+
+        [Header("Behaviour")]
+        [Tooltip("Attacks guild members on sight. Otherwise only retaliates.")]
+        public bool aggressiveToHumans;
+        [Tooltip("Runs away from predators instead of fighting.")]
+        public bool fleesFromPredators;
+        public List<MonsterDefinition> prey = new();
+        public List<MonsterDefinition> rivals = new();
+        public float wanderRadius = 5f;
+        public float leashRadius = 14f;
+        public bool canRaid;
+        [Tooltip("Members of a nest move as a flock following a pack leader.")]
+        public bool packHunter;
+        public List<string> skillIds = new();
+
+        [Header("Ranged variant (e.g. goblin archers)")]
+        [Range(0f, 1f)] public float rangedVariantChance;
+        public float rangedVariantRange = 4.5f;
+        public string rangedVariantName;
+
+        [Header("Ecosystem")]
+        public List<Biome> biomes = new();
+        public int nestCapacity = 6;
+        [Tooltip("Logistic growth rate per game hour.")]
+        public float growthPerHour = 0.05f;
+        public int initialPopulation = 3;
+
+        [Header("Rewards")]
+        public List<LootEntry> loot = new();
+        public int expValue = 5;
+
+        public bool IsPredatorOf(MonsterDefinition other) => other != null && prey.Contains(other);
+        public bool IsRivalOf(MonsterDefinition other) => other != null && rivals.Contains(other);
+    }
+}

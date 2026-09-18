@@ -1,0 +1,206 @@
+using System;
+using GuildMaster.Core;
+using GuildMaster.Visuals;
+using GuildMaster.World;
+using UnityEngine;
+
+namespace GuildMaster.Units
+{
+    public enum Faction { Guild, Monster, Visitor }
+
+    [Serializable]
+    public struct CombatStats
+    {
+        public float MaxHp;
+        public float Attack;
+        public float Defense;
+        public float AttackRange;
+        public float AttackCooldown;
+        public float MoveSpeed;
+        public float SightRadius;
+
+        public bool IsRanged => AttackRange > 2f;
+    }
+
+    public struct UnitDamagedEvent
+    {
+        public Unit Target;
+        public Unit Source;
+        public float Amount;
+        public bool Critical;
+    }
+
+    public struct UnitDiedEvent
+    {
+        public Unit Victim;
+        public Unit Killer;
+    }
+
+    /// <summary>
+    /// Base for every combat-capable actor (monsters, adventurers). Handles health,
+    /// hostility, registration, and shared components. Behaviour lives in subclasses' FSMs.
+    /// </summary>
+    [RequireComponent(typeof(PathFollower))]
+    public abstract class Unit : MonoBehaviour
+    {
+        public string UnitId { get; protected set; }
+        public string DisplayName { get; protected set; }
+        public Faction Faction { get; protected set; }
+        public CombatStats Stats;
+        public float Hp { get; protected set; }
+        public bool IsAlive => !_dead && Hp > 0f;
+        public float HpRatio => Stats.MaxHp <= 0f ? 0f : Hp / Stats.MaxHp;
+
+        public PathFollower Mover { get; private set; }
+        public CharacterVisual Visual { get; private set; }
+
+        /// <summary>Last unit that damaged this one and when (scaled time).</summary>
+        public Unit LastAttacker { get; private set; }
+        public float LastAttackedTime { get; private set; } = -999f;
+
+        /// <summary>Scaled time at which the next attack is allowed.</summary>
+        public float NextAttackTime { get; set; }
+
+        public event Action<Unit> Died;
+
+        bool _dead;
+
+        public Vector2 Position => transform.position;
+
+        // ---------------- Tactical state ----------------
+
+        /// <summary>Body radius for crowd separation and melee spacing.</summary>
+        public float Radius { get; protected set; } = 0.3f;
+        /// <summary>Heavier units are pushed less by crowding.</summary>
+        public float Mass { get; protected set; } = 1f;
+        public readonly System.Collections.Generic.List<Skill> Skills = new();
+
+        public float StunnedUntil { get; private set; }
+        public bool IsStunned => Time.time < StunnedUntil;
+        float _speedBuff = 1f;
+        float _speedBuffUntil;
+        Vector2 _knockVelocity;
+        float _knockUntil;
+
+        /// <summary>Unit currently targeted by this unit (for UI, taunts, focus fire).</summary>
+        public Unit CurrentTarget { get; internal set; }
+
+        public void Stun(float seconds)
+        {
+            StunnedUntil = Mathf.Max(StunnedUntil, Time.time + seconds);
+            Mover.Stop();
+        }
+
+        public void ApplySpeedBuff(float multiplier, float seconds)
+        {
+            _speedBuff = multiplier;
+            _speedBuffUntil = Time.time + seconds;
+        }
+
+        /// <summary>Pushes the unit over ~0.15s, stopping at unwalkable terrain.</summary>
+        public void Knockback(Vector2 direction, float distance)
+        {
+            if (!IsAlive || distance <= 0f) return;
+            const float duration = 0.15f;
+            _knockVelocity = direction.normalized * (distance / duration) / Mathf.Max(0.5f, Mass);
+            _knockUntil = Time.time + duration;
+        }
+
+        /// <summary>Forces this unit to attack a specific target (taunts, pack calls). Override per AI.</summary>
+        public virtual void ForceTarget(Unit target) { }
+
+        protected void TickStatus(float dt)
+        {
+            Mover.BuffMultiplier = Time.time < _speedBuffUntil ? _speedBuff : 1f;
+            if (Time.time < _knockUntil)
+            {
+                var next = Position + _knockVelocity * dt;
+                if (Core.Services.TryGet<WorldService>(out var world) && world.Grid.IsWalkable(GridMap.WorldToCell(next)))
+                    transform.position = new Vector3(next.x, next.y, transform.position.z);
+            }
+            foreach (var s in Skills) s.Tick(this, dt);
+        }
+
+        /// <summary>Tries each ready skill in order; returns true if one was used.</summary>
+        public bool TryUseSkills(Unit target)
+        {
+            if (IsStunned) return false;
+            foreach (var s in Skills)
+                if (s.IsReady && s.TryUse(this, target)) return true;
+            return false;
+        }
+
+        protected virtual void Awake()
+        {
+            Mover = GetComponent<PathFollower>();
+            Visual = GetComponent<CharacterVisual>();
+            if (Visual == null) Visual = gameObject.AddComponent<CharacterVisual>();
+        }
+
+        protected virtual void OnEnable() => UnitRegistry.Register(this);
+        protected virtual void OnDisable() => UnitRegistry.Unregister(this);
+
+        /// <summary>Resets health/state for (re)spawn.</summary>
+        protected void ResetVitals()
+        {
+            _dead = false;
+            Hp = Stats.MaxHp;
+            LastAttacker = null;
+            LastAttackedTime = -999f;
+            NextAttackTime = 0f;
+            StunnedUntil = 0f;
+            _speedBuffUntil = 0f;
+            _knockUntil = 0f;
+            CurrentTarget = null;
+            foreach (var s in Skills) s.ResetCooldown(GameRandomStagger());
+            if (Mover) Mover.Speed = Stats.MoveSpeed;
+        }
+
+        static float GameRandomStagger() => Core.GameRandom.Shared.Range(0f, 2f);
+
+        public abstract bool IsHostileTo(Unit other);
+
+        /// <summary>True if the other unit hit us within the given seconds (retaliation).</summary>
+        public bool WasRecentlyAttackedBy(Unit other, float seconds = 8f)
+            => other != null && LastAttacker == other && Time.time - LastAttackedTime < seconds;
+
+        /// <summary>Directly sets HP (e.g. keeping the ratio after a max-HP change). Does not kill.</summary>
+        protected void SetHp(float hp)
+        {
+            if (!IsAlive) return;
+            Hp = Mathf.Clamp(hp, 1f, Stats.MaxHp);
+        }
+
+        public void Heal(float amount)
+        {
+            if (!IsAlive) return;
+            Hp = Mathf.Min(Stats.MaxHp, Hp + amount);
+        }
+
+        internal void ReceiveDamage(float amount, Unit source, bool critical)
+        {
+            if (!IsAlive) return;
+            Hp -= amount;
+            if (source != null)
+            {
+                LastAttacker = source;
+                LastAttackedTime = Time.time;
+            }
+            Visual?.Flash();
+            EventBus.Publish(new UnitDamagedEvent { Target = this, Source = source, Amount = amount, Critical = critical });
+            OnDamaged(amount, source);
+            if (Hp <= 0f)
+            {
+                Hp = 0f;
+                _dead = true;
+                Mover.Stop();
+                OnDeath(source);
+                Died?.Invoke(this);
+                EventBus.Publish(new UnitDiedEvent { Victim = this, Killer = source });
+            }
+        }
+
+        protected virtual void OnDamaged(float amount, Unit source) { }
+        protected abstract void OnDeath(Unit killer);
+    }
+}
