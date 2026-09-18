@@ -25,7 +25,21 @@ namespace GuildMaster.LLM
             public TaskCompletionSource<LlmResult> Tcs;
             public CancellationToken Token;
             public long Order;
+            public LlmExchange Exchange;
+            public bool Started;
         }
+
+        const float CancelGraceSeconds = 3f;
+        const float StaleWaitSeconds = 2f;
+        /// <summary>Generation that timed out and ignored cancellation (still running natively).</summary>
+        Task _stale;
+
+        const int HistorySize = 40;
+        readonly List<LlmExchange> _history = new();
+        int _exchangeId;
+
+        /// <summary>Most recent exchanges, oldest first (debug viewer).</summary>
+        public IReadOnlyList<LlmExchange> History => _history;
 
         static readonly int[] MaxQueuedPerPriority = { 4, 6, 8, 1 };
 
@@ -88,7 +102,7 @@ namespace GuildMaster.LLM
                 for (int i = _queue.Count - 1; i >= 0; i--)
                 {
                     if (_queue[i].Request.DedupeKey != request.DedupeKey) continue;
-                    _queue[i].Tcs.TrySetResult(LlmResult.Fail("superseded"));
+                    Finish(_queue[i], LlmResult.Fail("superseded"));
                     _queue.RemoveAt(i);
                 }
             }
@@ -105,6 +119,7 @@ namespace GuildMaster.LLM
                 Tcs = new TaskCompletionSource<LlmResult>(),
                 Token = ct,
                 Order = _order++,
+                Exchange = new LlmExchange { Id = ++_exchangeId, QueuedAt = Time.realtimeSinceStartup, Request = request },
             };
             _queue.Add(pending);
             if (!_busy) _ = PumpAsync();
@@ -119,13 +134,15 @@ namespace GuildMaster.LLM
                 while (_queue.Count > 0)
                 {
                     var next = TakeNext();
+                    next.Started = true;
+                    next.Exchange.QueueSeconds = Time.realtimeSinceStartup - next.Exchange.QueuedAt;
                     if (next.Token.IsCancellationRequested)
                     {
-                        next.Tcs.TrySetResult(LlmResult.Fail("cancelled"));
+                        Finish(next, LlmResult.Fail("cancelled"));
                         continue;
                     }
                     var result = await RunAsync(next);
-                    next.Tcs.TrySetResult(result);
+                    Finish(next, result);
                     if (this == null) return;
                 }
             }
@@ -133,6 +150,23 @@ namespace GuildMaster.LLM
             {
                 _busy = false;
             }
+        }
+
+        /// <summary>Completes a pending request and records it in the history.</summary>
+        void Finish(Pending p, LlmResult result)
+        {
+            var x = p.Exchange;
+            x.Ok = result.Ok;
+            x.Response = result.Text;
+            x.Error = result.Error;
+            float elapsed = Time.realtimeSinceStartup - x.QueuedAt;
+            if (!p.Started) x.QueueSeconds = elapsed; // dropped while still queued
+            else x.GenerateSeconds = result.Ok ? result.Seconds : Mathf.Max(0f, elapsed - x.QueueSeconds);
+            result.Exchange = x;
+            _history.Add(x);
+            if (_history.Count > HistorySize) _history.RemoveAt(0);
+            EventBus.Publish(new LlmExchangeEvent { Exchange = x });
+            p.Tcs.TrySetResult(result);
         }
 
         Pending TakeNext()
@@ -153,6 +187,19 @@ namespace GuildMaster.LLM
         async Task<LlmResult> RunAsync(Pending p)
         {
             if (!IsReady) return LlmResult.Fail("offline");
+            // A previous generation that ignored cancellation may still be running natively.
+            // Never start a second one on top of it and never wait on it unbounded.
+            if (_stale != null && !_stale.IsCompleted)
+            {
+                await Task.WhenAny(_stale, Task.Delay(TimeSpan.FromSeconds(StaleWaitSeconds)));
+                if (!_stale.IsCompleted)
+                {
+                    Failed++;
+                    return LlmResult.Fail("busy");
+                }
+            }
+            _stale = null;
+
             var sw = Stopwatch.StartNew();
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(p.Token);
             try
@@ -165,8 +212,14 @@ namespace GuildMaster.LLM
                     _backend.CancelCurrent();
                     timeoutCts.Cancel();
                     Failed++;
-                    // Let the backend unwind before starting the next request.
-                    try { await gen; } catch { /* ignored */ }
+                    // Give the backend a short grace period to unwind; if it does not, remember it
+                    // as stale (see above) instead of blocking the queue forever.
+                    await Task.WhenAny(gen, Task.Delay(TimeSpan.FromSeconds(CancelGraceSeconds)));
+                    if (!gen.IsCompleted)
+                    {
+                        _stale = gen;
+                        Debug.LogWarning($"[LLM] '{p.Request.Tag}' did not stop after cancel; later requests fail fast until it ends.");
+                    }
                     return LlmResult.Fail(p.Token.IsCancellationRequested ? "cancelled" : "timeout");
                 }
                 timeoutCts.Cancel();
@@ -192,7 +245,7 @@ namespace GuildMaster.LLM
 
         void OnDestroy()
         {
-            foreach (var p in _queue) p.Tcs.TrySetResult(LlmResult.Fail("shutdown"));
+            foreach (var p in _queue) Finish(p, LlmResult.Fail("shutdown"));
             _queue.Clear();
         }
     }

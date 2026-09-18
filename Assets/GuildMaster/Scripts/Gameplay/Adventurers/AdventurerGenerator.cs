@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using GuildMaster.Core;
+using GuildMaster.Data;
+using GuildMaster.Traits;
 using UnityEngine;
 
 namespace GuildMaster.Adventurers
@@ -28,12 +31,22 @@ namespace GuildMaster.Adventurers
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetCounter() => s_counter = 0;
 
-        public static AdventurerData Generate(GameRandom rng, int level = 1)
+        /// <summary>A name no current guild member has (falls back to any name when all are taken).</summary>
+        static string PickUnusedName(GameRandom rng)
+        {
+            if (!Services.TryGet<GuildRoster>(out var roster)) return rng.Pick(Names);
+            var free = new List<string>(Names);
+            foreach (var m in roster.Members) free.Remove(m.Data.name);
+            return free.Count > 0 ? rng.Pick(free) : rng.Pick(Names);
+        }
+
+        /// <param name="traitPool">Traits to roll from; defaults to the registered GameDatabase.</param>
+        public static AdventurerData Generate(GameRandom rng, int level = 1, IReadOnlyList<TraitDefinition> traitPool = null)
         {
             var d = new AdventurerData
             {
                 id = NextId(),
-                name = rng.Pick(Names),
+                name = PickUnusedName(rng),
                 cls = (AdventurerClass)rng.Range(0, 3),
                 level = Mathf.Max(1, level),
                 gold = rng.Range(20, 70),
@@ -45,6 +58,8 @@ namespace GuildMaster.Adventurers
                 hairColor = Color.HSVToRGB(rng.Range(0f, 1f), rng.Range(0.3f, 0.8f), rng.Range(0.25f, 0.9f)),
                 skinColor = Color.Lerp(new Color(0.98f, 0.84f, 0.70f), new Color(0.55f, 0.38f, 0.26f), rng.Range(0f, 0.8f)),
             };
+            traitPool ??= Services.TryGet<GameDatabase>(out var db) ? db.traits : null;
+            foreach (var t in TraitRoller.Roll(rng, traitPool)) d.traitIds.Add(t.id);
             return d;
         }
     }

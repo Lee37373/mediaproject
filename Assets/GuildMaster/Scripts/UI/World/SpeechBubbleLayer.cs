@@ -90,7 +90,7 @@ namespace GuildMaster.UI
                     _remove.Add(kv.Key);
                     continue;
                 }
-                bool visible = WorldOverlay.TryWorldToLocal(_layer, b.Target.position + new Vector3(0, 0.75f), out var local);
+                bool visible = WorldOverlay.TryWorldToLocal(_layer, b.Target.position + new Vector3(0, 1.25f), out var local);
                 b.Root.gameObject.SetActive(visible);
                 if (visible) b.Root.anchoredPosition = local;
             }

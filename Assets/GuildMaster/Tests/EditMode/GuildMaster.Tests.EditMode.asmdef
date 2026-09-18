@@ -3,6 +3,7 @@
     "references": [
         "GuildMaster.Core",
         "GuildMaster.Gameplay",
+        "GuildMaster.LLM",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

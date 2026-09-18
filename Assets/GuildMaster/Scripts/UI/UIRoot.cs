@@ -46,6 +46,8 @@ namespace GuildMaster.UI
             WorldLayer = (RectTransform)worldCanvas.transform;
             var floating = WorldLayer.gameObject.AddComponent<FloatingTextLayer>();
             floating.Build(UIBuilder.Rect(WorldLayer, "Floating").Stretch());
+            var nameTags = WorldLayer.gameObject.AddComponent<NameTagLayer>();
+            nameTags.Build(UIBuilder.Rect(WorldLayer, "NameTags").Stretch());
             var bubbles = WorldLayer.gameObject.AddComponent<SpeechBubbleLayer>();
             bubbles.Build(UIBuilder.Rect(WorldLayer, "Bubbles").Stretch());
             Services.Register(floating);
@@ -75,6 +77,8 @@ namespace GuildMaster.UI
             AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1000, 560));
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(620, 560));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
+            // Debug-only: LLM request/response viewer (no side-menu button).
+            if (Debug.isDebugBuild) AddWindow<LlmDebugView>(null, null, Key.F2, new Vector2(1180, 680));
 
             BuildBanner();
             EventBus.Subscribe<MapPickingChangedEvent>(OnPicking);

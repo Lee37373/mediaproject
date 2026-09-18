@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using GuildMaster.Traits;
 using GuildMaster.World;
 using UnityEngine;
 
@@ -130,7 +131,70 @@ namespace GuildMaster.Data
             goblin.rivals.Add(orc);
             orc.rivals.Add(goblin);
 
+            AddTraits(db);
             return db;
+        }
+
+        static void AddTraits(GameDatabase db)
+        {
+            TraitDefinition T(string id, string name, bool positive, string desc, string hint)
+            {
+                var t = ScriptableObject.CreateInstance<TraitDefinition>();
+                t.name = t.id = id;
+                t.displayName = name;
+                t.isPositive = positive;
+                t.description = desc;
+                t.promptHint = hint;
+                db.traits.Add(t);
+                return t;
+            }
+
+            void Conflict(TraitDefinition a, TraitDefinition b) { a.conflicts.Add(b); b.conflicts.Add(a); }
+
+            // ---------- Positive ----------
+            var brave = T("brave", "용감함", true, "늦게 후퇴하고 위험한 의뢰를 선호합니다.", "위험을 두려워하지 않고 강한 적과 싸우길 즐긴다.");
+            brave.retreatShift = -0.1f; brave.dangerAversion = -0.5f;
+            var sturdy = T("sturdy", "강골", true, "최대 HP +20%.", "몸이 튼튼해 웬만한 상처는 버틴다.");
+            sturdy.hpMul = 1.2f;
+            var marksman = T("marksman", "명사수", true, "공격력 +15%.", "공격이 정확하고 매섭다.");
+            marksman.atkMul = 1.15f;
+            var diligent = T("diligent", "근면함", true, "피로 누적 ×0.7.", "지치지 않고 성실하게 일한다.");
+            diligent.fatigueMul = 0.7f;
+            var learner = T("quick_learner", "빠른 학습자", true, "획득 EXP ×1.3.", "배우는 속도가 빠르고 성장에 욕심이 있다.");
+            learner.expMul = 1.3f;
+            var nimble = T("nimble", "날렵함", true, "이동 속도 +15%.", "몸놀림이 가볍고 빠르다.");
+            nimble.speedMul = 1.15f;
+            var hawkeye = T("hawkeye", "매의 눈", true, "시야 +2.", "멀리 있는 것도 놓치지 않는다.");
+            hawkeye.sightAdd = 2f;
+            var sociable = T("sociable", "사교적", true, "다른 모험가와 함께하는 의뢰를 선호합니다(×1.4).", "동료와 함께하는 것을 좋아한다.");
+            sociable.partyAffinity = 1.4f;
+            var loyal = T("loyal", "충성스러움", true, "영입하기 쉽습니다.", "한번 믿은 길드에는 끝까지 충실하다.");
+            loyal.recruitDifficulty = -0.3f;
+
+            // ---------- Negative ----------
+            var coward = T("coward", "겁많음", false, "일찍 후퇴하고 위험한 의뢰를 피합니다.", "겁이 많아 위험한 일은 되도록 피하고 싶어 한다.");
+            coward.retreatShift = 0.15f; coward.dangerAversion = 1f;
+            var frail = T("frail", "허약함", false, "최대 HP -20%.", "몸이 약해 쉽게 다친다.");
+            frail.hpMul = 0.8f;
+            var clumsy = T("clumsy", "서투름", false, "공격력 -15%.", "손재주가 없어 공격이 자주 빗나간다.");
+            clumsy.atkMul = 0.85f;
+            var lazy = T("lazy", "게으름", false, "피로 누적 ×1.4.", "게을러서 금방 쉬고 싶어 한다.");
+            lazy.fatigueMul = 1.4f;
+            var greedy = T("greedy", "탐욕스러움", false, "골드 보상을 크게 따지고(×1.5) 영입하기 어렵습니다.", "돈이라면 무엇이든 한다. 보상이 적으면 불만이다.");
+            greedy.goldGreed = 1.5f; greedy.recruitDifficulty = 0.2f;
+            var sluggish = T("sluggish", "느림보", false, "이동 속도 -15%.", "행동이 굼뜨고 느리다.");
+            sluggish.speedMul = 0.85f;
+            var loner = T("loner", "외톨이", false, "다른 모험가와 함께하는 의뢰를 꺼립니다(×0.5).", "혼자 일하는 것을 선호하고 남과 어울리기 싫어한다.");
+            loner.partyAffinity = 0.5f;
+            var arrogant = T("arrogant", "오만함", false, "영입하기 어렵습니다.", "자신이 최고라고 믿으며 남을 깔본다.");
+            arrogant.recruitDifficulty = 0.3f;
+
+            Conflict(brave, coward);
+            Conflict(sturdy, frail);
+            Conflict(marksman, clumsy);
+            Conflict(diligent, lazy);
+            Conflict(nimble, sluggish);
+            Conflict(sociable, loner);
         }
     }
 }

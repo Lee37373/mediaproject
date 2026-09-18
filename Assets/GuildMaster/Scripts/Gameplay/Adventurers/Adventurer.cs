@@ -30,6 +30,9 @@ namespace GuildMaster.Adventurers
         public StateMachine<Adventurer> Fsm { get; private set; }
         public Engagement Engage { get; private set; }
         public Quest CurrentQuest { get; set; }
+        /// <summary>Reason of the latest high-level decision (shown in the inspector).</summary>
+        public string LastThought { get; set; }
+        public bool LastThoughtFromLlm { get; set; }
         public bool IsGuildMember { get; set; } = true;
 
         /// <summary>Hp ratio below which the adventurer retreats (traits can modify).</summary>
@@ -98,7 +101,7 @@ namespace GuildMaster.Adventurers
             DisplayName = data.name;
             Radius = 0.3f;
             SkillFactory.Assign(this, ClassSkills(data.cls));
-            Traits = new TraitSet(this);
+            Traits = TraitSet.FromIds(data.traitIds, Services.TryGet<GameDatabase>(out var db) ? db : null);
             RecalculateStats(fullHeal: true);
             Visual.Init(ClassSprite(data));
             GetComponent<HealthBar>().Init(this, 0.75f, new Color(0.3f, 0.85f, 0.35f));

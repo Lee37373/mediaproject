@@ -6,8 +6,10 @@ using UnityEngine.InputSystem;
 namespace GuildMaster.CameraControl
 {
     /// <summary>
-    /// Top-down RTS camera: WASD/arrow and edge panning, middle/right-drag panning,
+    /// Top-down RTS camera: WASD/arrow and edge panning, left/middle-drag panning,
     /// cursor-anchored wheel zoom, map bounds clamp, follow target, and trauma-based shake.
+    /// A left press that moves less than <see cref="ClickDragThreshold"/> stays a click:
+    /// map-click consumers should use <see cref="MapClickReleased"/> instead of raw mouse state.
     /// Uses unscaled time so it works while the game is paused.
     /// </summary>
     [RequireComponent(typeof(Camera))]
@@ -26,8 +28,14 @@ namespace GuildMaster.CameraControl
         bool _hasBounds;
         float _targetZoom;
         Vector3 _basePosition;
+        const float ClickDragThreshold = 6f;
+        const float FocusZoom = 9f;
+
         Vector3 _dragOriginWorld;
         bool _dragging;
+        Vector2 _leftPressScreen;
+        bool _leftPressOnMap;
+        bool _leftDragged;
         Transform _follow;
         bool _zoomAtCursor;
         float _trauma;
@@ -61,6 +69,27 @@ namespace GuildMaster.CameraControl
         }
 
         public void Follow(Transform target) => _follow = target;
+
+        /// <summary>Follows a target and zooms in if the view is wide.</summary>
+        public void Focus(Transform target)
+        {
+            _follow = target;
+            if (target != null && _targetZoom > FocusZoom) SetZoom(FocusZoom);
+        }
+
+        /// <summary>
+        /// True on the frame the left button is released after a press that started on the map
+        /// (not over UI) and did not turn into a drag-pan.
+        /// </summary>
+        public bool MapClickReleased
+        {
+            get
+            {
+                var mouse = Mouse.current;
+                if (mouse == null || !mouse.leftButton.wasReleasedThisFrame || !_leftPressOnMap) return false;
+                return !_leftDragged && (mouse.position.ReadValue() - _leftPressScreen).magnitude < ClickDragThreshold;
+            }
+        }
 
         public void SetZoom(float size)
         {
@@ -104,9 +133,28 @@ namespace GuildMaster.CameraControl
                 _basePosition += (Vector3)(move.normalized * panSpeed * zoomFactor * dt);
             }
 
-            // Middle-mouse drag pan.
             if (mouse != null)
             {
+                // Left drag pan (short presses remain clicks).
+                if (mouse.leftButton.wasPressedThisFrame)
+                {
+                    _leftPressScreen = mouse.position.ReadValue();
+                    _leftPressOnMap = !pointerOverUI;
+                    _leftDragged = false;
+                    _dragOriginWorld = ScreenToWorld(_leftPressScreen);
+                }
+                if (mouse.leftButton.isPressed && _leftPressOnMap)
+                {
+                    var screen = mouse.position.ReadValue();
+                    if (!_leftDragged && (screen - _leftPressScreen).magnitude >= ClickDragThreshold)
+                    {
+                        _leftDragged = true;
+                        _follow = null;
+                    }
+                    if (_leftDragged) _basePosition += _dragOriginWorld - ScreenToWorld(screen);
+                }
+
+                // Middle-mouse drag pan.
                 if (mouse.middleButton.wasPressedThisFrame && !pointerOverUI)
                 {
                     _dragging = true;
@@ -142,6 +190,11 @@ namespace GuildMaster.CameraControl
                 }
                 else _cam.orthographicSize = newZoom;
             }
+
+            // Drop dead or pooled-away targets (pooled units get reused for other monsters).
+            if (_follow && (!_follow.gameObject.activeInHierarchy
+                            || (_follow.TryGetComponent<Units.Unit>(out var followed) && !followed.IsAlive)))
+                _follow = null;
 
             if (_follow)
             {

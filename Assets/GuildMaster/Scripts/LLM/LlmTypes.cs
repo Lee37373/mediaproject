@@ -27,9 +27,30 @@ namespace GuildMaster.LLM
         public string Text;
         public string Error;
         public float Seconds;
+        /// <summary>Debug record of this request (null when it never reached the queue).</summary>
+        public LlmExchange Exchange;
 
         public static LlmResult Fail(string error) => new() { Ok = false, Error = error };
     }
+
+    /// <summary>One request/response pair kept for the debug viewer.</summary>
+    public class LlmExchange
+    {
+        public int Id;
+        /// <summary>Realtime (seconds since startup) when the request was queued.</summary>
+        public float QueuedAt;
+        public float QueueSeconds;
+        public float GenerateSeconds;
+        public LlmRequest Request;
+        public bool Ok;
+        public string Response;
+        public string Error;
+        /// <summary>Caller's verdict after validation (e.g. "채택", "대체: quest_id").</summary>
+        public string Note;
+    }
+
+    /// <summary>Published by the gateway whenever an exchange finishes (success or failure).</summary>
+    public struct LlmExchangeEvent { public LlmExchange Exchange; }
 
     public enum LlmBackendState { NotConfigured, Loading, Ready, Failed }
 

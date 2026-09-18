@@ -47,6 +47,55 @@ namespace GuildMaster.LLM
             return sb.ToString();
         }
 
+        /// <summary>Indents compact JSON for reading (string contents are left untouched).</summary>
+        public static string Pretty(string json, string indent = "  ")
+        {
+            if (string.IsNullOrEmpty(json)) return json;
+            var sb = new StringBuilder(json.Length * 2);
+            int depth = 0;
+            bool inString = false, escaped = false;
+            foreach (char c in json)
+            {
+                if (inString)
+                {
+                    sb.Append(c);
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == '"') inString = false;
+                    continue;
+                }
+                switch (c)
+                {
+                    case '"': inString = true; sb.Append(c); break;
+                    case '{':
+                    case '[':
+                        sb.Append(c).Append('\n');
+                        depth++;
+                        for (int i = 0; i < depth; i++) sb.Append(indent);
+                        break;
+                    case '}':
+                    case ']':
+                        sb.Append('\n');
+                        depth = Math.Max(0, depth - 1);
+                        for (int i = 0; i < depth; i++) sb.Append(indent);
+                        sb.Append(c);
+                        break;
+                    case ',':
+                        sb.Append(c).Append('\n');
+                        for (int i = 0; i < depth; i++) sb.Append(indent);
+                        break;
+                    case ':': sb.Append(": "); break;
+                    case ' ':
+                    case '\n':
+                    case '\r':
+                    case '\t':
+                        break;
+                    default: sb.Append(c); break;
+                }
+            }
+            return sb.ToString();
+        }
+
         /// <summary>Trims model output text for display (removes quotes/whitespace, caps length).</summary>
         public static string CleanLine(string s, int maxLen = 100)
         {

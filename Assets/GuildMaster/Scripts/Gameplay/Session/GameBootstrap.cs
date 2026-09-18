@@ -121,7 +121,8 @@ namespace GuildMaster.Session
             var llm = AddSystem<LlmGateway>();
             llm.SetBackend(LlmBackends.CreateDefault(_systems));
             Services.Register(llm);
-            Services.Register<IAdventurerDecisionMaker>(new RuleBasedDecisionMaker());
+            // LLM decisions with the rule-based maker as the built-in fallback.
+            Services.Register<IAdventurerDecisionMaker>(new LlmDecisionMaker(llm));
             var roster = AddSystem<GuildRoster>();
             roster.Capacity = Balance.rosterCapacity;
             Services.Register(roster);

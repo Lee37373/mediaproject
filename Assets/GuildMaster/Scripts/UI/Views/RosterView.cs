@@ -27,7 +27,7 @@ namespace GuildMaster.UI
         protected override void Refresh()
         {
             var roster = Services.Get<GuildRoster>();
-            _summary.text = $"길드원 {roster.Members.Count}/{roster.Capacity}명 · 행을 클릭하면 해당 모험가로 이동합니다.";
+            _summary.text = $"길드원 {roster.Members.Count}/{roster.Capacity}명 · 행을 클릭하면 해당 모험가를 추적합니다.";
             EnsureRows(_content, _rows, roster.Members.Count, MemberRow.Create);
             for (int i = 0; i < roster.Members.Count; i++) _rows[i].Bind(roster.Members[i], i);
         }
@@ -37,17 +37,19 @@ namespace GuildMaster.UI
             Image _bg;
             Text _main;
             Text _sub;
+            Text _traits;
             Adventurer _adv;
 
             public static MemberRow Create(Transform parent)
             {
                 var bg = UIBuilder.Panel(parent, "MemberRow", UITheme.RowBg);
-                bg.Size(-1, 62);
+                bg.Size(-1, 86);
                 var row = bg.gameObject.AddComponent<MemberRow>();
                 row._bg = bg;
                 UIBuilder.VLayout(bg, 2, 6).padding = new RectOffset(12, 12, 6, 6);
                 row._main = UIBuilder.Label(bg.transform, "", 16).Size(-1, 24);
                 row._sub = UIBuilder.Label(bg.transform, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 22);
+                row._traits = UIBuilder.Label(bg.transform, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 22);
                 var btn = bg.gameObject.AddComponent<Button>();
                 btn.targetGraphic = bg;
                 btn.onClick.AddListener(row.Focus);
@@ -63,6 +65,7 @@ namespace GuildMaster.UI
                 _main.text = $"{d.name}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
                              $"<color=#{hpColor}>HP {a.Hp:0}/{a.Stats.MaxHp:0}</color>  {UIBuilder.Colored(a.StateLabel, UITheme.Accent)}";
                 string quest = a.CurrentQuest != null ? $" · 의뢰 {a.CurrentQuest.Title}" : "";
+                _traits.text = "특성: " + Traits.TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad);
                 _sub.text = $"골드 {d.gold} · EXP {d.exp}/{d.ExpToNextLevel} · 피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 물약 {d.potions} · 전리품 {d.LootCount} · 처치 {d.kills} · 완료 {d.questsCompleted}{quest}";
             }
 
@@ -70,7 +73,9 @@ namespace GuildMaster.UI
             {
                 if (_adv == null) return;
                 if (Services.TryGet<CameraController>(out var cam)) cam.JumpTo(_adv.Position);
-                if (Services.TryGet<InspectorView>(out var inspector)) inspector.Show(_adv);
+                if (!Services.TryGet<InspectorView>(out var inspector)) return;
+                inspector.Show(_adv);
+                inspector.FocusSelected();
             }
         }
     }

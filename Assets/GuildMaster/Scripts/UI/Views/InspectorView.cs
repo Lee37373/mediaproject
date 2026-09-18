@@ -9,6 +9,7 @@ using GuildMaster.Monsters;
 using GuildMaster.Player;
 using GuildMaster.Quests;
 using GuildMaster.Town;
+using GuildMaster.Traits;
 using GuildMaster.Units;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -27,8 +28,12 @@ namespace GuildMaster.UI
         Text _title;
         Text _body;
         SpriteRenderer _ring;
+        Button _followButton;
         object _selected;
         float _timer;
+        const float DoubleClickSeconds = 0.35f;
+        object _lastClicked;
+        float _lastClickTime;
 
         public object Selected => _selected;
 
@@ -36,9 +41,11 @@ namespace GuildMaster.UI
         {
             var img = UIBuilder.Panel(canvas, "Inspector", UITheme.PanelBg);
             _panel = img.rectTransform;
-            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, 250));
+            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, 272));
             _title = UIBuilder.Label(_panel, "", 18, TextAnchor.UpperLeft, UITheme.Accent, FontStyle.Bold);
-            _title.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -8), new Vector2(-24, 26));
+            _title.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(12, -8), new Vector2(-124, 26));
+            _followButton = UIBuilder.Button(_panel, "추적 (F)", ToggleFocus, 96, 26, fontSize: 14);
+            _followButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-8, -8), new Vector2(96, 26));
             _body = UIBuilder.Label(_panel, "", 14, TextAnchor.UpperLeft);
             _body.rectTransform.Stretch(12, 12, 38, 10);
             _body.verticalOverflow = VerticalWrapMode.Overflow;
@@ -57,6 +64,7 @@ namespace GuildMaster.UI
             _selected = target;
             _panel.gameObject.SetActive(target != null);
             _timer = 0f;
+            RefreshFollowButton();
         }
 
         public void Clear() => Show(null);
@@ -64,6 +72,7 @@ namespace GuildMaster.UI
         void Update()
         {
             HandleClick();
+            HandleFocusKey();
 
             if (_selected is Unit u && (u == null || !u.IsAlive)) Clear();
             if (_selected == null) { _ring.gameObject.SetActive(false); return; }
@@ -73,16 +82,59 @@ namespace GuildMaster.UI
             if (_timer > 0f) return;
             _timer = 0.25f;
             RefreshText();
+            RefreshFollowButton();
         }
 
         void HandleClick()
         {
-            var mouse = Mouse.current;
-            if (mouse == null || !mouse.leftButton.wasPressedThisFrame) return;
+            var cam = Services.Get<CameraController>();
+            if (!cam.MapClickReleased) return;
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
             if (Services.TryGet<MapPicker>(out var picker) && picker.IsPicking) return;
-            var world = Services.Get<CameraController>().MouseWorldPosition();
-            Show(PickAt(world));
+            var picked = PickAt(cam.MouseWorldPosition());
+
+            // Double-click on the same unit focuses (follows) it.
+            bool doubleClick = picked is Unit && picked == _lastClicked && Time.unscaledTime - _lastClickTime < DoubleClickSeconds;
+            _lastClicked = picked;
+            _lastClickTime = Time.unscaledTime;
+            Show(picked);
+            if (doubleClick) FocusSelected();
+        }
+
+        void HandleFocusKey()
+        {
+            var kb = Keyboard.current;
+            if (kb == null || !kb.fKey.wasPressedThisFrame) return;
+            var es = EventSystem.current;
+            if (es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null) return;
+            if (_selected is Unit) { ToggleFocus(); return; }
+            // Nothing selected: F toggles following the guild master avatar.
+            if (!Services.TryGet<CameraController>(out var cam) || !Services.TryGet<PlayerAvatar>(out var avatar)) return;
+            if (cam.FollowTarget == avatar.transform) cam.Follow(null);
+            else cam.Focus(avatar.transform);
+        }
+
+        bool IsFollowingSelected
+            => _selected is Unit u && Services.TryGet<CameraController>(out var cam) && cam.FollowTarget == u.transform;
+
+        /// <summary>Camera follows the selected unit (NPC focus).</summary>
+        public void FocusSelected()
+        {
+            if (_selected is Unit u && Services.TryGet<CameraController>(out var cam)) cam.Focus(u.transform);
+            RefreshFollowButton();
+        }
+
+        void ToggleFocus()
+        {
+            if (IsFollowingSelected) Services.Get<CameraController>().Follow(null);
+            else FocusSelected();
+            RefreshFollowButton();
+        }
+
+        void RefreshFollowButton()
+        {
+            _followButton.gameObject.SetActive(_selected is Unit);
+            _followButton.SetLabel(IsFollowingSelected ? "추적 해제" : "추적 (F)");
         }
 
         static object PickAt(Vector2 p)
@@ -142,7 +194,8 @@ namespace GuildMaster.UI
                 $"EXP {d.exp}/{d.ExpToNextLevel} · 골드 {d.gold} · 물약 {d.potions} · 장비 {d.gearTier}등급\n" +
                 $"피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 처치 {d.kills} · 완료 의뢰 {d.questsCompleted}\n" +
                 $"성격 {d.mbti} · 가치관 {d.values}\n" +
-                $"{Muted("특성: " + (d.traitIds.Count == 0 ? "-" : string.Join(", ", d.traitIds)))}\n" +
+                $"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}\n" +
+                $"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}\n" +
                 $"{Muted("전리품: " + loot)}";
         }
 

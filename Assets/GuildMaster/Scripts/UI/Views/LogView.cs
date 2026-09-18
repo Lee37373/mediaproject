@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using GuildMaster.Adventurers;
 using GuildMaster.Core;
 using GuildMaster.Session;
 using UnityEngine;
@@ -6,10 +7,11 @@ using UnityEngine.UI;
 
 namespace GuildMaster.UI
 {
-    /// <summary>Bottom-left event feed showing the latest log entries.</summary>
+    /// <summary>Bottom-left event feed: latest log entries plus NPC speech (chat).</summary>
     public class LogView : MonoBehaviour
     {
-        const int VisibleLines = 9;
+        const int VisibleLines = 11;
+        static readonly Color SpeechColor = new(0.65f, 0.85f, 1f);
 
         readonly Queue<string> _lines = new();
         Text _text;
@@ -26,11 +28,26 @@ namespace GuildMaster.UI
             if (Services.TryGet<GameLog>(out var log))
                 foreach (var e in log.Entries) Push(e);
             EventBus.Subscribe<LogAddedEvent>(OnLog);
+            EventBus.Subscribe<AdventurerSpeechEvent>(OnSpeech);
         }
 
-        void OnDestroy() => EventBus.Unsubscribe<LogAddedEvent>(OnLog);
+        void OnDestroy()
+        {
+            EventBus.Unsubscribe<LogAddedEvent>(OnLog);
+            EventBus.Unsubscribe<AdventurerSpeechEvent>(OnSpeech);
+        }
 
         void OnLog(LogAddedEvent e) => Push(e.Entry);
+
+        /// <summary>NPC lines (speech bubbles) also go to the feed, like a chat window.</summary>
+        void OnSpeech(AdventurerSpeechEvent e)
+        {
+            if (e.Adventurer == null || string.IsNullOrWhiteSpace(e.Text)) return;
+            string time = Services.TryGet<GameClock>(out var clock) ? $"{clock.Day}일 {clock.Hour:00}:{clock.Minute:00}" : "";
+            Enqueue($"<color=#{UITheme.Hex(UITheme.TextMuted)}>[{time}]</color> " +
+                    $"<color=#{UITheme.Hex(UITheme.Accent)}>{e.Adventurer.Data.name}</color>: " +
+                    $"<color=#{UITheme.Hex(SpeechColor)}>\"{e.Text.Replace("<", "＜")}\"</color>");
+        }
 
         void Push(LogEntry e)
         {
@@ -43,7 +60,12 @@ namespace GuildMaster.UI
                 LogCategory.Combat => UITheme.Warn,
                 _ => UITheme.Text,
             };
-            _lines.Enqueue($"<color=#{UITheme.Hex(UITheme.TextMuted)}>[{e.Time}]</color> <color=#{UITheme.Hex(color)}>{e.Text}</color>");
+            Enqueue($"<color=#{UITheme.Hex(UITheme.TextMuted)}>[{e.Time}]</color> <color=#{UITheme.Hex(color)}>{e.Text}</color>");
+        }
+
+        void Enqueue(string line)
+        {
+            _lines.Enqueue(line);
             while (_lines.Count > VisibleLines) _lines.Dequeue();
             _dirty = true;
         }

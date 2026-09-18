@@ -1,9 +1,16 @@
 # 길드 마스터 타이쿤 (Guild Master Tycoon)
 
-Unity 6 (6000.0.60f1) 2D URP 게임입니다. LLM 기반 길드 경영 시뮬레이션이고, 방치형이라 "보는 재미"가 중요합니다.
+Unity 6 (6000.3.24f1) 2D URP 게임입니다. LLM 기반 길드 경영 시뮬레이션이고, 방치형이라 "보는 재미"가 중요합니다.
 
 - 설계: `Assets/GuildMaster/Docs/DESIGN.md`. 원본 기획서와 달라진 결정 사항이 표로 정리돼 있습니다.
-- 진행 상황과 다음 할 일: `Assets/GuildMaster/Docs/PROGRESS.md`. **작업을 시작하기 전에 먼저 읽고, 끝나면 갱신하세요.**
+- **구현 계획**: `Assets/GuildMaster/Docs/PLAN.md`. 작업 ID별 사양, 파일, 완료 기준, 미결 질문이 있습니다.
+- **진행 상황**: `Assets/GuildMaster/Docs/PROGRESS.md`. 체크리스트, 다음 작업, 세션 기록이 있습니다.
+- **세션 시작 순서**
+  1. PROGRESS.md에서 "다음 작업"을 확인합니다.
+  2. PLAN.md에서 해당 작업의 사양을 읽습니다.
+  3. 미결 질문(❓)이 있으면 사용자에게 묻습니다.
+  4. 구현하고 검증합니다.
+  5. PROGRESS.md를 갱신합니다.
 
 ## 사용자 선호
 - 패키지를 설치하기 전에 **이유와 대안을 설명하고 확인**을 받으세요.
@@ -40,16 +47,21 @@ GuildMaster.Tests.EditMode
 - 파일 이름이 `*System.cs`인 스크립트가 컴파일에서 빠지는 현상이 한 번 있었습니다(원인 불명). 피하세요.
 
 ## Git
-- `main` 브랜치입니다. 커밋은 사용자가 요청할 때만 합니다.
+- `main` 브랜치입니다. 커밋은 **작업 단위가 끝나 검증까지 마친 시점에 Claude가 판단해서** 합니다(2026-09-18 사용자 위임). 푸시는 요청할 때만 합니다.
 - `Assets/StreamingAssets/LlamaLib-*`(약 4GB 네이티브 바이너리)와 `*.gguf`는 `.gitignore`로 제외했습니다. LLMUnity가 다시 내려받습니다.
 
 ## 테스트와 검증 (Unity MCP)
-- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 13개가 통과합니다.
+- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 28개가 통과합니다.
 - 컴파일: 먼저 `AssetDatabase.Refresh` + `CompilationPipeline.RequestScriptCompilation`을 eval로 실행하고, 그다음 `recompile_status`와 `console`(error)로 확인합니다.
   - 컴파일 뒤 도메인 리로드 중에는 `wait_for`가 네트워크 에러를 낼 수 있습니다. 정상입니다.
 - `eval`에서는 `using`을 쓸 수 없습니다. 전체 네임스페이스를 쓰거나 `GuildMaster.Session.DebugCommands`를 쓰세요.
   - 제공 메서드: `Status()`, `PostHunt(id, count, gold, exp, party)`, `SetSpeed(i)`
+  - 전투 검증: `SpawnSkirmish(speciesId, n)`(마을 밖 교전 생성과 길드원 투입), `SkirmishReport()`, `ClearSkirmish()`, `UnitsNearCamera(r)`
+- MCP 도구가 없는 세션에서는 `unity` CLI(unity-cli 스킬)로 같은 일을 합니다: `unity status`, `unity command eval "<C#>"`, `recompile_status`, `console --level error`, `run_tests --mode editor`, `capture_game_view --source screen --save_path ...`
+  - `capture_game_view`의 `save_path`는 `Assets/` 기준으로 저장됩니다. 확인한 뒤 지우세요.
 - 플레이 중 코드를 바꾸면 반드시 `editor_stop` 후에 컴파일하세요.
+  - **LLM이 생성 중일 때는 스크립트 파일도 건드리지 마세요.** 에디터가 포커스를 받아 자동 리로드하면 네이티브 스레드 때문에 "Reloading Domain"에서 멈춥니다(에디터 재시작 필요). 먼저 `editor_stop`한 뒤 파일을 고치세요.
+- LLM 요청/응답은 플레이 중 **F2**(LLM 디버그 창, 에디터·개발 빌드 전용)로 볼 수 있습니다. 판정(채택/대체 이유), 대기·생성 시간, 전체 프롬프트가 나오고 복사할 수 있습니다.
 - `Run In Background`는 켜져 있어야 합니다. 꺼져 있으면 에디터가 비활성일 때 게임이 멈춥니다.
 
 ## LLM (LLMUnity v3.0.3, 로컬)

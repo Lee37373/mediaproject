@@ -6,6 +6,10 @@ using UnityEngine;
 
 namespace GuildMaster.Units
 {
+    public struct TelegraphStartedEvent { public Unit Owner; public Vector2 Center; public float Radius; }
+    /// <summary>Published when a wind-up ends, before its effect applies. Cancelled if the owner died.</summary>
+    public struct TelegraphResolvedEvent { public Unit Owner; public Vector2 Center; public float Radius; public bool Cancelled; }
+
     /// <summary>
     /// Telegraphed area attacks: a ground marker fills up during the wind-up, then the effect
     /// resolves. AI queries active telegraphs to dodge out of hostile ones.
@@ -61,6 +65,7 @@ namespace GuildMaster.Units
             };
             t.Fill.localScale = Vector3.zero;
             _active.Add(t);
+            EventBus.Publish(new TelegraphStartedEvent { Owner = owner, Center = center, Radius = radius });
         }
 
         void Update()
@@ -73,7 +78,9 @@ namespace GuildMaster.Units
                 if (k < 1f) continue;
                 _active.RemoveAt(i);
                 _pool.Despawn(t.Visual);
-                if (t.Owner != null && t.Owner.IsAlive) t.OnResolve?.Invoke();
+                bool alive = t.Owner != null && t.Owner.IsAlive;
+                EventBus.Publish(new TelegraphResolvedEvent { Owner = t.Owner, Center = t.Center, Radius = t.Radius, Cancelled = !alive });
+                if (alive) t.OnResolve?.Invoke();
             }
         }
 

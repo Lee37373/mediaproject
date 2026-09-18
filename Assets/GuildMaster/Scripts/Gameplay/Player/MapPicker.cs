@@ -55,9 +55,10 @@ namespace GuildMaster.Player
                 Cancel();
                 return;
             }
-            if (mouse == null || !mouse.leftButton.wasPressedThisFrame) return;
+            var cam = Services.Get<CameraController>();
+            if (!cam.MapClickReleased) return;
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
-            var pos = Services.Get<CameraController>().MouseWorldPosition();
+            var pos = cam.MouseWorldPosition();
             var cb = _onPicked;
             End();
             cb?.Invoke(pos);

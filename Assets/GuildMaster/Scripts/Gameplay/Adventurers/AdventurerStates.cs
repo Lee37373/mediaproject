@@ -96,11 +96,13 @@ namespace GuildMaster.Adventurers
     /// <summary>Waits for an asynchronous (possibly LLM) decision while idling.</summary>
     public class DecidingState : State<Adventurer>
     {
-        const float TimeoutSeconds = 25f;
+        /// <summary>Real seconds (LLM latency does not scale with game speed); covers queue wait + generation.</summary>
+        const float TimeoutRealSeconds = 70f;
 
         Task<AdventurerDecision> _task;
         CancellationTokenSource _cts;
         float _wanderTimer;
+        float _startRealTime;
 
         public override string Label => "고민 중";
 
@@ -110,6 +112,7 @@ namespace GuildMaster.Adventurers
             var available = AdvCtx.Board.AvailableFor(a).ToList();
             _cts = new CancellationTokenSource();
             _wanderTimer = 1f;
+            _startRealTime = Time.unscaledTime;
             if (Services.TryGet<IAdventurerDecisionMaker>(out var maker))
             {
                 try { _task = maker.DecideAsync(a, available, _cts.Token); }
@@ -130,7 +133,7 @@ namespace GuildMaster.Adventurers
                     : RuleBasedDecisionMaker.Decide(a, AdvCtx.Board.AvailableFor(a).ToList());
                 Apply(decision);
             }
-            else if (TimeInState > TimeoutSeconds)
+            else if (Time.unscaledTime - _startRealTime > TimeoutRealSeconds)
             {
                 _cts.Cancel();
                 Apply(RuleBasedDecisionMaker.Decide(a, AdvCtx.Board.AvailableFor(a).ToList()));
@@ -140,6 +143,11 @@ namespace GuildMaster.Adventurers
         void Apply(AdventurerDecision d)
         {
             var a = Owner;
+            if (!string.IsNullOrEmpty(d.Reason))
+            {
+                a.LastThought = d.Reason;
+                a.LastThoughtFromLlm = d.FromLLM;
+            }
             switch (d.Action)
             {
                 case AdventurerAction.AcceptQuest:

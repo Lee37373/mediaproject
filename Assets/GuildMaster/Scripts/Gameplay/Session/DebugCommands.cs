@@ -1,10 +1,13 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
 using GuildMaster.Ecosystem;
 using GuildMaster.Economy;
+using GuildMaster.Monsters;
 using GuildMaster.Quests;
+using UnityEngine;
 
 namespace GuildMaster.Session
 {
@@ -39,6 +42,102 @@ namespace GuildMaster.Session
         }
 
         public static void SetSpeed(int index) => Services.Get<GameClock>().SetSpeed(index);
+
+        /// <summary>
+        /// Spawns 'count' nest-less monsters a few cells outside town, teleports living guild
+        /// members next to them and makes them fight, then points the camera there.
+        /// Starts/reset the <see cref="SkirmishMonitor"/>; read results with <see cref="SkirmishReport"/>.
+        /// </summary>
+        public static string SpawnSkirmish(string speciesId, int count, bool pullGuild = true)
+        {
+            var eco = Services.Get<EcosystemManager>();
+            var species = eco.Species.FirstOrDefault(s => s.id == speciesId);
+            if (species == null) return "unknown species: " + speciesId;
+            var world = Services.Get<World.WorldService>();
+            var pool = Services.Get<PoolService>();
+            var rng = GameRandom.Shared;
+            var town = world.Map.TownRect;
+            var center = world.TownCenterWorld;
+
+            // First walkable, reachable spot 8 cells beyond each town edge.
+            var dirs = new[] { Vector2.right, Vector2.left, Vector2.up, Vector2.down };
+            var path = new List<Vector2Int>();
+            Vector2 site = default;
+            Vector2 toTown = default;
+            bool found = false;
+            foreach (var d in dirs)
+            {
+                float reach = (Mathf.Abs(d.x) > 0 ? town.width : town.height) * 0.5f + 8f;
+                var cell = World.GridMap.WorldToCell(center + d * reach);
+                if (!world.Grid.TryFindNearestWalkable(cell, 6, out cell) || world.Grid.IsInTown(cell)) continue;
+                site = World.GridMap.CellToWorld(cell);
+                if (!world.FindPath(center, site, path)) continue;
+                toTown = -d;
+                found = true;
+                break;
+            }
+            if (!found) return "no skirmish site found";
+
+            var monsters = new List<Monster>();
+            for (int i = 0; i < count; i++)
+            {
+                world.Grid.TryRandomWalkableNear(World.GridMap.WorldToCell(site), 2, rng, out var c);
+                var m = pool.Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(c) + rng.InsideUnitCircle() * 0.3f);
+                m.Setup(species, null);
+                monsters.Add(m);
+            }
+
+            int pulled = 0;
+            if (pullGuild)
+            {
+                foreach (var a in Services.Get<GuildRoster>().Members)
+                {
+                    if (!a.IsAlive) continue;
+                    var spot = site + toTown * 7f + rng.InsideUnitCircle() * 1.5f;
+                    if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(spot), 4, out var c)) continue;
+                    a.Mover.Stop();
+                    var p = World.GridMap.CellToWorld(c);
+                    a.transform.position = new Vector3(p.x, p.y, a.transform.position.z);
+                    a.ChangeState(a.ReturnState);
+                    a.ForceTarget(monsters.OrderBy(m => (m.Position - p).sqrMagnitude).First());
+                    pulled++;
+                }
+            }
+
+            if (Services.TryGet<CameraControl.CameraController>(out var cam))
+            {
+                cam.Follow(null);
+                cam.JumpTo(site + toTown * 3.5f);
+            }
+            SkirmishMonitor.Ensure().ResetStats();
+            return $"skirmish {species.id}x{count} at {site} (guild pulled: {pulled})";
+        }
+
+        /// <summary>Kills every living nest-less monster (leftovers from <see cref="SpawnSkirmish"/>).</summary>
+        public static int ClearSkirmish()
+        {
+            var strays = Units.UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null).ToList();
+            foreach (var m in strays) m.Perish();
+            return strays.Count;
+        }
+
+        public static string SkirmishReport()
+            => SkirmishMonitor.Instance != null ? SkirmishMonitor.Instance.Report() : "no monitor (call SpawnSkirmish first)";
+
+        /// <summary>Positions/states of living units within radius of the camera centre.</summary>
+        public static string UnitsNearCamera(float radius = 12f)
+        {
+            var cam = Services.Get<CameraControl.CameraController>();
+            Vector2 c = cam.transform.position;
+            var sb = new StringBuilder();
+            foreach (var u in Units.UnitRegistry.All)
+            {
+                if (!u.IsAlive || (u.Position - c).sqrMagnitude > radius * radius) continue;
+                string state = u is Adventurer a ? a.StateLabel + (a.Engage.IsKiting ? "/kite" : "") : u is Monster m ? m.StateLabel : "-";
+                sb.AppendLine($"  {u.DisplayName} ({u.Position.x:0.0},{u.Position.y:0.0}) hp={u.Hp:0}/{u.Stats.MaxHp:0} {state} tgt={u.CurrentTarget?.DisplayName}");
+            }
+            return sb.ToString();
+        }
 
         /// <summary>Sends a small grammar-constrained request and logs latency/result.</summary>
         public static async void TestLlm()
