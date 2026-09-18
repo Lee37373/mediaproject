@@ -27,6 +27,17 @@ namespace GuildMaster.Adventurers
             return a;
         }
 
+        /// <summary>Adds an already spawned visitor to the guild (recruitment).</summary>
+        public bool AddExisting(Adventurer a)
+        {
+            if (a == null || IsFull || _members.Contains(a)) return false;
+            a.transform.SetParent(transform, true);
+            a.JoinGuild();
+            _members.Add(a);
+            EventBus.Publish(new AdventurerJoinedEvent { Adventurer = a });
+            return true;
+        }
+
         public Adventurer Find(string id) => _members.Find(m => m.Data.id == id);
 
         internal void NotifyDeath(Adventurer a, Unit killer)

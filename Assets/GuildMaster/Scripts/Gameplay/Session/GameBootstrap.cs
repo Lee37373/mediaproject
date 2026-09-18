@@ -131,6 +131,10 @@ namespace GuildMaster.Session
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)
                 roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), guildDoor + GameRandom.Shared.InsideUnitCircle());
+            // --- Recruitment: visitors who can be talked into joining ---
+            var visitors = AddSystem<Recruitment.VisitorService>();
+            visitors.Init(clock, roster, world);
+            Services.Register(visitors);
 
             // --- Camera ---
             var cam = SetupCamera(world);

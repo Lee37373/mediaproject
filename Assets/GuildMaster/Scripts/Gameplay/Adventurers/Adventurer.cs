@@ -37,6 +37,14 @@ namespace GuildMaster.Adventurers
         public bool LastThoughtFromLlm { get; set; }
         public bool IsGuildMember { get; set; } = true;
 
+        // ---- Visitor (recruitment candidate) ----
+        public bool IsVisitor => Faction == Faction.Visitor;
+        /// <summary>Game hour (TotalHours) at which a visitor heads for the gate.</summary>
+        public float VisitorLeaveAtHour { get; set; }
+        /// <summary>True while the recruitment dialogue with the guild master is open.</summary>
+        public bool InConversation { get; set; }
+        public Transform ConversationPartner { get; set; }
+
         /// <summary>Hp ratio below which the adventurer retreats (traits can modify).</summary>
         public float RetreatThreshold => Traits?.RetreatThreshold ?? 0.35f;
 
@@ -49,6 +57,8 @@ namespace GuildMaster.Adventurers
         internal GuildVisitState VisitState;
         internal RestState RestState;
         internal DeadState DeadState;
+        internal VisitorWanderState VisitorWanderState;
+        internal VisitorLeaveState VisitorLeaveState;
 
         float _senseTimer;
         bool _dodging;
@@ -94,6 +104,27 @@ namespace GuildMaster.Adventurers
             VisitState = new GuildVisitState();
             RestState = new RestState();
             DeadState = new DeadState();
+            VisitorWanderState = new VisitorWanderState();
+            VisitorLeaveState = new VisitorLeaveState();
+        }
+
+        /// <summary>Turns a freshly created adventurer into a town visitor (not attacked, no quests).</summary>
+        public void BecomeVisitor(float leaveAtHour)
+        {
+            Faction = Faction.Visitor;
+            IsGuildMember = false;
+            VisitorLeaveAtHour = leaveAtHour;
+            ChangeState(VisitorWanderState);
+        }
+
+        /// <summary>Visitor accepted the guild's offer. Call through <see cref="GuildRoster.AddExisting"/>.</summary>
+        internal void JoinGuild()
+        {
+            Faction = Faction.Guild;
+            IsGuildMember = true;
+            InConversation = false;
+            ConversationPartner = null;
+            ChangeState(IdleState);
         }
 
         void Setup(AdventurerData data)

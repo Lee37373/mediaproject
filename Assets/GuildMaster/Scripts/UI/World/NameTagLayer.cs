@@ -26,6 +26,7 @@ namespace GuildMaster.UI
         static readonly Color AdventurerColor = new(0.7f, 1f, 0.7f);
         static readonly Color MonsterColor = new(1f, 0.72f, 0.66f);
         static readonly Color MasterColor = new(1f, 0.88f, 0.45f);
+        static readonly Color VisitorColor = new(0.85f, 0.8f, 1f);
 
         RectTransform _layer;
         readonly List<Text> _tags = new();
@@ -89,7 +90,8 @@ namespace GuildMaster.UI
                     switch (u)
                     {
                         case Adventurer a:
-                            Place(a.transform.position + new Vector3(0f, HeadOffset), $"{a.Data.name} Lv.{a.Data.level}", AdventurerColor);
+                            if (a.IsVisitor) Place(a.transform.position + new Vector3(0f, HeadOffset), $"{a.Data.name} Lv.{a.Data.level} (방문자)", VisitorColor);
+                            else Place(a.transform.position + new Vector3(0f, HeadOffset), $"{a.Data.name} Lv.{a.Data.level}", AdventurerColor);
                             break;
                         case Monster m:
                             if (fog != null && !fog.IsVisible(m.Position)) break;

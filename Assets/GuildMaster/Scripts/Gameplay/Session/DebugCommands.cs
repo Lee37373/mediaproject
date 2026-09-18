@@ -121,6 +121,40 @@ namespace GuildMaster.Session
             return strays.Count;
         }
 
+        // ---------------- Recruitment (P3-3) ----------------
+
+        static Recruitment.RecruitmentSession s_recruit;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => s_recruit = null;
+
+        public static string SpawnVisitor()
+        {
+            var v = Services.Get<Recruitment.VisitorService>().SpawnVisitor();
+            return $"{v.Data.name} {AdventurerData.ClassLabel(v.Data.cls)} Lv{v.Data.level} {v.Data.mbti}/{v.Data.values} traits={string.Join(",", v.Data.traitIds)}";
+        }
+
+        /// <summary>Talks to the first visitor (starting a session if needed). Poll RecruitStatus() for the reply.</summary>
+        public static string RecruitSay(string message, bool proposal = false)
+        {
+            if (s_recruit == null || s_recruit.Visitor == null || s_recruit.Outcome != Recruitment.RecruitOutcome.Ongoing)
+            {
+                var v = Services.Get<Recruitment.VisitorService>().Visitors.FirstOrDefault(x => x != null);
+                if (v == null) return "no visitor";
+                s_recruit = new Recruitment.RecruitmentSession(v, Services.Get<Player.PlayerAvatar>().transform);
+            }
+            _ = s_recruit.SendAsync(message, proposal);
+            return "sent";
+        }
+
+        public static string RecruitStatus()
+        {
+            if (s_recruit == null) return "no session";
+            var sb = new StringBuilder($"{s_recruit.Visitor?.Data.name} affinity={s_recruit.Affinity} turns={s_recruit.PlayerTurns} busy={s_recruit.Busy} outcome={s_recruit.Outcome} llm={s_recruit.LastReplyFromLlm}\n");
+            foreach (var t in s_recruit.Turns) sb.AppendLine((t.FromPlayer ? "  나: " : "  NPC: ") + t.Text);
+            return sb.ToString();
+        }
+
         public static string SkirmishReport()
             => SkirmishMonitor.Instance != null ? SkirmishMonitor.Instance.Report() : "no monitor (call SpawnSkirmish first)";
 

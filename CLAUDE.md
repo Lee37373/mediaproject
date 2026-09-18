@@ -52,12 +52,13 @@ GuildMaster.Tests.EditMode
 - `Assets/StreamingAssets/LlamaLib-*`(약 4GB 네이티브 바이너리)와 `*.gguf`는 `.gitignore`로 제외했습니다. LLMUnity가 다시 내려받습니다.
 
 ## 테스트와 검증 (Unity MCP)
-- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 37개가 통과합니다.
+- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 42개가 통과합니다.
 - 컴파일: 먼저 `AssetDatabase.Refresh` + `CompilationPipeline.RequestScriptCompilation`을 eval로 실행하고, 그다음 `recompile_status`와 `console`(error)로 확인합니다.
   - 컴파일 뒤 도메인 리로드 중에는 `wait_for`가 네트워크 에러를 낼 수 있습니다. 정상입니다.
 - `eval`에서는 `using`을 쓸 수 없습니다. 전체 네임스페이스를 쓰거나 `GuildMaster.Session.DebugCommands`를 쓰세요.
   - 제공 메서드: `Status()`, `PostHunt(id, count, gold, exp, party)`, `SetSpeed(i)`
   - 전투 검증: `SpawnSkirmish(speciesId, n)`(마을 밖 교전 생성과 길드원 투입), `SkirmishReport()`, `ClearSkirmish()`, `UnitsNearCamera(r)`
+  - 영입 검증: `SpawnVisitor()`, `RecruitSay(말, 제안여부)`(첫 방문자와 대화), `RecruitStatus()`
 - MCP 도구가 없는 세션에서는 `unity` CLI(unity-cli 스킬)로 같은 일을 합니다: `unity status`, `unity command eval "<C#>"`, `recompile_status`, `console --level error`, `run_tests --mode editor`, `capture_game_view --source screen --save_path ...`
   - `capture_game_view`의 `save_path`는 `Assets/` 기준으로 저장됩니다. 확인한 뒤 지우세요.
 - 플레이 중 코드를 바꾸면 반드시 `editor_stop` 후에 컴파일하세요.

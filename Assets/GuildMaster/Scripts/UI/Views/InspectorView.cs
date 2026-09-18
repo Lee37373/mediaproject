@@ -29,6 +29,7 @@ namespace GuildMaster.UI
         Text _body;
         SpriteRenderer _ring;
         Button _followButton;
+        Button _recruitButton;
         object _selected;
         float _timer;
         const float DoubleClickSeconds = 0.35f;
@@ -46,6 +47,9 @@ namespace GuildMaster.UI
             _title.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(12, -8), new Vector2(-124, 26));
             _followButton = UIBuilder.Button(_panel, "추적 (F)", ToggleFocus, 96, 26, fontSize: 14);
             _followButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-8, -8), new Vector2(96, 26));
+            _recruitButton = UIBuilder.Button(_panel, "영입 대화", OnRecruitClicked, 120, 30, UITheme.Header, 15);
+            _recruitButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(120, 30));
+            _recruitButton.gameObject.SetActive(false);
             _body = UIBuilder.Label(_panel, "", 14, TextAnchor.UpperLeft);
             _body.rectTransform.Stretch(12, 12, 38, 10);
             _body.verticalOverflow = VerticalWrapMode.Overflow;
@@ -131,8 +135,15 @@ namespace GuildMaster.UI
             RefreshFollowButton();
         }
 
+        void OnRecruitClicked()
+        {
+            if (_selected is Adventurer { IsVisitor: true } v && Services.TryGet<RecruitDialogView>(out var dialog))
+                dialog.BeginApproach(v);
+        }
+
         void RefreshFollowButton()
         {
+            _recruitButton.gameObject.SetActive(_selected is Adventurer { IsVisitor: true });
             _followButton.gameObject.SetActive(_selected is Unit);
             _followButton.SetLabel(IsFollowingSelected ? "추적 해제" : "추적 (F)");
         }
@@ -183,7 +194,7 @@ namespace GuildMaster.UI
         void ShowAdventurer(Adventurer a)
         {
             var d = a.Data;
-            _title.text = $"{d.name}  {Muted($"{AdventurerData.ClassLabel(d.cls)} Lv.{d.level}")}";
+            _title.text = $"{d.name}  {Muted($"{AdventurerData.ClassLabel(d.cls)} Lv.{d.level}")}" + (a.IsVisitor ? "  " + UIBuilder.Colored("(방문자)", UITheme.Warn) : "");
             var s = a.Stats;
             string quest = a.CurrentQuest != null ? $"{a.CurrentQuest.Title} ({a.CurrentQuest.ProgressText})" : "없음";
             var db = Services.Get<GameDatabase>();

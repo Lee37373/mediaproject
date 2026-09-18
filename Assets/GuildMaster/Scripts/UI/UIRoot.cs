@@ -79,6 +79,8 @@ namespace GuildMaster.UI
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             // Debug-only: LLM request/response viewer (no side-menu button).
             if (Debug.isDebugBuild) AddWindow<LlmDebugView>(null, null, Key.F2, new Vector2(1180, 680));
+            // Opened from the inspector ("영입 대화"), no menu button or hotkey.
+            AddWindow<RecruitDialogView>(null, null, Key.None, new Vector2(980, 600));
 
             BuildBanner();
             EventBus.Subscribe<MapPickingChangedEvent>(OnPicking);
@@ -94,7 +96,7 @@ namespace GuildMaster.UI
             panel.Create(WindowLayer, size, new Vector2(0, -10));
             _panels.Add(panel);
             if (menu != null) UIBuilder.Button(menu, label, () => Focus(panel), -1, 40);
-            _hotkeys.Add((hotkey, panel));
+            if (hotkey != Key.None) _hotkeys.Add((hotkey, panel));
             Services.Register(panel);
             return panel;
         }
