@@ -39,6 +39,10 @@ GuildMaster.Tests.EditMode
 - `.NET Standard 2.1`에는 없는 API가 있습니다(예: `FirstOrDefault(pred, default)`).
 - 파일 이름이 `*System.cs`인 스크립트가 컴파일에서 빠지는 현상이 한 번 있었습니다(원인 불명). 피하세요.
 
+## Git
+- `main` 브랜치입니다. 커밋은 사용자가 요청할 때만 합니다.
+- `Assets/StreamingAssets/LlamaLib-*`(약 4GB 네이티브 바이너리)와 `*.gguf`는 `.gitignore`로 제외했습니다. LLMUnity가 다시 내려받습니다.
+
 ## 테스트와 검증 (Unity MCP)
 - 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 13개가 통과합니다.
 - 컴파일: 먼저 `AssetDatabase.Refresh` + `CompilationPipeline.RequestScriptCompilation`을 eval로 실행하고, 그다음 `recompile_status`와 `console`(error)로 확인합니다.
