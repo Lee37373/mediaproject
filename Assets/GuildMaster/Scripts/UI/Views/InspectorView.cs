@@ -31,6 +31,7 @@ namespace GuildMaster.UI
         Button _followButton;
         Button _recruitButton;
         Button _dialogueButton;
+        Button _detailButton;
         object _selected;
         float _timer;
         const float DoubleClickSeconds = 0.35f;
@@ -53,6 +54,8 @@ namespace GuildMaster.UI
             _recruitButton.gameObject.SetActive(false);
             _dialogueButton = UIBuilder.Button(_panel, "대화 기록", OnDialogueClicked, 100, 30, null, 15);
             _dialogueButton.gameObject.SetActive(false);
+            _detailButton = UIBuilder.Button(_panel, "상세", OnDetailClicked, 80, 30, UITheme.Header, 15);
+            _detailButton.gameObject.SetActive(false);
             _body = UIBuilder.Label(_panel, "", 14, TextAnchor.UpperLeft);
             _body.rectTransform.Stretch(12, 12, 38, 10);
             _body.verticalOverflow = VerticalWrapMode.Overflow;
@@ -149,6 +152,11 @@ namespace GuildMaster.UI
                 dialog.BeginApproach(v);
         }
 
+        void OnDetailClicked()
+        {
+            if (_selected is Adventurer a && Services.TryGet<AdventurerDetailView>(out var view)) view.Show(a);
+        }
+
         void OnDialogueClicked()
         {
             if (_selected is Adventurer a && Services.TryGet<DialogueLogView>(out var view)) view.Show(a);
@@ -161,6 +169,8 @@ namespace GuildMaster.UI
             _dialogueButton.gameObject.SetActive(_selected is Adventurer);
             // Bottom-right corner; shifts left when the recruit button sits there.
             _dialogueButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(visitor ? -136 : -8, 8), new Vector2(100, 30));
+            _detailButton.gameObject.SetActive(_selected is Adventurer);
+            _detailButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(visitor ? -244 : -116, 8), new Vector2(80, 30));
             _followButton.gameObject.SetActive(_selected is Unit);
             _followButton.SetLabel(IsFollowingSelected ? "추적 해제" : "추적 (F)");
         }

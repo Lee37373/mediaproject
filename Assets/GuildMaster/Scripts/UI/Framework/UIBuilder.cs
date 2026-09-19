@@ -314,5 +314,17 @@ namespace GuildMaster.UI
         }
 
         public static string Colored(string s, Color c) => $"<color=#{UITheme.Hex(c)}>{s}</color>";
+
+        /// <summary>Hover tooltip for this element (text read on hover, so it can change). See UITooltip.</summary>
+        public static T Tooltip<T>(this T c, Func<string> text) where T : Component
+        {
+            // No '??' here: a missing Unity component is a fake null in the editor.
+            var target = c.GetComponent<TooltipTarget>();
+            if (target == null) target = c.gameObject.AddComponent<TooltipTarget>();
+            target.Text = text;
+            var graphic = c.GetComponent<Graphic>();
+            if (graphic != null) graphic.raycastTarget = true;
+            return c;
+        }
     }
 }

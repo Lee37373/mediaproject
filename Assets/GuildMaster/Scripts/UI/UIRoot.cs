@@ -91,12 +91,16 @@ namespace GuildMaster.UI
             AddWindow<RecruitDialogView>(null, null, Key.None, new Vector2(980, 600));
             AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 380));
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
+            // Opened from the inspector and roster [상세] buttons (P4-6).
+            AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 700));
 
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
             // ` key: shortcut reference with toggle states (drawn above everything else).
             HudLayer.gameObject.AddComponent<KeyHelpView>().Build(HudLayer);
+            // Hover tooltips sit above every window.
+            HudLayer.gameObject.AddComponent<UITooltip>().Build(HudLayer);
             EventBus.Subscribe<MapPickingChangedEvent>(OnPicking);
         }
 

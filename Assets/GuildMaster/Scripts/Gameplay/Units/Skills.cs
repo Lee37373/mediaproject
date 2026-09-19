@@ -19,6 +19,10 @@ namespace GuildMaster.Units
         float _readyAt;
 
         public abstract string Name { get; }
+        /// <summary>Player-facing explanation (tooltips).</summary>
+        public virtual string Description => "";
+        /// <summary>Seconds until the skill can be used again (0 = ready).</summary>
+        public float CooldownLeft => Mathf.Max(0f, _readyAt - Time.time);
         public virtual Color Color => UnityEngine.Color.white;
         public float Cooldown { get; protected set; } = 8f;
         public bool IsReady => Time.time >= _readyAt;
@@ -73,6 +77,7 @@ namespace GuildMaster.Units
     {
         public WhirlwindSkill() { Cooldown = 7f; }
         public override string Name => "회전베기";
+        public override string Description => "적 2명 이상에게 둘러싸이면 주변(반경 1.9)을 베어 공격력 120% 피해를 주고 밀쳐 냅니다.";
         public override Color Color => new(1f, 0.75f, 0.4f);
 
         public override bool TryUse(Unit self, Unit target)
@@ -95,6 +100,7 @@ namespace GuildMaster.Units
     {
         public TauntSkill() { Cooldown = 14f; }
         public override string Name => "도발";
+        public override string Description => "체력 50% 이상일 때, 반경 5 안에서 동료를 노리는 적을 자신에게 끌어옵니다.";
         public override Color Color => new(1f, 0.9f, 0.3f);
 
         public override bool TryUse(Unit self, Unit target)
@@ -120,6 +126,7 @@ namespace GuildMaster.Units
     {
         public PiercingShotSkill() { Cooldown = 9f; }
         public override string Name => "관통 화살";
+        public override string Description => "일직선으로 꿰뚫는 화살. 선 위의 모든 적에게 공격력 130% 피해(산·벽에서 멈춤).";
         public override Color Color => new(0.7f, 1f, 0.6f);
 
         public override bool TryUse(Unit self, Unit target)
@@ -157,6 +164,7 @@ namespace GuildMaster.Units
         public FireballSkill() { Cooldown = 6f; }
         public override float AreaRadius => Radius;
         public override string Name => "화염구";
+        public override string Description => "느린 불덩이를 던져 맞은 곳 반경 1.6에 공격력 150% 피해. 나무에 막힐 수 있습니다.";
         public override Color Color => new(1f, 0.5f, 0.2f);
 
         public override bool TryUse(Unit self, Unit target)
@@ -186,6 +194,7 @@ namespace GuildMaster.Units
     {
         public BlinkSkill() { Cooldown = 12f; }
         public override string Name => "블링크";
+        public override string Description => "체력 75% 이하에서 근접한 적이 붙으면 안전한 곳으로 순간이동합니다.";
         public override Color Color => new(0.6f, 0.7f, 1f);
 
         public override bool TryUse(Unit self, Unit target)
@@ -217,6 +226,7 @@ namespace GuildMaster.Units
 
         public ChargeSkill() { Cooldown = 10f; }
         public override string Name => "돌진";
+        public override string Description => "2.5~7칸 떨어진 목표에게 돌진해 공격력 140% 피해, 넉백과 0.5초 기절.";
         public override Color Color => new(1f, 0.55f, 0.35f);
         public override bool IsChanneling => _active;
 
@@ -266,6 +276,7 @@ namespace GuildMaster.Units
         public override float AreaRadius => Radius;
         public override bool AreaOnSelf => true;
         public override string Name => "내려찍기";
+        public override string Description => "1.1초 예고 뒤 주변(반경 2.3)에 공격력 200% 피해와 강한 넉백. 붉은 장판을 피하세요.";
         public override Color Color => new(1f, 0.35f, 0.2f);
         public override bool IsChanneling => Time.time < _channelUntil;
 
@@ -296,6 +307,7 @@ namespace GuildMaster.Units
     {
         public PackHowlSkill() { Cooldown = 15f; }
         public override string Name => "동료 부르기";
+        public override string Description => "주변 같은 무리를 불러 목표를 함께 공격하고 4초간 이동속도 30% 증가.";
         public override Color Color => new(0.8f, 0.85f, 1f);
 
         public override bool TryUse(Unit self, Unit target)

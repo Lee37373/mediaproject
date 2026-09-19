@@ -53,6 +53,11 @@ namespace GuildMaster.UI
                 var btn = bg.gameObject.AddComponent<Button>();
                 btn.targetGraphic = bg;
                 btn.onClick.AddListener(row.Focus);
+                // Detail window (P4-6), pinned to the top-right corner outside the row's layout.
+                var detail = UIBuilder.Button(bg.transform, "상세", row.OpenDetail, 72, 28, UITheme.Header, 14);
+                if (!detail.TryGetComponent<LayoutElement>(out var le)) le = detail.gameObject.AddComponent<LayoutElement>();
+                le.ignoreLayout = true;
+                ((RectTransform)detail.transform).Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-10, -8), new Vector2(72, 28));
                 return row;
             }
 
@@ -67,6 +72,11 @@ namespace GuildMaster.UI
                 string quest = a.CurrentQuest != null ? $" · 의뢰 {a.CurrentQuest.Title}" : "";
                 _traits.text = "특성: " + Traits.TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad);
                 _sub.text = $"골드 {d.gold} · EXP {d.exp}/{d.ExpToNextLevel} · 피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 물약 {d.potions} · 전리품 {d.LootCount} · 처치 {d.kills} · 완료 {d.questsCompleted}{quest}";
+            }
+
+            void OpenDetail()
+            {
+                if (_adv != null && Services.TryGet<AdventurerDetailView>(out var view)) view.Show(_adv);
             }
 
             void Focus()
