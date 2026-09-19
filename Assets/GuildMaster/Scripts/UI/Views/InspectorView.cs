@@ -30,6 +30,7 @@ namespace GuildMaster.UI
         SpriteRenderer _ring;
         Button _followButton;
         Button _recruitButton;
+        Button _dialogueButton;
         object _selected;
         float _timer;
         const float DoubleClickSeconds = 0.35f;
@@ -50,6 +51,8 @@ namespace GuildMaster.UI
             _recruitButton = UIBuilder.Button(_panel, "영입 대화", OnRecruitClicked, 120, 30, UITheme.Header, 15);
             _recruitButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(120, 30));
             _recruitButton.gameObject.SetActive(false);
+            _dialogueButton = UIBuilder.Button(_panel, "대화 기록", OnDialogueClicked, 100, 30, null, 15);
+            _dialogueButton.gameObject.SetActive(false);
             _body = UIBuilder.Label(_panel, "", 14, TextAnchor.UpperLeft);
             _body.rectTransform.Stretch(12, 12, 38, 10);
             _body.verticalOverflow = VerticalWrapMode.Overflow;
@@ -145,9 +148,18 @@ namespace GuildMaster.UI
                 dialog.BeginApproach(v);
         }
 
+        void OnDialogueClicked()
+        {
+            if (_selected is Adventurer a && Services.TryGet<DialogueLogView>(out var view)) view.Show(a);
+        }
+
         void RefreshFollowButton()
         {
-            _recruitButton.gameObject.SetActive(_selected is Adventurer { IsVisitor: true });
+            bool visitor = _selected is Adventurer { IsVisitor: true };
+            _recruitButton.gameObject.SetActive(visitor);
+            _dialogueButton.gameObject.SetActive(_selected is Adventurer);
+            // Bottom-right corner; shifts left when the recruit button sits there.
+            _dialogueButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(visitor ? -136 : -8, 8), new Vector2(100, 30));
             _followButton.gameObject.SetActive(_selected is Unit);
             _followButton.SetLabel(IsFollowingSelected ? "추적 해제" : "추적 (F)");
         }

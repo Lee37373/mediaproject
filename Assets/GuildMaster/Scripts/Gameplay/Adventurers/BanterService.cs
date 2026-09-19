@@ -106,6 +106,8 @@ namespace GuildMaster.Adventurers
             // They may have left for a quest while the model was writing.
             if (!StillChatting(a) || !StillChatting(b)) return false;
             if (fromLlm) LlmBanters++; else FixedBanters++;
+            float hour = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : 0f;
+            DialogueLog.AddBanter(a.Data, b.Data, hour, lines.first, lines.second);
             a.Say(lines.first);
             _scheduled.Add((b, lines.second, Time.unscaledTime + ReplyDelay));
             return true;

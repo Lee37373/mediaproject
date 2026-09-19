@@ -87,6 +87,7 @@ namespace GuildMaster.UI
             // Opened from the inspector ("영입 대화"), no menu button or hotkey.
             AddWindow<RecruitDialogView>(null, null, Key.None, new Vector2(980, 600));
             AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 380));
+            AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
 
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);

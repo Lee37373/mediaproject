@@ -26,6 +26,11 @@ namespace GuildMaster.Adventurers
         public List<MemoryEntry> memories = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>
         public List<RelationEntry> relations = new();
+        /// <summary>Conversation history (recruit talks, small talk), see DialogueLog.</summary>
+        public List<DialogueLine> dialogue = new();
+        /// <summary>Recruitment talk state kept between talks (-1 = never talked).</summary>
+        public int recruitAffinity = -1;
+        public int recruitTurns;
         public int potions;
         public int gearTier;
         public List<ItemStack> loot = new();

@@ -39,13 +39,22 @@ namespace GuildMaster.Recruitment
         public RecruitOutcome Outcome { get; private set; } = RecruitOutcome.Ongoing;
         public bool LastReplyFromLlm { get; private set; }
         public IReadOnlyList<RecruitTurn> Turns => _turns;
+        /// <summary>True when this talk continues an earlier one (transcript loaded from the visitor).</summary>
+        public bool Resumed { get; }
 
         public event System.Action Changed;
 
         public RecruitmentSession(Adventurer visitor, Transform guildMaster)
         {
             Visitor = visitor;
-            Affinity = InitialAffinity(visitor.Traits);
+            // Resume an earlier talk with this visitor: same affinity, turn count and transcript.
+            var data = visitor.Data;
+            Resumed = data.recruitAffinity >= 0;
+            Affinity = Resumed ? data.recruitAffinity : InitialAffinity(visitor.Traits);
+            PlayerTurns = Resumed ? data.recruitTurns : 0;
+            foreach (var line in DialogueLog.Recruit(data))
+                _turns.Add(new RecruitTurn { FromPlayer = line.fromPlayer, Text = line.text });
+            SaveState();
             visitor.InConversation = true;
             visitor.ConversationPartner = guildMaster;
             var clock = Services.Get<GameClock>();
@@ -70,15 +79,17 @@ namespace GuildMaster.Recruitment
             if (Busy || Outcome != RecruitOutcome.Ongoing || Visitor == null) return;
             playerText = string.IsNullOrWhiteSpace(playerText) ? (proposal ? "우리 길드에 들어오지 않겠나?" : "...") : playerText.Trim();
             Busy = true;
-            _turns.Add(new RecruitTurn { FromPlayer = true, Text = playerText });
+            AddTurn(true, playerText);
             PlayerTurns++;
+            SaveState();
             Changed?.Invoke();
 
             var reply = await GetReplyAsync(playerText, proposal);
             if (Visitor == null) { Busy = false; return; } // left or destroyed meanwhile
 
             Affinity = Mathf.Clamp(Affinity + Mathf.Clamp(reply.AffinityDelta, -RecruitPrompt.MaxDelta, RecruitPrompt.MaxDelta), 0, 100);
-            _turns.Add(new RecruitTurn { FromPlayer = false, Text = reply.Text });
+            AddTurn(false, reply.Text);
+            SaveState();
             Visitor.Say(reply.Text);
             Busy = false;
             Finish(Judge(Affinity, reply.Decision, PlayerTurns));
@@ -105,6 +116,20 @@ namespace GuildMaster.Recruitment
                 if (result.Exchange != null) result.Exchange.Note = "규칙 기반으로 대체: " + (result.Ok ? "parse" : result.Error);
             }
             return RuleBasedRecruiter.Respond(playerText, Visitor.Data.values, Affinity, proposal, GameRandom.Shared);
+        }
+
+        void AddTurn(bool fromPlayer, string text)
+        {
+            _turns.Add(new RecruitTurn { FromPlayer = fromPlayer, Text = text });
+            float hour = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : 0f;
+            DialogueLog.AddRecruit(Visitor.Data, hour, fromPlayer, text);
+        }
+
+        void SaveState()
+        {
+            if (Visitor == null) return;
+            Visitor.Data.recruitAffinity = Affinity;
+            Visitor.Data.recruitTurns = PlayerTurns;
         }
 
         void Finish(RecruitOutcome outcome)

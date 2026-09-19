@@ -18,7 +18,7 @@ namespace GuildMaster.Adventurers.Prompts
 
         public const string SystemPrompt =
             "너는 판타지 모험가 길드의 두 모험가(a, b)가 마을에서 쉬며 나누는 짧은 잡담을 쓴다. " +
-            "주어진 JSON의 성격(mbti, values), 특성(traits), 기억(memories), 길드의 최근 소식(recent_events)을 소재로 삼는다. " +
+            "주어진 JSON의 성격(mbti, values), 특성(traits), 기억(memories), 길드의 최근 소식(recent_events)을 소재로 삼는다. last_talk는 두 사람이 지난번에 나눈 대화다(있으면 이어지는 화제나 그 뒤의 일을 말해도 좋지만 똑같은 말을 반복하지 않는다). " +
             "a가 먼저 말을 걸고 b가 자기 성격대로 대답한다. 서로 이름을 불러도 좋다. " +
             "각 대사는 자연스러운 한국어 구어체 한두 문장으로 짧게 쓴다. 영어를 섞지 않는다.\n" +
             "feeling_to_other는 상대에 대한 현재 감정이다(친함/호감/보통/껄끄러움/적대). 말투에 반영한다: 친하면 편하고 다정하게, 껄끄러우면 퉁명스럽거나 비꼬게.\n" +
@@ -47,6 +47,7 @@ namespace GuildMaster.Adventurers.Prompts
             public SpeakerDto a;
             public SpeakerDto b;
             public string[] recent_events;
+            public string[] last_talk;
         }
 
         [Serializable]
@@ -80,6 +81,7 @@ namespace GuildMaster.Adventurers.Prompts
             recent_events = Services.TryGet<GameLog>(out var log)
                 ? log.Recent(12).Where(l => !l.StartsWith("방문자")).TakeLast(RecentEventCount).ToArray()
                 : Array.Empty<string>(),
+            last_talk = DialogueLog.LastBanterWith(a.Data, b.Data.name, 2).Select(l => l.Format()).ToArray(),
         };
 
         public static string Grammar { get; } = new GbnfObject()

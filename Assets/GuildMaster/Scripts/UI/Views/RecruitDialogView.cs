@@ -78,10 +78,16 @@ namespace GuildMaster.UI
             var inputRow = UIBuilder.Row(right, 36);
             _input = UIBuilder.Input(inputRow, "방문자에게 할 말을 입력하세요 (Enter: 보내기)", height: 34);
             _input.characterLimit = 120;
+            // End of edit = Enter unless focus was lost to a click or ESC. (Checking enterKey.wasPressedThisFrame
+            // missed Enter: the field handles it on a different frame, and the Korean IME consumes it while composing.)
             _input.onEndEdit.AddListener(_ =>
             {
-                if (Keyboard.current != null && (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.numpadEnterKey.wasPressedThisFrame))
-                    Send(false);
+                var kb = Keyboard.current;
+                var mouse = Mouse.current;
+                bool clickedAway = mouse != null && (mouse.leftButton.isPressed || mouse.rightButton.isPressed);
+                bool cancelled = kb != null && kb.escapeKey.isPressed;
+                if (clickedAway || cancelled || !Visible) return;
+                Send(false);
             });
             _send = UIBuilder.Button(inputRow, "보내기", () => Send(false), 90, 34);
 
@@ -152,7 +158,7 @@ namespace GuildMaster.UI
             _shownTurns = -1;
             _input.text = "";
             Open();
-            visitor.Say("무슨 일이시죠?");
+            visitor.Say(_session.Resumed ? "아까 하던 이야기 마저 할까요?" : "무슨 일이시죠?");
             _input.ActivateInputField();
         }
 
@@ -171,6 +177,7 @@ namespace GuildMaster.UI
             var session = _session;
             var task = session.SendAsync(proposal && string.IsNullOrWhiteSpace(text) ? null : text, proposal);
             Refresh();
+            _input.ActivateInputField();   // keep typing while the visitor thinks
             await task;
             if (session == _session && Visible) { Refresh(); _input.ActivateInputField(); }
         }
