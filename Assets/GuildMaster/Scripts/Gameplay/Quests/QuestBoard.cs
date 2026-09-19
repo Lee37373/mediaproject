@@ -132,7 +132,7 @@ namespace GuildMaster.Quests
             switch (q.Type)
             {
                 case QuestType.Hunt:
-                    d = HuntDanger(q.Species, q.RequiredCount);
+                    d = HuntDanger(q.Species, q.RequiredCount, q.Point, q.Radius);
                     break;
                 case QuestType.ClearNest:
                     d = NestDanger(q.Nest);
@@ -304,20 +304,46 @@ namespace GuildMaster.Quests
 
         // ---------------- Danger from observations only ----------------
 
+        /// <summary>Raises the danger by that many steps, never past 높음.</summary>
+        public static DangerLevel Raise(DangerLevel d, int steps)
+            => (DangerLevel)Mathf.Clamp((int)d + Mathf.Max(0, steps), (int)DangerLevel.Low, (int)DangerLevel.High);
+
         /// <summary>Hunt danger: species danger, +1 for large hunts (8+). Shared with the posting form's preview.</summary>
         public static DangerLevel HuntDanger(MonsterDefinition species, int count)
+            => Raise(species.danger, count >= 8 ? 1 : 0);
+
+        /// <summary>
+        /// Hunt danger at a marked spot: also +1 when the guild has seen armed monsters of that
+        /// species at a known nest inside the hunting area (P4-22).
+        /// </summary>
+        public static DangerLevel HuntDanger(MonsterDefinition species, int count, Vector2 point, float radius)
+            => Raise(HuntDanger(species, count), GearedNearby(species, point, radius) ? 1 : 0);
+
+        /// <summary>Did the guild observe danger-raising gear on this species inside the hunting area?</summary>
+        static bool GearedNearby(MonsterDefinition species, Vector2 point, float radius)
         {
-            var d = species.danger;
-            return count >= 8 && d < DangerLevel.High ? d + 1 : d;
+            if (!Services.TryGet<GuildIntel>(out var intel)) return false;
+            if (GuildIntel.RaisesDanger(intel.GearOfHomeless(species))) return true;
+            foreach (var n in intel.KnownNests)
+            {
+                if (intel.SpeciesOf(n) != species) continue;
+                if (Vector2.Distance(n.WorldPosition, point) > radius) continue;
+                if (GuildIntel.RaisesDanger(intel.GearAt(n))) return true;
+            }
+            return false;
         }
 
-        /// <summary>Clear-nest danger: species danger, +1 when at least 5 were last observed there.</summary>
+        /// <summary>
+        /// Clear-nest danger: species danger, +1 when at least 5 were last observed there, and
+        /// +1 when the guild saw armed monsters (2+) or a crown wearer there (P4-22).
+        /// </summary>
         public static DangerLevel NestDanger(Nest nest)
         {
             bool hasIntel = Services.TryGet<GuildIntel>(out var intel);
             var d = (hasIntel ? intel.SpeciesOf(nest) : nest.Species).danger;
             int seen = hasIntel ? intel.Get(nest).LastCount : 0;
-            return seen >= 5 && d < DangerLevel.High ? d + 1 : d;
+            bool geared = hasIntel && GuildIntel.RaisesDanger(intel.GearAt(nest));
+            return Raise(d, (seen >= 5 ? 1 : 0) + (geared ? 1 : 0));
         }
 
 

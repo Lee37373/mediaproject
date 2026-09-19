@@ -38,6 +38,7 @@ namespace GuildMaster.Adventurers.Prompts
             "risk_for_me가 '여유'나 '적당'인 의뢰가 있으면 그중 성격에 맞는 것을 맡는 것이 보통이고, " +
             "idle은 성격상 분명한 이유가 있을 때만 고른다. status.money_status가 '부족'이면 조금 내키지 않는 의뢰라도 맡는다. " +
             "단, 돈이 부족하다는 이유만으로 '무모' 의뢰를 맡지는 않는다.\n" +
+            "threat_notes는 길드가 직접 눈으로 본 몬스터의 장비 정보다. 길드가 실제로 본 것만 적혀 있으니 해당 의뢰의 위험 판단에 참고한다.\n" +
             "memories는 이 모험가가 직접 겪은 일이다. 판단과 대사에 자연스럽게 반영한다. 죽을 뻔했거나 동료가 쓰러진 상대는 특히 경계하고, 복수하려고 무리하지 않는다.\n" +
             "reason은 판단 이유를 20자 이내의 짧은 구절로 쓰고(예: \"보수가 좋고 안전해서\"), say는 그 모험가가 동료에게 하는 짧은 한국어 대사 한 마디다. " +
             "반드시 JSON 한 개로만 답한다.";
@@ -87,6 +88,8 @@ namespace GuildMaster.Adventurers.Prompts
             public string[] recent_events;
             /// <summary>Selected personal memories, "[2일 14시] ..." (see AdventurerMemory).</summary>
             public string[] memories;
+            /// <summary>Armed monsters the guild has actually seen (P4-22); empty when none.</summary>
+            public string[] threat_notes;
         }
 
         [Serializable]
@@ -136,6 +139,9 @@ namespace GuildMaster.Adventurers.Prompts
                 }).ToArray(),
                 recent_events = recent,
                 memories = AdventurerMemory.SelectForPrompt(d.memories).Select(m => m.Format()).ToArray(),
+                threat_notes = Services.TryGet<Ecosystem.GuildIntel>(out var intel)
+                    ? intel.ThreatNotes().ToArray()
+                    : Array.Empty<string>(),
             };
         }
 

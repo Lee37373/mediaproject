@@ -318,7 +318,18 @@ namespace GuildMaster.UI
             _body.text =
                 $"개체 수: {intel.DescribeNest(n)} · 최대 {species.nestCapacity} · 지형 {n.Biome}\n" +
                 $"이 종의 발견한 둥지 {intel.KnownNestCount(species)}곳 · 관측 합계 {intel.ObservedPopulation(species)}마리\n" +
+                NestGearText(intel, n) +
                 Muted("시야에 들어와야 개체 수와 주인이 갱신됩니다. 둥지가 비거나 다른 종에게 밀려나면 다른 무리가 자리잡을 수 있습니다.");
+        }
+
+        /// <summary>Gear the guild observed on this nest's monsters (P4-22); empty when none.</summary>
+        static string NestGearText(GuildIntel intel, Nest n)
+        {
+            var gear = intel.GearAt(n);
+            if (!gear.Any) return "";
+            string line = intel.DescribeGear(gear);
+            if (GuildIntel.RaisesDanger(gear)) line += " · 위험 +1";
+            return UIBuilder.Colored(line, gear.HasCrown ? UITheme.Accent : UITheme.Warn) + "\n";
         }
 
         void ShowBuilding(Building b)

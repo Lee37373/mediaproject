@@ -231,7 +231,9 @@ namespace GuildMaster.UI
             switch (d.Type)
             {
                 case QuestType.Hunt when d.Species != null:
-                    return QuestBoard.HuntDanger(d.Species, d.Count);
+                    return d.HasPoint
+                        ? QuestBoard.HuntDanger(d.Species, d.Count, d.Point, d.Radius <= 0f ? 8f : d.Radius)
+                        : QuestBoard.HuntDanger(d.Species, d.Count);
                 case QuestType.ClearNest when d.Nest != null:
                     return QuestBoard.NestDanger(d.Nest);
                 case QuestType.Escort:

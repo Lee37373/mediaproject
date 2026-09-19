@@ -508,5 +508,24 @@ namespace GuildMaster.Session
             }
             return sb.Length == 0 ? "none" : sb.ToString();
         }
+
+        // ---------------- Observed gear intel (P4-22) ----------------
+
+        /// <summary>What the guild knows about monster gear: per nest, plus the LLM threat notes.</summary>
+        public static string GearIntel()
+        {
+            var intel = Services.Get<Ecosystem.GuildIntel>();
+            var sb = new StringBuilder();
+            foreach (var n in intel.KnownNests)
+            {
+                var gear = intel.GearAt(n);
+                sb.AppendLine($"  {intel.NameOf(n)}: danger={Quests.QuestBoard.NestDanger(n)} " +
+                              (gear.Any ? $"geared={gear.GearedCount} crown={gear.HasCrown} absorbed={gear.AbsorbedHp:0} raises={Ecosystem.GuildIntel.RaisesDanger(gear)} | {intel.DescribeGear(gear)}"
+                                        : "no gear observed"));
+            }
+            var notes = intel.ThreatNotes();
+            sb.AppendLine("  threat_notes: " + (notes.Count == 0 ? "(none)" : string.Join(" / ", notes)));
+            return sb.ToString();
+        }
     }
 }
