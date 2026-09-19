@@ -173,6 +173,42 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.25f));
         }
 
+        /// <summary>Travelling merchant's cart with a striped awning (P4-3).</summary>
+        public static Sprite MerchantCart()
+        {
+            const string key = "c_merchant_cart";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(64, 60);
+            var wood = Hex(0xA8703C);
+            var woodInk = Hex(0x4A2E17);
+            c.Shape(Ellipse(32, 6, 27, 4.5f), new Color(0f, 0f, 0f, 0.22f), new Color(0f, 0f, 0f, 0.22f), 0f);
+            // Awning poles behind the goods.
+            c.Shape(RoundRect(9, 16, 13, 50, 1.5f), Hex(0x7A5230), woodInk, 1.5f);
+            c.Shape(RoundRect(51, 16, 55, 50, 1.5f), Hex(0x7A5230), woodInk, 1.5f);
+            // Goods: sacks, a crate and potion bottles.
+            c.Shape(Ellipse(20, 30, 8, 6), Hex(0xD9C08A), Hex(0x6B5530), 2f);
+            c.Shape(RoundRect(28, 24, 42, 36, 2f), Hex(0xC98B4A), woodInk, 2f);
+            c.Shape(Circle(47, 29, 4f), Hex(0xE0533F), Hex(0x5A1E18), 1.5f);
+            c.Shape(Circle(40, 38, 3.5f), Hex(0x4FA3E0), Hex(0x1F3F5A), 1.5f);
+            // Cart body and wheels.
+            var body = RoundRect(5, 12, 59, 26, 3f);
+            c.Shape(body, wood, woodInk, 2.5f);
+            c.ShapeClipped(RoundRect(5, 18, 59, 20, 0f), (x, y) => body(x, y) + 3f, Darker(wood, 0.8f));
+            c.Shape(Circle(16, 11, 7f), Hex(0x6B4526), woodInk, 2.5f);
+            c.Shape(Circle(48, 11, 7f), Hex(0x6B4526), woodInk, 2.5f);
+            c.Shape(Circle(16, 11, 2f), woodInk, woodInk, 0f);
+            c.Shape(Circle(48, 11, 2f), woodInk, woodInk, 0f);
+            // Striped awning.
+            var awning = Union(RoundRect(4, 46, 60, 56, 3f), Circle(11, 46, 4.5f), Circle(25, 46, 4.5f), Circle(39, 46, 4.5f), Circle(53, 46, 4.5f));
+            c.Shape(awning, Hex(0xE8574A), Hex(0x6E1F1A), 2.5f);
+            for (int i = 0; i < 4; i++)
+            {
+                float x0 = 11 + i * 14;
+                c.ShapeClipped(RoundRect(x0, 38, x0 + 7, 60, 0f), (x, y) => awning(x, y) + 2.5f, Hex(0xF6EEDC));
+            }
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
         // ---------------- Buildings ----------------
 
         public static Sprite Building(Town.BuildingType type, int tilesW, int tilesH)

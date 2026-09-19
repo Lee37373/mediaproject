@@ -93,6 +93,9 @@ namespace GuildMaster.UI
                             if (a.IsVisitor) Place(a.transform.position + new Vector3(0f, HeadOffset), $"{a.Data.name} Lv.{a.Data.level} (방문자)", VisitorColor);
                             else Place(a.transform.position + new Vector3(0f, HeadOffset), $"{a.Data.name} Lv.{a.Data.level}", AdventurerColor);
                             break;
+                        case Town.Merchant merchant:
+                            Place(merchant.transform.position + new Vector3(0f, HeadOffset), "행상인", VisitorColor);
+                            break;
                         case Monster m:
                             if (fog != null && !fog.IsVisible(m.Position)) break;
                             Place(m.transform.position + new Vector3(0f, HeadOffset * m.Def.scale), m.DisplayName, MonsterColor);

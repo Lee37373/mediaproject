@@ -155,6 +155,12 @@ namespace GuildMaster.Session
             var crafting = AddSystem<CraftingService>();
             crafting.Init(treasury, db, clock, town);
             Services.Register(crafting);
+            // Travelling merchant buying the guild's stock (P4-3).
+            var market = new MerchantMarket(treasury, db);
+            Services.Register(market);
+            var merchant = AddSystem<MerchantService>();
+            merchant.Init(clock, world, market);
+            Services.Register(merchant);
 
             // --- Camera ---
             var cam = SetupCamera(world);

@@ -329,6 +329,43 @@ namespace GuildMaster.Session
             return $"attempts={b.Attempts} llm={b.LlmBanters} fixed={b.FixedBanters}";
         }
 
+        // ---------------- Merchant (P4-3) ----------------
+
+        /// <summary>Sends the travelling merchant now.</summary>
+        public static string MerchantVisit()
+            => Services.Get<Town.MerchantService>().StartVisit() ? "merchant on the way" : "merchant already in town";
+
+        /// <summary>Visit state plus every stocked item's supply, demand and merchant price.</summary>
+        public static string MerchantStatus()
+        {
+            var s = Services.Get<Town.MerchantService>();
+            var clock = Services.Get<GameClock>();
+            var t = Services.Get<GuildTreasury>();
+            var db = Services.Get<Data.GameDatabase>();
+            var sb = new StringBuilder();
+            sb.Append($"[{clock.FormatTime()}] merchant={(s.Merchant != null ? s.Merchant.StateLabel : "none")} open={s.IsOpen} ");
+            sb.Append($"closeAt={s.CloseAtHour:0.0} next={s.NextVisitHour:0.0} now={clock.TotalHours:0.0} gold={t.Gold}\n");
+            foreach (var kv in t.Stock.Where(kv => kv.Value > 0))
+            {
+                var item = db.Item(kv.Key);
+                sb.Append($"  {kv.Key} x{kv.Value} supply={s.Market.Supply(kv.Key):0.0} demand={s.Market.Demand(kv.Key):0.00} price={s.Market.Price(item)} base={item?.baseValue}\n");
+            }
+            return sb.ToString();
+        }
+
+        public static string MerchantSell(string itemId, int count)
+        {
+            var s = Services.Get<Town.MerchantService>();
+            if (!s.IsOpen) return "stall closed";
+            return $"sold for {s.Market.Sell(itemId, count)}G";
+        }
+
+        public static string MerchantClose()
+        {
+            Services.Get<Town.MerchantService>().CloseStall();
+            return "closing";
+        }
+
         public static string SkirmishReport()
             => SkirmishMonitor.Instance != null ? SkirmishMonitor.Instance.Report() : "no monitor (call SpawnSkirmish first)";
 

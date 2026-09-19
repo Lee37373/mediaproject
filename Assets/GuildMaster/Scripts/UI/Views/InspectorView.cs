@@ -71,6 +71,8 @@ namespace GuildMaster.UI
             RefreshFollowButton();
             // Clicking a building also opens its upgrade window (P4-1).
             if (target is Building b && Services.TryGet<BuildingView>(out var view)) view.ShowBuilding(b);
+            // Clicking the travelling merchant opens its trade window (P4-3).
+            if (target is Merchant && Services.TryGet<MerchantView>(out var shop) && !shop.Visible) shop.Open();
         }
 
         public void Clear() => Show(null);
@@ -187,8 +189,17 @@ namespace GuildMaster.UI
                 case Monster m: ShowMonster(m); break;
                 case Nest n: ShowNest(n); break;
                 case Building b: ShowBuilding(b); break;
+                case Merchant m: ShowMerchant(m); break;
                 case PlayerAvatar: break;
             }
+        }
+
+        void ShowMerchant(Merchant m)
+        {
+            _title.text = $"행상인  {Muted("(외부 상인)")}";
+            _body.text =
+                $"상태: {UIBuilder.Colored(m.StateLabel, UITheme.Accent)}\n" +
+                Muted("창고의 재료·물약·장비를 사 갑니다. [행상인 (T)] 창에서 팔 수 있습니다.");
         }
 
         static string Muted(string s) => UIBuilder.Colored(s, UITheme.TextMuted);
