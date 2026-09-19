@@ -65,6 +65,7 @@ namespace GuildMaster.UI
             if (Services.TryGet<LLM.LlmGateway>(out var llm)) HudView.ExtraStatus = () => llm ? llm.StatusText : "";
             var hud = HudLayer.gameObject.AddComponent<HudView>();
             hud.Build(HudLayer);
+            HudLayer.gameObject.AddComponent<MinimapView>().Build(HudLayer);
             var log = HudLayer.gameObject.AddComponent<LogView>();
             log.Build(HudLayer);
             var inspector = HudLayer.gameObject.AddComponent<InspectorView>();
