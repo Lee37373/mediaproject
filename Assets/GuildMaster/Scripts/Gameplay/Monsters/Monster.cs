@@ -242,7 +242,7 @@ namespace GuildMaster.Monsters
         protected override void OnDamaged(float amount, Unit source)
         {
             // Retaliate immediately unless already fighting something.
-            if (source != null && source.IsAlive && Fsm.Current != EngageState && Fsm.Current != FleeState && Fsm.Current != LureState)
+            if (source != null && source.IsAlive && source.IsTargetableBy(this) && Fsm.Current != EngageState && Fsm.Current != FleeState && Fsm.Current != LureState)
             {
                 Engage.SetTarget(source);
                 Fsm.ChangeState(EngageState);

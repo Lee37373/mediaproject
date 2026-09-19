@@ -59,11 +59,16 @@ namespace GuildMaster.Session
 
         public static void SetSpeed(int index) => Services.Get<GameClock>().SetSpeed(index);
 
-        /// <summary>Guild master and members take no damage (testing; also F6).</summary>
-        public static string Invulnerable(bool on)
+        /// <summary>
+        /// Guild master and members take no damage (testing; F6 = both flags). With
+        /// <paramref name="untargetable"/> enemies also cannot target them; pass false for lure tests.
+        /// </summary>
+        public static string Invulnerable(bool on, bool untargetable = true)
         {
             Units.Unit.GuildInvulnerable = on;
-            string msg = on ? "[디버그] 길드 무적 켬 (F6)" : "[디버그] 길드 무적 끔 (F6)";
+            Units.Unit.GuildUntargetable = on && untargetable;
+            string msg = !on ? "[디버그] 길드 무적 끔 (F6)"
+                : untargetable ? "[디버그] 길드 무적 켬: 피해 없음·표적 불가 (F6)" : "[디버그] 길드 무적 켬: 피해만 없음";
             Debug.Log(msg);
             if (Services.TryGet<GameLog>(out var log)) log.Add(msg, LogCategory.Info);
             return msg;

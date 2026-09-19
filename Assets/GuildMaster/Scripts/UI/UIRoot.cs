@@ -65,7 +65,9 @@ namespace GuildMaster.UI
             if (Services.TryGet<LLM.LlmGateway>(out var llm)) HudView.ExtraStatus = () => llm ? llm.StatusText : "";
             var hud = HudLayer.gameObject.AddComponent<HudView>();
             hud.Build(HudLayer);
-            HudLayer.gameObject.AddComponent<MinimapView>().Build(HudLayer);
+            var minimap = HudLayer.gameObject.AddComponent<MinimapView>();
+            minimap.Build(HudLayer);
+            Services.Register(minimap);
             var log = HudLayer.gameObject.AddComponent<LogView>();
             log.Build(HudLayer);
             var inspector = HudLayer.gameObject.AddComponent<InspectorView>();
@@ -93,6 +95,8 @@ namespace GuildMaster.UI
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
+            // ` key: shortcut reference with toggle states (drawn above everything else).
+            HudLayer.gameObject.AddComponent<KeyHelpView>().Build(HudLayer);
             EventBus.Subscribe<MapPickingChangedEvent>(OnPicking);
         }
 

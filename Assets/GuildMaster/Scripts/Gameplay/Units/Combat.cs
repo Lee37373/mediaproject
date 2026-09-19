@@ -103,6 +103,7 @@ namespace GuildMaster.Units
         public void SetTarget(Unit target)
         {
             if (target == Target) return;
+            if (target != null && !target.IsTargetableBy(_self)) return; // debug untargetable (F6)
             Target = target;
             _self.CurrentTarget = target;
             _repathTimer = 0f;
@@ -168,7 +169,7 @@ namespace GuildMaster.Units
 
         public EngageStatus Tick(float dt)
         {
-            if (Target == null || !Target.IsAlive || !_self.IsAlive) { Clear(); return EngageStatus.Lost; }
+            if (Target == null || !Target.IsAlive || !_self.IsAlive || !Target.IsTargetableBy(_self)) { Clear(); return EngageStatus.Lost; }
 
             float dist = Combat.Distance(_self, Target);
             if (dist > GiveUpDistance) { Clear(); _self.Mover.Stop(); return EngageStatus.Lost; }

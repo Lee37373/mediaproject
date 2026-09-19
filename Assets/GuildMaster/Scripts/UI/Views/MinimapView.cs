@@ -38,6 +38,9 @@ namespace GuildMaster.UI
         static readonly Color FrameColor = new(1f, 1f, 1f, 0.85f);
 
         RectTransform _root, _map, _dots;
+
+        /// <summary>False while hidden with M.</summary>
+        public bool IsShown => _root != null && _root.gameObject.activeSelf;
         Texture2D _texture;
         Color32[] _base, _pixels;
         MapData _mapData;

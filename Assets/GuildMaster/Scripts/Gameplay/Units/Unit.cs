@@ -213,9 +213,19 @@ namespace GuildMaster.Units
         /// no damage. Hits still count as attacks, so retaliation and targeting behave as usual.
         /// </summary>
         public static bool GuildInvulnerable;
+        /// <summary>
+        /// Debug/testing (F6): with <see cref="GuildInvulnerable"/>, enemies cannot target guild units at
+        /// all (no picking, retaliation or taunts). Off = damage immunity only (e.g. lure tests).
+        /// </summary>
+        public static bool GuildUntargetable;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetDebugStatics() => GuildInvulnerable = false;
+        static void ResetDebugStatics() => GuildInvulnerable = GuildUntargetable = false;
+
+        /// <summary>False when <paramref name="attacker"/> may not pick this unit as a target (debug untargetable).</summary>
+        public bool IsTargetableBy(Unit attacker)
+            => !(GuildInvulnerable && GuildUntargetable && Faction == Faction.Guild
+                 && attacker != null && attacker.Faction != Faction.Guild);
 
         internal void ReceiveDamage(float amount, Unit source, bool critical)
         {

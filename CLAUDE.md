@@ -68,7 +68,8 @@ GuildMaster.Tests.EditMode
   - 호위·게임 오버 검증: `PostEscort(시간당G, 시간당EXP, 시간, 인원)`, `ForceAccept(퀘스트ID, n)`, `MasterWalkOut(방향0~3, 칸)`, `MasterHome()`, `MasterStatus()`, `SpawnNearMaster(종, n, 거리)`
   - 잡담·호감도: `ForceBanter()`, `BanterStatus()`, `Relate(from, to, delta)`(명단 순번), `Relations()`
   - 영역: `Territories()`(둥지별 개체·반경·세력), `InvadeNest(순번, 종, 수)`(둥지 영역에 다른 종 투입)
-  - 테스트 무적: `Invulnerable(true)` 또는 플레이 중 **F6**(길드 마스터·길드원 피해 0)
+  - 테스트 무적: `Invulnerable(true)` 또는 플레이 중 **F6**(길드 마스터·길드원 피해 0, 몬스터가 표적으로 못 잡음). 피해만 막기(유인 테스트): `Invulnerable(true, false)`
+  - 플레이 중 **`** 키: 화면 상단에 단축키(F2·F3·F4·F6·M 등)와 켬/끔 상태 표시
   - 행상인: `MerchantVisit()`(지금 방문), `MerchantStatus()`(품목별 공급·수요·가격), `MerchantSell(품목, 수)`, `MerchantClose()`
   - 침공: `RaidNests()`(둥지별 개체 수·위험 단계), `ForceRaid(순번, 채우기)`, `RaidStatus()`(적·건물·길드원), `Hurt(순번, 피해)`
 - MCP 도구가 없는 세션에서는 `unity` CLI(unity-cli 스킬)로 같은 일을 합니다: `unity status`, `unity command eval "<C#>"`, `recompile_status`, `console --level error`, `run_tests --mode editor`, `capture_game_view --source screen --save_path ...`

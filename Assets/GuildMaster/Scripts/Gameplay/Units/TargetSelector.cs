@@ -26,6 +26,7 @@ namespace GuildMaster.Units
                 if ((u.Position - self.Position).sqrMagnitude > r2) continue;
                 if (filter != null && !filter(u)) continue;
                 if (engage != null && engage.IsIgnoring(u)) continue;
+                if (!u.IsTargetableBy(self)) continue;
                 float s = Score(self, u, self.Tier, engage?.Target);
                 if (s > bestScore) { bestScore = s; best = u; }
             }
