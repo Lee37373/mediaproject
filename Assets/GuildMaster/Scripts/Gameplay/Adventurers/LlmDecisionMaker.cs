@@ -35,6 +35,12 @@ namespace GuildMaster.Adventurers
             var result = await _gateway.RequestAsync(DecisionPrompt.BuildRequest(a, available), ct);
             // The adventurer may have died or left while the model was thinking.
             if (a == null || !a.IsAlive) { Note(result, "무시: 모험가 없음"); return AdventurerDecision.Idle(); }
+            // Cancelled by the caller (the decision is no longer wanted): nothing to fall back to.
+            if (!result.Ok && result.Error == "cancelled" && ct.IsCancellationRequested)
+            {
+                Note(result, "취소: 다른 행동(파티 초대 등)으로 대체");
+                return AdventurerDecision.Idle();
+            }
             if (!result.Ok) return Fallback(a, available, result.Error, result);
             if (!LlmJson.TryParse<DecisionPrompt.ResponseDto>(result.Text, out var dto))
                 return Fallback(a, available, "parse", result);

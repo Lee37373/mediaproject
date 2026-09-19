@@ -38,8 +38,6 @@ namespace GuildMaster.Adventurers
     {
         /// <summary>Real seconds before stragglers are dropped and the party leaves anyway.</summary>
         public const float GatherTimeoutRealSeconds = 60f;
-        const float LeaderSpeedBuff = 1.15f;
-        const float LeaderBuffGameHours = 3f;
 
         class Gathering
         {
@@ -56,15 +54,13 @@ namespace GuildMaster.Adventurers
         readonly LlmGateway _gateway;
         readonly QuestBoard _board;
         readonly GuildRoster _roster;
-        readonly GameClock _clock;
         readonly Dictionary<Quest, Gathering> _gatherings = new();
 
-        public PartyService(LlmGateway gateway, QuestBoard board, GuildRoster roster, GameClock clock)
+        public PartyService(LlmGateway gateway, QuestBoard board, GuildRoster roster)
         {
             _gateway = gateway;
             _board = board;
             _roster = roster;
-            _clock = clock;
             EventBus.Subscribe<QuestAcceptedEvent>(OnAccepted);
         }
 
@@ -197,8 +193,6 @@ namespace GuildMaster.Adventurers
             if (g.Pending > 0) g.Cts.Cancel();
             g.Cts.Dispose();
             if (g.Joined.Count == 0) return;
-            if (g.Leader != null && g.Leader.IsAlive)
-                g.Leader.ApplySpeedBuff(LeaderSpeedBuff, _clock.HoursToSeconds(LeaderBuffGameHours));
             EventBus.Publish(new PartyFormedEvent { Quest = g.Quest, Leader = g.Leader, Members = g.Joined.ToList() });
         }
     }

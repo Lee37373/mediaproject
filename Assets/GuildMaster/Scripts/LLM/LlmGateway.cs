@@ -159,7 +159,7 @@ namespace GuildMaster.LLM
         {
             int chars = x.Response?.Length ?? 0;
             string rate = x.Ok && x.GenerateSeconds > 0.01f ? $" ({chars / x.GenerateSeconds:0.0}자/s)" : "";
-            string outcome = x.Ok ? "성공" : "실패(" + x.Error + ")";
+            string outcome = x.Ok ? "성공" : x.Error == "cancelled" ? "취소됨(요청 측)" : "실패(" + x.Error + ")";
             return $"[LLM] #{x.Id} {x.Request?.Tag} {outcome} · 대기 {x.QueueSeconds:0.0}s · 생성 {x.GenerateSeconds:0.0}s · 응답 {chars}자{rate}";
         }
 
@@ -235,7 +235,8 @@ namespace GuildMaster.LLM
                 {
                     _backend.CancelCurrent();
                     timeoutCts.Cancel();
-                    Failed++;
+                    // A caller cancelling (e.g. a party invite replacing a decision) is not a failure.
+                    if (!p.Token.IsCancellationRequested) Failed++;
                     // Give the backend a short grace period to unwind; if it does not, remember it
                     // as stale (see above) instead of blocking the queue forever.
                     await Task.WhenAny(gen, Task.Delay(TimeSpan.FromSeconds(CancelGraceSeconds)));
