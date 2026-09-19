@@ -93,3 +93,7 @@ InitTestScene*.unity*
 # Design / plan / progress notes stay local (user request 2026-09-19)
 /Assets/GuildMaster/Docs/
 /Assets/GuildMaster/Docs.meta
+
+# Claude Code files stay local (user request 2026-09-19)
+/CLAUDE.md
+/.claude/
