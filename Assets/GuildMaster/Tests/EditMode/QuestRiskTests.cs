@@ -25,5 +25,16 @@ namespace GuildMaster.Tests
             Assert.That(QuestRisk.PartyNeeded(1f, DangerLevel.High), Is.EqualTo(0), "no party of four is enough");
             Assert.That(QuestRisk.PartyNeeded(1f, DangerLevel.Low), Is.EqualTo(1));
         }
+
+        [Test]
+        public void HuntDanger_LargeHuntsAreOneStepHarder_UpToHigh()
+        {
+            var db = DefaultContent.Build();
+            var slime = db.monsters.Find(m => m.danger == DangerLevel.Low);
+            var boss = db.monsters.Find(m => m.danger == DangerLevel.High);
+            Assert.That(Quests.QuestBoard.HuntDanger(slime, 7), Is.EqualTo(DangerLevel.Low));
+            Assert.That(Quests.QuestBoard.HuntDanger(slime, 8), Is.EqualTo(DangerLevel.Medium));
+            Assert.That(Quests.QuestBoard.HuntDanger(boss, 10), Is.EqualTo(DangerLevel.High), "capped at high");
+        }
     }
 }

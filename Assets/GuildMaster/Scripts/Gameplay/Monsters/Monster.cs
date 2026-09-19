@@ -105,6 +105,7 @@ namespace GuildMaster.Monsters
             _baseStats = Stats;
             Equipment.Clear();
             _crownAura = false;
+            NextLureTime = 0f;
             _pickupTimer = GameRandom.Shared.Range(0f, PickupCheckInterval);
             foreach (var g in def.startingGear)
                 if (g.item != null && GameRandom.Shared.Chance(g.chance)) Equipment.Equip(g.item);
@@ -372,21 +373,28 @@ namespace GuildMaster.Monsters
             RefreshStats();
         }
 
-        /// <summary>Small marker for worn gear: a gold crown dot for the leader, else the item's colour.</summary>
+        /// <summary>
+        /// Small marker for worn gear: a gold crown dot for the leader, else the item's colour.
+        /// FogHideable owns the renderer's enabled flag, so "no gear" hides the GameObject instead —
+        /// toggling the renderer showed the dot inside the fog (gear picked up out of sight) and left a
+        /// stale dot on pooled monsters that respawned without gear.
+        /// </summary>
         void UpdateGearIcon()
         {
             ItemDefinition shown = null;
             foreach (var i in Equipment.Worn) if (shown == null || MonsterEquipment.Score(i) > MonsterEquipment.Score(shown)) shown = i;
-            if (shown == null) { if (_gearIcon != null) _gearIcon.enabled = false; return; }
+            if (shown == null) { if (_gearIcon != null) _gearIcon.gameObject.SetActive(false); return; }
+            var fog = GetComponent<FogHideable>();
             if (_gearIcon == null)
             {
                 var go = new GameObject("GearIcon");
                 go.transform.SetParent(transform, false);
                 _gearIcon = go.AddComponent<SpriteRenderer>();
                 _gearIcon.sprite = SpriteFactory.Circle(10, Color.white, new Color(0.1f, 0.08f, 0.06f, 1f));
-                GetComponent<FogHideable>().Refresh();
+                fog.Refresh();
             }
-            _gearIcon.enabled = true;
+            _gearIcon.gameObject.SetActive(true);
+            _gearIcon.enabled = fog.IsFogVisible;
             _gearIcon.color = shown.color;
             float size = shown.IsUnique ? 0.3f : 0.22f;
             float s = size / _gearIcon.sprite.bounds.size.x;

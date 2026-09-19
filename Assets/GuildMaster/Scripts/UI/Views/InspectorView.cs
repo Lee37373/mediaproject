@@ -89,7 +89,7 @@ namespace GuildMaster.UI
             HandleClick();
             HandleFocusKey();
 
-            if (_selected is Unit u && (u == null || !u.IsAlive)) Clear();
+            if (_selected is Unit u && (u == null || !u.IsAlive || !IsSeen(u))) Clear();
             if (_selected == null) { _ring.gameObject.SetActive(false); return; }
 
             UpdateRing();
@@ -175,11 +175,16 @@ namespace GuildMaster.UI
             _followButton.SetLabel(IsFollowingSelected ? "추적 해제" : "추적 (F)");
         }
 
+        /// <summary>
+        /// Guild units are always known; anything else only while the guild sees it. A selected
+        /// monster walking into the fog is dropped, or the card and ring would keep tracking it.
+        /// </summary>
+        static bool IsSeen(Unit u)
+            => u.Faction == Faction.Guild || !Services.TryGet<FogOfWar>(out var fog) || fog.IsVisible(u.Position);
+
         static object PickAt(Vector2 p)
         {
-            Services.TryGet<FogOfWar>(out var fog);
-            var unit = UnitRegistry.FindNearest(p + new Vector2(0, -0.1f), 0.8f,
-                u => u.Faction == Faction.Guild || fog == null || fog.IsVisible(u.Position));
+            var unit = UnitRegistry.FindNearest(p + new Vector2(0, -0.1f), 0.8f, IsSeen);
             if (unit != null) return unit;
             var eco = Services.Get<EcosystemManager>();
             var nest = eco.Nests.Where(n => n.Discovered && Vector2.Distance(n.WorldPosition, p) < 1.2f)
@@ -273,12 +278,23 @@ namespace GuildMaster.UI
             string prey = d.prey.Count == 0 ? "-" : string.Join(", ", d.prey.Select(p => p.displayName));
             string rivals = d.rivals.Count == 0 ? "-" : string.Join(", ", d.rivals.Select(p => p.displayName));
             _body.text =
-                $"상태: {UIBuilder.Colored(m.StateLabel, UITheme.Accent)} · 소속: {m.Home?.DisplayName ?? "-"}\n" +
+                $"상태: {UIBuilder.Colored(m.StateLabel, UITheme.Accent)} · 소속: {HomeName(m)}\n" +
                 $"HP {m.Hp:0}/{m.Stats.MaxHp:0} · 공격 {m.Stats.Attack:0.#} · 방어 {m.Stats.Defense:0.#}\n" +
                 $"성향: {(d.aggressiveToHumans ? UIBuilder.Colored("사람을 공격함", UITheme.Bad) : "먼저 공격하지 않음")} · 전투 {CombatTiers.Label(m.Tier)}\n" +
                 $"먹이: {prey} · 적대: {rivals}\n" +
                 GearText(m) +
                 $"{Muted("전리품: " + string.Join(", ", d.loot.Where(l => l.item).Select(l => $"{l.item.displayName}({l.chance * 100:0}%)")))}";
+        }
+
+        /// <summary>
+        /// The monster's nest as the guild knows it (GuildIntel): undiscovered nests stay unnamed, and
+        /// a nest taken over out of sight keeps the owners last seen there.
+        /// </summary>
+        static string HomeName(Monster m)
+        {
+            if (m.Home == null) return "-";
+            if (!m.Home.Discovered) return "알 수 없는 둥지";
+            return Services.TryGet<GuildIntel>(out var intel) ? intel.NameOf(m.Home) : m.Home.DisplayName;
         }
 
         /// <summary>Worn items and swallowed HP (P4-21); empty when it has none.</summary>

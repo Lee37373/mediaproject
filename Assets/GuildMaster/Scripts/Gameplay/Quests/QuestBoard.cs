@@ -132,8 +132,7 @@ namespace GuildMaster.Quests
             switch (q.Type)
             {
                 case QuestType.Hunt:
-                    d = q.Species.danger;
-                    if (q.RequiredCount >= 8 && d < DangerLevel.High) d++;
+                    d = HuntDanger(q.Species, q.RequiredCount);
                     break;
                 case QuestType.ClearNest:
                     d = NestDanger(q.Nest);
@@ -304,6 +303,13 @@ namespace GuildMaster.Quests
         }
 
         // ---------------- Danger from observations only ----------------
+
+        /// <summary>Hunt danger: species danger, +1 for large hunts (8+). Shared with the posting form's preview.</summary>
+        public static DangerLevel HuntDanger(MonsterDefinition species, int count)
+        {
+            var d = species.danger;
+            return count >= 8 && d < DangerLevel.High ? d + 1 : d;
+        }
 
         /// <summary>Clear-nest danger: species danger, +1 when at least 5 were last observed there.</summary>
         public static DangerLevel NestDanger(Nest nest)

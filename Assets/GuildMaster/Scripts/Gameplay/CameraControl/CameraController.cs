@@ -70,6 +70,9 @@ namespace GuildMaster.CameraControl
 
         public void Follow(Transform target) => _follow = target;
 
+        static bool IsHiddenByFog(Units.Unit u)
+            => u.Faction != Units.Faction.Guild && Services.TryGet<Fog.FogOfWar>(out var fog) && !fog.IsVisible(u.Position);
+
         /// <summary>Follows a target and zooms in if the view is wide.</summary>
         public void Focus(Transform target)
         {
@@ -191,9 +194,10 @@ namespace GuildMaster.CameraControl
                 else _cam.orthographicSize = newZoom;
             }
 
-            // Drop dead or pooled-away targets (pooled units get reused for other monsters).
+            // Drop dead or pooled-away targets (pooled units get reused for other monsters), and
+            // non-guild units that walked into the fog (the camera must not track the unseen).
             if (_follow && (!_follow.gameObject.activeInHierarchy
-                            || (_follow.TryGetComponent<Units.Unit>(out var followed) && !followed.IsAlive)))
+                            || (_follow.TryGetComponent<Units.Unit>(out var followed) && (!followed.IsAlive || IsHiddenByFog(followed)))))
                 _follow = null;
 
             if (_follow)

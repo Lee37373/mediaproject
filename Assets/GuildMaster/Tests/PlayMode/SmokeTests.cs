@@ -194,5 +194,61 @@ namespace GuildMaster.Tests
             }
             finally { Unit.GuildInvulnerable = false; }
         }
+
+        // ---------------- Regressions ----------------
+
+        [UnityTest]
+        public IEnumerator PackHowl_NeedsAPackMate_AndHastesOnlyWhenItCalls()
+        {
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var master = Services.Get<PlayerAvatar>();
+                DebugCommands.SpawnNearMaster("skull", 1, 2f, forceTarget: false);
+                var first = UnitRegistry.All.OfType<Monster>().First(m => m.Home == null && m.IsAlive);
+                Assert.That(new PackHowlSkill().TryUse(first, master), Is.False, "a lone skeleton has nobody to call");
+                yield return null;
+                Assert.That(first.Mover.BuffMultiplier, Is.EqualTo(1f), "and no free haste");
+
+                DebugCommands.SpawnNearMaster("skull", 1, 2f, forceTarget: false);
+                Assert.That(new PackHowlSkill().TryUse(first, master), Is.True, "a pack mate answers");
+                yield return null;
+                Assert.That(first.Mover.BuffMultiplier, Is.GreaterThan(1f));
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
+        public IEnumerator FallenMember_StaysDead_AfterAPosthumousLevelUp()
+        {
+            yield return Boot();
+            var member = Roster.Members.First(a => a.IsAlive);
+            member.ReceiveDamage(member.Hp + 999f, null, false);
+            Assert.That(member.IsAlive, Is.False);
+            // A projectile fired before death can still land the killing blow and its EXP.
+            member.GainExp(member.Data.ExpToNextLevel * 3);
+            member.RecalculateStats();
+            Assert.That(member.IsAlive, Is.False, "never revived");
+            Assert.That(member.Hp, Is.EqualTo(0f));
+        }
+
+        [UnityTest]
+        public IEnumerator WalkingHome_BadlyHurt_TurnsIntoARetreat()
+        {
+            yield return Boot();
+            var member = Roster.Members.First(a => a.IsAlive);
+            bool retreated = false;
+            Action<AdventurerRetreatedEvent> onRetreat = e => { if (e.Adventurer == member) retreated = true; };
+            EventBus.Subscribe(onRetreat);
+            member.Data.potions = 0;
+            member.ChangeState(member.ReturnState);
+            Assert.That(member.ReturnState.Retreating, Is.False, "a normal walk home");
+            member.ReceiveDamage(member.Hp - member.Stats.MaxHp * 0.1f, null, false);
+            yield return null;
+            yield return null;
+            EventBus.Unsubscribe(onRetreat);
+            Assert.That(retreated, Is.True, "fighting on the way home, it retreats instead of fighting to the death");
+        }
     }
 }

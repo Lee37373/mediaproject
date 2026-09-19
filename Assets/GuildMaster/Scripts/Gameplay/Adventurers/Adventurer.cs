@@ -210,9 +210,11 @@ namespace GuildMaster.Adventurers
         {
             float ratio = Stats.MaxHp > 0 ? HpRatio : 1f;
             Stats = AdventurerStats.Compute(Data, Traits?.Modifiers);
-            if (fullHeal || !IsAlive) ResetVitals();
+            if (fullHeal) ResetVitals();
             else
             {
+                // Never revives: a projectile still in flight can land the killing blow (and a
+                // level-up) after its shooter died, and ResetVitals would bring them back.
                 Mover.Speed = Stats.MoveSpeed;
                 SetHp(Mathf.Max(1f, Stats.MaxHp * ratio));
             }
@@ -307,7 +309,7 @@ namespace GuildMaster.Adventurers
                 Engage.Clear();
                 Looting.Cancel();
                 Data.stress = Mathf.Min(100f, Data.stress + 15f);
-                ReturnState.Retreating = true;
+                ReturnState.RequestRetreat();
                 Fsm.ChangeState(ReturnState);
                 return true;
             }
@@ -375,7 +377,8 @@ namespace GuildMaster.Adventurers
 
         public void GainExp(int amount)
         {
-            if (amount <= 0) return;
+            // The fallen gain nothing (a posthumous kill would otherwise level up a corpse).
+            if (amount <= 0 || !IsAlive) return;
             Data.exp += Mathf.RoundToInt(amount * (Traits?.ExpMultiplier ?? 1f));
             bool leveled = false;
             while (Data.exp >= Data.ExpToNextLevel)

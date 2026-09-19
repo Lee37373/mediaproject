@@ -314,14 +314,15 @@ namespace GuildMaster.Units
         {
             if (target == null || self is not Monsters.Monster me) return false;
             UnitRegistry.Collect(self.Position, 7f, u => u != self && u is Monsters.Monster m && m.Def == me.Def && m.Home == me.Home, Buffer); // own pack only
-            int called = 0;
+            // A lone wolf has nobody to call: no howl, and no free haste either (it used to buff
+            // itself on every failed try, i.e. permanently while fighting alone).
+            if (Buffer.Count == 0) return false;
             foreach (var u in Buffer.ToArray())
             {
                 u.ApplySpeedBuff(1.3f, 4f);
-                if (u.CurrentTarget == null) { u.ForceTarget(target); called++; }
+                if (u.CurrentTarget == null) u.ForceTarget(target);
             }
             self.ApplySpeedBuff(1.3f, 4f);
-            if (called == 0 && Buffer.Count == 0) return false;
             Fx?.Ring(self.Position, 3f, Color, 0.6f);
             Announce(self);
             return true;

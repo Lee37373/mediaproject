@@ -267,10 +267,7 @@ namespace GuildMaster.Units
                 _repathTimer = 0.5f;
                 _lastTargetPos = Target.Position;
                 if (!_self.Mover.SetDestination(Target.Position, Mathf.Max(0.1f, _self.Stats.AttackRange * 0.8f)))
-                {
-                    Clear();
-                    return EngageStatus.Lost;
-                }
+                    return DropUnreachable();
             }
             return EngageStatus.Chasing;
         }
@@ -315,9 +312,20 @@ namespace GuildMaster.Units
                 bool ok = Tactics.FindFiringPosition(_self, Target, out var spot)
                     ? _self.Mover.SetDestination(spot, 0.1f)
                     : _self.Mover.SetDestination(Target.Position, _self.Stats.AttackRange * 0.6f);
-                if (!ok) { Clear(); return EngageStatus.Lost; }
+                if (!ok) return DropUnreachable();
             }
             return EngageStatus.Chasing;
+        }
+
+        /// <summary>
+        /// No path to the target (e.g. across water): drop it and skip it for a while, or the next
+        /// sense tick picks it again and repeats a failed whole-map A* search every few frames.
+        /// </summary>
+        EngageStatus DropUnreachable()
+        {
+            Ignore(Target, IgnoreSeconds);
+            Clear();
+            return EngageStatus.Lost;
         }
     }
 }

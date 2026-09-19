@@ -13,7 +13,6 @@ namespace GuildMaster.UI
         protected RectTransform Frame { get; private set; }
         float _refreshTimer;
 
-        public bool IsOpen => gameObject.activeSelf;
         protected virtual float RefreshInterval => 0.5f;
 
         public abstract string Title { get; }

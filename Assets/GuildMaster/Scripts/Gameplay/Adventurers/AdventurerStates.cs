@@ -372,7 +372,9 @@ namespace GuildMaster.Adventurers
 
     public class ReturnToTownState : State<Adventurer>
     {
-        public bool Retreating;
+        /// <summary>Running home badly hurt (or exhausted) rather than just walking back.</summary>
+        public bool Retreating { get; private set; }
+        bool _retreatRequested;
 
         const float LureTimeout = 12f;
         bool _luring;
@@ -380,9 +382,17 @@ namespace GuildMaster.Adventurers
 
         public override string Label => _luring ? "유인 후퇴" : Retreating ? "후퇴 중" : "귀환 중";
 
+        /// <summary>
+        /// Makes the next entry a retreat. A request survives the Exit of a re-entry, so a member
+        /// already walking home can still switch to retreating (Exit resets <see cref="Retreating"/>).
+        /// </summary>
+        public void RequestRetreat() => _retreatRequested = true;
+
         public override void Enter()
         {
             var a = Owner;
+            Retreating = _retreatRequested;
+            _retreatRequested = false;
             a.Mover.SpeedMultiplier = Retreating ? 1.15f : 1f;
             _luring = false;
             // Veterans drag their pursuer past a known hostile nest on the way out (P4-18).
@@ -410,6 +420,9 @@ namespace GuildMaster.Adventurers
                 _luring = false;
                 a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
             }
+            // Walking home still fights whatever attacks on the way: badly hurt, drink a potion or
+            // turn it into a retreat instead of fighting to the death.
+            if (!Retreating && a.HpRatio < a.RetreatThreshold && a.CheckRetreat()) return;
             if (!Retreating && a.HandleCombat(dt)) return;
             if (!Retreating && a.Looting.Tick(dt)) return;
             if (Vector2.Distance(a.Position, AdvCtx.GuildDoor) < 1.2f)
@@ -467,7 +480,6 @@ namespace GuildMaster.Adventurers
                 else if (!q.IsActive) a.CurrentQuest = null;
             }
 
-            var db = Services.Get<GameDatabase>();
             while (a.Data.potions < 2 && trade.SellGoods(a, DefaultContent.Potion)) a.Data.potions++;
             // Survival first (potions), then the next gear tier if the gold is left (P4-4).
             GearShopping.TryBuy(a);
@@ -534,7 +546,6 @@ namespace GuildMaster.Adventurers
 
         public override void Tick(float dt)
         {
-            var c = Owner.Visual.Body.color;
             Owner.Visual.SetTint(new Color(0.6f, 0.6f, 0.6f, Mathf.Clamp01(1f - TimeInState / FadeSeconds)));
             if (TimeInState >= FadeSeconds) Object.Destroy(Owner.gameObject);
         }

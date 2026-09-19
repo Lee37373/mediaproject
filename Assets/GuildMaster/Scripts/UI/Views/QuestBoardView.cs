@@ -231,7 +231,7 @@ namespace GuildMaster.UI
             switch (d.Type)
             {
                 case QuestType.Hunt when d.Species != null:
-                    return d.Count >= 8 && d.Species.danger < DangerLevel.High ? d.Species.danger + 1 : d.Species.danger;
+                    return QuestBoard.HuntDanger(d.Species, d.Count);
                 case QuestType.ClearNest when d.Nest != null:
                     return QuestBoard.NestDanger(d.Nest);
                 case QuestType.Escort:

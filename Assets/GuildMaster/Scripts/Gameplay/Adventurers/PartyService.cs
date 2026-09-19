@@ -171,7 +171,9 @@ namespace GuildMaster.Adventurers
 
         void Answer(Gathering g, Adventurer c, bool accept, string say, bool fromLlm)
         {
-            if (!_gatherings.ContainsKey(g.Quest)) return; // timed out / finished already
+            // Timed out / finished already — or a newer gathering for the same quest took its place
+            // (the leader left and someone else took it): a stale answer must not join that one.
+            if (!_gatherings.TryGetValue(g.Quest, out var current) || current != g) return;
             g.Pending--;
             g.Answered.Add(c);
             if (c == null || !c.IsAlive) return;
