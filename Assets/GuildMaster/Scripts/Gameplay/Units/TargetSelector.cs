@@ -13,6 +13,8 @@ namespace GuildMaster.Units
     {
         const float Stickiness = 1.5f;
         const float CrowdRadius = 3f;
+        /// <summary>Score bonus for the target a leader called (P4-27); outweighs a few units of distance.</summary>
+        public const float CalledTargetBonus = 4f;
 
         /// <summary>Best candidate within radius passing the filter (and not ignored by the engagement), or null.</summary>
         public static Unit Pick(Unit self, float radius, Func<Unit, bool> filter, Engagement engage = null)
@@ -44,16 +46,19 @@ namespace GuildMaster.Units
             // Allies already fighting this candidate (same side as us, targeting it).
             int crowd = UnitRegistry.CountInRadius(u.Position, CrowdRadius, a => IsAlly(self, a) && a.CurrentTarget == u);
             bool finishable = u.Hp <= self.Stats.Attack * 2.5f;
-            if (tier >= CombatTier.Heroic && finishable) score += 3f + crowd * 1f;   // focus fire on a kill
+            if (u == self.CalledTarget) score += CalledTargetBonus;                   // the leader's call: pile on
+            else if (tier >= CombatTier.Heroic && finishable) score += 3f + crowd * 1f; // focus fire on a kill
             else score -= CombatTiers.CrowdPenalty(tier, crowd);                     // spread out
 
             if (tier >= CombatTier.Skilled) score += (1f - u.HpRatio) * 3f;           // finish the wounded
 
             var victim = u.CurrentTarget;
-            if (tier >= CombatTier.Veteran && victim != null && IsAlly(self, victim))
+            if (victim != null && IsAlly(self, victim))
             {
-                // Guard the back line: enemies going after our shooters or badly hurt allies.
-                if (victim.Stats.IsRanged || victim.HpRatio < 0.5f) score += 3f;
+                // Guard the back line: enemies going after our shooters (front-liners from Skilled,
+                // everyone from Veteran) or badly hurt allies (Veteran).
+                if (victim.IsBackLine && (tier >= CombatTier.Veteran || self.GuardsBackLine)) score += 3f;
+                else if (tier >= CombatTier.Veteran && victim.HpRatio < 0.5f) score += 3f;
                 if (tier >= CombatTier.Heroic && victim.HpRatio < 0.35f) score += 3f;  // cover a retreating ally
             }
             return score;

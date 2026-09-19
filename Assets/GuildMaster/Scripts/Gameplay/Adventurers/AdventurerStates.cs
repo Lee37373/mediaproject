@@ -223,8 +223,22 @@ namespace GuildMaster.Adventurers
                 a.ChangeState(a.HuntState);
                 return;
             }
+            // Parties travel in formation (P4-27): followers keep their slot, the leader sets the pace.
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out var leader))
+                {
+                    if (leader.Fsm.Current == leader.HuntState) a.ChangeState(a.HuntState);
+                    return;
+                }
+                party.PaceLeader(a);
+            }
             if (!a.Mover.IsMoving) a.Mover.SetDestination(_destination, 1.5f);
         }
+
+        float _formationRepath;
+
+        public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
     }
 
     /// <summary>
@@ -241,6 +255,7 @@ namespace GuildMaster.Adventurers
 
         float _searchTimer;
         float _roamTimer;
+        float _formationRepath;
 
         public override string Label => "사냥 중";
 
@@ -249,6 +264,8 @@ namespace GuildMaster.Adventurers
             _searchTimer = 0f;
             _roamTimer = 0f;
         }
+
+        public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
 
         Vector2 Area => Owner.CurrentQuest.Point;
         float AreaRadius => Owner.CurrentQuest.Type == QuestType.Hunt ? Owner.CurrentQuest.Radius : NestRoamRadius;
@@ -298,7 +315,8 @@ namespace GuildMaster.Adventurers
             if (a.Looting.Tick(dt)) return;
 
             _searchTimer -= dt;
-            if (_searchTimer <= 0f)
+            bool searched = _searchTimer <= 0f;
+            if (searched)
             {
                 _searchTimer = 0.6f;
                 // Only what this adventurer can actually see.
@@ -308,12 +326,21 @@ namespace GuildMaster.Adventurers
                     a.Engage.SetTarget(target);
                     return;
                 }
-                // Drifted out (a chase, a lure): walk back into the area.
-                if (Vector2.Distance(a.Position, Area) > AreaRadius + 2f && (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, Area) > AreaRadius))
-                {
-                    a.Mover.SetDestination(Area, 1.5f);
-                    return;
-                }
+            }
+
+            // Parties patrol together (P4-27): followers stay in formation around the leader.
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out _)) return;
+                party.PaceLeader(a);
+            }
+
+            // Drifted out (a chase, a lure): walk back into the area.
+            if (searched && Vector2.Distance(a.Position, Area) > AreaRadius + 2f
+                && (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, Area) > AreaRadius))
+            {
+                a.Mover.SetDestination(Area, 1.5f);
+                return;
             }
 
             // Nothing in sight: patrol random spots inside the area.

@@ -53,6 +53,7 @@ namespace GuildMaster.Session
             Application.logMessageReceived += OnLog;
             EventBus.Subscribe<TelegraphStartedEvent>(OnTelegraphStarted);
             EventBus.Subscribe<TelegraphResolvedEvent>(OnTelegraphResolved);
+            EventBus.Subscribe<PartyTargetCalledEvent>(OnPartyCall);
             ResetStats();
         }
 
@@ -61,6 +62,7 @@ namespace GuildMaster.Session
             Application.logMessageReceived -= OnLog;
             EventBus.Unsubscribe<TelegraphStartedEvent>(OnTelegraphStarted);
             EventBus.Unsubscribe<TelegraphResolvedEvent>(OnTelegraphResolved);
+            EventBus.Unsubscribe<PartyTargetCalledEvent>(OnPartyCall);
             if (Instance == this) Instance = null;
         }
 
@@ -82,6 +84,7 @@ namespace GuildMaster.Session
             _lastTarget.Clear();
             _spreadSamples = _allOnOneSamples = _monsterSwitches = _advSwitches = _dropped = 0;
             _focusShareSum = 0f;
+            _partyCalls = _focusSamples = _focusHits = _noviceFocusSamples = _noviceFocusHits = _backSamples = _backBehind = 0;
         }
 
         void OnLog(string message, string stackTrace, LogType type)
@@ -117,6 +120,48 @@ namespace GuildMaster.Session
             SampleOverlap();
             SampleKiting();
             SampleTargets();
+            SampleParties();
+        }
+
+        // ---------------- Parties (P4-27) ----------------
+
+        readonly List<Adventurer> _party = new();
+        int _partyCalls, _focusSamples, _focusHits, _noviceFocusSamples, _noviceFocusHits, _backSamples, _backBehind;
+
+        void OnPartyCall(PartyTargetCalledEvent e) => _partyCalls++;
+
+        /// <summary>
+        /// Focus fire (members whose target is the leader's call — skilled+ should, novices need not)
+        /// and the back line (back-liners fighting near a front-liner: are they farther from the enemy?).
+        /// </summary>
+        void SampleParties()
+        {
+            if (!Services.TryGet<PartyTactics>(out var tactics) || !Services.TryGet<Quests.QuestBoard>(out var board)) return;
+            foreach (var q in board.Quests)
+            {
+                Adventurer any = null;
+                foreach (var t in q.Assignees) if (t is Adventurer a) { any = a; break; }
+                if (any == null || tactics.Party(any, _party).Count < 2) continue;
+                var leader = _party[0];
+                foreach (var m in _party)
+                {
+                    var target = m.Engage.Target;
+                    if (target == null) continue;
+                    var called = leader.Tier >= CombatTier.Skilled ? leader.Engage.Target : null;
+                    if (m != leader && called != null)
+                    {
+                        if (m.Tier >= CombatTier.Skilled) { _focusSamples++; if (target == called) _focusHits++; }
+                        else { _noviceFocusSamples++; if (target == called) _noviceFocusHits++; }
+                    }
+                    if (m.Role != PartyRole.Back) continue;
+                    float front = float.MaxValue;
+                    foreach (var f in _party)
+                        if (f.Role == PartyRole.Front) front = Mathf.Min(front, Vector2.Distance(f.Position, target.Position));
+                    if (front > 6f) continue;
+                    _backSamples++;
+                    if (Vector2.Distance(m.Position, target.Position) >= front - 0.25f) _backBehind++;
+                }
+            }
         }
 
         /// <summary>
@@ -218,6 +263,8 @@ namespace GuildMaster.Session
             sb.AppendLine($"  telegraph: count={_telegraphs} advInsideAtStart={_advInsideAtStart} advInsideAtResolve={_advInsideAtResolve}");
             float share = _spreadSamples > 0 ? 100f * _focusShareSum / _spreadSamples : 0f;
             float allOne = _spreadSamples > 0 ? 100f * _allOnOneSamples / _spreadSamples : 0f;
+            static string Pct(int hit, int all) => all > 0 ? $"{100f * hit / all:0}%/{all}" : "-";
+            sb.AppendLine($"  party: calls={_partyCalls} focusSkilled+={Pct(_focusHits, _focusSamples)} focusNovice={Pct(_noviceFocusHits, _noviceFocusSamples)} backLineBehind={Pct(_backBehind, _backSamples)}");
             sb.AppendLine($"  targets: spreadSamples={_spreadSamples} avgTopShare={share:0}% allOnOne={allOne:0}% monsterSwitches={_monsterSwitches} advSwitches={_advSwitches} dropped={_dropped}");
             return sb.ToString();
         }

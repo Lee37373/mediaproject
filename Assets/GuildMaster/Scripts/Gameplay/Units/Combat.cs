@@ -99,6 +99,12 @@ namespace GuildMaster.Units
         /// <summary>Search radius for retargeting (usually the sight radius).</summary>
         public float SearchRadius { get; set; } = 8f;
 
+        /// <summary>
+        /// Formation hint for ranged units (P4-27, party back line): a spot to fall back to while
+        /// reloading, or null when the current position is fine.
+        /// </summary>
+        public System.Func<Unit, Vector2?> HoldSpot { get; set; }
+
         public Engagement(Unit self) { _self = self; }
 
         public void SetTarget(Unit target)
@@ -314,6 +320,17 @@ namespace GuildMaster.Units
                 return EngageStatus.Chasing;
             }
             _kiting = false;
+
+            // Formation (party back line): fall back behind the front line while reloading.
+            if (!cooldownReady && HoldSpot?.Invoke(Target) is Vector2 hold && (hold - _self.Position).sqrMagnitude > 0.6f * 0.6f)
+            {
+                if (_tacticTimer <= 0f || !_self.Mover.IsMoving)
+                {
+                    _tacticTimer = 0.45f;
+                    _self.Mover.SetDestination(hold, 0.2f);
+                }
+                return EngageStatus.Chasing;
+            }
 
             bool inRange = Combat.InRange(_self, Target);
             bool hasShot = inRange && Combat.HasShot(_self, Target);

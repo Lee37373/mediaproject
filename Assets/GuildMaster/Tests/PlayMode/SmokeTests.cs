@@ -249,6 +249,50 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator Party_TravelsTogether_AndItsSkilledLeaderCallsATarget()
+        {
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var members = Roster.Members.Take(3).ToList();
+                Assume.That(members.Count, Is.EqualTo(3), "three starting members");
+                foreach (var m in members) m.Data.grade = AdventurerGrade.Rare; // skilled: leader calls, members follow
+                var goblin = Services.Get<EcosystemManager>().Species.First(s => s.id == "goblin");
+                MakeKnown(goblin);
+                var center = Services.Get<World.WorldService>().TownCenterWorld;
+                string id = DebugCommands.PostHunt("goblin", 30, 60, 20, 3, center.x + 20f, center.y);
+                var quest = Services.Get<QuestBoard>().FindById(id);
+                Assert.That(quest, Is.Not.Null, "hunt posted: " + id);
+                DebugCommands.ForceAccept(id, 3);
+                Assert.That(quest.Assignees.Count, Is.EqualTo(3), "a party of three");
+                var leader = (Adventurer)quest.Assignees[0];
+
+                Clock.SetSpeed(2);
+                yield return WaitFor(() => leader.StateLabel == "사냥 중", 25f);
+                Assert.That(leader.StateLabel, Is.EqualTo("사냥 중"), "the party reached the hunting area");
+                foreach (var m in members)
+                    Assert.That(Vector2.Distance(m.Position, leader.Position), Is.LessThan(4f), $"{m.Data.name} arrived with the leader");
+
+                Unit called = null;
+                Action<PartyTargetCalledEvent> onCall = e => called = e.Target;
+                EventBus.Subscribe(onCall);
+                var pool = Services.Get<PoolService>();
+                var world = Services.Get<World.WorldService>();
+                for (int i = 0; i < 3; i++)
+                {
+                    var p = leader.Position + new Vector2(5f, i - 1f);
+                    if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(p), 3, out var c)) continue;
+                    pool.Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(c)).Setup(goblin, null);
+                }
+                yield return WaitFor(() => called != null, 15f);
+                EventBus.Unsubscribe(onCall);
+                Assert.That(called, Is.InstanceOf<Monster>(), "the skilled leader called a target for focus fire");
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
         public IEnumerator FallenMember_StaysDead_AfterAPosthumousLevelUp()
         {
             yield return Boot();

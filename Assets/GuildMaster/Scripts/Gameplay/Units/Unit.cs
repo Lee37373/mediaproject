@@ -96,6 +96,15 @@ namespace GuildMaster.Units
         /// <summary>Unit currently targeted by this unit (for UI, taunts, focus fire).</summary>
         public Unit CurrentTarget { get; internal set; }
 
+        // ---------------- Group roles (P4-27) ----------------
+
+        /// <summary>Target a leader called for focus fire (party leader, pack leader); scored higher by TargetSelector.</summary>
+        public virtual Unit CalledTarget => null;
+        /// <summary>Fights from the back line (ranged roles); allied front-liners protect it.</summary>
+        public virtual bool IsBackLine => Stats.IsRanged;
+        /// <summary>Front-liner that goes for enemies attacking its back line.</summary>
+        public virtual bool GuardsBackLine => false;
+
         public void Stun(float seconds)
         {
             StunnedUntil = Mathf.Max(StunnedUntil, Time.time + seconds);

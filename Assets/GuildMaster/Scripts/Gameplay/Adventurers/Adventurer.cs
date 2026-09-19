@@ -121,7 +121,17 @@ namespace GuildMaster.Adventurers
             LureState = new LureState();
             TownGuardState = new TownGuardState();
             Looting = new AdventurerLooting(this);
+            // Party back line (P4-27): ranged members fall back behind a front-liner while reloading.
+            Engage.HoldSpot = target => Services.TryGet<PartyTactics>(out var party) ? party.BackLineSpot(this, target) : null;
         }
+
+        // ---------------- Party roles (P4-27) ----------------
+
+        public PartyRole Role => Data != null ? PartyTactics.RoleOf(Data.cls) : PartyRole.Back;
+        public override bool IsBackLine => Role == PartyRole.Back;
+        /// <summary>Skilled+ warriors protect the back line.</summary>
+        public override bool GuardsBackLine => Role == PartyRole.Front && Tier >= CombatTier.Skilled;
+        public override Unit CalledTarget => Services.TryGet<PartyTactics>(out var party) ? party.CalledTargetFor(this) : null;
 
         /// <summary>Turns a freshly created adventurer into a town visitor (not attacked, no quests).</summary>
         public void BecomeVisitor(float leaveAtHour)
@@ -278,19 +288,37 @@ namespace GuildMaster.Adventurers
             if (Engage.Target != null && allowed != null && !allowed(Engage.Target)) Engage.Clear();
             if (Engage.Target != null)
             {
-                if (Engage.Tick(dt) != EngageStatus.Lost) return true;
+                if (Engage.Tick(dt) != EngageStatus.Lost) return Fighting();
             }
 
             _senseTimer -= dt;
             if (_senseTimer > 0f) return false;
             _senseTimer = SenseInterval;
 
-            // Threats first (aggressive monsters or anything that hit us), then optional quest targets.
-            var target = TargetSelector.Pick(this, Stats.SightRadius * 0.8f, threat, Engage)
+            // The leader's call first (anywhere in sight, P4-27), then threats (aggressive monsters or
+            // anything that hit us), then optional quest targets.
+            var target = CalledCandidate(threat, extra)
+                         ?? TargetSelector.Pick(this, Stats.SightRadius * 0.8f, threat, Engage)
                          ?? (extra != null ? TargetSelector.Pick(this, Stats.SightRadius, extra, Engage) : null);
             if (target == null) return false;
             Engage.SetTarget(target);
-            return Engage.Tick(dt) != EngageStatus.Lost;
+            return Engage.Tick(dt) != EngageStatus.Lost && Fighting();
+        }
+
+        /// <summary>The party leader's called target when it is in sight and allowed here, or null.</summary>
+        Unit CalledCandidate(System.Func<Unit, bool> threat, System.Func<Unit, bool> extra)
+        {
+            var called = CalledTarget;
+            if (called == null || !called.IsAlive || Engage.IsIgnoring(called)) return null;
+            if (Vector2.Distance(Position, called.Position) > Stats.SightRadius) return null;
+            return threat(called) || (extra != null && extra(called)) ? called : null;
+        }
+
+        /// <summary>A fight breaks formation pacing (catch-up / waiting speeds): fight at normal speed.</summary>
+        bool Fighting()
+        {
+            Mover.SpeedMultiplier = 1f;
+            return true;
         }
 
         /// <summary>Drinks a potion or signals retreat when badly hurt/exhausted. Returns true if retreating.</summary>

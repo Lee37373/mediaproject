@@ -156,6 +156,10 @@ namespace GuildMaster.Session
             Services.Register(new MemoryRecorder(clock, roster));
             // Multi-person quests: the first taker invites idle members (LLM, rule fallback).
             Services.Register(new PartyService(llm, board, roster));
+            // Party roles, formation and focus fire on the leader's call (P4-27).
+            var partyTactics = AddSystem<PartyTactics>();
+            partyTactics.Init(pool);
+            Services.Register(partyTactics);
             // Idle small talk in town (LLM only when the gateway is idle).
             var banter = AddSystem<BanterService>();
             banter.Init(llm, roster, world);
