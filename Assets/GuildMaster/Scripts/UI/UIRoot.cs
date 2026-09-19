@@ -75,7 +75,7 @@ namespace GuildMaster.UI
 
             AddWindow<QuestBoardView>(menu, "의뢰 게시판 (Q)", Key.Q, new Vector2(1180, 680));
             AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1000, 560));
-            AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(620, 560));
+            AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             // Debug-only: LLM request/response viewer (no side-menu button).
             if (Debug.isDebugBuild) AddWindow<LlmDebugView>(null, null, Key.F2, new Vector2(1180, 680));

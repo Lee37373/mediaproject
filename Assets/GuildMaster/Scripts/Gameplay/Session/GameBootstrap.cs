@@ -151,6 +151,10 @@ namespace GuildMaster.Session
             Services.Register(visitors);
             // Building upgrades (P4-1).
             Services.Register(new UpgradeService(town, treasury, db, roster));
+            // Crafting at the apothecary / blacksmith (P4-2).
+            var crafting = AddSystem<CraftingService>();
+            crafting.Init(treasury, db, clock, town);
+            Services.Register(crafting);
 
             // --- Camera ---
             var cam = SetupCamera(world);

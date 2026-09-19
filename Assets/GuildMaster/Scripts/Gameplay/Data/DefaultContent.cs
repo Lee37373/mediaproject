@@ -150,6 +150,7 @@ namespace GuildMaster.Data
 
             AddTraits(db);
             AddBuildings(db);
+            AddRecipes(db);
             return db;
         }
 
@@ -191,6 +192,29 @@ namespace GuildMaster.Data
                 new BuildingLevel { maxHp = 600, dailyTax = 60, effectText = "내구도 600 · 세금 하루 60G" },
                 new BuildingLevel { goldCost = 400, itemCosts = { I("stone_shard", 10), I("iron_ore", 6) }, maxHp = 900, dailyTax = 90, effectText = "내구도 900 · 세금 하루 90G" },
                 new BuildingLevel { goldCost = 1000, itemCosts = { I("crown_shard", 1), I("iron_ore", 15) }, maxHp = 1300, dailyTax = 130, effectText = "내구도 1300 · 세금 하루 130G" });
+        }
+
+        /// <summary>Crafting recipes (P4-2). Agreed with the user 2026-09-19; tune in P5-1.</summary>
+        static void AddRecipes(GameDatabase db)
+        {
+            static ItemCost I(string id, int n) => new() { itemId = id, count = n };
+            void R(string id, string output, Town.BuildingType station, int tier, float hours, int gold, params ItemCost[] inputs)
+            {
+                var r = ScriptableObject.CreateInstance<RecipeDefinition>();
+                r.name = r.id = id;
+                r.outputItemId = output;
+                r.station = station;
+                r.requiredTier = tier;
+                r.hours = hours;
+                r.goldCost = gold;
+                r.inputs.AddRange(inputs);
+                db.recipes.Add(r);
+            }
+
+            R("potion", Potion, Town.BuildingType.Apothecary, 1, 2f, 5, I("slime_jelly", 2));
+            R("gear_t1", "gear_t1", Town.BuildingType.Blacksmith, 1, 4f, 0, I("stone_shard", 3), I("rusty_dagger", 1));
+            R("gear_t2", "gear_t2", Town.BuildingType.Blacksmith, 2, 6f, 0, I("bone_shard", 4), I("iron_ore", 2));
+            R("gear_t3", "gear_t3", Town.BuildingType.Blacksmith, 3, 8f, 0, I("goblin_helm", 3), I("crown_shard", 1));
         }
 
         static void AddTraits(GameDatabase db)

@@ -72,6 +72,7 @@ namespace GuildMaster.Session
                 ? $"[침공] 남은 적 {e.Withdrawn}마리가 물러갔습니다. (처치 {e.Killed})"
                 : $"[침공] 침공을 막아냈습니다! (처치 {e.Killed})", LogCategory.Danger); });
             EventBus.Subscribe<Town.BuildingDestroyedEvent>(e => Add($"[침공] {e.Building.DisplayName}이(가) 무너졌습니다!", LogCategory.Danger));
+            EventBus.Subscribe<CraftCompletedEvent>(e => Add($"제작 완료: {_db.Item(e.Recipe.outputItemId)?.displayName ?? e.Recipe.outputItemId} x{e.Count}", LogCategory.Economy));
             EventBus.Subscribe<Town.BuildingLevelChangedEvent>(e => Add($"{e.Building.DisplayName} 업그레이드 완료 (Lv.{e.Level})", LogCategory.Info));
             EventBus.Subscribe<AdventurerLevelUpEvent>(e => Add($"{e.Adventurer.Data.name} 레벨 업! (Lv.{e.Level})", LogCategory.Info));
             EventBus.Subscribe<TradeEvent>(e =>

@@ -28,6 +28,23 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void RecipesUseKnownItems_AndReachableTiers()
+        {
+            var db = DefaultContent.Build();
+            db.BuildIndex();
+            Assert.That(db.recipes.Count, Is.GreaterThanOrEqualTo(4));
+            foreach (var r in db.recipes)
+            {
+                Assert.That(db.Item(r.outputItemId), Is.Not.Null, r.id);
+                foreach (var c in r.inputs) Assert.That(db.Item(c.itemId), Is.Not.Null, $"{r.id} needs unknown '{c.itemId}'");
+                var station = db.Building(r.station);
+                Assert.That(station, Is.Not.Null, r.id);
+                Assert.That(station.Level(station.MaxLevel).craftTier, Is.GreaterThanOrEqualTo(r.requiredTier), $"{r.id} tier unreachable");
+                Assert.That(r.hours, Is.GreaterThan(0f), r.id);
+            }
+        }
+
+        [Test]
         public void TownHallAndGuildHallFollowSpec()
         {
             var db = DefaultContent.Build();
