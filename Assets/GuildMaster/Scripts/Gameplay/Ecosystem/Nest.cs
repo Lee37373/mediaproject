@@ -40,6 +40,15 @@ namespace GuildMaster.Ecosystem
             if (species != null && _renderer != null) _renderer.sprite = CartoonArt.Nest(species);
         }
 
+        /// <summary>Cold, dim tint for a nest drawn from memory rather than sight (P4-23).</summary>
+        static readonly Color RememberedTint = new(0.66f, 0.70f, 0.80f, 0.9f);
+
+        /// <summary>Out of sight the nest is only what the guild last saw, so it is shown dimmed.</summary>
+        public void SetRemembered(bool remembered)
+        {
+            if (_renderer != null) _renderer.color = remembered ? RememberedTint : Color.white;
+        }
+
         /// <summary>
         /// Territory radius: the species' base scaled by how full the nest is (0.6x nearly empty,
         /// 1.4x full); 0 when nobody lives here. Real simulation value — guild-facing UI must not show it.

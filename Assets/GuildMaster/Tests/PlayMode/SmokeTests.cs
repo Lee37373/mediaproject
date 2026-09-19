@@ -169,6 +169,49 @@ namespace GuildMaster.Tests
             Assert.That(wearer.Stats.Attack, Is.GreaterThan(wearer.Def.attack), "gear raises attack");
         }
 
+        /// <summary>
+        /// P4-23: the fog leaves a frozen grey copy of what the guild last saw, it does not follow
+        /// the real monster, and seeing the spot again settles the question and removes it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FogGhost_RemembersWhereAMonsterWasLastSeen()
+        {
+            yield return Boot();
+            var avatar = Services.Get<PlayerAvatar>();
+            var ghosts = Services.Get<Fog.FogGhostService>();
+            var world = Services.Get<World.WorldService>();
+            // Well outside town, so only the guild master lights the spot.
+            var far = world.TownCenterWorld + new Vector2(30f, 0f);
+            avatar.transform.position = far;
+            yield return WaitFor(() => Services.Get<Fog.FogOfWar>().IsVisibleRaw(far), 5f);
+
+            DebugCommands.SpawnNearMaster("goblin", 2, 2f);
+            var seen = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null).ToList();
+            Assert.That(seen, Is.Not.Empty, "monsters spawned next to the guild master");
+            // The fog must actually judge them visible first: until then they were never seen, and
+            // walking away would (correctly) leave nothing behind.
+            yield return WaitFor(() => seen.All(m => m.GetComponent<Fog.FogHideable>() is { IsFogEvaluated: true, IsFogVisible: true }), 5f);
+            Assert.That(seen.All(m => m.GetComponent<Fog.FogHideable>().IsFogVisible), Is.True, "the guild sees them before it walks away");
+            Assert.That(ghosts.Ghosts.Count, Is.EqualTo(0), "nothing is remembered while it is in plain sight");
+
+            // Walk away: the fog closes over them and keeps the last sighting.
+            avatar.transform.position = world.TownCenterWorld;
+            yield return WaitFor(() => ghosts.Ghosts.Count >= seen.Count, 5f);
+            Assert.That(ghosts.Ghosts.Count, Is.GreaterThanOrEqualTo(seen.Count), "each monster left a ghost");
+            var ghost = ghosts.Ghosts[0];
+            var frozenAt = ghost.Position;
+
+            // The real monsters keep moving; the memory does not.
+            Clock.SetSpeed(3);
+            yield return WaitFor(() => seen.Any(m => Vector2.Distance(m.Position, frozenAt) > 2f), 15f);
+            Assert.That(ghost.Position, Is.EqualTo(frozenAt), "the ghost stays where it was seen");
+
+            // Looking again removes the memory, whatever is actually there now.
+            avatar.transform.position = frozenAt;
+            yield return WaitFor(() => !ghosts.Ghosts.Contains(ghost), 5f);
+            Assert.That(ghosts.Ghosts.Contains(ghost), Is.False, "seeing the spot again clears the memory");
+        }
+
         [UnityTest]
         public IEnumerator Adventurer_PicksUpAnItemDroppedInTown()
         {

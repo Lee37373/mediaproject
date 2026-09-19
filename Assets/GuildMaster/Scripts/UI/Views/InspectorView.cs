@@ -90,6 +90,7 @@ namespace GuildMaster.UI
             HandleFocusKey();
 
             if (_selected is Unit u && (u == null || !u.IsAlive || !IsSeen(u))) Clear();
+            if (_selected is FogGhost g && (g == null || !g.IsActive)) Clear();
             if (_selected == null) { _ring.gameObject.SetActive(false); return; }
 
             UpdateRing();
@@ -186,6 +187,12 @@ namespace GuildMaster.UI
         {
             var unit = UnitRegistry.FindNearest(p + new Vector2(0, -0.1f), 0.8f, IsSeen);
             if (unit != null) return unit;
+            // A last sighting left under the fog (P4-23); the real thing always wins over it.
+            if (Services.TryGet<FogGhostService>(out var ghosts))
+            {
+                var ghost = ghosts.PickAt(p, 0.8f);
+                if (ghost != null) return ghost;
+            }
             var eco = Services.Get<EcosystemManager>();
             var nest = eco.Nests.Where(n => n.Discovered && Vector2.Distance(n.WorldPosition, p) < 1.2f)
                 .OrderBy(n => Vector2.Distance(n.WorldPosition, p)).FirstOrDefault();
@@ -202,6 +209,7 @@ namespace GuildMaster.UI
             {
                 case Unit u: pos = u.Position + new Vector2(0, -0.28f); if (u is Monster m) scale = m.Def.scale; break;
                 case Nest n: pos = n.WorldPosition; scale = 1.4f; break;
+                case FogGhost g: pos = g.Position + new Vector2(0, -0.28f); break;
                 default: _ring.gameObject.SetActive(false); return;
             }
             _ring.gameObject.SetActive(true);
@@ -218,8 +226,20 @@ namespace GuildMaster.UI
                 case Nest n: ShowNest(n); break;
                 case Building b: ShowBuilding(b); break;
                 case Merchant m: ShowMerchant(m); break;
+                case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
             }
+        }
+
+        /// <summary>A last sighting under the fog (P4-23): only what was seen, never the present state.</summary>
+        void ShowGhost(FogGhost g)
+        {
+            var ghosts = Services.Get<FogGhostService>();
+            _title.text = UIBuilder.Colored("마지막 목격", UITheme.TextMuted) + "  " + g.Label;
+            string hp = g.HpRatio >= 0f ? $" · 체력 약 {Mathf.RoundToInt(g.HpRatio * 100f / 5f) * 5}%" : "";
+            _body.text =
+                $"{ghosts.AgoText(g.SeenAtHour)}에 이 자리에서 봤습니다{hp}\n" +
+                Muted("지금 무엇이 있는지는 알 수 없습니다. 다시 가서 보면 이 표시는 사라집니다.");
         }
 
         void ShowMerchant(Merchant m)

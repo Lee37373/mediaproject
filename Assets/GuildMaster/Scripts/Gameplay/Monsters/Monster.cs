@@ -22,7 +22,7 @@ namespace GuildMaster.Monsters
     /// Pooled monster driven by a small FSM: wander around its nest, engage prey/rivals/humans,
     /// flee from predators, and return home when leashed.
     /// </summary>
-    public class Monster : Unit, IProjectileStyle
+    public class Monster : Unit, IProjectileStyle, Fog.IFogGhostSubject
     {
         public const string PoolKey = "unit.monster";
         const float SenseInterval = 0.4f;
@@ -413,6 +413,14 @@ namespace GuildMaster.Monsters
         }
 
         static readonly System.Collections.Generic.List<ItemStack> s_noLoot = new();
+
+        // ---------------- Fog memory (P4-23) ----------------
+
+        // The guild remembers a living monster where the fog took it; corpses leave nothing.
+        bool Fog.IFogGhostSubject.WantsGhost => IsAlive;
+        string Fog.IFogGhostSubject.GhostLabel => DisplayName;
+        SpriteRenderer Fog.IFogGhostSubject.GhostBody => Visual != null ? Visual.Body : null;
+        float Fog.IFogGhostSubject.GhostHpRatio => HpRatio;
 
         // ---------------- Equipment (P4-21) ----------------
 

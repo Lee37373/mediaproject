@@ -35,6 +35,8 @@ namespace GuildMaster.UI
         static readonly Color RaiderColor = new(1f, 0.2f, 0.85f);
         static readonly Color NestColor = new(0.85f, 0.45f, 0.15f);
         static readonly Color EmptyNestColor = new(0.55f, 0.5f, 0.45f);
+        /// <summary>Last-seen monsters under the fog (P4-23), grey so they read as memory.</summary>
+        static readonly Color GhostColor = new(0.62f, 0.66f, 0.74f);
         static readonly Color FrameColor = new(1f, 1f, 1f, 0.85f);
 
         RectTransform _root, _map, _dots;
@@ -170,6 +172,11 @@ namespace GuildMaster.UI
                 bool raider = raiders != null && Contains(raiders, m);
                 Dot(m.Position, raider ? RaiderColor : MonsterColor, raider ? 6f : 4f);
             }
+
+            // Where the fog took a monster: a grey dot for the last sighting, not the real position.
+            if (Services.TryGet<FogGhostService>(out var ghosts))
+                foreach (var g in ghosts.Ghosts)
+                    if (g != null && g.IsActive && g.HpRatio >= 0f) Dot(g.Position, GhostColor, 4f);
 
             if (Services.TryGet<GuildRoster>(out var roster))
                 foreach (var a in roster.Members)

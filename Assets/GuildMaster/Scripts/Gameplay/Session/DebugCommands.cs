@@ -527,5 +527,22 @@ namespace GuildMaster.Session
             sb.AppendLine("  threat_notes: " + (notes.Count == 0 ? "(none)" : string.Join(" / ", notes)));
             return sb.ToString();
         }
+
+        // ---------------- Fog memory (P4-23) ----------------
+
+        /// <summary>Last-seen ghosts standing under the fog right now.</summary>
+        public static string FogGhosts()
+        {
+            var svc = Services.Get<Fog.FogGhostService>();
+            var sb = new StringBuilder();
+            sb.AppendLine($"  ghosts={svc.Ghosts.Count}/{Fog.FogGhostService.MaxGhosts}");
+            foreach (var g in svc.Ghosts)
+            {
+                if (g == null || !g.IsActive) continue;
+                string hp = g.HpRatio >= 0f ? $" hp={g.HpRatio * 100f:0}%" : "";
+                sb.AppendLine($"  {g.Label} at ({g.Position.x:0.0}, {g.Position.y:0.0}){hp} seen={svc.AgoText(g.SeenAtHour)}");
+            }
+            return sb.ToString();
+        }
     }
 }

@@ -136,6 +136,10 @@ namespace GuildMaster.Session
             var intel = AddSystem<GuildIntel>();
             intel.Init(eco, fog, clock, world);
             Services.Register(intel);
+            // Fog memory (P4-23): grey last-seen copies of what the fog swallowed.
+            var ghosts = AddSystem<Fog.FogGhostService>();
+            ghosts.Init(pool, fog, clock, eco);
+            Services.Register(ghosts);
 
             var board = AddSystem<QuestBoard>();
             board.Init(treasury, eco, clock);
