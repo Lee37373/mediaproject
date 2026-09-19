@@ -9,6 +9,8 @@ using UnityEngine;
 namespace GuildMaster.Units
 {
     public struct SkillUsedEvent { public Unit User; public string Name; public Color Color; }
+    /// <summary>A support skill restored HP (P4-29): floating "+N" and effects.</summary>
+    public struct UnitHealedEvent { public Unit Target; public Unit Healer; public float Amount; }
 
     /// <summary>
     /// Active ability with its own trigger condition. Units try their ready skills before basic
@@ -36,6 +38,8 @@ namespace GuildMaster.Units
         public virtual float AreaRadius => 0f;
         /// <summary>True if the area is centred on the user rather than the target.</summary>
         public virtual bool AreaOnSelf => false;
+        /// <summary>Helps allies instead of hurting enemies; usable outside fights too (target may be null).</summary>
+        public virtual bool IsSupport => false;
         public virtual void Tick(Unit self, float dt) { }
 
         protected void Announce(Unit self)
@@ -58,6 +62,35 @@ namespace GuildMaster.Units
             if (target == null || !target.IsAlive) return;
             float dmg = Mathf.Max(1f, self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f) - target.Stats.Defense * 0.5f);
             target.ReceiveDamage(Mathf.Round(dmg), self, false);
+        }
+
+        /// <summary>
+        /// The ally (or self) below <paramref name="below"/> HP ratio in reach and in sight that is worst
+        /// off — lowest HP, a little worse when under attack right now — or null.
+        /// </summary>
+        protected static Unit MostEndangeredAlly(Unit self, float radius, float below)
+        {
+            Unit best = null;
+            float bestScore = float.MaxValue;
+            foreach (var u in UnitRegistry.All)
+            {
+                if (!u.IsAlive || u.HpRatio >= below || (u != self && !TargetSelector.IsAlly(self, u))) continue;
+                if ((u.Position - self.Position).sqrMagnitude > radius * radius) continue;
+                if (u != self && !World.HasLineOfSight(self.Position, u.Position, 2)) continue;
+                float score = u.HpRatio - (Time.time - u.LastAttackedTime < 3f ? 0.1f : 0f);
+                if (score < bestScore) { bestScore = score; best = u; }
+            }
+            return best;
+        }
+
+        protected static void HealUnit(Unit healer, Unit patient, float amount)
+        {
+            float before = patient.Hp;
+            patient.Heal(Mathf.Round(amount));
+            float gained = patient.Hp - before;
+            if (gained <= 0f) return;
+            Fx?.Spark(patient.Position + new Vector2(0f, 0.3f), new Color(0.55f, 1f, 0.6f), 0.9f, 0.35f);
+            EventBus.Publish(new UnitHealedEvent { Target = patient, Healer = healer, Amount = gained });
         }
 
         protected static FxService Fx => Services.TryGet<FxService>(out var fx) ? fx : null;
@@ -211,6 +244,58 @@ namespace GuildMaster.Units
         }
     }
 
+    /// <summary>Priest (P4-29): heals the ally in the most danger.</summary>
+    public class HealSkill : Skill
+    {
+        const float Range = 6f;
+        const float Below = 0.6f;
+
+        public HealSkill() { Cooldown = 6f; }
+        public override string Name => "치유";
+        public override string Description => "체력 60% 미만인 동료 중 가장 위험한 한 명(자신 포함, 반경 6)을 공격력의 300%만큼 회복합니다.";
+        public override Color Color => new(0.55f, 1f, 0.6f);
+        public override bool IsSupport => true;
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            var patient = MostEndangeredAlly(self, Range, Below);
+            if (patient == null) return false;
+            if (patient != self) Fx?.Beam(self.Position, patient.Position, Color, 0.08f, 0.3f);
+            HealUnit(self, patient, self.Stats.Attack * 3f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>Priest (P4-29): heals every hurt ally around when several need it.</summary>
+    public class MassHealSkill : Skill
+    {
+        const float Radius = 4f;
+        const float Below = 0.7f;
+        const int MinPatients = 2;
+        static readonly List<Unit> s_patients = new();
+
+        public MassHealSkill() { Cooldown = 15f; }
+        public override string Name => "광역 치유";
+        public override string Description => "주변(반경 4)에 체력 70% 미만인 동료가 2명 이상이면 모두를 공격력의 150%만큼 회복합니다.";
+        public override Color Color => new(0.7f, 1f, 0.75f);
+        public override bool IsSupport => true;
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            s_patients.Clear();
+            foreach (var u in UnitRegistry.All)
+                if (u.IsAlive && u.HpRatio < Below && (u == self || TargetSelector.IsAlly(self, u))
+                    && (u.Position - self.Position).sqrMagnitude <= Radius * Radius)
+                    s_patients.Add(u);
+            if (s_patients.Count < MinPatients) return false;
+            foreach (var u in s_patients.ToArray()) HealUnit(self, u, self.Stats.Attack * 1.5f);
+            Fx?.Ring(self.Position, Radius, Color, 0.5f);
+            Announce(self);
+            return true;
+        }
+    }
+
     // ============================================================ Monster skills
 
     /// <summary>Straight-line dash that damages, knocks back and stuns on contact.</summary>
@@ -338,6 +423,8 @@ namespace GuildMaster.Units
             "pierce" => new PiercingShotSkill(),
             "fireball" => new FireballSkill(),
             "blink" => new BlinkSkill(),
+            "heal" => new HealSkill(),
+            "massheal" => new MassHealSkill(),
             "charge" => new ChargeSkill(),
             "slam" => new GroundSlamSkill(),
             "howl" => new PackHowlSkill(),

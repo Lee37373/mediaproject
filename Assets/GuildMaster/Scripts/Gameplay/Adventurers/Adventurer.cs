@@ -79,7 +79,12 @@ namespace GuildMaster.Adventurers
         public string TraderName => Data.name;
         public int Gold { get => Data.gold; set => Data.gold = value; }
         public List<ItemStack> CarriedLoot => Data.loot;
-        public Color ProjectileColor => Data.cls == AdventurerClass.Mage ? new Color(0.5f, 0.7f, 1f) : new Color(0.95f, 0.85f, 0.55f);
+        public Color ProjectileColor => Data.cls switch
+        {
+            AdventurerClass.Mage => new Color(0.5f, 0.7f, 1f),
+            AdventurerClass.Priest => new Color(1f, 0.97f, 0.7f),   // holy light
+            _ => new Color(0.95f, 0.85f, 0.55f),
+        };
 
         public string StateLabel => Fsm?.Current?.Label ?? "-";
         public override string DebugState => StateLabel;
@@ -176,6 +181,8 @@ namespace GuildMaster.Adventurers
         {
             AdventurerClass.Warrior => new[] { "taunt", "whirlwind" },
             AdventurerClass.Ranger => new[] { "pierce" },
+            // Mass heal first: when several are hurt it beats a single heal (P4-29).
+            AdventurerClass.Priest => new[] { "massheal", "heal" },
             _ => new[] { "blink", "fireball" },
         };
 
@@ -188,11 +195,15 @@ namespace GuildMaster.Adventurers
         /// <summary>Level band plus birth grade (see CombatTiers.FromLevel).</summary>
         public override CombatTier Tier => Data == null ? CombatTier.Novice : CombatTiers.FromLevel(Data.level, (int)Data.grade);
 
-        /// <summary>Cute Adventurers skins per class; the penguin king is reserved for the guild master.</summary>
+        /// <summary>
+        /// Cute Adventurers skins per class; the penguin king is reserved for the guild master and the
+        /// robed frog for priests (user decision, P4-29).
+        /// </summary>
         public static string[] SkinsFor(AdventurerClass cls) => cls switch
         {
             AdventurerClass.Warrior => new[] { "knight", "raccoon" },
-            AdventurerClass.Ranger => new[] { "fox", "frog" },
+            AdventurerClass.Ranger => new[] { "fox" },
+            AdventurerClass.Priest => new[] { "frog" },
             _ => new[] { "robot", "skeleton" },
         };
 
@@ -211,6 +222,7 @@ namespace GuildMaster.Adventurers
             {
                 AdventurerClass.Warrior => (new Color(0.62f, 0.64f, 0.70f), new Color(0.75f, 0.2f, 0.2f), new Color(0.35f, 0.3f, 0.3f)),
                 AdventurerClass.Ranger => (new Color(0.30f, 0.52f, 0.28f), new Color(0.55f, 0.38f, 0.2f), new Color(0.3f, 0.25f, 0.18f)),
+                AdventurerClass.Priest => (new Color(0.92f, 0.9f, 0.84f), new Color(0.95f, 0.8f, 0.35f), new Color(0.55f, 0.5f, 0.45f)),
                 _ => (new Color(0.25f, 0.35f, 0.75f), new Color(0.9f, 0.85f, 0.4f), new Color(0.2f, 0.22f, 0.45f)),
             };
             return PixelArt.Humanoid(d.id, d.hairColor, d.skinColor, body, accent, legs);
@@ -294,6 +306,8 @@ namespace GuildMaster.Adventurers
             _senseTimer -= dt;
             if (_senseTimer > 0f) return false;
             _senseTimer = SenseInterval;
+            // Between fights: patch up the party (priests, P4-29). In fights the engagement uses skills.
+            TryUseSupportSkills();
 
             // The leader's call first (anywhere in sight, P4-27), then threats (aggressive monsters or
             // anything that hit us), then optional quest targets.

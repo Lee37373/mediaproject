@@ -38,8 +38,18 @@ namespace GuildMaster.Tests
         {
             _scene = SceneManager.CreateScene($"Smoke{++s_sceneCounter}");
             SceneManager.SetActiveScene(_scene);
+            // Keyboard input must reach the game even when the editor window is not focused (tests run
+            // from outside): by default the Input System disables the keyboard / routes it to the editor.
+            var settings = InputSystem.settings;
+            _backgroundBehavior = settings.backgroundBehavior;
+            _editorInputBehavior = settings.editorInputBehaviorInPlayMode;
+            settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+            settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
             yield return null;
         }
+
+        InputSettings.BackgroundBehavior _backgroundBehavior;
+        InputSettings.EditorInputBehaviorInPlayMode _editorInputBehavior;
 
         [UnityTearDown]
         public IEnumerator TearDown()
@@ -47,15 +57,21 @@ namespace GuildMaster.Tests
             Time.timeScale = 1f;
             GameSettings.ShowTitle = true;
             MenuState.Reset();
+            InputSystem.settings.backgroundBehavior = _backgroundBehavior;
+            InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
             if (_scene.IsValid() && _scene.isLoaded) yield return SceneManager.UnloadSceneAsync(_scene);
         }
 
         // ---------------- Helpers ----------------
 
         /// <summary>Starts a session like Main.unity does (minus the LLM object).</summary>
+        /// <summary>Same world every run, so a failure can be reproduced (random seeds made some tests flaky).</summary>
+        const int TestSeed = 20260920;
+
         static IEnumerator Boot(bool showTitle = false)
         {
             GameSettings.ShowTitle = showTitle;
+            GameSettings.PendingSeed = TestSeed;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             yield return null;
@@ -72,6 +88,7 @@ namespace GuildMaster.Tests
         static IEnumerator PressEscape()
         {
             var kb = Keyboard.current ?? InputSystem.AddDevice<Keyboard>();
+            if (!kb.enabled) InputSystem.EnableDevice(kb); // disabled while the editor was unfocused
             // A queued key can be dropped when the editor window changes focus (device resync):
             // queue it again until the input system really sees the key down.
             for (int attempt = 0; attempt < 5; attempt++)
@@ -161,6 +178,9 @@ namespace GuildMaster.Tests
             EventBus.Subscribe(onTaken);
             var member = Roster.Members.First(a => a.IsAlive);
             var at = member.Position + new Vector2(1.5f, 0f);
+            // Next to the member, but never inside a building wall.
+            var grid = Services.Get<World.WorldService>().Grid;
+            if (grid.TryFindNearestWalkable(World.GridMap.WorldToCell(at), 3, out var cell)) at = World.GridMap.CellToWorld(cell);
             DebugCommands.DropItem("slime_jelly", 1, at.x, at.y);
             yield return WaitFor(() => taker != null, 15f);
             EventBus.Unsubscribe(onTaken);
@@ -414,6 +434,32 @@ namespace GuildMaster.Tests
                 Assert.That(mates.Any(m => m.CurrentTarget == master), Is.True, "a pack mate came back with it for the enemy");
             }
             finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
+        public IEnumerator Priest_HealsTheMostHurtAlly()
+        {
+            yield return Boot();
+            var data = AdventurerGenerator.Generate(GameRandom.Shared);
+            data.cls = AdventurerClass.Priest;
+            var patient = Roster.Members.First(a => a.IsAlive);
+            var other = Roster.Members.First(a => a.IsAlive && a != patient);
+            var priest = Roster.Recruit(data, patient.Position + new Vector2(1f, 0f));
+            // Out of the mass heal's reach (4) but within a single heal's (6): the priest must choose.
+            other.transform.position = (Vector3)(patient.Position + new Vector2(0f, 5f));
+            yield return WaitFor(() => priest.Skills.All(s => s.IsReady), 3f); // skills start staggered
+            patient.ReceiveDamage(patient.Hp - patient.Stats.MaxHp * 0.2f, null, false);  // 20%
+            other.ReceiveDamage(other.Hp - other.Stats.MaxHp * 0.5f, null, false);        // 50%, farther from death
+            float before = patient.Hp, otherBefore = other.Hp;
+            Unit healed = null;
+            Action<UnitHealedEvent> onHeal = e => healed ??= e.Target;
+            EventBus.Subscribe(onHeal);
+            bool used = priest.TryUseSupportSkills();
+            EventBus.Unsubscribe(onHeal);
+            Assert.That(used, Is.True, "the priest used a heal");
+            Assert.That(patient.Hp, Is.GreaterThan(before), "the one closest to death got healed");
+            Assert.That(healed, Is.EqualTo(patient), "and it was healed first");
+            Assert.That(other.Hp >= otherBefore, Is.True);
         }
 
         [UnityTest]

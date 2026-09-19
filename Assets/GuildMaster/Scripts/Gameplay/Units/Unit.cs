@@ -150,6 +150,15 @@ namespace GuildMaster.Units
             return false;
         }
 
+        /// <summary>Support skills (heals) outside fights: returns true if one was used.</summary>
+        public bool TryUseSupportSkills()
+        {
+            if (IsStunned) return false;
+            foreach (var s in Skills)
+                if (s.IsSupport && s.IsReady && s.TryUse(this, null)) return true;
+            return false;
+        }
+
         /// <summary>
         /// Heroic units save area skills for groups: skip while the blast would hit a single enemy
         /// although several are nearby (they may bunch up in a moment).

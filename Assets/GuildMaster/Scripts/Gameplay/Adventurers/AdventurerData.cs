@@ -6,7 +6,8 @@ using UnityEngine;
 
 namespace GuildMaster.Adventurers
 {
-    public enum AdventurerClass { Warrior, Ranger, Mage }
+    /// <summary>Priest added in P4-29 (appended so existing values keep their meaning).</summary>
+    public enum AdventurerClass { Warrior, Ranger, Mage, Priest }
 
     /// <summary>Birth grade (fixed): adds to the level band when deciding combat smarts (CombatTier).</summary>
     public enum AdventurerGrade { Common, Rare, Heroic }
@@ -73,8 +74,20 @@ namespace GuildMaster.Adventurers
             AdventurerClass.Warrior => "전사",
             AdventurerClass.Ranger => "궁수",
             AdventurerClass.Mage => "마법사",
+            AdventurerClass.Priest => "사제",
             _ => c.ToString(),
         };
+
+        /// <summary>Share of new adventurers and visitors who are priests (user decision: rare).</summary>
+        public const float PriestChance = 0.15f;
+
+        /// <summary>Priest 15%, the other three classes share the rest equally.</summary>
+        public static AdventurerClass RollClass(float roll01)
+        {
+            if (roll01 < PriestChance) return AdventurerClass.Priest;
+            float rest = (roll01 - PriestChance) / (1f - PriestChance);
+            return (AdventurerClass)Mathf.Min(2, Mathf.FloorToInt(rest * 3f));
+        }
 
         public static string GradeLabel(AdventurerGrade g) => g switch
         {
@@ -100,6 +113,8 @@ namespace GuildMaster.Adventurers
         {
             AdventurerClass.Warrior => new CombatStats { MaxHp = 60, Attack = 9, Defense = 4, AttackRange = 1.2f, AttackCooldown = 1.0f, MoveSpeed = 3.2f, SightRadius = 7f },
             AdventurerClass.Ranger => new CombatStats { MaxHp = 42, Attack = 8, Defense = 2, AttackRange = 5f, AttackCooldown = 1.2f, MoveSpeed = 3.4f, SightRadius = 9f },
+            // Weak ranged light; its worth is in the heals (attack also scales them, P4-29).
+            AdventurerClass.Priest => new CombatStats { MaxHp = 38, Attack = 6, Defense = 2, AttackRange = 4.5f, AttackCooldown = 1.3f, MoveSpeed = 3.1f, SightRadius = 8f },
             _ => new CombatStats { MaxHp = 36, Attack = 13, Defense = 1, AttackRange = 4.5f, AttackCooldown = 1.6f, MoveSpeed = 3.0f, SightRadius = 8f },
         };
 

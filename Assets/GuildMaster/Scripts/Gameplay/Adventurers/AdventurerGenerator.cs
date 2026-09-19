@@ -47,7 +47,7 @@ namespace GuildMaster.Adventurers
             {
                 id = NextId(),
                 name = PickUnusedName(rng),
-                cls = (AdventurerClass)rng.Range(0, 3),
+                cls = AdventurerData.RollClass(rng.Value),
                 grade = AdventurerData.RollGrade(rng.Range(0f, 1f)),
                 level = Mathf.Max(1, level),
                 gold = rng.Range(20, 70),
