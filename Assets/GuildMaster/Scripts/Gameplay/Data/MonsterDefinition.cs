@@ -41,6 +41,8 @@ namespace GuildMaster.Data
         public float moveSpeed = 2.5f;
         public float sightRadius = 6f;
         public DangerLevel danger;
+        [Tooltip("Fighting smarts (P4-26): Instinct for mindless beasts up to Veteran for bosses.")]
+        public Units.CombatTier combatTier = Units.CombatTier.Novice;
 
         [Header("Behaviour")]
         [Tooltip("Attacks guild members on sight. Otherwise only retaliates.")]

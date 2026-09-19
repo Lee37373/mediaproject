@@ -6,8 +6,8 @@ namespace GuildMaster.Units
     /// <summary>
     /// Tier-dependent target scoring shared by adventurers and monsters (higher score = better).
     /// Every tier: nearer is better, keep the current target unless something is clearly better,
-    /// strike back at whoever hits us, avoid piling onto one victim. Higher tiers add factors
-    /// (see <see cref="CombatTier"/>).
+    /// strike back at whoever hits us. Novice and up also avoid piling onto one victim
+    /// (<see cref="CombatTiers.CrowdPenalty"/>); higher tiers add factors (see <see cref="CombatTier"/>).
     /// </summary>
     public static class TargetSelector
     {
@@ -37,19 +37,15 @@ namespace GuildMaster.Units
         {
             float score = -Vector2.Distance(self.Position, u.Position);
             if (u == current) score += Stickiness;
-            if (self.WasRecentlyAttackedBy(u, 4f)) score += tier == CombatTier.Novice ? 1.5f : 4f;
+            if (self.WasRecentlyAttackedBy(u, 4f)) score += tier <= CombatTier.Novice ? 1.5f : 4f;
+            // Instinct: the nearest (or whoever hits it) — no counting of allies at all.
+            if (tier == CombatTier.Instinct) return score;
 
             // Allies already fighting this candidate (same side as us, targeting it).
             int crowd = UnitRegistry.CountInRadius(u.Position, CrowdRadius, a => IsAlly(self, a) && a.CurrentTarget == u);
             bool finishable = u.Hp <= self.Stats.Attack * 2.5f;
             if (tier >= CombatTier.Heroic && finishable) score += 3f + crowd * 1f;   // focus fire on a kill
-            else
-            {
-                // Spread out: a mild cost per attacker, and a heavy one past the free "slots" around a
-                // victim, so a pack splits up instead of everyone queueing behind the same back.
-                int slots = tier >= CombatTier.Veteran ? 1 : 2;
-                score -= crowd * (tier >= CombatTier.Veteran ? 1.5f : 0.8f) + Mathf.Max(0, crowd - slots) * 3f;
-            }
+            else score -= CombatTiers.CrowdPenalty(tier, crowd);                     // spread out
 
             if (tier >= CombatTier.Skilled) score += (1f - u.HpRatio) * 3f;           // finish the wounded
 

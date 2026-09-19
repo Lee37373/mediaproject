@@ -220,6 +220,35 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator NoviceArcher_ShootsWithoutKiting()
+        {
+            yield return Boot();
+            Unit.GuildInvulnerable = true; // damage only: the archer must still pick the guild master
+            try
+            {
+                var master = Services.Get<PlayerAvatar>();
+                Monster archer = null;
+                for (int i = 0; i < 40 && archer == null; i++)
+                {
+                    DebugCommands.SpawnNearMaster("goblin", 1, 1.5f);
+                    archer = UnitRegistry.All.OfType<Monster>().FirstOrDefault(m => m.Home == null && m.IsAlive && m.IsRangedVariant);
+                }
+                Assert.That(archer, Is.Not.Null, "a goblin archer spawned");
+                Assert.That(archer.Tier, Is.EqualTo(CombatTier.Novice));
+                archer.ForceTarget(master);
+                bool kited = false;
+                float end = Time.realtimeSinceStartup + 4f;
+                while (Time.realtimeSinceStartup < end)
+                {
+                    kited |= archer.Engage.IsKiting;
+                    yield return null;
+                }
+                Assert.That(kited, Is.False, "a novice archer next to a melee unit keeps shooting instead of backing off");
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
         public IEnumerator FallenMember_StaysDead_AfterAPosthumousLevelUp()
         {
             yield return Boot();

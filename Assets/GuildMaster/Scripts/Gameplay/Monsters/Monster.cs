@@ -147,13 +147,8 @@ namespace GuildMaster.Monsters
             }
         }
 
-        /// <summary>Danger sets fighting smarts: weak species fight like novices, bosses like veterans.</summary>
-        public override CombatTier Tier => Def == null ? CombatTier.Novice : Def.danger switch
-        {
-            DangerLevel.Low => CombatTier.Novice,
-            DangerLevel.Medium => CombatTier.Skilled,
-            _ => CombatTier.Veteran,
-        };
+        /// <summary>Fighting smarts set per species (P4-26): slimes on instinct up to veteran bosses.</summary>
+        public override CombatTier Tier => Def == null ? CombatTier.Novice : Def.combatTier;
 
         /// <summary>Anything hostile we can see, or whoever just hit us.</summary>
         bool IsTargetCandidate(Unit u)

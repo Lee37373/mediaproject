@@ -30,6 +30,8 @@ namespace GuildMaster.Session
         int _samples;
         float _maxOverlapSeconds;
         int _threatSamples, _kitingSamples, _kiteEpisodes;
+        readonly int[] _tierThreat = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierKite = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
         int _telegraphs, _advInsideAtStart, _advInsideAtResolve;
         int _errorCount;
         readonly Dictionary<Unit, int> _targetCounts = new();
@@ -72,6 +74,8 @@ namespace GuildMaster.Session
             _samples = 0;
             _maxOverlapSeconds = 0f;
             _threatSamples = _kitingSamples = _kiteEpisodes = 0;
+            System.Array.Clear(_tierThreat, 0, _tierThreat.Length);
+            System.Array.Clear(_tierKite, 0, _tierKite.Length);
             _telegraphs = _advInsideAtStart = _advInsideAtResolve = 0;
             _errorCount = 0;
             _targetCounts.Clear();
@@ -183,9 +187,14 @@ namespace GuildMaster.Session
         {
             foreach (var u in UnitRegistry.All)
             {
-                if (!u.IsAlive || !u.Stats.IsRanged || u is not Adventurer a) continue;
-                bool threatened = Tactics.NearestMeleeThreat(a, KiteThreatRadius + a.Radius) != null;
-                bool kiting = a.Engage.IsKiting;
+                if (!u.IsAlive || !u.Stats.IsRanged || u.CombatEngagement == null) continue;
+                bool threatened = Tactics.NearestMeleeThreat(u, KiteThreatRadius + u.Radius) != null;
+                bool kiting = u.CombatEngagement.IsKiting;
+                // Every ranged unit by tier (P4-26: only skilled and up kite).
+                int tier = (int)u.Tier;
+                if (threatened) _tierThreat[tier]++;
+                if (threatened && kiting) _tierKite[tier]++;
+                if (u is not Adventurer a) continue;
                 if (threatened) _threatSamples++;
                 if (threatened && kiting) _kitingSamples++;
                 _wasKiting.TryGetValue(a, out var was);
@@ -202,6 +211,10 @@ namespace GuildMaster.Session
             sb.AppendLine($"  overlap: maxContinuous={_maxOverlapSeconds:0.0}s pairs>{PersistentOverlapSeconds:0}s={_persistentPairs.Count} activeNow={_overlapSince.Count}");
             float kitePct = _threatSamples > 0 ? 100f * _kitingSamples / _threatSamples : 0f;
             sb.AppendLine($"  kiting: threatSamples={_threatSamples} kitingWhileThreatened={kitePct:0}% episodes={_kiteEpisodes}");
+            sb.Append("  kitingByTier(all ranged, kite%/threatSamples):");
+            for (int t = 0; t < _tierThreat.Length; t++)
+                if (_tierThreat[t] > 0) sb.Append($" {CombatTiers.Label((CombatTier)t)}={100f * _tierKite[t] / _tierThreat[t]:0}%/{_tierThreat[t]}");
+            sb.AppendLine();
             sb.AppendLine($"  telegraph: count={_telegraphs} advInsideAtStart={_advInsideAtStart} advInsideAtResolve={_advInsideAtResolve}");
             float share = _spreadSamples > 0 ? 100f * _focusShareSum / _spreadSamples : 0f;
             float allOne = _spreadSamples > 0 ? 100f * _allOnOneSamples / _spreadSamples : 0f;

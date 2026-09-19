@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using GuildMaster.Traits;
+using GuildMaster.Units;
 using GuildMaster.World;
 using UnityEngine;
 
@@ -150,6 +151,15 @@ namespace GuildMaster.Data
             goblin.territoryRadius = 5.5f;
             goblinWarrior.territoryRadius = 6f;
             slimeKing.territoryRadius = 6.5f;
+
+            // Fighting smarts (P4-26): slimes act on instinct, goblins and skeletons fight like novices,
+            // goblin warriors are skilled, the slime king is a veteran.
+            slime.combatTier = CombatTier.Instinct;
+            stoneSlime.combatTier = CombatTier.Instinct;
+            skull.combatTier = CombatTier.Novice;
+            goblin.combatTier = CombatTier.Novice;
+            goblinWarrior.combatTier = CombatTier.Skilled;
+            slimeKing.combatTier = CombatTier.Veteran;
 
             // Tactics & skills.
             stoneSlime.skillIds.Add("charge");

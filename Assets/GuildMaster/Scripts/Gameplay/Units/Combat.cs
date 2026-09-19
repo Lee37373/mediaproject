@@ -55,8 +55,9 @@ namespace GuildMaster.Units
     /// Reusable fight behaviour for any unit:
     /// - uses ready skills first,
     /// - melee: chase and strike (crowd separation spreads attackers around the target),
-    /// - ranged: keep firing distance, kite away from melee threats between shots,
-    ///   and reposition to regain line of sight or find cover from enemy shooters.
+    /// - ranged: keep firing distance, kite away from melee threats between shots (Skilled+),
+    ///   and reposition to regain line of sight or find cover from enemy shooters (Veteran+);
+    ///   lower tiers simply walk at the target until they have a shot (see <see cref="CombatTiers"/>).
     /// </summary>
     public class Engagement
     {
@@ -176,26 +177,45 @@ namespace GuildMaster.Units
 
             if (_self.IsStunned || IsChanneling()) return EngageStatus.Attacking;
 
-            // Periodic re-evaluation (tier sets how often and what counts, see TargetSelector).
+            // Periodic re-evaluation (tier sets how often and what counts, see TargetSelector);
+            // instinct-driven units only turn on whoever just hit them.
+            var tier = _self.Tier;
             _retargetTimer -= dt;
-            if (_retargetTimer <= 0f)
+            Unit better = null;
+            if (CombatTiers.RetaliatesOnly(tier))
             {
-                _retargetTimer = CombatTiers.RetargetInterval(_self.Tier);
+                better = FreshAttacker();
+                // Stays on the new attacker a moment, or two attackers taking turns flip it every hit.
+                if (better != null && better != Target) _lockedUntil = Time.time + InstinctFocusSeconds;
+            }
+            else if (_retargetTimer <= 0f)
+            {
+                _retargetTimer = CombatTiers.RetargetInterval(tier);
                 if (CandidateFilter != null && Time.time >= _lockedUntil)
-                {
-                    var better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
-                    if (better != null && better != Target)
-                    {
-                        SetTarget(better);
-                        dist = Combat.Distance(_self, Target);
-                    }
-                }
+                    better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
+            }
+            if (better != null && better != Target)
+            {
+                SetTarget(better);
+                dist = Combat.Distance(_self, Target);
             }
 
             if (HoldOffTick(dt, dist)) return EngageStatus.Chasing;
             if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
 
             return _self.Stats.IsRanged ? RangedTick(dt, dist) : MeleeTick(dt, dist);
+        }
+
+        /// <summary>After turning on an attacker, instinct-driven units ignore other hits this long.</summary>
+        const float InstinctFocusSeconds = 1.5f;
+
+        /// <summary>Someone other than the target hit us just now (instinct: turn on them), or null.</summary>
+        Unit FreshAttacker()
+        {
+            var hitter = _self.LastAttacker;
+            if (hitter == null || hitter == Target || !_self.WasRecentlyAttackedBy(hitter, 0.5f)) return null;
+            if (Time.time < _lockedUntil || !hitter.IsAlive || !hitter.IsTargetableBy(_self) || IsIgnoring(hitter)) return null;
+            return CandidateFilter == null || CandidateFilter(hitter) ? hitter : null;
         }
 
         // ---------------- Third-party wait ("어부지리", Skilled+) ----------------
@@ -275,10 +295,11 @@ namespace GuildMaster.Units
         EngageStatus RangedTick(float dt, float dist)
         {
             _tacticTimer -= dt;
+            var tier = _self.Tier;
             bool cooldownReady = Time.time >= _self.NextAttackTime;
 
-            // Kite: step away from melee threats while reloading.
-            var threat = Tactics.NearestMeleeThreat(_self, 2.2f + _self.Radius);
+            // Kite (Skilled+): step away from melee threats while reloading.
+            var threat = CombatTiers.CanKite(tier) ? Tactics.NearestMeleeThreat(_self, 2.2f + _self.Radius) : null;
             if (threat != null && !cooldownReady)
             {
                 if (_tacticTimer <= 0f || !_self.Mover.IsMoving)
@@ -305,13 +326,15 @@ namespace GuildMaster.Units
             }
             if (GaveUpChase(dist, dt)) return EngageStatus.Lost;
 
-            // No shot: find a firing position (line of sight, away from melee, in cover), else close in.
+            // No shot. Veteran+ look for a firing position (line of sight, away from melee, in cover);
+            // the others just walk at the target — to firing range, or right up to it when something
+            // blocks the line — and shoot as soon as the line is clear.
             if (_tacticTimer <= 0f || !_self.Mover.IsMoving)
             {
                 _tacticTimer = 0.8f;
-                bool ok = Tactics.FindFiringPosition(_self, Target, out var spot)
+                bool ok = CombatTiers.SeeksFiringPosition(tier) && Tactics.FindFiringPosition(_self, Target, out var spot)
                     ? _self.Mover.SetDestination(spot, 0.1f)
-                    : _self.Mover.SetDestination(Target.Position, _self.Stats.AttackRange * 0.6f);
+                    : _self.Mover.SetDestination(Target.Position, inRange ? 1f : _self.Stats.AttackRange * 0.8f);
                 if (!ok) return DropUnreachable();
             }
             return EngageStatus.Chasing;
