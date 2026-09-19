@@ -49,7 +49,7 @@ namespace GuildMaster.Town
             transform.position = new Vector3(footprint.center.x, footprint.center.y, 0f);
 
             _renderer = gameObject.AddComponent<SpriteRenderer>();
-            _renderer.sprite = PixelArt.Building(type, footprint.width, footprint.height);
+            _renderer.sprite = CartoonArt.Building(type, footprint.width, footprint.height);
             _renderer.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(footprint.yMin * 8f) + 4;
         }
 

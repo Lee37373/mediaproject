@@ -45,7 +45,7 @@ namespace GuildMaster.Ecosystem
             transform.position = WorldPosition;
 
             _renderer = gameObject.AddComponent<SpriteRenderer>();
-            _renderer.sprite = PixelArt.Nest(species);
+            _renderer.sprite = CartoonArt.Nest(species);
             _renderer.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f) - 2;
             _renderer.enabled = false;
         }

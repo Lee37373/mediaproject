@@ -1,20 +1,25 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using GuildMaster.Visuals;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
 namespace GuildMaster.World
 {
-    /// <summary>Builds ground and decoration Tilemaps from MapData using runtime-created tiles.</summary>
+    /// <summary>
+    /// Draws the map in the cartoon style of the character art. The ground is painted once into
+    /// 16×16-cell chunk textures (curved, outlined terrain edges; see <see cref="CartoonGroundPainter"/>);
+    /// trees and rocks sit on a decoration Tilemap. Gameplay keeps using the tile grid.
+    /// </summary>
     public class MapRenderer : MonoBehaviour
     {
         public const int GroundOrder = 0;
         public const int DecorOrder = 1;
         const int Variants = 4;
+        const int ChunkCells = 16;
+        const int GroundPixelsPerCell = 32;
 
-        Tilemap _ground;
         Tilemap _decor;
-        readonly Dictionary<(TileType, int), Tile> _groundTiles = new();
         readonly List<Tile> _trees = new();
         readonly List<Tile> _rocks = new();
 
@@ -22,49 +27,75 @@ namespace GuildMaster.World
         {
             if (!TryGetComponent<Grid>(out var grid)) grid = gameObject.AddComponent<Grid>();
             grid.cellSize = Vector3.one;
-            _ground = CreateTilemap("Ground", GroundOrder);
+            BuildGround(map);
             _decor = CreateTilemap("Decor", DecorOrder);
 
             for (int v = 0; v < Variants; v++)
             {
-                _trees.Add(MakeTile(PixelArt.Tree(v)));
-                _rocks.Add(MakeTile(PixelArt.Rock(v)));
+                _trees.Add(MakeTile(CartoonArt.Tree(v)));
+                _rocks.Add(MakeTile(CartoonArt.Rock(v)));
             }
 
-            int n = map.Width * map.Height;
-            var positions = new Vector3Int[n];
-            var groundTiles = new TileBase[n];
             var decorPositions = new List<Vector3Int>();
             var decorTiles = new List<TileBase>();
-
             for (int y = 0; y < map.Height; y++)
             for (int x = 0; x < map.Width; x++)
             {
                 int i = map.Index(x, y);
-                var type = map.Tiles[i];
                 int hash = Hash(x, y);
-                positions[i] = new Vector3Int(x, y, 0);
-                groundTiles[i] = GroundTile(type, hash % Variants);
-
                 if (map.Trees[i])
                 {
-                    decorPositions.Add(positions[i]);
+                    decorPositions.Add(new Vector3Int(x, y, 0));
                     decorTiles.Add(_trees[(hash / 7) % Variants]);
                 }
-                else if (type == TileType.Mountain && hash % 100 < 45)
+                else if (map.Tiles[i] == TileType.Mountain && hash % 100 < 30)
                 {
-                    decorPositions.Add(positions[i]);
+                    decorPositions.Add(new Vector3Int(x, y, 0));
                     decorTiles.Add(_rocks[(hash / 7) % Variants]);
                 }
             }
-            _ground.SetTiles(positions, groundTiles);
             _decor.SetTiles(decorPositions.ToArray(), decorTiles.ToArray());
         }
 
-        /// <summary>Refresh a single ground tile (e.g. when terrain changes).</summary>
-        public void SetGround(Vector2Int cell, TileType type)
+        /// <summary>Paints all ground chunks (in parallel), then uploads them as sprites.</summary>
+        void BuildGround(MapData map)
         {
-            _ground.SetTile((Vector3Int)cell, GroundTile(type, Hash(cell.x, cell.y) % Variants));
+            var root = new GameObject("Ground").transform;
+            root.SetParent(transform, false);
+            var painter = new CartoonGroundPainter(map, GroundPixelsPerCell);
+            int cw = (map.Width + ChunkCells - 1) / ChunkCells, ch = (map.Height + ChunkCells - 1) / ChunkCells;
+            var buffers = new Color32[cw * ch][];
+            var sizes = new Vector2Int[cw * ch];
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            Parallel.For(0, cw * ch, i =>
+            {
+                int tx = i % cw * ChunkCells, ty = i / cw * ChunkCells;
+                int tw = Mathf.Min(ChunkCells, map.Width - tx), th = Mathf.Min(ChunkCells, map.Height - ty);
+                var px = new Color32[tw * GroundPixelsPerCell * th * GroundPixelsPerCell];
+                painter.Paint(tx, ty, tw, th, px);
+                buffers[i] = px;
+                sizes[i] = new Vector2Int(tw, th);
+            });
+            for (int i = 0; i < buffers.Length; i++)
+            {
+                int tx = i % cw * ChunkCells, ty = i / cw * ChunkCells;
+                int pw = sizes[i].x * GroundPixelsPerCell, ph = sizes[i].y * GroundPixelsPerCell;
+                var tex = new Texture2D(pw, ph, TextureFormat.RGBA32, false)
+                {
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    name = $"GroundChunk_{tx}_{ty}",
+                };
+                tex.SetPixels32(buffers[i]);
+                tex.Apply(false, true); // free the CPU copy
+                var go = new GameObject(tex.name);
+                go.transform.SetParent(root, false);
+                go.transform.position = new Vector3(tx, ty, 0f);
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = Sprite.Create(tex, new Rect(0, 0, pw, ph), Vector2.zero, GroundPixelsPerCell, 0, SpriteMeshType.FullRect);
+                sr.sortingOrder = GroundOrder;
+            }
+            Debug.Log($"[Map] Ground painted: {buffers.Length} chunks in {sw.ElapsedMilliseconds} ms");
         }
 
         public void ClearDecor(RectInt area)
@@ -72,14 +103,6 @@ namespace GuildMaster.World
             for (int y = area.yMin; y < area.yMax; y++)
             for (int x = area.xMin; x < area.xMax; x++)
                 _decor.SetTile(new Vector3Int(x, y, 0), null);
-        }
-
-        Tile GroundTile(TileType type, int variant)
-        {
-            if (_groundTiles.TryGetValue((type, variant), out var t)) return t;
-            t = MakeTile(PixelArt.TerrainTile(type, variant));
-            _groundTiles[(type, variant)] = t;
-            return t;
         }
 
         Tilemap CreateTilemap(string name, int order)

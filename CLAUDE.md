@@ -34,7 +34,7 @@ GuildMaster.Tests.EditMode
 - **AI는 하이브리드**입니다.
   - 저수준(이동·전투·생존)은 C# FSM(`StateMachine<T>`, `State<T>`)이 맡습니다.
   - 고수준 판단(퀘스트 선택 등)은 `IAdventurerDecisionMaker`가 맡습니다. LLM 구현체와 `RuleBasedDecisionMaker`(항상 쓸 수 있는 대체 경로)가 있습니다.
-- **아트**: 캐릭터·몬스터는 LAYERLAB 2D Characters(Cute Adventurers 프레임, Casual Monsters 전신 이미지)를 `Assets/GuildMaster/Resources/Art/`에 복사해 씁니다(`Visuals/ArtLibrary.cs`, 가져오기 설정은 `Scripts/Editor/ArtImportSettings.cs`). 이미지가 없으면 `Visuals/PixelArt.cs`의 코드 생성 그림으로 대체합니다. 맵·건물·둥지는 아직 코드 생성 도트 그림입니다.
+- **아트**: 캐릭터·몬스터는 LAYERLAB 2D Characters(Cute Adventurers 프레임, Casual Monsters 전신 이미지)를 `Assets/GuildMaster/Resources/Art/`에 복사해 씁니다(`Visuals/ArtLibrary.cs`, 가져오기 설정은 `Scripts/Editor/ArtImportSettings.cs`). 이미지가 없으면 `Visuals/PixelArt.cs`의 코드 생성 그림으로 대체합니다. 맵은 같은 카툰풍으로 코드가 그립니다: 지형은 `World/CartoonGroundPainter.cs`(16×16칸 덩어리 텍스처, 1칸 32px, 곡선 경계·외곽선·경계 안티앨리어싱, 시작 시 약 2초), 나무·바위·둥지·건물은 `Visuals/CartoonArt.cs`.
   - 원본 패키지: `%APPDATA%/Unity/Asset Store-5.x/LAYERLAB/Textures Materials2D Characters/`(Spine·PSB는 쓰지 않음). **Asset Store EULA상 재배포 금지라 `Resources/Art`는 `.gitignore`로 제외**했습니다. 다른 PC에서는 패키지에서 다시 복사해야 합니다.
 - **UI는 uGUI를 코드로 조립**합니다(`UIBuilder`). 한글은 OS 폰트(맑은 고딕)를 씁니다. 레이아웃은 LayoutGroup 기반입니다.
   - 주의: `childForceExpand`가 켜진 LayoutGroup은 스스로 flexible이 됩니다. 필요하면 `Size(..., flexWidth: 0)`로 막으세요.
