@@ -111,6 +111,9 @@ namespace GuildMaster.Monsters
                 }
             }
 
+            // Skilled+ monsters losing a fight alone fall back to their pack and strike back together (P4-28).
+            if (m.TryStartRegroup()) return;
+
             if (m.Engage.Tick(dt) == EngageStatus.Lost)
             {
                 // Look for another target before giving up.

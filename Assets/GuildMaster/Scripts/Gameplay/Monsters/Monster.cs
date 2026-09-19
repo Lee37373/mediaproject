@@ -42,6 +42,9 @@ namespace GuildMaster.Monsters
         internal MonsterReturnState ReturnState;
         internal RaidState RaidState;
         internal MonsterPickupState PickupState;
+        internal MonsterRegroupState RegroupState;
+        /// <summary>Earliest time the next fall-back-and-regroup may start (skilled+ monsters, P4-28).</summary>
+        internal float NextRegroupTime;
 
         /// <summary>Optional override (e.g. raid waves) that replaces the default idle behaviour.</summary>
         public State<Monster> DefaultStateOverride { get; set; }
@@ -64,6 +67,8 @@ namespace GuildMaster.Monsters
             ReturnState = new MonsterReturnState();
             RaidState = new RaidState();
             PickupState = new MonsterPickupState();
+            RegroupState = new MonsterRegroupState();
+            Engage.ApproachSpot = EncircleSpot;
         }
 
         public static GameObject CreatePooledInstance()
@@ -106,6 +111,7 @@ namespace GuildMaster.Monsters
             Equipment.Clear();
             _crownAura = false;
             NextLureTime = 0f;
+            NextRegroupTime = 0f;
             _pickupTimer = GameRandom.Shared.Range(0f, PickupCheckInterval);
             foreach (var g in def.startingGear)
                 if (g.item != null && GameRandom.Shared.Chance(g.chance)) Equipment.Equip(g.item);
@@ -207,6 +213,109 @@ namespace GuildMaster.Monsters
                 u => u is Monster m && m.Def.IsPredatorOf(Def) && CanSee(m)) as Monster;
         }
 
+        // ---------------- Pack tactics (skilled+, P4-28) ----------------
+
+        static readonly System.Collections.Generic.List<Monster> s_encirclers = new();
+        static readonly System.Collections.Generic.List<float> s_bearings = new();
+
+        /// <summary>Another living member of the same pack: same species and nest (or both nest-less).</summary>
+        public bool IsPackMate(Monster o) => o != null && o != this && o.IsAlive && o.Def == Def && o.Home == Home;
+
+        /// <summary>Who calls the pack's target: the crown holder / pack leader, else the first member of the nest.</summary>
+        Monster CallingLeader
+        {
+            get
+            {
+                var leader = PackLeader;
+                if (leader != null || Home == null) return leader;
+                foreach (var m in Home.Members) if (m.IsAlive) return m;
+                return null;
+            }
+        }
+
+        /// <summary>Skilled+ packs gang up on their leader's target (when the leader is close by).</summary>
+        public override Unit CalledTarget
+        {
+            get
+            {
+                if (Tier < CombatTier.Skilled || Home == null) return null;
+                var leader = CallingLeader;
+                if (leader == null || leader == this || (leader.Position - Position).sqrMagnitude > 10f * 10f) return null;
+                var t = leader.Engage.Target;
+                return t != null && t.IsAlive ? t : null;
+            }
+        }
+
+        /// <summary>
+        /// Encircling: when two or more skilled+ melee pack mates go for the same target, each heads for
+        /// its own slot around it (spread evenly, centred on where they come from) instead of the target.
+        /// </summary>
+        Vector2? EncircleSpot(Unit target)
+        {
+            if (Tier < CombatTier.Skilled || Stats.IsRanged || target == null) return null;
+            s_encirclers.Clear();
+            foreach (var u in UnitRegistry.All)
+                if (u is Monster o && (o == this || IsPackMate(o)) && !o.Stats.IsRanged && o.Engage.Target == target) s_encirclers.Add(o);
+            if (s_encirclers.Count < 2) return null;
+            s_bearings.Clear();
+            int index = 0;
+            for (int i = 0; i < s_encirclers.Count; i++)
+            {
+                var d = s_encirclers[i].Position - target.Position;
+                s_bearings.Add(Mathf.Atan2(d.y, d.x));
+                if (s_encirclers[i] == this) index = i;
+            }
+            float angle = PackTactics.EncircleAngle(s_bearings, index);
+            float radius = Stats.AttackRange * 0.9f + target.Radius + Radius;
+            if (!Services.TryGet<World.WorldService>(out var world)) return null;
+            // A slot on water or rock slides along the ring to the nearest walkable angle.
+            for (int k = 0; k < 7; k++)
+            {
+                float a = angle + (k % 2 == 1 ? 1 : -1) * ((k + 1) / 2) * 20f * Mathf.Deg2Rad;
+                var spot = target.Position + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * radius;
+                if (!world.Grid.IsWalkable(World.GridMap.WorldToCell(spot))) continue;
+                // At the slot but shoved out of reach by the crowd: close the last step directly.
+                return (spot - Position).sqrMagnitude < 0.35f * 0.35f ? null : spot;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Badly hurt and outnumbered (skilled+): fall back to the nearest group of pack mates away from
+        /// the fight, or to the nest, then strike back together (MonsterRegroupState). False if not needed
+        /// or there is nowhere to go.
+        /// </summary>
+        internal bool TryStartRegroup()
+        {
+            if (Tier < CombatTier.Skilled || HpRatio >= PackTactics.RegroupHp || Time.time < NextRegroupTime) return false;
+            const float near = 6f;
+            int allies = 0, enemies = 0;
+            Monster rally = null;
+            float rallyDist = float.MaxValue;
+            foreach (var u in UnitRegistry.All)
+            {
+                if (!u.IsAlive || u == this) continue;
+                float d = Vector2.Distance(u.Position, Position);
+                if (u is Monster o && IsPackMate(o))
+                {
+                    bool busy = o.Fsm.Current == o.FleeState || o.Fsm.Current == o.RegroupState;
+                    if (d <= near) { if (!busy) allies++; }
+                    else if (!busy && d < rallyDist) { rallyDist = d; rally = o; }
+                }
+                else if ((IsHostileTo(u) || u.IsHostileTo(this)) && (u.CurrentTarget == this || d <= 2.5f)) enemies++;
+            }
+            // Not needed (or nowhere to go): look again in a moment rather than every frame.
+            NextRegroupTime = Time.time + 0.5f;
+            if (!PackTactics.ShouldRegroup(HpRatio, enemies, allies)) return false;
+            if (rally == null && (Home == null || Vector2.Distance(Position, HomePosition) <= near)) return false;
+            NextRegroupTime = Time.time + 20f;
+            RegroupState.RallyMate = rally;
+            RegroupState.Point = rally != null ? rally.Position : HomePosition;
+            RegroupState.Enemy = Engage.Target ?? LastAttacker;
+            Fsm.ChangeState(RegroupState);
+            return true;
+        }
+
         void Update()
         {
             if (!IsAlive)
@@ -233,7 +342,7 @@ namespace GuildMaster.Monsters
 
         void Sense()
         {
-            if (Fsm.Current == FleeState || Fsm.Current == LureState) return;
+            if (Fsm.Current == FleeState || Fsm.Current == LureState || Fsm.Current == RegroupState) return;
             // Raiders march together; they do not scatter from predators in their own wave.
             var predator = DefaultStateOverride == null ? FindPredator() : null;
             if (predator != null && !WasRecentlyAttackedBy(predator, 2f))
@@ -283,7 +392,8 @@ namespace GuildMaster.Monsters
         protected override void OnDamaged(float amount, Unit source)
         {
             // Retaliate immediately unless already fighting something.
-            if (source != null && source.IsAlive && source.IsTargetableBy(this) && Fsm.Current != EngageState && Fsm.Current != FleeState && Fsm.Current != LureState)
+            if (source != null && source.IsAlive && source.IsTargetableBy(this) && Fsm.Current != EngageState && Fsm.Current != FleeState
+                && Fsm.Current != LureState && Fsm.Current != RegroupState)
             {
                 Engage.SetTarget(source);
                 Fsm.ChangeState(EngageState);

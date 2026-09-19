@@ -72,8 +72,14 @@ namespace GuildMaster.Tests
         static IEnumerator PressEscape()
         {
             var kb = Keyboard.current ?? InputSystem.AddDevice<Keyboard>();
-            InputSystem.QueueStateEvent(kb, new KeyboardState(Key.Escape));
-            yield return null;
+            // A queued key can be dropped when the editor window changes focus (device resync):
+            // queue it again until the input system really sees the key down.
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                InputSystem.QueueStateEvent(kb, new KeyboardState(Key.Escape));
+                yield return null;
+                if (kb.escapeKey.isPressed) break;
+            }
             yield return null;
             InputSystem.QueueStateEvent(kb, new KeyboardState());
             yield return null;
@@ -123,7 +129,10 @@ namespace GuildMaster.Tests
             yield return Boot();
             var pause = UnityEngine.Object.FindFirstObjectByType<PauseMenuView>();
             yield return PressEscape();
-            Assert.That(pause.IsOpen && Clock.IsHeld, Is.True, "ESC with nothing open pauses");
+            string state = $"pauseViews={UnityEngine.Object.FindObjectsByType<PauseMenuView>(FindObjectsSortMode.None).Length} "
+                           + $"open={pause.IsOpen} held={Clock.IsHeld} menu={MenuState.IsOpen} "
+                           + $"selected={Services.Get<InspectorView>().Selected} esc={Keyboard.current?.escapeKey.isPressed}";
+            Assert.That(pause.IsOpen && Clock.IsHeld, Is.True, "ESC with nothing open pauses — " + state);
             yield return PressEscape();
             Assert.That(pause.IsOpen || Clock.IsHeld, Is.False, "ESC again resumes");
         }
@@ -271,8 +280,10 @@ namespace GuildMaster.Tests
                 Clock.SetSpeed(2);
                 yield return WaitFor(() => leader.StateLabel == "사냥 중", 25f);
                 Assert.That(leader.StateLabel, Is.EqualTo("사냥 중"), "the party reached the hunting area");
+                // Someone may have stopped for loot or a scuffle on the way: the formation gathers them in.
+                yield return WaitFor(() => members.All(m => Vector2.Distance(m.Position, leader.Position) < 4f), 6f);
                 foreach (var m in members)
-                    Assert.That(Vector2.Distance(m.Position, leader.Position), Is.LessThan(4f), $"{m.Data.name} arrived with the leader");
+                    Assert.That(Vector2.Distance(m.Position, leader.Position), Is.LessThan(4f), $"{m.Data.name} is with the leader");
 
                 Unit called = null;
                 Action<PartyTargetCalledEvent> onCall = e => called = e.Target;
@@ -288,6 +299,119 @@ namespace GuildMaster.Tests
                 yield return WaitFor(() => called != null, 15f);
                 EventBus.Unsubscribe(onCall);
                 Assert.That(called, Is.InstanceOf<Monster>(), "the skilled leader called a target for focus fire");
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        /// <summary>Moves the guild master to open ground outside town (8 walkable cells every way).</summary>
+        static PlayerAvatar MasterOnOpenGround()
+        {
+            var world = Services.Get<World.WorldService>();
+            var grid = world.Grid;
+            var c0 = World.GridMap.WorldToCell(world.TownCenterWorld);
+            for (int r = 16; r < 50; r++)
+            for (int k = 0; k < 16; k++)
+            {
+                float a = k * Mathf.PI / 8f;
+                var c = c0 + new Vector2Int(Mathf.RoundToInt(Mathf.Cos(a) * r), Mathf.RoundToInt(Mathf.Sin(a) * r));
+                if (grid.IsInTown(c)) continue;
+                bool open = true;
+                for (int dy = -8; dy <= 8 && open; dy++)
+                for (int dx = -8; dx <= 8 && open; dx++)
+                    if (!grid.IsWalkable(c + new Vector2Int(dx, dy))) open = false;
+                if (!open) continue;
+                var master = Services.Get<PlayerAvatar>();
+                master.Mover.Stop();
+                master.transform.position = World.GridMap.CellToWorld(c);
+                return master;
+            }
+            return null;
+        }
+
+        static Monster SpawnMonster(string speciesId, Vector2 at, bool meleeOnly = false)
+        {
+            var def = Services.Get<EcosystemManager>().Species.First(s => s.id == speciesId);
+            var pool = Services.Get<PoolService>();
+            if (Services.Get<World.WorldService>().Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(at), 4, out var cell))
+                at = World.GridMap.CellToWorld(cell);
+            for (int i = 0; i < 40; i++)
+            {
+                var m = pool.Spawn<Monster>(Monster.PoolKey, at);
+                m.Setup(def, null);
+                if (!meleeOnly || !m.IsRangedVariant) return m;
+                m.Perish();
+            }
+            return null;
+        }
+
+        /// <summary>Largest angular gap (degrees) between units around a centre: ~90 when four surround it.</summary>
+        static float LargestGap(Vector2 centre, System.Collections.Generic.IEnumerable<Unit> units)
+        {
+            var angles = units.Select(u => Mathf.Atan2(u.Position.y - centre.y, u.Position.x - centre.x) * Mathf.Rad2Deg).OrderBy(a => a).ToList();
+            float gap = 0f;
+            for (int i = 0; i < angles.Count; i++) gap = Mathf.Max(gap, (i + 1 < angles.Count ? angles[i + 1] : angles[0] + 360f) - angles[i]);
+            return gap;
+        }
+
+        [UnityTest]
+        public IEnumerator SkilledPack_Encircles_NovicePackDoesNot()
+        {
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var master = MasterOnOpenGround();
+                Assume.That(master, Is.Not.Null, "open ground on this map");
+                Clock.SetSpeed(2);
+                // Four melee monsters charge the guild master from the same spot to the east.
+                System.Collections.Generic.List<Monster> ChargeFromTheEast(string species)
+                {
+                    var pack = new System.Collections.Generic.List<Monster>();
+                    for (int i = 0; i < 4; i++)
+                    {
+                        var m = SpawnMonster(species, master.Position + new Vector2(6f, (i - 1.5f) * 0.4f), meleeOnly: true);
+                        m.ForceTarget(master);
+                        pack.Add(m);
+                    }
+                    return pack;
+                }
+
+                var warriors = ChargeFromTheEast("goblin_warrior");
+                yield return new WaitForSeconds(4f); // scaled: 8 s at x2
+                float skilledGap = LargestGap(master.Position, warriors);
+                foreach (var m in warriors) m.Perish();
+
+                var goblins = ChargeFromTheEast("goblin");
+                yield return new WaitForSeconds(4f);
+                float noviceGap = LargestGap(master.Position, goblins);
+
+                Assert.That(skilledGap, Is.LessThan(200f), "skilled goblin warriors spread around the target");
+                Assert.That(noviceGap, Is.GreaterThan(250f), "novice goblins all come at it from one side");
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
+        public IEnumerator SkilledMonster_Outnumbered_FallsBackAndReturnsWithItsPack()
+        {
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var master = MasterOnOpenGround();
+                Assume.That(master, Is.Not.Null, "open ground on this map");
+                var lone = SpawnMonster("goblin_warrior", master.Position + new Vector2(1.5f, 0f));
+                var mates = new[]
+                {
+                    SpawnMonster("goblin_warrior", master.Position + new Vector2(0f, 12f)),
+                    SpawnMonster("goblin_warrior", master.Position + new Vector2(1f, 12.5f)),
+                };
+                typeof(Unit).GetProperty(nameof(Unit.Hp)).SetValue(lone, lone.Stats.MaxHp * 0.3f);
+                lone.ForceTarget(master);
+                bool regrouped = false;
+                yield return WaitFor(() => (regrouped |= lone.StateLabel == "재집결") && mates.Any(m => m.CurrentTarget == master), 15f);
+                Assert.That(regrouped, Is.True, "the hurt warrior fell back");
+                Assert.That(mates.Any(m => m.CurrentTarget == master), Is.True, "a pack mate came back with it for the enemy");
             }
             finally { Unit.GuildInvulnerable = false; }
         }

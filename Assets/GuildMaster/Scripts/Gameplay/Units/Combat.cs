@@ -105,6 +105,12 @@ namespace GuildMaster.Units
         /// </summary>
         public System.Func<Unit, Vector2?> HoldSpot { get; set; }
 
+        /// <summary>
+        /// Where a melee unit should close in on its target instead of the target itself (P4-28, pack
+        /// encircling), or null for a straight chase.
+        /// </summary>
+        public System.Func<Unit, Vector2?> ApproachSpot { get; set; }
+
         public Engagement(Unit self) { _self = self; }
 
         public void SetTarget(Unit target)
@@ -280,9 +286,11 @@ namespace GuildMaster.Units
         {
             if (Combat.InRange(_self, Target))
             {
+                ResetChase();
+                // Encircling (P4-28): between blows, keep working round to the own slot.
+                if (Time.time < _self.NextAttackTime && CircleToSlot(dt)) return EngageStatus.Attacking;
                 if (_self.Mover.IsMoving) _self.Mover.Stop();
                 Combat.TryAttack(_self, Target);
-                ResetChase();
                 return EngageStatus.Attacking;
             }
             if (GaveUpChase(dist, dt)) return EngageStatus.Lost;
@@ -292,10 +300,30 @@ namespace GuildMaster.Units
             {
                 _repathTimer = 0.5f;
                 _lastTargetPos = Target.Position;
-                if (!_self.Mover.SetDestination(Target.Position, Mathf.Max(0.1f, _self.Stats.AttackRange * 0.8f)))
-                    return DropUnreachable();
+                bool ok = ApproachSpot?.Invoke(Target) is Vector2 spot
+                    ? _self.Mover.SetDestination(spot, 0.2f) || _self.Mover.SetDestination(Target.Position, Mathf.Max(0.1f, _self.Stats.AttackRange * 0.8f))
+                    : _self.Mover.SetDestination(Target.Position, Mathf.Max(0.1f, _self.Stats.AttackRange * 0.8f));
+                if (!ok) return DropUnreachable();
             }
             return EngageStatus.Chasing;
+        }
+
+        float _circleTimer;
+        bool _circling;
+
+        /// <summary>
+        /// While reloading within reach, walks on to the encircling slot (<see cref="ApproachSpot"/>)
+        /// instead of standing where the chase ended. True while on the way there.
+        /// </summary>
+        bool CircleToSlot(float dt)
+        {
+            if (ApproachSpot == null) return false;
+            _circleTimer -= dt;
+            if (_circleTimer > 0f) return _circling && _self.Mover.IsMoving;
+            _circleTimer = 0.4f;
+            _circling = ApproachSpot(Target) is Vector2 slot && (slot - _self.Position).sqrMagnitude > 0.8f * 0.8f
+                        && _self.Mover.SetDestination(slot, 0.2f);
+            return _circling;
         }
 
         EngageStatus RangedTick(float dt, float dist)
