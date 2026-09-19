@@ -23,12 +23,20 @@ namespace GuildMaster.Fog
 
     /// <summary>
     /// Grid fog of war with three states (unexplored / explored / visible).
-    /// Vision is recomputed on a fixed tick; alpha fades smoothly into a 1-texel-per-tile
-    /// texture rendered above the world with bilinear filtering for soft edges.
+    /// Vision is recomputed per cell on a fixed tick and each cell's alpha fades smoothly. Rendering
+    /// (P4-7) upsamples the cell alphas to <see cref="RenderScale"/> texels per cell after a small
+    /// 1-2-1 blur, so edges are round instead of stair-stepped. Explored-but-unseen ground is covered
+    /// with a cool grey-blue instead of black, which reads as faded (desaturated) memory.
     /// </summary>
     public class FogOfWar : MonoBehaviour
     {
         public const int SortingOrder = 3000;
+        /// <summary>Render texels per map cell (the simulation stays one value per cell).</summary>
+        public const int RenderScale = 2;
+
+        /// <summary>Tint over explored ground (faded look); unexplored ground is near black.</summary>
+        static readonly Color ExploredTint = new(0.16f, 0.18f, 0.27f);
+        static readonly Color UnexploredTint = new(0.02f, 0.02f, 0.04f);
 
         static readonly List<IVisionSource> s_sources = new();
         static readonly List<IFogHideable> s_hideables = new();
@@ -38,7 +46,9 @@ namespace GuildMaster.Fog
         int[] _visibleStamp;
         int _stamp;
         float[] _alpha;
+        float[] _blurred;
         Color32[] _pixels;
+        int _tw, _th;
         Texture2D _texture;
         float _exploredAlpha = 0.55f;
         float _tickInterval = 0.1f;
@@ -70,20 +80,23 @@ namespace GuildMaster.Fog
             _explored = new bool[n];
             _visibleStamp = new int[n];
             _alpha = new float[n];
-            _pixels = new Color32[n];
-            for (int i = 0; i < n; i++) { _alpha[i] = 1f; _pixels[i] = new Color32(0, 0, 0, 255); }
+            _blurred = new float[n];
+            for (int i = 0; i < n; i++) _alpha[i] = 1f;
+            _tw = width * RenderScale;
+            _th = height * RenderScale;
+            _pixels = new Color32[_tw * _th];
 
-            _texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
+            _texture = new Texture2D(_tw, _th, TextureFormat.RGBA32, false)
             {
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp,
                 name = "FogTexture"
             };
-            _texture.SetPixels32(_pixels);
-            _texture.Apply(false);
+            Render();
 
+            // RenderScale pixels per unit: the sprite still covers exactly the map.
             var sr = gameObject.AddComponent<SpriteRenderer>();
-            sr.sprite = Sprite.Create(_texture, new Rect(0, 0, width, height), Vector2.zero, 1f, 0, SpriteMeshType.FullRect);
+            sr.sprite = Sprite.Create(_texture, new Rect(0, 0, _tw, _th), Vector2.zero, RenderScale, 0, SpriteMeshType.FullRect);
             sr.sortingOrder = SortingOrder;
             transform.position = Vector3.zero;
             Tick(0f);
@@ -161,13 +174,11 @@ namespace GuildMaster.Fog
                 a = Mathf.Lerp(a, target, fade);
                 if (Mathf.Abs(a - target) < 0.01f) a = target;
                 _alpha[i] = a;
-                _pixels[i].a = (byte)(a * 255f);
                 changed = true;
             }
             if (changed)
             {
-                _texture.SetPixels32(_pixels);
-                _texture.Apply(false);
+                Render();
                 _dirty = false;
             }
 
@@ -175,6 +186,115 @@ namespace GuildMaster.Fog
 
             if (newly > 0) Core.EventBus.Publish(new FogUpdatedEvent { NewlyExploredCells = newly });
         }
+
+        /// <summary>
+        /// Cell alphas → render texture: 1-2-1 blur per cell, then bilinear upsampling to
+        /// RenderScale texels per cell; colour goes from the explored tint to near black as alpha
+        /// rises from the explored level to fully unexplored.
+        /// </summary>
+        void Render()
+        {
+            BlurCells();
+            if (_palette == null) BuildPalette();
+            if (_sx0 == null) BuildSampleTables();
+            var blurred = _blurred;
+            var pixels = _pixels;
+            var palette = _palette;
+            var line = _line;
+            int w = _w, tw = _tw;
+            for (int ty = 0; ty < _th; ty++)
+            {
+                // Vertical blend of the two cell rows for this texel row, then horizontal per texel.
+                int r0 = _sy0[ty] * w, r1 = _sy1[ty] * w;
+                float fy = _sfy[ty];
+                for (int x = 0; x < w; x++) line[x] = blurred[r0 + x] + (blurred[r1 + x] - blurred[r0 + x]) * fy;
+                int row = ty * tw;
+                for (int tx = 0; tx < tw; tx++)
+                {
+                    float l = line[_sx0[tx]];
+                    float a = l + (line[_sx1[tx]] - l) * _sfx[tx];
+                    int idx = (int)(a * 255f + 0.5f);
+                    pixels[row + tx] = palette[idx < 0 ? 0 : idx > 255 ? 255 : idx];
+                }
+            }
+            _texture.SetPixels32(pixels);
+            _texture.Apply(false);
+        }
+
+        /// <summary>
+        /// Colour per alpha byte: the explored tint up to the explored level, darkening to near
+        /// black as it approaches fully unexplored.
+        /// </summary>
+        void BuildPalette()
+        {
+            _palette = new Color32[256];
+            float span = Mathf.Max(0.001f, 1f - _exploredAlpha);
+            for (int i = 0; i < 256; i++)
+            {
+                float a = i / 255f;
+                var c = Color.Lerp(ExploredTint, UnexploredTint, Mathf.Clamp01((a - _exploredAlpha) / span));
+                _palette[i] = new Color32((byte)(c.r * 255f), (byte)(c.g * 255f), (byte)(c.b * 255f), (byte)i);
+            }
+        }
+
+        Color32[] _palette;
+        // Bilinear sample positions per texel column/row (cell indices and blend factor), fixed per map.
+        int[] _sx0, _sx1, _sy0, _sy1;
+        float[] _sfx, _sfy, _line;
+
+        void BuildSampleTables()
+        {
+            Axis(_tw, _w, out _sx0, out _sx1, out _sfx);
+            Axis(_th, _h, out _sy0, out _sy1, out _sfy);
+            _line = new float[_w];
+
+            static void Axis(int texels, int cells, out int[] i0, out int[] i1, out float[] f)
+            {
+                i0 = new int[texels];
+                i1 = new int[texels];
+                f = new float[texels];
+                for (int t = 0; t < texels; t++)
+                {
+                    // Texel centre in cell space; cell centres sit at integer + 0.5.
+                    float p = (t + 0.5f) / RenderScale - 0.5f;
+                    int a = Mathf.Clamp(Mathf.FloorToInt(p), 0, cells - 1);
+                    i0[t] = a;
+                    i1[t] = Mathf.Min(a + 1, cells - 1);
+                    f[t] = Mathf.Clamp01(p - a);
+                }
+            }
+        }
+
+        /// <summary>Separable 1-2-1 blur of the cell alphas into <see cref="_blurred"/> (edges clamped).</summary>
+        void BlurCells()
+        {
+            // Horizontal pass into _blurred, then vertical pass back through a row buffer.
+            var src = _alpha;
+            var dst = _blurred;
+            int w = _w, h = _h;
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    float l = src[row + (x > 0 ? x - 1 : 0)], c = src[row + x], r = src[row + (x < w - 1 ? x + 1 : x)];
+                    dst[row + x] = (l + 2f * c + r) * 0.25f;
+                }
+            }
+            if (_column == null || _column.Length != h) _column = new float[h];
+            var col = _column;
+            for (int x = 0; x < w; x++)
+            {
+                for (int y = 0; y < h; y++) col[y] = dst[y * w + x];
+                for (int y = 0; y < h; y++)
+                {
+                    float d = col[y > 0 ? y - 1 : 0], c = col[y], u = col[y < h - 1 ? y + 1 : y];
+                    dst[y * w + x] = (d + 2f * c + u) * 0.25f;
+                }
+            }
+        }
+
+        float[] _column;
 
         void ForEachCellInCircle(Vector2 center, float radius, System.Action<int> action)
         {
