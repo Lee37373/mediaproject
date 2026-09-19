@@ -15,6 +15,14 @@ namespace GuildMaster.Town
     public class Building : MonoBehaviour
     {
         SpriteRenderer _renderer;
+        SpriteRenderer _interior;
+        Color _tint = Color.white;
+        float _alpha = 1f;
+        float _checkTimer;
+        bool _seeThrough;
+
+        /// <summary>Opacity of the outside while someone is behind it or the cursor is over it.</summary>
+        const float SeeThroughAlpha = 0.35f;
 
         public BuildingType Type { get; private set; }
         public RectInt Footprint { get; private set; }
@@ -51,6 +59,17 @@ namespace GuildMaster.Town
             _renderer = gameObject.AddComponent<SpriteRenderer>();
             _renderer.sprite = CartoonArt.Building(type, footprint.width, footprint.height);
             _renderer.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(footprint.yMin * 8f) + 4;
+
+            // Interior drawn underneath; visible when the outside fades (see Update).
+            var interior = CartoonArt.BuildingInterior(type, footprint.width, footprint.height);
+            if (interior != null)
+            {
+                var go = new GameObject("Interior");
+                go.transform.SetParent(transform, false);
+                _interior = go.AddComponent<SpriteRenderer>();
+                _interior.sprite = interior;
+                _interior.sortingOrder = World.MapRenderer.DecorOrder + 1;
+            }
         }
 
         public void SetLevel(int level)
@@ -73,8 +92,64 @@ namespace GuildMaster.Town
             if (IsDestroyed) return;
             Hp = Mathf.Max(0f, Hp - amount);
             EventBus.Publish(new BuildingDamagedEvent { Building = this, Amount = amount });
-            if (_renderer) _renderer.color = Color.Lerp(new Color(0.45f, 0.3f, 0.3f), Color.white, Hp / MaxHp);
+            _tint = Color.Lerp(new Color(0.45f, 0.3f, 0.3f), Color.white, Hp / MaxHp);
+            ApplyColor();
             if (IsDestroyed) EventBus.Publish(new BuildingDestroyedEvent { Building = this });
+        }
+
+        void ApplyColor()
+        {
+            if (_renderer) _renderer.color = new Color(_tint.r, _tint.g, _tint.b, _alpha);
+        }
+
+        /// <summary>
+        /// See-through walls: the outside fades when a unit stands behind/inside the footprint or the
+        /// cursor hovers it, revealing the interior sprite underneath.
+        /// </summary>
+        void Update()
+        {
+            if (_interior == null) return;
+            _checkTimer -= Time.unscaledDeltaTime;
+            if (_checkTimer <= 0f)
+            {
+                _checkTimer = 0.15f;
+                _seeThrough = CursorOver() || UnitBehind();
+            }
+            float target = _seeThrough ? SeeThroughAlpha : 1f;
+            if (Mathf.Approximately(_alpha, target)) return;
+            _alpha = Mathf.MoveTowards(_alpha, target, Time.unscaledDeltaTime * 4f);
+            ApplyColor();
+        }
+
+        /// <summary>Cursor over the building sprite.</summary>
+        bool Covers(Vector2 p)
+        {
+            var r = Footprint;
+            return p.x >= r.xMin && p.x <= r.xMax && p.y >= r.yMin && p.y <= r.yMax;
+        }
+
+        /// <summary>
+        /// A unit hidden by the building: inside its outline and above the front edge (units at the
+        /// door are drawn in front of it anyway), or just behind the roof so the head is covered.
+        /// </summary>
+        bool Hides(Vector2 p)
+        {
+            var r = Footprint;
+            return p.x >= r.xMin - 0.2f && p.x <= r.xMax + 0.2f && p.y > r.yMin + 0.1f && p.y <= r.yMax + 0.6f;
+        }
+
+        bool CursorOver()
+        {
+            if (!Services.TryGet<CameraControl.CameraController>(out var cam)) return false;
+            if (UnityEngine.EventSystems.EventSystem.current != null && UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject()) return false;
+            return Covers(cam.MouseWorldPosition());
+        }
+
+        bool UnitBehind()
+        {
+            foreach (var u in Units.UnitRegistry.All)
+                if (u != null && u.IsAlive && Hides(u.Position)) return true;
+            return false;
         }
 
         /// <summary>Closest point on the footprint edge (for melee attackers).</summary>

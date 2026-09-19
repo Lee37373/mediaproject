@@ -228,6 +228,63 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
         }
 
+        /// <summary>
+        /// What the building looks like inside (seen when the outside fades out): plank floor inside
+        /// thick walls, plus a few pieces of furniture per building type. Null for open yards.
+        /// </summary>
+        public static Sprite BuildingInterior(Town.BuildingType type, int tilesW, int tilesH)
+        {
+            if (type == Town.BuildingType.TrainingGround) return null;
+            string key = $"c_interior:{type}:{tilesW}x{tilesH}";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
+            var c = new Canvas(w, h);
+            var wallBand = Hex(0xC9B48E);
+            var floor = Hex(0xD9A866);
+            // Outer walls, then the plank floor with board lines.
+            var outer = RoundRect(2, 2, w - 2, h - 2, 6f);
+            c.Shape(outer, wallBand, Ink, 3.5f);
+            var room = RoundRect(12, 12, w - 12, h - 14, 3f);
+            c.Shape(room, floor, Darker(wallBand, 0.7f), 2f);
+            for (float y = 22; y < h - 16; y += 12)
+            {
+                float yy = y;
+                c.ShapeClipped(RoundRect(14, yy, w - 14, yy + 1.5f, 0.5f), (x, y2) => room(x, y2) + 2f, Darker(floor, 0.85f));
+            }
+            // Doorway gap in the front wall.
+            c.Shape(RoundRect(w * 0.5f - 11, 0, w * 0.5f + 11, 14, 2f), floor, floor, 0f);
+
+            float cx = w * 0.5f;
+            switch (type)
+            {
+                case Town.BuildingType.TownHall:
+                    c.Shape(RoundRect(cx - 12, 14, cx + 12, h - 30, 3f), Hex(0xC0392B), Darker(Hex(0xC0392B), 0.6f), 2f);   // carpet
+                    c.Shape(RoundRect(cx - 40, h - 44, cx + 40, h - 28, 4f), Hex(0x8A5A30), Ink, 2.5f);                    // long table
+                    for (int i = -1; i <= 1; i++) c.Shape(Circle(cx + i * 26, h - 52, 5f), Hex(0xB07A44), Ink, 2f);       // chairs
+                    break;
+                case Town.BuildingType.GuildHall:
+                    c.Shape(RoundRect(cx - 30, h - 30, cx + 30, h - 16, 2f), Hex(0xB98A55), Ink, 2.5f);                   // quest board
+                    for (int i = 0; i < 4; i++) c.Shape(RoundRect(cx - 26 + i * 14, h - 27, cx - 16 + i * 14, h - 19, 1f), Hex(0xFFF6DA), Ink, 1f);
+                    c.Shape(RoundRect(18, 30, 58, 42, 3f), Hex(0x8A5A30), Ink, 2.5f);                                      // counter
+                    c.Shape(Circle(w - 40, 48, 11f), Hex(0xA56B3A), Ink, 2.5f);                                            // round table
+                    c.Shape(Circle(w - 58, 48, 4.5f), Hex(0xB07A44), Ink, 2f);
+                    c.Shape(Circle(w - 22, 48, 4.5f), Hex(0xB07A44), Ink, 2f);
+                    break;
+                case Town.BuildingType.Blacksmith:
+                    c.Shape(RoundRect(16, h - 42, 44, h - 18, 4f), Hex(0x6B6F7A), Ink, 2.5f);                              // forge
+                    c.Shape(Ellipse(30, h - 30, 8, 6), Hex(0xFF9F3A), Hex(0xFF6B2A), 2f);                                  // fire
+                    c.Shape(Union(RoundRect(w - 52, 36, w - 20, 44, 2f), RoundRect(w - 42, 24, w - 30, 38, 1f)), Hex(0x4A4E57), Ink, 2f);  // anvil
+                    break;
+                case Town.BuildingType.Apothecary:
+                    c.Shape(RoundRect(14, h - 32, w - 14, h - 20, 2f), Hex(0x8A5A30), Ink, 2f);                            // shelf
+                    var bottles = new[] { Hex(0xE74C3C), Hex(0x3498DB), Hex(0x2ECC71), Hex(0xE74C3C), Hex(0x9B59B6) };
+                    for (int i = 0; i < bottles.Length && 20 + i * 12 < w - 20; i++) c.Shape(Circle(22 + i * 12, h - 26, 4f), bottles[i], Ink, 1.5f);
+                    c.Shape(RoundRect(cx - 18, 26, cx + 18, 36, 2f), Hex(0xA56B3A), Ink, 2f);                              // counter
+                    break;
+            }
+            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+        }
+
         static Sprite TrainingYard(Canvas c, string key)
         {
             int w = c.W, h = c.H;
