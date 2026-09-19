@@ -103,5 +103,51 @@ namespace GuildMaster.LLM
             s = s.Trim().Trim('"').Trim();
             return s.Length > maxLen ? s.Substring(0, maxLen - 1) + "…" : s;
         }
+
+        /// <summary>
+        /// Cleans a generated line so it never ends mid-sentence. The grammar allows up to
+        /// <paramref name="grammarCap"/> chars; text that long was cut by the grammar, not ended by
+        /// the model. Over-long or cut text is shortened to its last complete sentence within
+        /// <paramref name="maxLen"/>; with none, it is dropped ("") or, if
+        /// <paramref name="dropIfUnfinished"/> is false, cut at a word boundary with "…".
+        /// </summary>
+        public static string CleanSentence(string s, int maxLen, int grammarCap, bool dropIfUnfinished)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return "";
+            s = s.Replace("\\n", " ").Replace('\n', ' ').Replace('\r', ' ').Trim().Trim('"').Trim();
+            bool cutByGrammar = s.Length >= grammarCap;
+            if (!cutByGrammar && s.Length <= maxLen) return s;
+
+            int end = LastSentenceEnd(s, maxLen);
+            if (end >= Math.Min(6, maxLen / 3)) return s.Substring(0, end).Trim();
+            if (dropIfUnfinished) return "";
+            int space = s.LastIndexOf(' ', Math.Min(s.Length, maxLen) - 1);
+            int cut = space > maxLen / 3 ? space : Math.Min(s.Length, maxLen - 1);
+            return s.Substring(0, cut).TrimEnd(' ', ',') + "…";
+        }
+
+        const string Terminators = ".!?…~";
+        // Common Korean sentence-final syllables; only trusted before a space/comma or at the end.
+        // Kept short on purpose: 지/어/고 etc. also end words mid-sentence ("끝까지 찾아서").
+        const string KoreanEndings = "다요까죠네야";
+
+        /// <summary>Length of the longest prefix (≤ maxLen) that ends a sentence, or 0.</summary>
+        static int LastSentenceEnd(string s, int maxLen)
+        {
+            int limit = Math.Min(s.Length, maxLen);
+            for (int i = limit - 1; i >= 0; i--)
+            {
+                char c = s[i];
+                if (Terminators.IndexOf(c) >= 0)
+                {
+                    int j = i + 1;
+                    while (j < s.Length && j < maxLen && Terminators.IndexOf(s[j]) >= 0) j++;
+                    return j;
+                }
+                bool boundary = i + 1 >= s.Length || s[i + 1] == ' ' || s[i + 1] == ',';
+                if (boundary && KoreanEndings.IndexOf(c) >= 0) return i + 1;
+            }
+            return 0;
+        }
     }
 }

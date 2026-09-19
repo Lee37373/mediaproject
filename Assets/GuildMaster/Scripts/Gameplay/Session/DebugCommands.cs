@@ -215,7 +215,7 @@ namespace GuildMaster.Session
         }
 
         /// <summary>Spawns monsters next to the guild master (they aggro on it).</summary>
-        public static string SpawnNearMaster(string speciesId, int count, float distance = 4f)
+        public static string SpawnNearMaster(string speciesId, int count, float distance = 4f, bool forceTarget = true)
         {
             var species = Services.Get<EcosystemManager>().Species.FirstOrDefault(s => s.id == speciesId);
             if (species == null) return "unknown species: " + speciesId;
@@ -229,7 +229,7 @@ namespace GuildMaster.Session
                 if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(p), 3, out var c)) continue;
                 var mon = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(c));
                 mon.Setup(species, null);
-                mon.ForceTarget(master);
+                if (forceTarget) mon.ForceTarget(master);
                 spawned++;
             }
             return $"spawned {spawned}";

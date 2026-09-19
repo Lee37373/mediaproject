@@ -92,8 +92,9 @@ namespace GuildMaster.Adventurers
             {
                 Action = action,
                 QuestId = action == AdventurerAction.AcceptQuest ? dto.quest_id : null,
-                Reason = LlmJson.CleanLine(dto.reason, DecisionPrompt.ReasonMaxChars),
-                Say = LlmJson.CleanLine(dto.say, DecisionPrompt.SayMaxChars),
+                Reason = LlmJson.CleanSentence(dto.reason, DecisionPrompt.ReasonMaxChars, DecisionPrompt.ReasonGrammarChars, false),
+                // A cut-off line is worse than silence.
+                Say = LlmJson.CleanSentence(dto.say, DecisionPrompt.SayMaxChars, DecisionPrompt.SayGrammarChars, true),
                 FromLLM = true,
             };
             return true;

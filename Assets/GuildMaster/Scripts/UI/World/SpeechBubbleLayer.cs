@@ -56,7 +56,7 @@ namespace GuildMaster.UI
                 b.Target = speaker;
                 _active[speaker] = b;
             }
-            b.Text.text = text.Length > 80 ? text.Substring(0, 78) + "…" : text;
+            b.Text.text = text.Length > 200 ? text.Substring(0, 199) + "…" : text;
             b.TimeLeft = duration;
             b.Root.gameObject.SetActive(true);
         }

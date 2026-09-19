@@ -19,6 +19,7 @@ namespace GuildMaster.LLM
 
         LLMUnity.LLM _llm;
         LLMAgent _agent;
+        static readonly System.Random s_seedRng = new();
 
         public LlmBackendState State { get; private set; } = LlmBackendState.NotConfigured;
         public string Description { get; private set; } = "LLM 컴포넌트 없음";
@@ -121,6 +122,9 @@ namespace GuildMaster.LLM
             _agent.grammar = request.Grammar ?? "";
             _agent.numPredict = request.MaxTokens;
             _agent.temperature = request.Temperature;
+            // LLMUnity documents seed 0 as "random" but passes it to llama.cpp, where 0 is a fixed
+            // seed: identical prompts then give identical lines forever. Use a fresh seed per call.
+            _agent.seed = s_seedRng.Next(1, int.MaxValue);
             return await _agent.Chat(request.User, null, null, addToHistory: false);
         }
 

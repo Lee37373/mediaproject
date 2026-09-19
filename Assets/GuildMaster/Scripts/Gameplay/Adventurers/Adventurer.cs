@@ -272,10 +272,28 @@ namespace GuildMaster.Adventurers
             EventBus.Publish(new AdventurerStateChangedEvent { Adventurer = this, Label = s.Label });
         }
 
+        /// <summary>A line said again within this many game hours is skipped (small models repeat themselves).</summary>
+        const float RepeatWindowHours = 6f;
+        readonly List<(string key, float hour)> _recentLines = new();
+
         public void Say(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
+            float now = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : Time.time / 60f;
+            string key = LineKey(text);
+            _recentLines.RemoveAll(l => now - l.hour > RepeatWindowHours);
+            if (_recentLines.Exists(l => l.key == key)) return;
+            _recentLines.Add((key, now));
+            if (_recentLines.Count > 8) _recentLines.RemoveAt(0);
             EventBus.Publish(new AdventurerSpeechEvent { Adventurer = this, Text = text });
+        }
+
+        /// <summary>Letters/digits only, so "좀 쉬어야겠어..." and "좀 쉬어야겠어!" count as the same line.</summary>
+        static string LineKey(string text)
+        {
+            var sb = new System.Text.StringBuilder(text.Length);
+            foreach (char c in text) if (char.IsLetterOrDigit(c)) sb.Append(c);
+            return sb.ToString();
         }
 
         // ---------------- Unit overrides ----------------

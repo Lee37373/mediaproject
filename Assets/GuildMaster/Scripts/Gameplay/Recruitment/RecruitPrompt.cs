@@ -14,7 +14,7 @@ namespace GuildMaster.Recruitment
     /// <summary>Prompt, response DTO and grammar for the recruitment dialogue (P3-3).</summary>
     public static class RecruitPrompt
     {
-        public const int ReplyMaxChars = 100;
+        public const int ReplyMaxChars = 200;
         public const int MaxDelta = 15;
         /// <summary>Exchanges (player line + visitor line) kept in the prompt.</summary>
         public const int HistoryTurns = 6;
@@ -92,15 +92,18 @@ namespace GuildMaster.Recruitment
         static string BuildGrammar(string[] decisions) => new GbnfObject()
             .Enum("decision", decisions)
             .Int("affinity_delta", 2)
-            .String("reply", ReplyMaxChars)
+            .String("reply", ReplyGrammarChars)
             .Build();
+
+        /// <summary>Safety cap; a reply cut by it is trimmed to its last full sentence.</summary>
+        public const int ReplyGrammarChars = 200;
 
         public static LlmRequest BuildRequest(Adventurer v, int affinity, IReadOnlyList<RecruitTurn> turns, bool proposal) => new()
         {
             System = BuildSystem(v, affinity),
             User = BuildUser(turns, v.Data.name, proposal),
             Grammar = proposal ? ProposalGrammar : Grammar,
-            MaxTokens = 150,
+            MaxTokens = 400,
             Temperature = 0.8f,
             Priority = LlmPriority.Dialogue,
             DedupeKey = "recruit:" + v.Data.id,

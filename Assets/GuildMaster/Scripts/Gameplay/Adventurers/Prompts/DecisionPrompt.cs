@@ -16,8 +16,12 @@ namespace GuildMaster.Adventurers.Prompts
     /// </summary>
     public static class DecisionPrompt
     {
-        public const int ReasonMaxChars = 50;
-        public const int SayMaxChars = 40;
+        public const int ReasonMaxChars = 120;
+        public const int SayMaxChars = 120;
+        /// <summary>Safety caps only (a runaway small model would otherwise hit MaxTokens and break
+        /// the JSON). A line cut by the cap is trimmed to its last full sentence (LlmJson.CleanSentence).</summary>
+        public const int ReasonGrammarChars = 120;
+        public const int SayGrammarChars = 120;
         public const int RecentEventCount = 5;
 
         public static readonly string[] Actions = { "accept_quest", "rest", "shop", "idle" };
@@ -159,8 +163,8 @@ namespace GuildMaster.Adventurers.Prompts
             => new GbnfObject()
                 .Enum("action", Actions)
                 .Enum("quest_id", questIds.Append(""))
-                .String("reason", ReasonMaxChars)
-                .String("say", SayMaxChars)
+                .String("reason", ReasonGrammarChars)
+                .String("say", SayGrammarChars)
                 .Build();
 
         public static LlmRequest BuildRequest(Adventurer a, IReadOnlyList<Quest> available) => new()
@@ -168,7 +172,7 @@ namespace GuildMaster.Adventurers.Prompts
             System = SystemPrompt,
             User = LlmJson.ToJson(BuildContext(a, available)),
             Grammar = BuildGrammar(available.Select(q => q.Id)),
-            MaxTokens = 160,
+            MaxTokens = 400,
             Temperature = 0.7f,
             Priority = LlmPriority.Decision,
             DedupeKey = a.Data.id,

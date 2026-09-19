@@ -97,7 +97,7 @@ namespace GuildMaster.Recruitment
                     if (result.Exchange != null) result.Exchange.Note = $"영입 대화: 호감 {dto.affinity_delta:+0;-0;0}, {dto.decision}";
                     return new RuleBasedRecruiter.Reply
                     {
-                        Text = LlmJson.CleanLine(dto.reply, RecruitPrompt.ReplyMaxChars),
+                        Text = LlmJson.CleanSentence(dto.reply, RecruitPrompt.ReplyMaxChars, RecruitPrompt.ReplyGrammarChars, false),
                         AffinityDelta = dto.affinity_delta,
                         Decision = RecruitPrompt.ParseDecision(dto.decision),
                     };
