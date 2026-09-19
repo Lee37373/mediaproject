@@ -22,6 +22,7 @@ namespace GuildMaster.Town
             Phase.Trading => "장사 중",
             _ => "떠나는 중",
         };
+        public override string DebugState => StateLabel;
 
         Vector2 _stall;
         Vector2 _exit;

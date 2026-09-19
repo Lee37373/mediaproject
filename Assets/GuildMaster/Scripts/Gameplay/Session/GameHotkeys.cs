@@ -6,7 +6,7 @@ using UnityEngine.InputSystem;
 
 namespace GuildMaster.Session
 {
-    /// <summary>Global shortcuts: Space pause, 1-3 speed, F3 toggle fog (debug). F (focus) lives in InspectorView.</summary>
+    /// <summary>Global shortcuts: Space pause, 1-3 speed, F3 toggle fog, F4 unit gizmos (debug). F (focus) lives in InspectorView.</summary>
     public class GameHotkeys : MonoBehaviour
     {
         void Update()
@@ -22,6 +22,12 @@ namespace GuildMaster.Session
 
             if (kb.f3Key.wasPressedThisFrame && Services.TryGet<FogOfWar>(out var fog))
                 fog.Disabled = !fog.Disabled;
+            // F4: unit debug gizmos for every unit (editor Scene view / Game view with Gizmos on).
+            if (Application.isEditor && kb.f4Key.wasPressedThisFrame)
+            {
+                Units.UnitGizmos.ShowAll = !Units.UnitGizmos.ShowAll;
+                Debug.Log($"[Debug] 유닛 기즈모 전체 표시: {(Units.UnitGizmos.ShowAll ? "켬" : "끔")}");
+            }
         }
 
         static bool IsTyping()

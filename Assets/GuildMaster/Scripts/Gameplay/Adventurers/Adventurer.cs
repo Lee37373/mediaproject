@@ -76,6 +76,8 @@ namespace GuildMaster.Adventurers
         public Color ProjectileColor => Data.cls == AdventurerClass.Mage ? new Color(0.5f, 0.7f, 1f) : new Color(0.95f, 0.85f, 0.55f);
 
         public string StateLabel => Fsm?.Current?.Label ?? "-";
+        public override string DebugState => StateLabel;
+        public override Engagement CombatEngagement => Engage;
 
         public static Adventurer Create(AdventurerData data, Vector2 position, Transform parent)
         {

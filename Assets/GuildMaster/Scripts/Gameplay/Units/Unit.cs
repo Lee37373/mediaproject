@@ -85,6 +85,14 @@ namespace GuildMaster.Units
         /// <summary>Combat intelligence tier (target choice, chase give-up, skill timing).</summary>
         public virtual CombatTier Tier => CombatTier.Novice;
 
+        /// <summary>Fight behaviour, if this unit has one (debug gizmos).</summary>
+        public virtual Engagement CombatEngagement => null;
+        /// <summary>Current behaviour state for debug labels.</summary>
+        public virtual string DebugState => "";
+
+        void OnDrawGizmos() => UnitGizmos.Draw(this, false);
+        void OnDrawGizmosSelected() => UnitGizmos.Draw(this, true);
+
         /// <summary>Unit currently targeted by this unit (for UI, taunts, focus fire).</summary>
         public Unit CurrentTarget { get; internal set; }
 

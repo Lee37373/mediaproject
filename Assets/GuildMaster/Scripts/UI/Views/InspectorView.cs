@@ -69,6 +69,7 @@ namespace GuildMaster.UI
         public void Show(object target)
         {
             _selected = target;
+            UnitGizmos.Focus = target as Unit;
             _panel.gameObject.SetActive(target != null);
             _timer = 0f;
             RefreshFollowButton();

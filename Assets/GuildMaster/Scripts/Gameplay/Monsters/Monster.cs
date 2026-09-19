@@ -247,5 +247,7 @@ namespace GuildMaster.Monsters
         }
 
         public string StateLabel => Fsm.Current?.Label ?? "-";
+        public override string DebugState => StateLabel;
+        public override Engagement CombatEngagement => Engage;
     }
 }

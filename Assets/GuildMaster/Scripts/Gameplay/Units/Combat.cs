@@ -78,6 +78,19 @@ namespace GuildMaster.Units
 
         public Unit Target { get; private set; }
         public float GiveUpDistance { get; set; } = 18f;
+
+        /// <summary>Seconds chased without closing in (debug).</summary>
+        public float StallTime => _stallTime;
+
+        /// <summary>Targets currently skipped after a failed chase (debug).</summary>
+        public IEnumerable<Unit> IgnoredUnits
+        {
+            get
+            {
+                foreach (var (unit, until) in _ignored)
+                    if (Time.time < until) yield return unit;
+            }
+        }
         public bool IsKiting => _kiting;
 
         /// <summary>Which units may be (re)targeted mid-fight; null disables retargeting.</summary>
