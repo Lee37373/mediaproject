@@ -101,6 +101,8 @@ namespace GuildMaster.Monsters
             GetComponent<FogHideable>().Refresh();
             Engage.Clear();
             Engage.GiveUpDistance = def.leashRadius;
+            Engage.SearchRadius = def.sightRadius;
+            Engage.CandidateFilter = IsTargetCandidate;
             DefaultStateOverride = null;
             _spawnPosition = transform.position;
             _corpseTimer = 0f;
@@ -125,10 +127,26 @@ namespace GuildMaster.Monsters
             }
         }
 
+        /// <summary>Danger sets fighting smarts: weak species fight like novices, bosses like veterans.</summary>
+        public override CombatTier Tier => Def == null ? CombatTier.Novice : Def.danger switch
+        {
+            DangerLevel.Low => CombatTier.Novice,
+            DangerLevel.Medium => CombatTier.Skilled,
+            _ => CombatTier.Veteran,
+        };
+
+        /// <summary>Anything hostile we can see, or whoever just hit us.</summary>
+        bool IsTargetCandidate(Unit u)
+            => u != this && (WasRecentlyAttackedBy(u) || (IsHostileTo(u) && CanSee(u)));
+
+        /// <summary>Best target by <see cref="TargetSelector"/> (tier-dependent), or null.</summary>
+        public Unit FindTarget() => TargetSelector.Pick(this, Stats.SightRadius, IsTargetCandidate, Engage);
+
         public override void ForceTarget(Unit target)
         {
             if (!IsAlive || target == null || !target.IsAlive || Fsm.Current == FleeState) return;
-            Engage.SetTarget(target);
+            // Taunts and pack calls hold for a few seconds before normal retargeting resumes.
+            Engage.Force(target, 4f);
             if (Fsm.Current != EngageState) Fsm.ChangeState(EngageState);
         }
 
@@ -187,7 +205,7 @@ namespace GuildMaster.Monsters
                 return;
             }
             if (Fsm.Current == EngageState || Fsm.Current == ReturnState) return;
-            var target = UnitRegistry.FindNearestHostile(this, Stats.SightRadius);
+            var target = FindTarget();
             if (target != null)
             {
                 Engage.SetTarget(target);

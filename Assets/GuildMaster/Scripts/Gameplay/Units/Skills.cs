@@ -28,6 +28,10 @@ namespace GuildMaster.Units
         protected void StartCooldown() => _readyAt = Time.time + Cooldown;
 
         public abstract bool TryUse(Unit self, Unit target);
+        /// <summary>Blast radius for area skills (0 = single target); used by heroic skill timing.</summary>
+        public virtual float AreaRadius => 0f;
+        /// <summary>True if the area is centred on the user rather than the target.</summary>
+        public virtual bool AreaOnSelf => false;
         public virtual void Tick(Unit self, float dt) { }
 
         protected void Announce(Unit self)
@@ -151,6 +155,7 @@ namespace GuildMaster.Units
     {
         const float Radius = 1.6f;
         public FireballSkill() { Cooldown = 6f; }
+        public override float AreaRadius => Radius;
         public override string Name => "화염구";
         public override Color Color => new(1f, 0.5f, 0.2f);
 
@@ -258,6 +263,8 @@ namespace GuildMaster.Units
         float _channelUntil;
 
         public GroundSlamSkill() { Cooldown = 8f; }
+        public override float AreaRadius => Radius;
+        public override bool AreaOnSelf => true;
         public override string Name => "내려찍기";
         public override Color Color => new(1f, 0.35f, 0.2f);
         public override bool IsChanneling => Time.time < _channelUntil;

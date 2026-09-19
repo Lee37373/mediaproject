@@ -82,6 +82,9 @@ namespace GuildMaster.Units
         Vector2 _knockVelocity;
         float _knockUntil;
 
+        /// <summary>Combat intelligence tier (target choice, chase give-up, skill timing).</summary>
+        public virtual CombatTier Tier => CombatTier.Novice;
+
         /// <summary>Unit currently targeted by this unit (for UI, taunts, focus fire).</summary>
         public Unit CurrentTarget { get; internal set; }
 
@@ -126,8 +129,21 @@ namespace GuildMaster.Units
         {
             if (IsStunned) return false;
             foreach (var s in Skills)
-                if (s.IsReady && s.TryUse(this, target)) return true;
+                if (s.IsReady && !HoldAreaSkill(s, target) && s.TryUse(this, target)) return true;
             return false;
+        }
+
+        /// <summary>
+        /// Heroic units save area skills for groups: skip while the blast would hit a single enemy
+        /// although several are nearby (they may bunch up in a moment).
+        /// </summary>
+        bool HoldAreaSkill(Skill s, Unit target)
+        {
+            if (Tier < CombatTier.Heroic || s.AreaRadius <= 0f || target == null) return false;
+            var center = s.AreaOnSelf ? Position : target.Position;
+            int inBlast = UnitRegistry.CountInRadius(center, s.AreaRadius, u => u != this && IsHostileTo(u));
+            int nearby = UnitRegistry.CountInRadius(Position, 6f, u => u != this && IsHostileTo(u));
+            return inBlast < 2 && nearby >= 2;
         }
 
         protected virtual void Awake()

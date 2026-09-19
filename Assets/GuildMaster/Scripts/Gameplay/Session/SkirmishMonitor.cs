@@ -32,6 +32,10 @@ namespace GuildMaster.Session
         int _threatSamples, _kitingSamples, _kiteEpisodes;
         int _telegraphs, _advInsideAtStart, _advInsideAtResolve;
         int _errorCount;
+        readonly Dictionary<Unit, int> _targetCounts = new();
+        readonly Dictionary<Unit, Unit> _lastTarget = new();
+        int _spreadSamples, _allOnOneSamples, _monsterSwitches, _advSwitches, _dropped;
+        float _focusShareSum;
 
         public static SkirmishMonitor Instance { get; private set; }
 
@@ -70,6 +74,10 @@ namespace GuildMaster.Session
             _threatSamples = _kitingSamples = _kiteEpisodes = 0;
             _telegraphs = _advInsideAtStart = _advInsideAtResolve = 0;
             _errorCount = 0;
+            _targetCounts.Clear();
+            _lastTarget.Clear();
+            _spreadSamples = _allOnOneSamples = _monsterSwitches = _advSwitches = _dropped = 0;
+            _focusShareSum = 0f;
         }
 
         void OnLog(string message, string stackTrace, LogType type)
@@ -104,6 +112,41 @@ namespace GuildMaster.Session
             _samples++;
             SampleOverlap();
             SampleKiting();
+            SampleTargets();
+        }
+
+        /// <summary>
+        /// Monster target spread (how much the pack piles onto one adventurer, only while at least two
+        /// adventurers are in the fight) and target switches / dropped chases for both sides.
+        /// </summary>
+        void SampleTargets()
+        {
+            _targetCounts.Clear();
+            int engaged = 0;
+            var fighters = new HashSet<Unit>();
+            foreach (var u in UnitRegistry.All)
+            {
+                if (!u.IsAlive) continue;
+                var t = u.CurrentTarget;
+                _lastTarget.TryGetValue(u, out var prev);
+                if (prev != null && t != prev)
+                {
+                    if (t == null && prev.IsAlive) _dropped++;
+                    else if (t != null) { if (u is Adventurer) _advSwitches++; else _monsterSwitches++; }
+                }
+                _lastTarget[u] = t;
+                if (u is Adventurer && t != null) fighters.Add(u);
+                if (u is not Monsters.Monster || t is not Adventurer || !t.IsAlive) continue;
+                engaged++;
+                fighters.Add(t);
+                _targetCounts[t] = _targetCounts.TryGetValue(t, out var n) ? n + 1 : 1;
+            }
+            if (engaged < 2 || fighters.Count < 2) return;
+            int top = 0;
+            foreach (var c in _targetCounts.Values) top = Mathf.Max(top, c);
+            _spreadSamples++;
+            _focusShareSum += top / (float)engaged;
+            if (_targetCounts.Count == 1) _allOnOneSamples++;
         }
 
         void SampleOverlap()
@@ -160,6 +203,9 @@ namespace GuildMaster.Session
             float kitePct = _threatSamples > 0 ? 100f * _kitingSamples / _threatSamples : 0f;
             sb.AppendLine($"  kiting: threatSamples={_threatSamples} kitingWhileThreatened={kitePct:0}% episodes={_kiteEpisodes}");
             sb.AppendLine($"  telegraph: count={_telegraphs} advInsideAtStart={_advInsideAtStart} advInsideAtResolve={_advInsideAtResolve}");
+            float share = _spreadSamples > 0 ? 100f * _focusShareSum / _spreadSamples : 0f;
+            float allOne = _spreadSamples > 0 ? 100f * _allOnOneSamples / _spreadSamples : 0f;
+            sb.AppendLine($"  targets: spreadSamples={_spreadSamples} avgTopShare={share:0}% allOnOne={allOne:0}% monsterSwitches={_monsterSwitches} advSwitches={_advSwitches} dropped={_dropped}");
             return sb.ToString();
         }
     }

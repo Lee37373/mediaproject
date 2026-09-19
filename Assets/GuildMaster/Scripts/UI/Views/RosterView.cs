@@ -62,7 +62,7 @@ namespace GuildMaster.UI
                 _bg.color = index % 2 == 0 ? UITheme.RowBg : UITheme.RowBgAlt;
                 var d = a.Data;
                 string hpColor = UITheme.Hex(a.HpRatio > 0.6f ? UITheme.Good : a.HpRatio > 0.3f ? UITheme.Warn : UITheme.Bad);
-                _main.text = $"{d.name}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
+                _main.text = $"{d.name} {InspectorView.GradeTag(d.grade)}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
                              $"<color=#{hpColor}>HP {a.Hp:0}/{a.Stats.MaxHp:0}</color>  {UIBuilder.Colored(a.StateLabel, UITheme.Accent)}";
                 string quest = a.CurrentQuest != null ? $" · 의뢰 {a.CurrentQuest.Title}" : "";
                 _traits.text = "특성: " + Traits.TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad);

@@ -161,8 +161,11 @@ namespace GuildMaster.Adventurers
         public override void ForceTarget(Unit target)
         {
             if (!IsAlive || target == null || !target.IsAlive) return;
-            Engage.SetTarget(target);
+            Engage.Force(target, 3f);
         }
+
+        /// <summary>Level band plus birth grade (see CombatTiers.FromLevel).</summary>
+        public override CombatTier Tier => Data == null ? CombatTier.Novice : CombatTiers.FromLevel(Data.level, (int)Data.grade);
 
         /// <summary>Cute Adventurers skins per class; the penguin king is reserved for the guild master.</summary>
         public static string[] SkinsFor(AdventurerClass cls) => cls switch
@@ -250,6 +253,14 @@ namespace GuildMaster.Adventurers
                 Mover.SpeedMultiplier = 1f;
             }
 
+            // What may be (re)targeted this frame: threats (aggressive monsters we see or that hit us)
+            // and the caller's optional extra targets, limited to the optional zone.
+            System.Func<Unit, bool> threat = u => u is Monster m && (allowed == null || allowed(m))
+                                                   && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m)));
+            System.Func<Unit, bool> extra = extraTargets == null ? null : u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u);
+            Engage.CandidateFilter = extra == null ? threat : u => threat(u) || extra(u);
+            Engage.SearchRadius = Stats.SightRadius;
+
             // Optional zone (town defense): drop targets outside it instead of chasing them.
             if (Engage.Target != null && allowed != null && !allowed(Engage.Target)) Engage.Clear();
             if (Engage.Target != null)
@@ -262,9 +273,8 @@ namespace GuildMaster.Adventurers
             _senseTimer = SenseInterval;
 
             // Threats first (aggressive monsters or anything that hit us), then optional quest targets.
-            var threat = UnitRegistry.FindNearest(Position, Stats.SightRadius * 0.8f,
-                u => u is Monster m && (allowed == null || allowed(m)) && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m))));
-            var target = threat ?? (extraTargets != null ? UnitRegistry.FindNearest(Position, Stats.SightRadius, u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u)) : null);
+            var target = TargetSelector.Pick(this, Stats.SightRadius * 0.8f, threat, Engage)
+                         ?? (extra != null ? TargetSelector.Pick(this, Stats.SightRadius, extra, Engage) : null);
             if (target == null) return false;
             Engage.SetTarget(target);
             return Engage.Tick(dt) != EngageStatus.Lost;

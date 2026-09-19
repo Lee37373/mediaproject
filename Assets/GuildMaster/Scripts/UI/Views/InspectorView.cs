@@ -216,10 +216,18 @@ namespace GuildMaster.UI
 
         static string Muted(string s) => UIBuilder.Colored(s, UITheme.TextMuted);
 
+        /// <summary>Birth grade tag: muted for common, coloured for rare/heroic.</summary>
+        public static string GradeTag(AdventurerGrade g) => g switch
+        {
+            AdventurerGrade.Rare => UIBuilder.Colored("[희귀]", UITheme.Exp),
+            AdventurerGrade.Heroic => UIBuilder.Colored("[영웅]", UITheme.Accent),
+            _ => UIBuilder.Colored("[일반]", UITheme.TextMuted),
+        };
+
         void ShowAdventurer(Adventurer a)
         {
             var d = a.Data;
-            _title.text = $"{d.name}  {Muted($"{AdventurerData.ClassLabel(d.cls)} Lv.{d.level}")}" + (a.IsVisitor ? "  " + UIBuilder.Colored("(방문자)", UITheme.Warn) : "");
+            _title.text = $"{d.name}  {Muted($"{AdventurerData.ClassLabel(d.cls)} Lv.{d.level}")} {GradeTag(d.grade)}" + (a.IsVisitor ? "  " + UIBuilder.Colored("(방문자)", UITheme.Warn) : "");
             var s = a.Stats;
             string quest = a.CurrentQuest != null ? $"{a.CurrentQuest.Title} ({a.CurrentQuest.ProgressText})" : "없음";
             var db = Services.Get<GameDatabase>();
@@ -229,7 +237,7 @@ namespace GuildMaster.UI
                 $"HP {a.Hp:0}/{s.MaxHp:0} · 공격 {s.Attack:0.#} · 방어 {s.Defense:0.#} · 사거리 {s.AttackRange:0.#}\n" +
                 $"EXP {d.exp}/{d.ExpToNextLevel} · 골드 {d.gold} · 물약 {d.potions} · 장비 {d.gearTier}등급\n" +
                 $"피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 처치 {d.kills} · 완료 의뢰 {d.questsCompleted}\n" +
-                $"성격 {d.mbti} · 가치관 {d.values}\n" +
+                $"성격 {d.mbti} · 가치관 {d.values} · 전투 {CombatTiers.Label(a.Tier)}\n" +
                 $"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}\n" +
                 $"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}\n" +
                 $"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}\n" +
@@ -256,7 +264,7 @@ namespace GuildMaster.UI
             _body.text =
                 $"상태: {UIBuilder.Colored(m.StateLabel, UITheme.Accent)} · 소속: {m.Home?.DisplayName ?? "-"}\n" +
                 $"HP {m.Hp:0}/{m.Stats.MaxHp:0} · 공격 {m.Stats.Attack:0.#} · 방어 {m.Stats.Defense:0.#}\n" +
-                $"성향: {(d.aggressiveToHumans ? UIBuilder.Colored("사람을 공격함", UITheme.Bad) : "먼저 공격하지 않음")}\n" +
+                $"성향: {(d.aggressiveToHumans ? UIBuilder.Colored("사람을 공격함", UITheme.Bad) : "먼저 공격하지 않음")} · 전투 {CombatTiers.Label(m.Tier)}\n" +
                 $"먹이: {prey} · 적대: {rivals}\n" +
                 $"{Muted("전리품: " + string.Join(", ", d.loot.Where(l => l.item).Select(l => $"{l.item.displayName}({l.chance * 100:0}%)")))}";
         }

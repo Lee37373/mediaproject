@@ -89,7 +89,7 @@ namespace GuildMaster.Monsters
             if (m.Engage.Tick(dt) == EngageStatus.Lost)
             {
                 // Look for another target before giving up.
-                var next = UnitRegistry.FindNearestHostile(m, m.Stats.SightRadius);
+                var next = m.FindTarget();
                 if (next != null) m.Engage.SetTarget(next);
                 else m.GoToDefaultState();
             }

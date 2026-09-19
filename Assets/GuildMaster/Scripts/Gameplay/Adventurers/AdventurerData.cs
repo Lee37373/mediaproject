@@ -8,6 +8,9 @@ namespace GuildMaster.Adventurers
 {
     public enum AdventurerClass { Warrior, Ranger, Mage }
 
+    /// <summary>Birth grade (fixed): adds to the level band when deciding combat smarts (CombatTier).</summary>
+    public enum AdventurerGrade { Common, Rare, Heroic }
+
     /// <summary>Serializable state of an adventurer (separate from the MonoBehaviour for saving/LLM context).</summary>
     [Serializable]
     public class AdventurerData
@@ -15,6 +18,7 @@ namespace GuildMaster.Adventurers
         public string id;
         public string name;
         public AdventurerClass cls;
+        public AdventurerGrade grade;
         public int level = 1;
         public int exp;
         public int gold;
@@ -71,6 +75,17 @@ namespace GuildMaster.Adventurers
             AdventurerClass.Mage => "마법사",
             _ => c.ToString(),
         };
+
+        public static string GradeLabel(AdventurerGrade g) => g switch
+        {
+            AdventurerGrade.Rare => "희귀",
+            AdventurerGrade.Heroic => "영웅",
+            _ => "일반",
+        };
+
+        /// <summary>Common 70%, Rare 25%, Heroic 5%.</summary>
+        public static AdventurerGrade RollGrade(float roll01)
+            => roll01 < 0.05f ? AdventurerGrade.Heroic : roll01 < 0.30f ? AdventurerGrade.Rare : AdventurerGrade.Common;
     }
 
     /// <summary>Anything that tweaks an adventurer's combat stats (traits, buffs).</summary>

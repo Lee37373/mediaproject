@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using GuildMaster.Core;
 using GuildMaster.World;
 using UnityEngine;
@@ -59,15 +60,30 @@ namespace GuildMaster.Units
     /// </summary>
     public class Engagement
     {
+        /// <summary>How long a target dropped as unreachable is ignored.</summary>
+        const float IgnoreSeconds = 6f;
+        /// <summary>Closing in by less than this does not count as progress in a chase.</summary>
+        const float ChaseProgress = 0.3f;
+
         readonly Unit _self;
+        readonly List<(Unit unit, float until)> _ignored = new();
         float _repathTimer;
         float _tacticTimer;
+        float _retargetTimer;
+        float _lockedUntil;
+        float _stallTime;
+        float _bestDist = float.MaxValue;
         Vector2 _lastTargetPos;
         bool _kiting;
 
         public Unit Target { get; private set; }
         public float GiveUpDistance { get; set; } = 18f;
         public bool IsKiting => _kiting;
+
+        /// <summary>Which units may be (re)targeted mid-fight; null disables retargeting.</summary>
+        public System.Func<Unit, bool> CandidateFilter { get; set; }
+        /// <summary>Search radius for retargeting (usually the sight radius).</summary>
+        public float SearchRadius { get; set; } = 8f;
 
         public Engagement(Unit self) { _self = self; }
 
@@ -78,6 +94,15 @@ namespace GuildMaster.Units
             _self.CurrentTarget = target;
             _repathTimer = 0f;
             _tacticTimer = 0f;
+            _retargetTimer = CombatTiers.RetargetInterval(_self.Tier);
+            ResetChase();
+        }
+
+        /// <summary>Taunts / explicit orders: attack this target and do not retarget for a while.</summary>
+        public void Force(Unit target, float seconds)
+        {
+            SetTarget(target);
+            _lockedUntil = Time.time + seconds;
         }
 
         public void Clear()
@@ -85,6 +110,46 @@ namespace GuildMaster.Units
             Target = null;
             _self.CurrentTarget = null;
             _kiting = false;
+            _lockedUntil = 0f;
+            ResetChase();
+        }
+
+        /// <summary>True while a target is skipped after a failed chase.</summary>
+        public bool IsIgnoring(Unit u)
+        {
+            for (int i = _ignored.Count - 1; i >= 0; i--)
+            {
+                if (Time.time >= _ignored[i].until || _ignored[i].unit == null) { _ignored.RemoveAt(i); continue; }
+                if (_ignored[i].unit == u) return true;
+            }
+            return false;
+        }
+
+        void Ignore(Unit u, float seconds)
+        {
+            _ignored.RemoveAll(x => x.unit == u);
+            _ignored.Add((u, Time.time + seconds));
+        }
+
+        void ResetChase()
+        {
+            _stallTime = 0f;
+            _bestDist = float.MaxValue;
+        }
+
+        /// <summary>
+        /// Chase bookkeeping while out of reach: gives up (and ignores the target for a while) after
+        /// the tier's give-up time without closing in — e.g. a faster enemy kiting us.
+        /// </summary>
+        bool GaveUpChase(float dist, float dt)
+        {
+            if (dist < _bestDist - ChaseProgress) { _bestDist = dist; _stallTime = 0f; return false; }
+            _stallTime += dt;
+            if (_stallTime < CombatTiers.ChaseGiveUp(_self.Tier)) return false;
+            Ignore(Target, IgnoreSeconds);
+            Clear();
+            _self.Mover.Stop();
+            return true;
         }
 
         public EngageStatus Tick(float dt)
@@ -95,9 +160,26 @@ namespace GuildMaster.Units
             if (dist > GiveUpDistance) { Clear(); _self.Mover.Stop(); return EngageStatus.Lost; }
 
             if (_self.IsStunned || IsChanneling()) return EngageStatus.Attacking;
+
+            // Periodic re-evaluation (tier sets how often and what counts, see TargetSelector).
+            _retargetTimer -= dt;
+            if (_retargetTimer <= 0f)
+            {
+                _retargetTimer = CombatTiers.RetargetInterval(_self.Tier);
+                if (CandidateFilter != null && Time.time >= _lockedUntil)
+                {
+                    var better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
+                    if (better != null && better != Target)
+                    {
+                        SetTarget(better);
+                        dist = Combat.Distance(_self, Target);
+                    }
+                }
+            }
+
             if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
 
-            return _self.Stats.IsRanged ? RangedTick(dt, dist) : MeleeTick(dt);
+            return _self.Stats.IsRanged ? RangedTick(dt, dist) : MeleeTick(dt, dist);
         }
 
         bool IsChanneling()
@@ -106,14 +188,16 @@ namespace GuildMaster.Units
             return false;
         }
 
-        EngageStatus MeleeTick(float dt)
+        EngageStatus MeleeTick(float dt, float dist)
         {
             if (Combat.InRange(_self, Target))
             {
                 if (_self.Mover.IsMoving) _self.Mover.Stop();
                 Combat.TryAttack(_self, Target);
+                ResetChase();
                 return EngageStatus.Attacking;
             }
+            if (GaveUpChase(dist, dt)) return EngageStatus.Lost;
 
             _repathTimer -= dt;
             if (_repathTimer <= 0f || !_self.Mover.IsMoving || (Target.Position - _lastTargetPos).sqrMagnitude > 1f)
@@ -157,8 +241,10 @@ namespace GuildMaster.Units
             {
                 if (_self.Mover.IsMoving) _self.Mover.Stop();
                 Combat.TryAttack(_self, Target);
+                ResetChase();
                 return EngageStatus.Attacking;
             }
+            if (GaveUpChase(dist, dt)) return EngageStatus.Lost;
 
             // No shot: find a firing position (line of sight, away from melee, in cover), else close in.
             if (_tacticTimer <= 0f || !_self.Mover.IsMoving)
