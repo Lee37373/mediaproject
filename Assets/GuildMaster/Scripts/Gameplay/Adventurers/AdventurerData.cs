@@ -24,6 +24,8 @@ namespace GuildMaster.Adventurers
         public string values;
         public List<string> traitIds = new();
         public List<MemoryEntry> memories = new();
+        /// <summary>How this adventurer feels about other members (see Relationships).</summary>
+        public List<RelationEntry> relations = new();
         public int potions;
         public int gearTier;
         public List<ItemStack> loot = new();

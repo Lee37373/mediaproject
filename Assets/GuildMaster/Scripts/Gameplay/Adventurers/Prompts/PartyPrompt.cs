@@ -21,6 +21,7 @@ namespace GuildMaster.Adventurers.Prompts
             "- 가치관이 '동료'이거나 사교적이면 대체로 함께 간다. 혼자 일하기를 좋아하면 대체로 거절한다.\n" +
             "- 체력이 낮거나(hp_percent 50 미만) 피로가 높으면(fatigue 70 이상) 거절한다.\n" +
             "- quest.risk_for_me가 '무모'면 겁 많거나 안전을 중시하는 성격은 거절한다.\n" +
+            "- my_feeling_to_leader는 리더에 대한 네 감정이다(친함/호감/보통/껄끄러움/적대). 친하면 기꺼이 함께 가고, 껄끄럽거나 적대적이면 대체로 거절한다.\n" +
             "- 리더와 좋은 기억이 있으면 받아들이기 쉽고, 나쁜 기억이 있으면 망설인다.\n" +
             "say는 리더에게 직접 하는 짧은 한국어 대답 한 마디다(결정과 일치해야 한다). " +
             "반드시 JSON 한 개로만 답한다.";
@@ -59,6 +60,8 @@ namespace GuildMaster.Adventurers.Prompts
             public LeaderDto leader;
             public QuestDto quest;
             public string[] memories_with_leader;
+            /// <summary>"친함(+42)" — the invitee's feeling towards the leader.</summary>
+            public string my_feeling_to_leader;
             public string[] memories;
         }
 
@@ -105,6 +108,7 @@ namespace GuildMaster.Adventurers.Prompts
                     party_size = q.MaxParty,
                 },
                 memories_with_leader = withLeader,
+                my_feeling_to_leader = Relationships.Describe(Relationships.Get(c, leader)),
                 memories = basic.memories,
             };
         }
@@ -149,12 +153,14 @@ namespace GuildMaster.Adventurers.Prompts
             return true;
         }
 
-        /// <summary>Rule-based acceptance chance (spec P3-4): values 동료 0.8, loner-type traits 0.2, else 0.55.</summary>
-        public static float RuleAcceptChance(string values, float partyAffinity)
+        /// <summary>
+        /// Rule-based acceptance chance (spec P3-4): values 동료 0.8, loner-type traits 0.2, else 0.55;
+        /// plus feeling towards the leader / 200 (P3-5), kept within 0.05..0.95.
+        /// </summary>
+        public static float RuleAcceptChance(string values, float partyAffinity, int feelingToLeader = 0)
         {
-            if (values == "동료") return 0.8f;
-            if (partyAffinity < 1f) return 0.2f;
-            return 0.55f;
+            float c = values == "동료" ? 0.8f : partyAffinity < 1f ? 0.2f : 0.55f;
+            return Math.Max(0.05f, Math.Min(0.95f, c + feelingToLeader / 200f));
         }
     }
 }

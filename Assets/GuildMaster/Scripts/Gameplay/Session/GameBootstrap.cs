@@ -140,6 +140,7 @@ namespace GuildMaster.Session
             // Idle small talk in town (LLM only when the gateway is idle).
             var banter = AddSystem<BanterService>();
             banter.Init(llm, roster, world);
+            Services.Register(new RelationshipRecorder());
             Services.Register(banter);
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)

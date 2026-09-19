@@ -254,6 +254,27 @@ namespace GuildMaster.Session
             return Services.Get<BanterService>().TryStart() ? $"started: {idle[0].Data.name}, {idle[1].Data.name}" : "not started (LLM busy?)";
         }
 
+        /// <summary>Adds to how roster member #from feels about #to (indices into the roster).</summary>
+        public static string Relate(int from, int to, int delta)
+        {
+            var m = Services.Get<GuildRoster>().Members;
+            Relationships.Add(m[from], m[to], delta, "디버그");
+            return $"{m[from].Data.name} → {m[to].Data.name}: {Relationships.Describe(Relationships.Get(m[from], m[to]))}";
+        }
+
+        public static string Relations()
+        {
+            var r = Services.Get<GuildRoster>().Members;
+            var sb = new StringBuilder();
+            foreach (var a in r)
+            {
+                sb.Append(a.Data.name).Append(": ");
+                foreach (var b in r) if (a != b) sb.Append($"{b.Data.name} {Relationships.Describe(Relationships.Get(a, b))}  ");
+                sb.AppendLine();
+            }
+            return sb.ToString();
+        }
+
         public static string BanterStatus()
         {
             var b = Services.Get<BanterService>();

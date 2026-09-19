@@ -60,7 +60,7 @@ namespace GuildMaster.Adventurers
             bool llmReady = _gateway != null && _gateway.Enabled && _gateway.IsReady;
             if (llmReady && (_gateway.IsBusy || _gateway.QueueCount > 0)) return false; // never queue behind real work
             Attempts++;
-            if (!llmReady) { Play(a, b, FixedPair(), false); return true; }
+            if (!llmReady) return Play(a, b, FixedPair(), false);
             _ = RunAsync(a, b);
             return true;
         }
@@ -76,8 +76,12 @@ namespace GuildMaster.Adventurers
                     && BanterPrompt.TryInterpret(dto, out var lineA, out var lineB, a.Data.name, b.Data.name))
                 {
                     if (result.Exchange != null) result.Exchange.Note = "채택";
-                    Debug.Log($"[LLM-BANTER] {a.Data.name}: \"{lineA}\" / {b.Data.name}: \"{lineB}\" ({result.Seconds:0.0}s)");
-                    Play(a, b, (lineA, lineB), true);
+                    Debug.Log($"[LLM-BANTER] {a.Data.name}: \"{lineA}\" / {b.Data.name}: \"{lineB}\" ({dto.a_to_b:+0;-0;0}/{dto.b_to_a:+0;-0;0}, {result.Seconds:0.0}s)");
+                    if (Play(a, b, (lineA, lineB), true))
+                    {
+                        Relationships.Add(a, b, BanterPrompt.ClampDelta(dto.a_to_b), "잡담");
+                        Relationships.Add(b, a, BanterPrompt.ClampDelta(dto.b_to_a), "잡담");
+                    }
                 }
                 else if (result.Error == "preempted")
                 {
@@ -96,13 +100,15 @@ namespace GuildMaster.Adventurers
             }
         }
 
-        void Play(Adventurer a, Adventurer b, (string first, string second) lines, bool fromLlm)
+        /// <summary>Shows the two lines; false when either left before the model finished.</summary>
+        bool Play(Adventurer a, Adventurer b, (string first, string second) lines, bool fromLlm)
         {
             // They may have left for a quest while the model was writing.
-            if (!StillChatting(a) || !StillChatting(b)) return;
+            if (!StillChatting(a) || !StillChatting(b)) return false;
             if (fromLlm) LlmBanters++; else FixedBanters++;
             a.Say(lines.first);
             _scheduled.Add((b, lines.second, Time.unscaledTime + ReplyDelay));
+            return true;
         }
 
         void Update()

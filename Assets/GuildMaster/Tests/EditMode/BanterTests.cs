@@ -32,6 +32,8 @@ namespace GuildMaster.Tests
             // Addressing the other person or mentioning oneself mid-line stays.
             Assert.That(BanterPrompt.StripOwnName("레오야, 힘내자.", "로웬"), Is.EqualTo("레오야, 힘내자."));
             Assert.That(BanterPrompt.StripOwnName("로웬은 괜찮아.", "로웬"), Is.EqualTo("로웬은 괜찮아."));
+            Assert.That(BanterPrompt.StripOwnName("[아리스], 오늘도 쉬는구나.", "아리스"), Is.EqualTo("오늘도 쉬는구나."));
+            Assert.That(BanterPrompt.StripOwnName("[아리스] 혼자 일하고 싶대.", "리아"), Is.EqualTo("아리스 혼자 일하고 싶대."));
         }
 
         [Test]

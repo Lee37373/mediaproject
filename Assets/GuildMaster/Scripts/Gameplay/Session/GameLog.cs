@@ -52,6 +52,12 @@ namespace GuildMaster.Session
                 $"{e.Invitee.Data.name}이(가) {e.Leader.Data.name}의 파티 제안을 {(e.Accepted ? "수락" : "거절")}했습니다.", LogCategory.Quest));
             EventBus.Subscribe<PartyFormedEvent>(e => Add(
                 $"파티 출발: {e.Leader.Data.name}, {string.Join(", ", e.Members.Select(m => m.Data.name))} → '{e.Quest.Title}'", LogCategory.Quest));
+            // Only when the relationship grade changes (friendly → close, etc.), not every point.
+            EventBus.Subscribe<RelationChangedEvent>(e =>
+            {
+                string from = Relationships.Label(e.Old), to = Relationships.Label(e.New);
+                if (from != to) Add($"{e.From.Data.name}의 {e.To.Data.name}에 대한 감정: {from} → {to} ({e.Reason})", LogCategory.Info);
+            });
             EventBus.Subscribe<AdventurerJoinedEvent>(e => Add($"{e.Adventurer.Data.name}({AdventurerData.ClassLabel(e.Adventurer.Data.cls)})이(가) 길드에 합류했습니다.", LogCategory.Info));
             EventBus.Subscribe<Recruitment.VisitorArrivedEvent>(e => Add($"방문자 {e.Visitor.Data.name}({AdventurerData.ClassLabel(e.Visitor.Data.cls)} Lv.{e.Visitor.Data.level})이(가) 마을 광장에 왔습니다. 말을 걸어 영입해 보세요.", LogCategory.Info));
             EventBus.Subscribe<VisitorLeftTownEvent>(e => Add($"방문자 {e.Visitor.Data.name}이(가) 마을을 떠났습니다.", LogCategory.Info));

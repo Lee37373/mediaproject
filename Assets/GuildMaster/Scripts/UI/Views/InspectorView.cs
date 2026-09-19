@@ -208,7 +208,18 @@ namespace GuildMaster.UI
                 $"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}\n" +
                 $"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}\n" +
                 $"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}\n" +
+                $"{Muted("관계:")} {RelationsText(a)}\n" +
                 $"{Muted("전리품: " + loot)}";
+        }
+
+        /// <summary>Strongest feelings towards current members, e.g. "테오 친함(+42), 리아 껄끄러움(-18)".</summary>
+        static string RelationsText(Adventurer a)
+        {
+            if (a.IsVisitor || !Services.TryGet<GuildRoster>(out var roster)) return "-";
+            var parts = Relationships.Strongest(a, roster.Members, 3)
+                .Select(x => $"{x.other.Data.name} {UIBuilder.Colored(Relationships.Describe(x.value), x.value >= 15 ? UITheme.Good : x.value <= -15 ? UITheme.Bad : UITheme.TextMuted)}")
+                .ToList();
+            return parts.Count == 0 ? "-" : string.Join(", ", parts);
         }
 
         void ShowMonster(Monster m)

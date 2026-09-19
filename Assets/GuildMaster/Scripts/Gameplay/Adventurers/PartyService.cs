@@ -38,6 +38,8 @@ namespace GuildMaster.Adventurers
     {
         /// <summary>Real seconds before stragglers are dropped and the party leaves anyway.</summary>
         public const float GatherTimeoutRealSeconds = 60f;
+        /// <summary>The leader does not invite members they feel this badly about (적대).</summary>
+        public const int HostileThreshold = -40;
 
         class Gathering
         {
@@ -112,8 +114,10 @@ namespace GuildMaster.Adventurers
             return _roster.Members
                 .Where(a => a != leader && a.IsAlive && !a.IsVisitor && a.CurrentQuest == null
                             && (a.Fsm.Current == a.IdleState || a.Fsm.Current == a.DecidingState)
-                            && !IsInvited(a))
-                .Select(a => (a, score: RuleBasedDecisionMaker.Score(a, q)))
+                            && !IsInvited(a)
+                            && Relationships.Get(leader, a) > HostileThreshold)
+                // Friends first: fitness scaled by how the leader feels about them.
+                .Select(a => (a, score: RuleBasedDecisionMaker.Score(a, q) * (1f + Relationships.Get(leader, a) / 100f)))
                 .Where(x => x.score > 0f)
                 .OrderByDescending(x => x.score)
                 .Take(q.MaxParty - 1)
@@ -133,7 +137,7 @@ namespace GuildMaster.Adventurers
             catch (Exception ex)
             {
                 Debug.LogException(ex);
-                (accept, say) = RuleDecide(c);
+                (accept, say) = RuleDecide(c, g.Leader);
             }
             Answer(g, c, accept, say, fromLlm);
         }
@@ -153,14 +157,14 @@ namespace GuildMaster.Adventurers
                 }
                 if (result.Exchange != null) result.Exchange.Note = "규칙 기반으로 대체: " + (result.Ok ? "parse" : result.Error);
             }
-            var (ra, rs) = RuleDecide(c);
+            var (ra, rs) = RuleDecide(c, g.Leader);
             return (ra, rs, false);
         }
 
-        static (bool accept, string say) RuleDecide(Adventurer c)
+        static (bool accept, string say) RuleDecide(Adventurer c, Adventurer leader)
         {
             if (c == null) return (false, null);
-            float chance = PartyPrompt.RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f);
+            float chance = PartyPrompt.RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f, Relationships.Get(c, leader));
             bool accept = GameRandom.Shared.Value < chance;
             return (accept, accept ? "좋아, 같이 가자!" : "이번엔 사양할게.");
         }

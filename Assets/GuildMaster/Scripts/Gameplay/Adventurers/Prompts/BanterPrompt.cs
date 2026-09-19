@@ -20,7 +20,9 @@ namespace GuildMaster.Adventurers.Prompts
             "너는 판타지 모험가 길드의 두 모험가(a, b)가 마을에서 쉬며 나누는 짧은 잡담을 쓴다. " +
             "주어진 JSON의 성격(mbti, values), 특성(traits), 기억(memories), 길드의 최근 소식(recent_events)을 소재로 삼는다. " +
             "a가 먼저 말을 걸고 b가 자기 성격대로 대답한다. 서로 이름을 불러도 좋다. " +
-            "각 대사는 자연스러운 한국어 구어체 한두 문장으로 짧게 쓴다. 영어를 섞지 않는다. " +
+            "각 대사는 자연스러운 한국어 구어체 한두 문장으로 짧게 쓴다. 영어를 섞지 않는다.\n" +
+            "feeling_to_other는 상대에 대한 현재 감정이다(친함/호감/보통/껄끄러움/적대). 말투에 반영한다: 친하면 편하고 다정하게, 껄끄러우면 퉁명스럽거나 비꼬게.\n" +
+            "a_to_b와 b_to_a는 이 대화 뒤 감정의 변화다(-5~5). 대화가 즐겁거나 공감되면 +, 서운하거나 성격이 부딪치면 -, 별일 없으면 0 근처. " +
             "반드시 JSON 한 개로만 답한다.";
 
         [Serializable]
@@ -35,6 +37,8 @@ namespace GuildMaster.Adventurers.Prompts
             public int hp_percent;
             public string money_status;
             public string[] memories;
+            /// <summary>"친함(+42)" — this speaker's feeling towards the other one.</summary>
+            public string feeling_to_other;
         }
 
         [Serializable]
@@ -50,9 +54,11 @@ namespace GuildMaster.Adventurers.Prompts
         {
             public string a;
             public string b;
+            public int a_to_b;
+            public int b_to_a;
         }
 
-        static SpeakerDto Speaker(Adventurer x) => new()
+        static SpeakerDto Speaker(Adventurer x, Adventurer other) => new()
         {
             name = x.Data.name,
             @class = AdventurerData.ClassLabel(x.Data.cls),
@@ -63,18 +69,24 @@ namespace GuildMaster.Adventurers.Prompts
             hp_percent = (int)(x.HpRatio * 100f),
             money_status = DecisionPrompt.MoneyLabel(x.Data.gold),
             memories = AdventurerMemory.SelectForPrompt(x.Data.memories, 3).Select(m => m.Format()).ToArray(),
+            feeling_to_other = Relationships.Describe(Relationships.Get(x, other)),
         };
 
         public static ContextDto BuildContext(Adventurer a, Adventurer b) => new()
         {
-            a = Speaker(a),
-            b = Speaker(b),
-            recent_events = Services.TryGet<GameLog>(out var log) ? log.Recent(RecentEventCount).ToArray() : Array.Empty<string>(),
+            a = Speaker(a, b),
+            b = Speaker(b, a),
+            // Visitor arrivals/departures flood the log and would become the only topic.
+            recent_events = Services.TryGet<GameLog>(out var log)
+                ? log.Recent(12).Where(l => !l.StartsWith("방문자")).TakeLast(RecentEventCount).ToArray()
+                : Array.Empty<string>(),
         };
 
         public static string Grammar { get; } = new GbnfObject()
             .String("a", LineMaxChars)
             .String("b", LineMaxChars)
+            .Int("a_to_b", 1)
+            .Int("b_to_a", 1)
             .Build();
 
         /// <summary>Names who says what: without it the model mixes up speaker and listener.</summary>
@@ -93,7 +105,7 @@ namespace GuildMaster.Adventurers.Prompts
             Priority = LlmPriority.Banter,
             Preemptible = true, // yields to any decision/party/dialogue request mid-generation
             DedupeKey = "banter",
-            TimeoutSeconds = 25f,
+            TimeoutSeconds = 40f, // preemptible, so a long wait never blocks real work
             Tag = $"banter:{a.Data.id}+{b.Data.id}",
         };
 
@@ -105,6 +117,11 @@ namespace GuildMaster.Adventurers.Prompts
             return !string.IsNullOrEmpty(lineA) && !string.IsNullOrEmpty(lineB);
         }
 
+        public const int MaxDelta = 5;
+
+        /// <summary>Model's feeling change clamped to ±MaxDelta (the grammar allows one digit).</summary>
+        public static int ClampDelta(int d) => Math.Max(-MaxDelta, Math.Min(MaxDelta, d));
+
         static readonly string[] VocativeSuffixes = { "아", "야", "이", "" };
 
         /// <summary>
@@ -113,7 +130,10 @@ namespace GuildMaster.Adventurers.Prompts
         /// </summary>
         public static string StripOwnName(string line, string ownName)
         {
-            if (string.IsNullOrEmpty(line) || string.IsNullOrEmpty(ownName)) return line;
+            if (string.IsNullOrEmpty(line)) return line;
+            // The model sometimes writes names as "[아리스]" (JSON-ish habit).
+            line = line.Replace("[", "").Replace("]", "");
+            if (string.IsNullOrEmpty(ownName)) return line;
             foreach (var suffix in VocativeSuffixes)
             {
                 string head = ownName + suffix;
