@@ -64,14 +64,14 @@ namespace GuildMaster.Tests
             var t = new GuildTreasury(20, 0, 0, 0);
             var trade = new TradeService(t, _db) { LootBuyRate = 1f };
             var seller = new FakeTrader();
-            seller.CarriedLoot.Add(new ItemStack("wolf_pelt", 3)); // base 10 each
+            seller.CarriedLoot.Add(new ItemStack("bone_shard", 3)); // base 10 each
 
             int paid = trade.BuyLoot(seller);
 
             Assert.AreEqual(20, paid);
             Assert.AreEqual(20, seller.Gold);
             Assert.AreEqual(0, t.Gold);
-            Assert.AreEqual(2, t.GetStock("wolf_pelt"));
+            Assert.AreEqual(2, t.GetStock("bone_shard"));
             Assert.AreEqual(1, seller.CarriedLoot[0].count, "unaffordable loot stays with the seller");
         }
 

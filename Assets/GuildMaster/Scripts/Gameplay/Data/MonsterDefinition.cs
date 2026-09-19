@@ -62,6 +62,10 @@ namespace GuildMaster.Data
         public float rangedVariantRange = 4.5f;
         public string rangedVariantName;
 
+        [Header("Art (Resources/Art/Monsters)")]
+        public string artKey;
+        public string rangedArtKey;
+
         [Header("Ecosystem")]
         public List<Biome> biomes = new();
         public int nestCapacity = 6;

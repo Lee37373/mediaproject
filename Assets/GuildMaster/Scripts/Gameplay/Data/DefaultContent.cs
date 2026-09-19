@@ -33,17 +33,18 @@ namespace GuildMaster.Data
                 return i;
             }
 
+            // Loot of the Casual Monsters roster (2026-09-19: species follow the imported art).
             var jelly = Item("slime_jelly", "슬라임 젤", ItemCategory.Material, 4, new Color(0.5f, 0.9f, 0.5f));
-            var boarHide = Item("boar_hide", "멧돼지 가죽", ItemCategory.Material, 8, new Color(0.6f, 0.4f, 0.3f));
-            var meat = Item("raw_meat", "생고기", ItemCategory.Material, 5, new Color(0.8f, 0.3f, 0.3f));
-            var wolfPelt = Item("wolf_pelt", "늑대 가죽", ItemCategory.Material, 10, new Color(0.55f, 0.55f, 0.6f));
-            var wolfFang = Item("wolf_fang", "늑대 이빨", ItemCategory.Material, 7, new Color(0.95f, 0.95f, 0.85f));
+            var stoneShard = Item("stone_shard", "돌 슬라임 조각", ItemCategory.Material, 8, new Color(0.6f, 0.62f, 0.6f));
+            var denseJelly = Item("dense_jelly", "단단한 젤", ItemCategory.Material, 5, new Color(0.45f, 0.75f, 0.45f));
+            var boneShard = Item("bone_shard", "해골 뼛조각", ItemCategory.Material, 10, new Color(0.92f, 0.9f, 0.82f));
+            var oldArrowhead = Item("old_arrowhead", "낡은 화살촉", ItemCategory.Material, 7, new Color(0.55f, 0.5f, 0.45f));
             var goblinEar = Item("goblin_ear", "고블린 귀", ItemCategory.Material, 6, new Color(0.4f, 0.7f, 0.3f));
             var rustyDagger = Item("rusty_dagger", "녹슨 단검", ItemCategory.Material, 12, new Color(0.6f, 0.45f, 0.3f));
-            var orcTusk = Item("orc_tusk", "오크 엄니", ItemCategory.Material, 18, new Color(0.9f, 0.88f, 0.75f));
+            var goblinHelm = Item("goblin_helm", "고블린 전사 투구", ItemCategory.Material, 18, new Color(0.65f, 0.65f, 0.7f));
             var ironOre = Item("iron_ore", "철광석", ItemCategory.Material, 15, new Color(0.5f, 0.5f, 0.55f));
-            var ogreHide = Item("ogre_hide", "오거 가죽", ItemCategory.Material, 60, new Color(0.55f, 0.6f, 0.35f));
-            var giantBone = Item("giant_bone", "거대한 뼈", ItemCategory.Material, 35, new Color(0.92f, 0.9f, 0.8f));
+            var crownShard = Item("crown_shard", "왕관 조각", ItemCategory.Material, 60, new Color(0.95f, 0.8f, 0.3f));
+            var royalJelly = Item("royal_jelly", "왕의 젤", ItemCategory.Material, 35, new Color(0.35f, 0.85f, 0.4f));
 
             var potion = Item(Potion, "체력 물약", ItemCategory.Potion, 20, new Color(0.9f, 0.2f, 0.25f));
             potion.healAmount = 40f;
@@ -79,60 +80,73 @@ namespace GuildMaster.Data
             void Loot(MonsterDefinition m, ItemDefinition item, float chance, int min = 1, int max = 1)
                 => m.loot.Add(new LootEntry { item = item, chance = chance, min = min, max = max });
 
-            var slime = Mon("slime", "슬라임", MonsterShape.Slime, new Color(0.4f, 0.85f, 0.45f), new Color(0.8f, 1f, 0.8f), 1f,
+            // Species follow the imported Casual Monsters art; roles in the ecosystem are unchanged
+            // from the previous roster (prey / skittish prey / pack predator / raiders / boss).
+            var slime = Mon("slime", "슬라임", MonsterShape.Slime, new Color(0.4f, 0.85f, 0.45f), new Color(0.8f, 1f, 0.8f), 0.75f,
                 18, 3, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 8, 0.10f, 5, 3, Biome.Plains, Biome.Shore, Biome.Forest);
+            slime.artKey = "slime";
             Loot(slime, jelly, 0.85f, 1, 2);
 
-            var boar = Mon("boar", "멧돼지", MonsterShape.Beast, new Color(0.45f, 0.3f, 0.2f), new Color(0.9f, 0.85f, 0.7f), 1f,
-                35, 6, 2, 1.1f, 1.3f, 2.6f, 5, DangerLevel.Low, false, 6, 0.06f, 4, 6, Biome.Plains, Biome.Forest);
-            boar.fleesFromPredators = true;
-            Loot(boar, boarHide, 0.7f);
-            Loot(boar, meat, 0.6f, 1, 2);
+            var stoneSlime = Mon("stone_slime", "돌 슬라임", MonsterShape.Slime, new Color(0.55f, 0.58f, 0.55f), new Color(0.8f, 0.82f, 0.8f), 0.9f,
+                35, 6, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 6, 0.06f, 4, 6, Biome.Plains, Biome.Forest);
+            stoneSlime.artKey = "stone_slime";
+            stoneSlime.fleesFromPredators = true;
+            Loot(stoneSlime, stoneShard, 0.7f);
+            Loot(stoneSlime, denseJelly, 0.6f, 1, 2);
 
-            var wolf = Mon("wolf", "늑대", MonsterShape.Beast, new Color(0.5f, 0.5f, 0.56f), new Color(0.95f, 0.9f, 0.4f), 1f,
-                30, 7, 1, 1.1f, 1.0f, 3.6f, 7, DangerLevel.Low, true, 6, 0.045f, 3, 8, Biome.Forest, Biome.Plains);
-            Loot(wolf, wolfPelt, 0.7f);
-            Loot(wolf, wolfFang, 0.4f);
+            var skull = Mon("skull", "해골", MonsterShape.Humanoid, new Color(0.9f, 0.88f, 0.8f), new Color(0.3f, 0.3f, 0.35f), 0.8f,
+                30, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 6, 0.045f, 3, 8, Biome.Forest, Biome.Plains);
+            skull.artKey = "skull";
+            skull.rangedArtKey = "skull_archer";
+            Loot(skull, boneShard, 0.7f);
+            Loot(skull, oldArrowhead, 0.4f);
 
             var goblin = Mon("goblin", "고블린", MonsterShape.Humanoid, new Color(0.35f, 0.65f, 0.25f), new Color(0.55f, 0.35f, 0.2f), 0.85f,
                 28, 6, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.Low, true, 20, 0.05f, 4, 7, Biome.Forest, Biome.Plains);
+            goblin.artKey = "goblin";
+            goblin.rangedArtKey = "goblin_archer";
             goblin.canRaid = true;
             goblin.raidThreshold = 10; goblin.raidStep = 4; // raid danger at 10 / 14 / 18
             Loot(goblin, goblinEar, 0.8f);
             Loot(goblin, rustyDagger, 0.2f);
 
-            var orc = Mon("orc", "오크", MonsterShape.Humanoid, new Color(0.3f, 0.45f, 0.3f), new Color(0.4f, 0.3f, 0.25f), 1.15f,
+            var goblinWarrior = Mon("goblin_warrior", "고블린 전사", MonsterShape.Humanoid, new Color(0.3f, 0.45f, 0.3f), new Color(0.4f, 0.3f, 0.25f), 0.95f,
                 70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.03f, 3, 20, Biome.Mountain, Biome.Forest);
-            orc.canRaid = true;
-            orc.raidThreshold = 6; orc.raidStep = 3; // 6 / 9 / 12
-            Loot(orc, orcTusk, 0.7f);
-            Loot(orc, ironOre, 0.35f);
+            goblinWarrior.artKey = "goblin_warrior";
+            goblinWarrior.canRaid = true;
+            goblinWarrior.raidThreshold = 6; goblinWarrior.raidStep = 3; // 6 / 9 / 12
+            Loot(goblinWarrior, goblinHelm, 0.7f);
+            Loot(goblinWarrior, ironOre, 0.35f);
 
-            var ogre = Mon("ogre", "오거", MonsterShape.Brute, new Color(0.55f, 0.6f, 0.35f), new Color(0.4f, 0.28f, 0.2f), 1.6f,
+            var slimeKing = Mon("slime_king", "슬라임 킹", MonsterShape.Brute, new Color(0.35f, 0.8f, 0.4f), new Color(0.95f, 0.8f, 0.3f), 1.5f,
                 220, 22, 8, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 4, 0.008f, 1, 80, Biome.Mountain);
-            ogre.canRaid = true;
-            ogre.raidThreshold = 2; ogre.raidStep = 1; // 2 / 3 / 4
-            ogre.wanderRadius = 4f;
-            Loot(ogre, ogreHide, 1f);
-            Loot(ogre, giantBone, 0.6f, 1, 2);
+            slimeKing.artKey = "slime_king";
+            slimeKing.canRaid = true;
+            slimeKing.raidThreshold = 2; slimeKing.raidStep = 1; // 2 / 3 / 4
+            slimeKing.wanderRadius = 4f;
+            Loot(slimeKing, crownShard, 1f);
+            Loot(slimeKing, royalJelly, 0.6f, 1, 2);
 
             // Tactics & skills.
-            boar.skillIds.Add("charge");
-            wolf.packHunter = true;
-            wolf.skillIds.Add("howl");
+            stoneSlime.skillIds.Add("charge");
+            skull.packHunter = true;
+            skull.skillIds.Add("howl");
+            skull.rangedVariantChance = 0.3f;
+            skull.rangedVariantRange = 4.5f;
+            skull.rangedVariantName = "해골 궁수";
             goblin.packHunter = true;
             goblin.rangedVariantChance = 0.35f;
             goblin.rangedVariantRange = 4.5f;
             goblin.rangedVariantName = "고블린 궁수";
-            orc.skillIds.Add("charge");
-            ogre.skillIds.Add("slam");
+            goblinWarrior.skillIds.Add("charge");
+            slimeKing.skillIds.Add("slam");
 
             // Food web / rivalries (monster-vs-monster combat).
-            wolf.prey.AddRange(new[] { slime, boar });
-            orc.prey.Add(boar);
-            ogre.prey.AddRange(new[] { boar, wolf });
-            goblin.rivals.Add(orc);
-            orc.rivals.Add(goblin);
+            skull.prey.AddRange(new[] { slime, stoneSlime });
+            goblinWarrior.prey.Add(stoneSlime);
+            slimeKing.prey.AddRange(new[] { stoneSlime, skull });
+            goblin.rivals.Add(goblinWarrior);
+            goblinWarrior.rivals.Add(goblin);
 
             AddTraits(db);
             return db;

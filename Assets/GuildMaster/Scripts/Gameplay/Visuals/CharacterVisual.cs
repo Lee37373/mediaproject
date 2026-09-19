@@ -23,6 +23,47 @@ namespace GuildMaster.Visuals
 
         public SpriteRenderer Body => _body;
 
+        // ---- Frame animation (imported art, see ArtLibrary) ----
+        CharacterAnimSet _anim;
+        float _animTime;
+        bool _dying;
+        bool _wasMoving;
+
+        /// <summary>Art faces left by default (flip logic inverted).</summary>
+        public bool ArtFacesLeft { get; set; }
+
+        /// <summary>Uses animated frames (idle/run loops, one-shot death) instead of a single sprite.</summary>
+        public void InitAnimated(CharacterAnimSet set, float scale = 1f)
+        {
+            Init(set.Idle[0], scale);
+            _anim = set;
+            _animTime = 0f;
+            _dying = false;
+            // The frames carry their own ground shadow.
+            _shadow.enabled = !set.HasShadow;
+        }
+
+        /// <summary>Plays the death frames once (animated characters only).</summary>
+        public void PlayDeath()
+        {
+            if (_anim == null || _anim.Die.Length == 0 || _dying) return;
+            _dying = true;
+            _animTime = 0f;
+        }
+
+        void TickAnimation(bool moving)
+        {
+            if (moving != _wasMoving) { _wasMoving = moving; _animTime = 0f; }
+            _animTime += Time.deltaTime;
+            Sprite[] frames; float fps; bool loop = true;
+            if (_dying) { frames = _anim.Die; fps = _anim.DieFps; loop = false; }
+            else if (moving && _anim.Run.Length > 0) { frames = _anim.Run; fps = _anim.RunFps; }
+            else { frames = _anim.Idle; fps = _anim.IdleFps; }
+            int i = Mathf.FloorToInt(_animTime * fps);
+            i = loop ? i % frames.Length : Mathf.Min(i, frames.Length - 1);
+            _body.sprite = frames[i];
+        }
+
         public void Init(Sprite sprite, float scale = 1f)
         {
             if (_body == null)
@@ -40,6 +81,8 @@ namespace GuildMaster.Visuals
                 _body = bodyGo.AddComponent<SpriteRenderer>();
             }
             _body.sprite = sprite;
+            _anim = null;
+            if (_shadow) _shadow.enabled = true;
             _bodyT.localScale = Vector3.one * scale;
             _shadow.transform.localScale = new Vector3(scale, 0.45f * scale, 1f);
             _mover = GetComponent<PathFollower>();
@@ -70,11 +113,13 @@ namespace GuildMaster.Visuals
             bool moving = _mover != null && _mover.IsMoving;
             bool left = _faceOverrideTimer > 0f ? _facingLeftOverride : _mover != null && _mover.FacingLeft;
             _faceOverrideTimer -= Time.deltaTime;
-            _body.flipX = left;
+            _body.flipX = ArtFacesLeft ? !left : left;
 
             if (moving) _bobPhase += Time.deltaTime * 14f;
             else _bobPhase = Mathf.MoveTowards(_bobPhase, 0f, Time.deltaTime * 10f);
-            float bob = moving ? Mathf.Abs(Mathf.Sin(_bobPhase)) * 0.08f : 0f;
+            // Animated art has its own motion; single sprites bob while walking.
+            float bob = moving && _anim == null ? Mathf.Abs(Mathf.Sin(_bobPhase)) * 0.08f : 0f;
+            if (_anim != null) TickAnimation(moving);
             _bodyT.localPosition = new Vector3(0f, -0.3f + bob, 0f);
 
             int order = BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f);

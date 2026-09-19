@@ -447,6 +447,7 @@ namespace GuildMaster.Adventurers
         {
             Owner.Mover.Stop();
             Owner.Engage.Clear();
+            Owner.Visual.PlayDeath();
         }
 
         public override void Tick(float dt)

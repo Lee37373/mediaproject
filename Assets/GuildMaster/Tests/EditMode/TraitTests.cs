@@ -103,7 +103,7 @@ namespace GuildMaster.Tests
         [Test]
         public void AdjustQuestValue_ReflectsGreedAndDanger()
         {
-            var q = new Quest("Q_1", new QuestDraft { Type = QuestType.Hunt, Species = _db.Monster("orc"), Count = 3, RewardGold = 100, RewardExp = 20, MaxParty = 1 }, 0f)
+            var q = new Quest("Q_1", new QuestDraft { Type = QuestType.Hunt, Species = _db.Monster("goblin_warrior"), Count = 3, RewardGold = 100, RewardExp = 20, MaxParty = 1 }, 0f)
             {
                 Danger = DangerLevel.Medium,
             };

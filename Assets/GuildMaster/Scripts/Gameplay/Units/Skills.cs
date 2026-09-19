@@ -288,7 +288,7 @@ namespace GuildMaster.Units
     public class PackHowlSkill : Skill
     {
         public PackHowlSkill() { Cooldown = 15f; }
-        public override string Name => "울부짖음";
+        public override string Name => "동료 부르기";
         public override Color Color => new(0.8f, 0.85f, 1f);
 
         public override bool TryUse(Unit self, Unit target)

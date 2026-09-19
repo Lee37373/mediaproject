@@ -93,8 +93,10 @@ namespace GuildMaster.Monsters
             Mass = def.scale * def.scale;
             SkillFactory.Assign(this, def.skillIds);
             ResetVitals();
-            Visual.Init(PixelArt.Monster(def), def.scale);
-            Visual.SetTint(IsRangedVariant ? new Color(0.85f, 0.9f, 1f) : Color.white);
+            // Imported Casual Monsters art when available (archer variants have their own image).
+            var art = ArtLibrary.Monster(IsRangedVariant && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
+            Visual.Init(art != null ? art : PixelArt.Monster(def), def.scale);
+            Visual.SetTint(IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white);
             GetComponent<HealthBar>().Init(this, 0.75f * def.scale, new Color(0.9f, 0.25f, 0.2f));
             GetComponent<FogHideable>().Refresh();
             Engage.Clear();

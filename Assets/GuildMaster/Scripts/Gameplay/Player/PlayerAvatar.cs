@@ -30,7 +30,9 @@ namespace GuildMaster.Player
             go.transform.position = position;
             go.AddComponent<PathFollower>();
             var visual = go.AddComponent<CharacterVisual>();
-            visual.Init(PixelArt.GuildMaster());
+            var anim = ArtLibrary.Adventurer("penguin");
+            if (anim != null) visual.InitAnimated(anim);
+            else visual.Init(PixelArt.GuildMaster());
             var vision = go.AddComponent<VisionSource>();
             vision.SightRadius = sight;
             go.AddComponent<HealthBar>();

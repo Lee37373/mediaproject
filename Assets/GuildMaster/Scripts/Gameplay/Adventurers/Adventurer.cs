@@ -140,7 +140,10 @@ namespace GuildMaster.Adventurers
             SkillFactory.Assign(this, ClassSkills(data.cls));
             Traits = TraitSet.FromIds(data.traitIds, Services.TryGet<GameDatabase>(out var db) ? db : null);
             RecalculateStats(fullHeal: true);
-            Visual.Init(ClassSprite(data));
+            // Imported Cute Adventurers skin when available, generated pixel art otherwise.
+            var anim = ArtLibrary.Adventurer(SkinFor(data.cls, data.id));
+            if (anim != null) Visual.InitAnimated(anim);
+            else Visual.Init(ClassSprite(data));
             GetComponent<HealthBar>().Init(this, 0.75f, new Color(0.3f, 0.85f, 0.35f));
             GetComponent<HealthBar>().AlwaysVisible = false;
             GetComponent<VisionSource>().SightRadius = Stats.SightRadius;
@@ -159,6 +162,23 @@ namespace GuildMaster.Adventurers
         {
             if (!IsAlive || target == null || !target.IsAlive) return;
             Engage.SetTarget(target);
+        }
+
+        /// <summary>Cute Adventurers skins per class; the penguin king is reserved for the guild master.</summary>
+        public static string[] SkinsFor(AdventurerClass cls) => cls switch
+        {
+            AdventurerClass.Warrior => new[] { "knight", "raccoon" },
+            AdventurerClass.Ranger => new[] { "fox", "frog" },
+            _ => new[] { "robot", "skeleton" },
+        };
+
+        /// <summary>Stable skin choice for an adventurer (same id → same look).</summary>
+        public static string SkinFor(AdventurerClass cls, string id)
+        {
+            var skins = SkinsFor(cls);
+            int h = 0;
+            foreach (char c in id ?? "") h = h * 31 + c;
+            return skins[Mathf.Abs(h % skins.Length)];
         }
 
         static Sprite ClassSprite(AdventurerData d)
