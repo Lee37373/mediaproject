@@ -76,7 +76,34 @@ namespace GuildMaster.Core
         {
             if (Frozen) return;
             SpeedIndex = Mathf.Clamp(index, 0, SpeedScales.Length - 1);
-            Time.timeScale = SpeedScales[SpeedIndex];
+            ApplyScale();
+        }
+
+        int _holds;
+
+        /// <summary>True while something (e.g. a dialogue window) holds the game paused.</summary>
+        public bool IsHeld => _holds > 0;
+
+        /// <summary>
+        /// Pauses the game until the matching <see cref="Release"/>, keeping the chosen speed
+        /// (speed buttons still change it; it applies once released).
+        /// </summary>
+        public void Hold()
+        {
+            _holds++;
+            ApplyScale();
+        }
+
+        public void Release()
+        {
+            if (_holds == 0) return;
+            _holds--;
+            ApplyScale();
+        }
+
+        void ApplyScale()
+        {
+            Time.timeScale = _holds > 0 ? 0f : SpeedScales[SpeedIndex];
             EventBus.Publish(new GameSpeedChangedEvent { SpeedIndex = SpeedIndex, Scale = Time.timeScale });
         }
 

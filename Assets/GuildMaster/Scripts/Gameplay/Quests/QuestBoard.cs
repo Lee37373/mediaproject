@@ -69,6 +69,8 @@ namespace GuildMaster.Quests
                     if (d.Species == null) return "대상 몬스터를 선택하세요.";
                     if (Services.TryGet<GuildIntel>(out var known) && !known.IsKnown(d.Species)) return "아직 확인하지 못한 몬스터입니다.";
                     if (d.Count < 1) return "토벌 수는 1 이상이어야 합니다.";
+                    if (!d.HasPoint) return "사냥할 위치를 지도에서 지정하세요.";
+                    if (HuntPointError(d.Point) is { } pointError) return pointError;
                     break;
                 case QuestType.ClearNest:
                     if (d.Nest == null) return "소탕할 둥지를 선택하세요.";
@@ -83,6 +85,32 @@ namespace GuildMaster.Quests
                     break;
             }
             return null;
+        }
+
+        /// <summary>Hunting area radius (world units) around the point the player marks.</summary>
+        public const float HuntRadius = 8f;
+
+        /// <summary>Why a hunting point is unusable (outside the map, inside town, no walkable ground), or null.</summary>
+        public static string HuntPointError(Vector2 point)
+        {
+            if (!Services.TryGet<World.WorldService>(out var world)) return null;
+            var cell = World.GridMap.WorldToCell(point);
+            if (!world.Grid.InBounds(cell)) return "지도 밖입니다.";
+            if (world.Grid.IsInTown(cell)) return "마을 안은 사냥 위치로 지정할 수 없습니다.";
+            if (!world.Grid.TryFindNearestWalkable(cell, 3, out _)) return "걸어서 갈 수 없는 위치입니다.";
+            return null;
+        }
+
+        /// <summary>"마을 북동쪽 23칸": where a point lies as seen from the town centre.</summary>
+        public static string DescribeArea(Vector2 point)
+        {
+            if (!Services.TryGet<World.WorldService>(out var world)) return $"({point.x:0}, {point.y:0})";
+            var d = point - world.TownCenterWorld;
+            int dist = Mathf.RoundToInt(d.magnitude);
+            if (dist < 3) return "마을 근처";
+            string[] dirs = { "동쪽", "북동쪽", "북쪽", "북서쪽", "서쪽", "남서쪽", "남쪽", "남동쪽" };
+            int i = Mathf.RoundToInt(Mathf.Atan2(d.y, d.x) / (Mathf.PI / 4f));
+            return $"마을 {dirs[(i + 8) % 8]} {dist}칸";
         }
 
         public bool TryPost(QuestDraft draft, out Quest quest, out string error)

@@ -32,7 +32,7 @@ namespace GuildMaster.UI
             var h = UIBuilder.HLayout(bar, 14, 6);
             h.padding = new RectOffset(14, 14, 6, 6);
 
-            _time = UIBuilder.Label(bar.transform, "", 18, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(150);
+            _time = UIBuilder.Label(bar.transform, "", 18, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(250);
             string[] labels = { "II", "x1", "x2", "x4" };
             _speedButtons = new Button[labels.Length];
             for (int i = 0; i < labels.Length; i++)
@@ -56,7 +56,7 @@ namespace GuildMaster.UI
             _timer = 0.25f;
             if (!Services.TryGet<GameClock>(out var clock)) return;
 
-            _time.text = clock.FormatTime() + (clock.IsNight ? " ☾" : " ☀");
+            _time.text = clock.FormatTime() + (clock.IsNight ? " ☾" : " ☀") + (clock.IsHeld ? UIBuilder.Colored(" 대화 중 정지", UITheme.TextMuted) : "");
             for (int i = 0; i < _speedButtons.Length; i++)
                 _speedButtons[i].GetComponentInChildren<Text>().color = i == clock.SpeedIndex ? UITheme.Accent : UITheme.TextMuted;
 

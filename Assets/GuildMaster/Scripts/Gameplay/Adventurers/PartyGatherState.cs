@@ -10,6 +10,7 @@ namespace GuildMaster.Adventurers
     public class PartyGatherState : State<Adventurer>
     {
         float _wanderTimer;
+        float _guardTimer;
 
         public override string Label => "동료 모집 중";
 
@@ -19,6 +20,7 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             if (!AdvCtx.QuestStillValid(a)) return;
+            if (TownGuardState.TryStart(a, this, ref _guardTimer, dt)) return;
             if (!Services.TryGet<PartyService>(out var party) || !party.IsGathering(a.CurrentQuest))
             {
                 a.ChangeState(a.TravelState);

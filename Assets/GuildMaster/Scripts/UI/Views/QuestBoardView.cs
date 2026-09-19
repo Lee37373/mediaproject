@@ -24,7 +24,10 @@ namespace GuildMaster.UI
         Text _emptyLabel;
 
         Dropdown _type;
-        RectTransform _speciesRow, _nestRow, _hoursRow, _countRow;
+        RectTransform _speciesRow, _nestRow, _hoursRow, _countRow, _pointRow;
+        Text _pointLabel;
+        /// <summary>Centre of the hunting area picked on the map (hunt quests).</summary>
+        Vector2? _huntPoint;
         Dropdown _species;
         Dropdown _nest;
         Text _goldLabel, _expLabel;
@@ -72,6 +75,11 @@ namespace GuildMaster.UI
             _count = UIBuilder.Input(_countRow, "5", InputField.ContentType.IntegerNumber);
             _count.text = "5";
             _count.onValueChanged.AddListener(_ => OnFormChanged(false));
+
+            // Hunts: the player marks where to hunt; adventurers go there and fight what they see.
+            _pointRow = FieldRow(form, "사냥 위치");
+            _pointLabel = UIBuilder.Label(_pointRow, "", 14, TextAnchor.MiddleLeft).Size(-1, 30, 1);
+            UIBuilder.Button(_pointRow, "지도", PickHuntPoint, 56, 30, null, 14);
 
             var goldRow = FieldRow(form, "보상 골드");
             _goldLabel = goldRow.GetComponentInChildren<Text>();
@@ -144,6 +152,9 @@ namespace GuildMaster.UI
             {
                 case QuestType.Hunt:
                     d.Species = _species.value < _speciesOptions.Count ? _speciesOptions[_species.value] : null;
+                    d.HasPoint = _huntPoint.HasValue;
+                    d.Point = _huntPoint ?? default;
+                    d.Radius = QuestBoard.HuntRadius;
                     break;
                 case QuestType.ClearNest:
                     d.Nest = _nest.value < _nestOptions.Count ? _nestOptions[_nest.value] : null;
@@ -166,6 +177,8 @@ namespace GuildMaster.UI
             var type = CurrentType;
             _speciesRow.gameObject.SetActive(type == QuestType.Hunt);
             _countRow.gameObject.SetActive(type == QuestType.Hunt);
+            _pointRow.gameObject.SetActive(type == QuestType.Hunt);
+            _pointLabel.text = _huntPoint.HasValue ? QuestBoard.DescribeArea(_huntPoint.Value) : UIBuilder.Colored("지정 안 됨", UITheme.Bad);
             _nestRow.gameObject.SetActive(type == QuestType.ClearNest);
             _hoursRow.gameObject.SetActive(type == QuestType.Escort);
             _goldLabel.text = type == QuestType.Escort ? "시간당 골드" : "보상 골드";
@@ -211,6 +224,21 @@ namespace GuildMaster.UI
                     OnFormChanged(false);
                 }
                 else _message.text = UIBuilder.Colored("그 위치에 발견된 둥지가 없습니다.", UITheme.Bad);
+            }, Open);
+        }
+
+        void PickHuntPoint()
+        {
+            var picker = Services.Get<MapPicker>();
+            Close();
+            picker.Begin("사냥할 위치를 클릭하세요 (우클릭/ESC: 취소)", p =>
+            {
+                Open();
+                var error = QuestBoard.HuntPointError(p);
+                if (error != null) { _message.text = UIBuilder.Colored(error, UITheme.Bad); return; }
+                _huntPoint = p;
+                _message.text = "";
+                OnFormChanged(false);
             }, Open);
         }
 

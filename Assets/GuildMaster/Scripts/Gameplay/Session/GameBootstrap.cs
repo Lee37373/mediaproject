@@ -127,6 +127,7 @@ namespace GuildMaster.Session
             var board = AddSystem<QuestBoard>();
             board.Init(treasury, eco, clock);
             Services.Register(board);
+            AddSystem<QuestAreaMarkers>().Init();
 
             // --- AI: LLM gateway (falls back to rules when no model is available) ---
             var llm = AddSystem<LlmGateway>();

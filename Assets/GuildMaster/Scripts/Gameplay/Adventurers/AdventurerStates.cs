@@ -41,18 +41,10 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>
-        /// Where to go for a quest, using only what the guild knows: the nearest known nest of the
-        /// hunted species, otherwise a search spot in unexplored ground (see <see cref="GuildIntel"/>).
+        /// Where to go for a quest: the hunting point the player marked, or the nest to clear.
+        /// Adventurers never head for monsters nobody has seen (user bug report).
         /// </summary>
-        public static Vector2 QuestDestination(Adventurer a, Quest q)
-        {
-            if (q.Type == QuestType.Hunt && Services.TryGet<GuildIntel>(out var intel))
-            {
-                var nest = intel.FindNearestKnownNest(a.Position, q.Species);
-                return nest != null ? nest.WorldPosition : intel.FindSearchPoint(a.Position, GameRandom.Shared);
-            }
-            return q.Point;
-        }
+        public static Vector2 QuestDestination(Adventurer a, Quest q) => q.Point;
 
         public static void Wander(Adventurer a, ref float timer, float dt)
         {
@@ -70,6 +62,7 @@ namespace GuildMaster.Adventurers
     {
         const float DecisionIntervalHours = 1.5f;
         float _decisionTimer;
+        float _guardTimer;
         float _wanderTimer;
 
         public override string Label => "마을 대기";
@@ -91,6 +84,7 @@ namespace GuildMaster.Adventurers
                 a.CurrentQuest = null;
             }
 
+            if (TownGuardState.TryStart(a, this, ref _guardTimer, dt)) return;
             AdvCtx.Wander(a, ref _wanderTimer, dt);
             _decisionTimer -= dt;
             if (_decisionTimer > 0f) return;
@@ -110,6 +104,7 @@ namespace GuildMaster.Adventurers
         CancellationTokenSource _cts;
         float _wanderTimer;
         float _startRealTime;
+        float _guardTimer;
 
         public override string Label => "고민 중";
 
@@ -131,6 +126,7 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
+            if (TownGuardState.TryStart(a, a.IdleState, ref _guardTimer, dt)) return;
             AdvCtx.Wander(a, ref _wanderTimer, dt);
 
             if (_task.IsCompleted)
@@ -229,36 +225,31 @@ namespace GuildMaster.Adventurers
         }
     }
 
+    /// <summary>
+    /// Works the quest area: for hunts the spot the player marked on the map, for nest clearing the
+    /// nest. Patrols inside it and fights quest targets that come into view there (information rule:
+    /// nothing is known about monsters the guild has not seen).
+    /// </summary>
     public class HuntState : State<Adventurer>
     {
+        /// <summary>Nest clearing roams this close to the nest.</summary>
+        const float NestRoamRadius = 6f;
+        /// <summary>Hunt targets a little outside the area (seen from its edge) still count.</summary>
+        const float AreaSlack = 3f;
+
         float _searchTimer;
         float _roamTimer;
-        Vector2 _area;
-        /// <summary>No known nest of the target: sweeping unexplored ground instead of roaming a nest.</summary>
-        bool _scouting;
 
-        public override string Label => _scouting ? "수색 중" : "사냥 중";
+        public override string Label => "사냥 중";
 
         public override void Enter()
         {
             _searchTimer = 0f;
             _roamTimer = 0f;
-            PickArea();
         }
 
-        void PickArea()
-        {
-            var a = Owner;
-            var q = a.CurrentQuest;
-            _scouting = false;
-            if (q.Type == QuestType.Hunt && Services.TryGet<GuildIntel>(out var intel))
-            {
-                var nest = intel.FindNearestKnownNest(a.Position, q.Species);
-                _scouting = nest == null;
-                _area = nest != null ? nest.WorldPosition : intel.FindSearchPoint(a.Position, GameRandom.Shared);
-            }
-            else _area = AdvCtx.QuestDestination(a, q);
-        }
+        Vector2 Area => Owner.CurrentQuest.Point;
+        float AreaRadius => Owner.CurrentQuest.Type == QuestType.Hunt ? Owner.CurrentQuest.Radius : NestRoamRadius;
 
         /// <summary>
         /// Heroic drive hunt (P4-18), once per quest: after hitting a target that has at least two
@@ -287,52 +278,47 @@ namespace GuildMaster.Adventurers
             return q.Type == QuestType.ClearNest ? m.Home == q.Nest : m.Def == q.Species;
         }
 
+        /// <summary>A quest target inside the quest area (hunts), or any resident of the nest (clearing).</summary>
+        bool IsAreaTarget(Unit u)
+        {
+            if (!IsQuestTarget(u)) return false;
+            var q = Owner.CurrentQuest;
+            return q.Type != QuestType.Hunt || Vector2.Distance(u.Position, q.Point) <= q.Radius + AreaSlack;
+        }
+
         public override void Tick(float dt)
         {
             var a = Owner;
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
             if (TryDrive(a)) return;
-            if (a.HandleCombat(dt, IsQuestTarget)) return;
+            if (a.HandleCombat(dt, IsAreaTarget)) return;
 
             _searchTimer -= dt;
             if (_searchTimer <= 0f)
             {
                 _searchTimer = 0.6f;
                 // Only what this adventurer can actually see.
-                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius, u => IsQuestTarget(u) && !a.Engage.IsIgnoring(u) && a.CanSee(u));
+                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius, u => IsAreaTarget(u) && !a.Engage.IsIgnoring(u) && a.CanSee(u));
                 if (target != null)
                 {
                     a.Engage.SetTarget(target);
                     return;
                 }
-                // Hunting ground depleted (as far as we know), or a nest got discovered while scouting.
-                var q = a.CurrentQuest;
-                if (q.Type == QuestType.Hunt && Services.TryGet<GuildIntel>(out var intel))
+                // Drifted out (a chase, a lure): walk back into the area.
+                if (Vector2.Distance(a.Position, Area) > AreaRadius + 2f && (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, Area) > AreaRadius))
                 {
-                    var nest = intel.FindNearestKnownNest(a.Position, q.Species);
-                    // Scouting: next spot once the current walk ends (reached, or no path there).
-                    bool arrived = !a.Mover.IsMoving;
-                    if (nest != null && (_scouting || Vector2.Distance(nest.WorldPosition, _area) > 2f))
-                    {
-                        _scouting = false;
-                        _area = nest.WorldPosition;
-                        a.Mover.SetDestination(_area, 1.5f);
-                    }
-                    else if (nest == null && (!_scouting || arrived))
-                    {
-                        _scouting = true;
-                        _area = intel.FindSearchPoint(a.Position, GameRandom.Shared);
-                        a.Mover.SetDestination(_area, 1.5f);
-                    }
+                    a.Mover.SetDestination(Area, 1.5f);
+                    return;
                 }
             }
 
-            if (a.Mover.IsMoving || _scouting) return;
+            // Nothing in sight: patrol random spots inside the area.
+            if (a.Mover.IsMoving) return;
             _roamTimer -= dt;
             if (_roamTimer > 0f) return;
             _roamTimer = GameRandom.Shared.Range(1f, 3f);
             var world = Services.Get<WorldService>();
-            if (world.Grid.TryRandomWalkableNear(GridMap.WorldToCell(_area), 6, GameRandom.Shared, out var cell))
+            if (world.Grid.TryRandomWalkableNear(GridMap.WorldToCell(Area), Mathf.RoundToInt(AreaRadius), GameRandom.Shared, out var cell))
                 a.Mover.SetDestination(GridMap.CellToWorld(cell));
         }
     }
@@ -441,6 +427,7 @@ namespace GuildMaster.Adventurers
     {
         const float VisitSeconds = 1.5f;
         bool _goingToDoor;
+        float _guardTimer;
 
         public override string Label => "길드 방문";
 
@@ -482,6 +469,7 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
+            if (TownGuardState.TryStart(a, this, ref _guardTimer, dt)) return;
             if (_goingToDoor)
             {
                 if (a.Mover.IsMoving) return;
@@ -500,6 +488,7 @@ namespace GuildMaster.Adventurers
     public class RestState : State<Adventurer>
     {
         public override string Label => "휴식";
+        float _guardTimer;
 
         public override void Enter()
         {
@@ -509,6 +498,7 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
+            if (TownGuardState.TryStart(a, this, ref _guardTimer, dt)) return;
             float hours = dt / AdvCtx.Clock.RealSecondsPerGameHour;
             a.Heal(a.Stats.MaxHp * 0.25f * hours);
             a.Data.fatigue = Mathf.Max(0f, a.Data.fatigue - 30f * hours);

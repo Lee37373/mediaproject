@@ -30,13 +30,29 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
-        public static string PostHunt(string speciesId, int count, int gold, int exp, int party = 1)
+        /// <summary>
+        /// Posts a hunt around (x, y). Without a point it uses the nearest known nest of the species,
+        /// or (debug only, ignoring the information rule) the nearest living one.
+        /// </summary>
+        public static string PostHunt(string speciesId, int count, int gold, int exp, int party = 1, float x = -1f, float y = -1f)
         {
             var eco = Services.Get<EcosystemManager>();
             var species = eco.Species.FirstOrDefault(s => s.id == speciesId);
+            if (species == null) return "unknown species: " + speciesId;
+            var center = Services.Get<World.WorldService>().TownCenterWorld;
+            Vector2 point = new(x, y);
+            if (x < 0f || y < 0f)
+            {
+                var nest = Services.Get<GuildIntel>().FindNearestKnownNest(center, species);
+                var any = Units.UnitRegistry.FindNearest(center, 999f, u => u is Monster m && m.Def == species && m.IsAlive);
+                if (nest != null) point = nest.WorldPosition;
+                else if (any != null) point = any.Position;
+                else return "no " + speciesId + " to hunt";
+            }
             var ok = Services.Get<QuestBoard>().TryPost(new QuestDraft
             {
                 Type = QuestType.Hunt, Species = species, Count = count, RewardGold = gold, RewardExp = exp, MaxParty = party,
+                Point = point, HasPoint = true, Radius = QuestBoard.HuntRadius,
             }, out var q, out var err);
             return ok ? q.Id : err;
         }

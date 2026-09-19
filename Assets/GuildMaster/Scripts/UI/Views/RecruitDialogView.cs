@@ -12,8 +12,9 @@ namespace GuildMaster.UI
 {
     /// <summary>
     /// Recruitment dialogue window (P3-3). <see cref="BeginApproach"/> walks the guild master to the
-    /// visitor and opens the window within talking range; replies arrive asynchronously while the
-    /// game keeps running. Closing the window ends the talk without a verdict.
+    /// visitor and opens the window within talking range; replies arrive asynchronously. The game is
+    /// paused while the talk is open (user request) so the player can focus on it.
+    /// Closing the window ends the talk without a verdict.
     /// </summary>
     public class RecruitDialogView : UIPanel
     {
@@ -44,6 +45,7 @@ namespace GuildMaster.UI
         float _repathTimer;
         RecruitmentSession _session;
         int _shownTurns = -1;
+        bool _holdingClock;
 
         protected override void Build(RectTransform body)
         {
@@ -155,6 +157,7 @@ namespace GuildMaster.UI
         void StartSession(Adventurer visitor, Transform guildMaster)
         {
             _session = new RecruitmentSession(visitor, guildMaster);
+            if (!_holdingClock) { Services.Get<GameClock>().Hold(); _holdingClock = true; }
             _shownTurns = -1;
             _input.text = "";
             Open();
@@ -166,6 +169,8 @@ namespace GuildMaster.UI
         {
             _session?.Abort();
             _session = null;
+            if (_holdingClock && Services.TryGet<GameClock>(out var clock)) clock.Release();
+            _holdingClock = false;
         }
 
         async void Send(bool proposal)

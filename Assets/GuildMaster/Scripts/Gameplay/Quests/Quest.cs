@@ -22,7 +22,10 @@ namespace GuildMaster.Quests
         public QuestType Type;
         public MonsterDefinition Species;
         public Nest Nest;
+        /// <summary>Hunt: centre of the hunting area the player marked on the map. Escort: the guild master.</summary>
         public Vector2 Point;
+        /// <summary>True once the player picked <see cref="Point"/> (hunts require it).</summary>
+        public bool HasPoint;
         public float Radius;
         public int Count;
         public int RewardGold;
@@ -103,7 +106,7 @@ namespace GuildMaster.Quests
 
         public string Title => Type switch
         {
-            QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount}",
+            QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
             QuestType.ClearNest => $"{_nestName} 소탕",
             QuestType.Escort => $"길드 마스터 호위 (최대 {MaxHours}시간)",
             QuestType.Defend => "마을 방어",
