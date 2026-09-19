@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using GuildMaster.Adventurers;
 using GuildMaster.Core;
 using GuildMaster.Data;
 using GuildMaster.Ecosystem;
@@ -93,7 +94,8 @@ namespace GuildMaster.UI
             _exp.onValueChanged.AddListener(_ => OnFormChanged(false));
             _party = UIBuilder.Dropdown(FieldRow(form, "최대 인원"), new[] { "1명", "2명", "3명", "4명" }, _ => OnFormChanged(false));
 
-            _danger = UIBuilder.Label(form, "", 15).Size(-1, 44);
+            _danger = UIBuilder.Label(form, "", 15).Size(-1, 88);
+            _danger.verticalOverflow = VerticalWrapMode.Overflow;
             UIBuilder.Button(form, "의뢰 등록 (보상 예치)", Submit, -1, 38, new Color(0.25f, 0.45f, 0.3f), 17);
             _message = UIBuilder.Label(form, "", 14, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 40);
         }
@@ -193,7 +195,35 @@ namespace GuildMaster.UI
             string afford = t.CanAfford(draft.RewardGold, draft.RewardExp)
                 ? UIBuilder.Colored($"예치 후 잔액 {t.Gold - draft.RewardGold}G / {t.Exp - draft.RewardExp}EXP", UITheme.TextMuted)
                 : UIBuilder.Colored("길드 자금이 부족합니다", UITheme.Bad);
-            _danger.text = dangerText + "\n" + afford;
+            string risk = RiskText(draft, danger);
+            _danger.text = dangerText + (risk.Length > 0 ? "\n" + risk : "") + "\n" + afford;
+        }
+
+        /// <summary>
+        /// P4-11: how the current guild would judge this quest — the same margin the adventurers use
+        /// (QuestRisk), for the strongest member leading a party of the allowed size. A "무모" quest is
+        /// shown in red with the level or party size it would need; posting it is still allowed.
+        /// </summary>
+        static string RiskText(QuestDraft draft, DangerLevel? danger)
+        {
+            if (!danger.HasValue || !Services.TryGet<GuildRoster>(out var roster)) return "";
+            var best = roster.Members.Where(a => a != null && a.IsAlive)
+                .OrderByDescending(a => AdventurerStats.Power(a.Data)).FirstOrDefault();
+            if (best == null) return UIBuilder.Colored("현재 길드원이 없습니다.", UITheme.Bad);
+
+            var d = danger.Value;
+            float power = AdventurerStats.Power(best.Data);
+            int party = Mathf.Clamp(draft.MaxParty, 1, 4);
+            string label = QuestRisk.Label(QuestRisk.Margin(power, party, d));
+            var color = label == QuestRisk.Reckless ? UITheme.Bad : label == QuestRisk.Risky ? UITheme.Warn : UITheme.Good;
+            string who = party == 1 ? $"{best.Data.name}(Lv{best.Data.level}) 혼자" : $"{best.Data.name}(Lv{best.Data.level}) 포함 {party}인";
+            string text = $"현재 길드원 기준: {UIBuilder.Colored(label, color)} ({who})";
+            if (label != QuestRisk.Reckless && label != QuestRisk.Risky) return text;
+
+            int level = QuestRisk.SoloLevel(d, best.Data.gearTier);
+            int need = QuestRisk.PartyNeeded(power, d);
+            string advice = need > 1 ? $"Lv{level} 이상 혼자 또는 {need}인 파티 권장" : $"Lv{level} 이상 권장";
+            return text + "\n" + UIBuilder.Colored(label == QuestRisk.Reckless ? $"{advice} · 그래도 등록할 수 있습니다" : advice, color);
         }
 
         DangerLevel? EstimateDanger(QuestDraft d)

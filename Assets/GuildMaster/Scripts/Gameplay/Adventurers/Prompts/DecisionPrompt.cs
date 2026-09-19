@@ -159,12 +159,7 @@ namespace GuildMaster.Adventurers.Prompts
 
         /// <summary>Same power/requirement margin as the rule-based scorer, as words the model can use.</summary>
         public static string RiskLabel(Adventurer a, Quest q)
-        {
-            int partySize = q.Assignees.Count + 1;
-            float power = AdventurerStats.Power(a.Data) * (1f + 0.6f * (partySize - 1));
-            float margin = power / RuleBasedDecisionMaker.DangerRequirement(q.Danger);
-            return margin >= 2f ? "여유" : margin >= 1f ? "적당" : margin >= 0.8f ? "위험" : "무모";
-        }
+            => QuestRisk.Label(QuestRisk.Margin(AdventurerStats.Power(a.Data), q.Assignees.Count + 1, q.Danger));
 
         /// <summary>Grammar allowing only the given quest ids (or "").</summary>
         public static string BuildGrammar(IEnumerable<string> questIds)
