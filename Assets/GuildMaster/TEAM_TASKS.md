@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-19
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-23**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-24**).
 
 ## 사용 규칙
 
@@ -19,8 +19,9 @@
 
 | ID | 작업 | 담당 | 상태 | 주요 파일·모듈 | 커밋 |
 | --- | --- | --- | --- | --- | --- |
-| P4-11 | 의뢰 등록 위험 경고 | 미정 | 예정 | UI/Views/QuestBoardView | |
+| P4-11 | 의뢰 등록 위험 경고 | 이재혁 | 진행 중 | UI/Views/QuestBoardView | |
 | P4-22 | 관측된 몬스터 장비 정보(GuildIntel 기록·둥지 위험도·LLM threat_notes) | 미정 | 예정 | Ecosystem/GuildIntel, Quests/QuestBoard, Adventurers/Prompts/DecisionPrompt | |
+| P4-23 | 안개 속 마지막 목격 표시(시야에서 사라진 적을 회색 정지 모습으로) | 미정 | 예정 | Fog/FogGhostService(신규), UI/Views/MinimapView, UI/Views/InspectorView | |
 | P4-13 | 건물 배치와 감시탑 | 미정 | 예정 | Town, World | |
 | P4-19 | 스킬 기반 유인(은신·순간이동) | 미정 | 예정 | Units/Skills, Ecosystem/TerritoryTactics | |
 | P5-1 | 밸런스 | 미정 | 예정 | Data/DefaultContent, GameBalance | |
@@ -53,7 +54,7 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: 없음
+- **진행 중**: P4-11 의뢰 등록 위험 경고
 - **예정**: (정해지면 적기)
 - **완료**: P1 ~ P4-8, P4-10, P4-15 ~ P4-18, P4-20, P4-21 (위 표 참고)
 
