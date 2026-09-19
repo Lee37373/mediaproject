@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-19
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-22**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-23**).
 
 ## 사용 규칙
 
@@ -19,9 +19,9 @@
 
 | ID | 작업 | 담당 | 상태 | 주요 파일·모듈 | 커밋 |
 | --- | --- | --- | --- | --- | --- |
-| P4-9 | 사운드(효과음·BGM) | 미정 | 예정 | Audio(신규) | |
-| P4-10 | 메뉴와 설정(타이틀·일시정지·설정) | 미정 | 예정 | UI/Views(신규), UI/UIRoot | |
+| P4-10 | 메뉴와 설정(타이틀·일시정지·설정) | 이재혁 | 진행 중 | UI/Views(신규), UI/UIRoot, Session/GameBootstrap | |
 | P4-11 | 의뢰 등록 위험 경고 | 미정 | 예정 | UI/Views/QuestBoardView | |
+| P4-22 | 관측된 몬스터 장비 정보(GuildIntel 기록·둥지 위험도·LLM threat_notes) | 미정 | 예정 | Ecosystem/GuildIntel, Quests/QuestBoard, Adventurers/Prompts/DecisionPrompt | |
 | P4-13 | 건물 배치와 감시탑 | 미정 | 예정 | Town, World | |
 | P4-19 | 스킬 기반 유인(은신·순간이동) | 미정 | 예정 | Units/Skills, Ecosystem/TerritoryTactics | |
 | P5-1 | 밸런스 | 미정 | 예정 | Data/DefaultContent, GameBalance | |
@@ -30,6 +30,7 @@
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
 | P5-5 | Windows 빌드 | 미정 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 | 미정 | 예정 | 영상·발표 자료 | |
+| P4-9 | 사운드(효과음·BGM) — 가장 마지막에 진행 | 미정 | 예정 | Audio(신규) | |
 | P4-12 | 대화 묶음 생성과 미리 받기 | 미정 | 보류 | LLM, Adventurers/BanterService | |
 | P4-21 | 몬스터 장비와 바닥 아이템 순환 | 이재혁 | 완료 | Monsters, Items(신규), Data/ItemDefinition, Data/DefaultContent, Adventurers(줍기) | 27997c4 |
 | P4-8 | 전투 연출(타격 파티클, 치명타 히트스톱, 사망·레벨업 연출, 화면 흔들림) | 이재혁 | 완료 | Visuals/HitParticles, Visuals/CombatFeedback, Core/GameClock | f0df622 |
@@ -52,7 +53,7 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: 없음
+- **진행 중**: P4-10 메뉴와 설정
 - **예정**: (정해지면 적기)
 - **완료**: P1 ~ P4-8, P4-15 ~ P4-18, P4-20, P4-21 (위 표 참고)
 
