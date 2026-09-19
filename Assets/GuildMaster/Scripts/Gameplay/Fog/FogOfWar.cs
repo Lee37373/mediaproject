@@ -1,3 +1,5 @@
+using GuildMaster.Core;
+using GuildMaster.World;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -7,6 +9,8 @@ namespace GuildMaster.Fog
     {
         Vector2 VisionPosition { get; }
         float SightRadius { get; }
+        /// <summary>Elevated watch (town): walls, mountains and buildings do not block its view.</summary>
+        bool SeesOverWalls { get; }
     }
 
     public interface IFogHideable
@@ -130,10 +134,17 @@ namespace GuildMaster.Fog
         {
             _stamp++;
             int newly = 0;
+            Services.TryGet<WorldService>(out var world);
             foreach (var src in s_sources)
             {
-                ForEachCellInCircle(src.VisionPosition, src.SightRadius, i =>
+                var eye = src.VisionPosition;
+                bool occlude = world != null && !src.SeesOverWalls;
+                ForEachCellInCircle(eye, src.SightRadius, i =>
                 {
+                    if (_visibleStamp[i] == _stamp) return; // already seen this tick
+                    // Hard cover (mountain, wall, building) hides what lies behind it; the
+                    // blocking cell itself stays visible. Trees do not block the fog.
+                    if (occlude && world.Raycast(eye, new Vector2(i % _w + 0.5f, i / _w + 0.5f), out _, out _)) return;
                     _visibleStamp[i] = _stamp;
                     if (!_explored[i]) { _explored[i] = true; newly++; }
                 });

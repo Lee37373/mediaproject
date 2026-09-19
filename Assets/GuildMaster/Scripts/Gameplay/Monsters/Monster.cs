@@ -142,7 +142,7 @@ namespace GuildMaster.Monsters
         {
             if (!Def.fleesFromPredators) return null;
             return UnitRegistry.FindNearest(Position, Stats.SightRadius,
-                u => u is Monster m && m.Def.IsPredatorOf(Def)) as Monster;
+                u => u is Monster m && m.Def.IsPredatorOf(Def) && CanSee(m)) as Monster;
         }
 
         void Update()

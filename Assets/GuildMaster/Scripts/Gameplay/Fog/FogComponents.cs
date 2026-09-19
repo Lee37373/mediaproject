@@ -9,6 +9,8 @@ namespace GuildMaster.Fog
 
         public float SightRadius { get => sightRadius; set => sightRadius = value; }
         public Vector2 VisionPosition => transform.position;
+        /// <summary>Town watch only: sees over walls and buildings.</summary>
+        public bool SeesOverWalls { get; set; }
 
         void OnEnable() => FogOfWar.Register(this);
         void OnDisable() => FogOfWar.Unregister(this);

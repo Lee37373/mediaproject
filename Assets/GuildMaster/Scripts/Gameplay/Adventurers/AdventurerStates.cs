@@ -278,7 +278,7 @@ namespace GuildMaster.Adventurers
             {
                 _searchTimer = 0.6f;
                 // Only what this adventurer can actually see.
-                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius, IsQuestTarget);
+                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius, u => IsQuestTarget(u) && a.CanSee(u));
                 if (target != null)
                 {
                     a.Engage.SetTarget(target);

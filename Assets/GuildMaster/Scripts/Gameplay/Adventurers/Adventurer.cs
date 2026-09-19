@@ -239,8 +239,8 @@ namespace GuildMaster.Adventurers
 
             // Threats first (aggressive monsters or anything that hit us), then optional quest targets.
             var threat = UnitRegistry.FindNearest(Position, Stats.SightRadius * 0.8f,
-                u => u is Monster m && (m.IsHostileTo(this) || WasRecentlyAttackedBy(m)));
-            var target = threat ?? (extraTargets != null ? UnitRegistry.FindNearest(Position, Stats.SightRadius, extraTargets) : null);
+                u => u is Monster m && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m))));
+            var target = threat ?? (extraTargets != null ? UnitRegistry.FindNearest(Position, Stats.SightRadius, u => extraTargets(u) && CanSee(u)) : null);
             if (target == null) return false;
             Engage.SetTarget(target);
             return Engage.Tick(dt) != EngageStatus.Lost;

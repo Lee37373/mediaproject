@@ -82,6 +82,7 @@ namespace GuildMaster.Session
             townVision.transform.SetParent(_systems, false);
             townVision.transform.position = world.TownCenterWorld;
             townVision.SightRadius = Balance.townSightRadius;
+            townVision.SeesOverWalls = true; // watchtowers on the wall
             fog.Init(map.Width, map.Height, Balance.exploredFogAlpha, Balance.fogTickInterval);
 
             // --- Content & economy ---

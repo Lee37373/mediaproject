@@ -34,9 +34,9 @@ namespace GuildMaster.Units
             return best;
         }
 
-        /// <summary>Nearest living unit hostile to 'self' (or that attacked it) within its sight.</summary>
+        /// <summary>Nearest living unit hostile to 'self' and in its line of sight (or that attacked it) within radius.</summary>
         public static Unit FindNearestHostile(Unit self, float radius)
-            => FindNearest(self.Position, radius, u => u != self && (self.IsHostileTo(u) || self.WasRecentlyAttackedBy(u)));
+            => FindNearest(self.Position, radius, u => u != self && (self.WasRecentlyAttackedBy(u) || (self.IsHostileTo(u) && self.CanSee(u))));
 
         public static int CountInRadius(Vector2 from, float radius, Func<Unit, bool> predicate)
         {

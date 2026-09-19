@@ -160,6 +160,13 @@ namespace GuildMaster.Units
 
         public abstract bool IsHostileTo(Unit other);
 
+        /// <summary>
+        /// Line of sight to another unit: mountains, walls and buildings block it; up to two trees
+        /// are fine (same rule as ranged attacks). Use when picking new targets by sight.
+        /// </summary>
+        public bool CanSee(Unit other)
+            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.HasLineOfSight(Position, other.Position, 2));
+
         /// <summary>True if the other unit hit us within the given seconds (retaliation).</summary>
         public bool WasRecentlyAttackedBy(Unit other, float seconds = 8f)
             => other != null && LastAttacker == other && Time.time - LastAttackedTime < seconds;
