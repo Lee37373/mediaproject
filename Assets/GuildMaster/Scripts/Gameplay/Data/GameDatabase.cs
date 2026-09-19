@@ -14,6 +14,7 @@ namespace GuildMaster.Data
         public List<ItemDefinition> items = new();
         public List<MonsterDefinition> monsters = new();
         public List<TraitDefinition> traits = new();
+        public List<BuildingDefinition> buildings = new();
 
         Dictionary<string, ItemDefinition> _items;
         Dictionary<string, MonsterDefinition> _monsters;
@@ -40,5 +41,6 @@ namespace GuildMaster.Data
         public ItemDefinition Item(string id) => id != null && _items.TryGetValue(id, out var i) ? i : null;
         public MonsterDefinition Monster(string id) => id != null && _monsters.TryGetValue(id, out var m) ? m : null;
         public TraitDefinition Trait(string id) => id != null && _traits.TryGetValue(id, out var t) ? t : null;
+        public BuildingDefinition Building(Town.BuildingType type) => buildings.Find(b => b && b.type == type);
     }
 }

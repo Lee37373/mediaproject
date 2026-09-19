@@ -149,6 +149,8 @@ namespace GuildMaster.Session
             var visitors = AddSystem<Recruitment.VisitorService>();
             visitors.Init(clock, roster, world);
             Services.Register(visitors);
+            // Building upgrades (P4-1).
+            Services.Register(new UpgradeService(town, treasury, db, roster));
 
             // --- Camera ---
             var cam = SetupCamera(world);

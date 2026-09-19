@@ -149,7 +149,48 @@ namespace GuildMaster.Data
             goblinWarrior.rivals.Add(goblin);
 
             AddTraits(db);
+            AddBuildings(db);
             return db;
+        }
+
+        /// <summary>Building upgrade paths (P4-1). Costs agreed with the user 2026-09-19; tune in P5-1.</summary>
+        static void AddBuildings(GameDatabase db)
+        {
+            static ItemCost I(string id, int n) => new() { itemId = id, count = n };
+            BuildingDefinition B(Town.BuildingType type, params BuildingLevel[] levels)
+            {
+                var b = ScriptableObject.CreateInstance<BuildingDefinition>();
+                b.name = "building_" + type;
+                b.type = type;
+                b.levels.AddRange(levels);
+                db.buildings.Add(b);
+                return b;
+            }
+
+            B(Town.BuildingType.GuildHall,
+                new BuildingLevel { expPerHour = 8, rosterCapacity = 6, visitorLevelBonus = 0, effectText = "EXP 시간당 8 · 정원 6명" },
+                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, expPerHour = 14, rosterCapacity = 9, visitorLevelBonus = 1, effectText = "EXP 시간당 14 · 정원 9명 · 방문자 레벨 +1" },
+                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, expPerHour = 22, rosterCapacity = 12, visitorLevelBonus = 2, effectText = "EXP 시간당 22 · 정원 12명 · 방문자 레벨 +2" });
+
+            B(Town.BuildingType.Blacksmith,
+                new BuildingLevel { craftTier = 1, effectText = "1등급 장비 제작" },
+                new BuildingLevel { goldCost = 200, itemCosts = { I("iron_ore", 5), I("rusty_dagger", 3) }, craftTier = 2, effectText = "2등급 장비 제작" },
+                new BuildingLevel { goldCost = 600, itemCosts = { I("iron_ore", 12), I("goblin_helm", 3) }, craftTier = 3, effectText = "3등급 장비 제작" });
+
+            B(Town.BuildingType.Apothecary,
+                new BuildingLevel { craftTier = 1, craftSpeed = 1f, effectText = "물약 제작" },
+                new BuildingLevel { goldCost = 150, itemCosts = { I("slime_jelly", 10), I("dense_jelly", 5) }, craftTier = 1, craftSpeed = 1.5f, effectText = "물약 제작 속도 ×1.5" },
+                new BuildingLevel { goldCost = 450, itemCosts = { I("royal_jelly", 2), I("slime_jelly", 20) }, craftTier = 1, craftSpeed = 2f, effectText = "물약 제작 속도 ×2" });
+
+            B(Town.BuildingType.TrainingGround,
+                new BuildingLevel { idleExpPerHour = 0, effectText = "훈련 없음" },
+                new BuildingLevel { goldCost = 200, itemCosts = { I("stone_shard", 6), I("old_arrowhead", 4) }, idleExpPerHour = 3, effectText = "대기 중인 모험가 EXP 시간당 3" },
+                new BuildingLevel { goldCost = 550, itemCosts = { I("bone_shard", 12), I("stone_shard", 10) }, idleExpPerHour = 6, effectText = "대기 중인 모험가 EXP 시간당 6" });
+
+            B(Town.BuildingType.TownHall,
+                new BuildingLevel { maxHp = 600, dailyTax = 60, effectText = "내구도 600 · 세금 하루 60G" },
+                new BuildingLevel { goldCost = 400, itemCosts = { I("stone_shard", 10), I("iron_ore", 6) }, maxHp = 900, dailyTax = 90, effectText = "내구도 900 · 세금 하루 90G" },
+                new BuildingLevel { goldCost = 1000, itemCosts = { I("crown_shard", 1), I("iron_ore", 15) }, maxHp = 1300, dailyTax = 130, effectText = "내구도 1300 · 세금 하루 130G" });
         }
 
         static void AddTraits(GameDatabase db)

@@ -69,6 +69,8 @@ namespace GuildMaster.UI
             _panel.gameObject.SetActive(target != null);
             _timer = 0f;
             RefreshFollowButton();
+            // Clicking a building also opens its upgrade window (P4-1).
+            if (target is Building b && Services.TryGet<BuildingView>(out var view)) view.ShowBuilding(b);
         }
 
         public void Clear() => Show(null);

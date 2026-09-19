@@ -60,7 +60,9 @@ namespace GuildMaster.Recruitment
         public Adventurer SpawnVisitor()
         {
             var rng = GameRandom.Shared;
-            int level = Mathf.Max(1, 1 + (_clock.Day - 1) / 4 + rng.Range(-1, 2));
+            // A higher guild hall attracts more experienced visitors (P4-1).
+            int bonus = Services.TryGet<Town.UpgradeService>(out var upgrades) ? upgrades.VisitorLevelBonus : 0;
+            int level = Mathf.Max(1, 1 + (_clock.Day - 1) / 4 + rng.Range(-1, 2) + bonus);
             var data = AdventurerGenerator.Generate(rng, level);
             var gates = _world.Map.Gates;
             var cell = gates.Count > 0 ? gates[rng.Range(0, gates.Count)] : _world.Map.TownCenter;
