@@ -208,9 +208,19 @@ namespace GuildMaster.Units
             Hp = Mathf.Min(Stats.MaxHp, Hp + amount);
         }
 
+        /// <summary>
+        /// Debug/testing (F6, DebugCommands.Invulnerable): guild-side units (guild master, members) take
+        /// no damage. Hits still count as attacks, so retaliation and targeting behave as usual.
+        /// </summary>
+        public static bool GuildInvulnerable;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetDebugStatics() => GuildInvulnerable = false;
+
         internal void ReceiveDamage(float amount, Unit source, bool critical)
         {
             if (!IsAlive) return;
+            if (GuildInvulnerable && Faction == Faction.Guild) amount = 0f;
             Hp -= amount;
             if (source != null)
             {

@@ -68,6 +68,7 @@ GuildMaster.Tests.EditMode
   - 호위·게임 오버 검증: `PostEscort(시간당G, 시간당EXP, 시간, 인원)`, `ForceAccept(퀘스트ID, n)`, `MasterWalkOut(방향0~3, 칸)`, `MasterHome()`, `MasterStatus()`, `SpawnNearMaster(종, n, 거리)`
   - 잡담·호감도: `ForceBanter()`, `BanterStatus()`, `Relate(from, to, delta)`(명단 순번), `Relations()`
   - 영역: `Territories()`(둥지별 개체·반경·세력), `InvadeNest(순번, 종, 수)`(둥지 영역에 다른 종 투입)
+  - 테스트 무적: `Invulnerable(true)` 또는 플레이 중 **F6**(길드 마스터·길드원 피해 0)
   - 행상인: `MerchantVisit()`(지금 방문), `MerchantStatus()`(품목별 공급·수요·가격), `MerchantSell(품목, 수)`, `MerchantClose()`
   - 침공: `RaidNests()`(둥지별 개체 수·위험 단계), `ForceRaid(순번, 채우기)`, `RaidStatus()`(적·건물·길드원), `Hurt(순번, 피해)`
 - MCP 도구가 없는 세션에서는 `unity` CLI(unity-cli 스킬)로 같은 일을 합니다: `unity status`, `unity command eval "<C#>"`, `recompile_status`, `console --level error`, `run_tests --mode editor`, `capture_game_view --source screen --save_path ...`
@@ -75,7 +76,7 @@ GuildMaster.Tests.EditMode
 - 플레이 중 코드를 바꾸면 반드시 `editor_stop` 후에 컴파일하세요.
   - **LLM이 생성 중일 때는 스크립트 파일도 건드리지 마세요.** 에디터가 포커스를 받아 자동 리로드하면 네이티브 스레드 때문에 "Reloading Domain"에서 멈춥니다(에디터 재시작 필요). 먼저 `editor_stop`한 뒤 파일을 고치세요.
   - 멈추기 전에 `LlmGateway.IsBusy`가 false가 될 때까지 기다리면 안전합니다(2026-09-19 생성 중에 멈추고 컴파일했다가 도메인 리로드가 한 번 멈췄습니다).
-- **유닛 기즈모**(에디터 전용): 인스펙터로 고른 유닛(또는 하이어라키 선택)의 시야(노랑)·사거리(빨강)·목표 선·추격 포기한 대상(회색 점선)·몬스터 귀환 반경(파랑)·이름/등급/상태 라벨. **F4**로 모든 유닛과 둥지 영역 표시. Game 뷰는 상단 Gizmos 버튼이 켜져 있어야 보입니다.
+- **유닛 기즈모**(에디터 전용): 인스펙터로 고른 유닛(또는 하이어라키 선택)의 시야(노랑)·사거리(빨강)·목표 선·추격 포기한 대상(회색 점선)·몬스터 귀환 반경(파랑)·이름/등급/상태 라벨. **F4**로 모든 유닛과 둥지 영역 표시(F4를 켜면 Game 뷰 Gizmos 버튼도 자동으로 켜짐).
 - LLM 요청/응답은 플레이 중 **F2**(LLM 디버그 창, 에디터·개발 빌드 전용)로 볼 수 있습니다. 판정(채택/대체 이유), 대기·생성 시간, 전체 프롬프트가 나오고 복사할 수 있습니다.
 - `Run In Background`는 켜져 있어야 합니다. 꺼져 있으면 에디터가 비활성일 때 게임이 멈춥니다.
 

@@ -59,6 +59,16 @@ namespace GuildMaster.Session
 
         public static void SetSpeed(int index) => Services.Get<GameClock>().SetSpeed(index);
 
+        /// <summary>Guild master and members take no damage (testing; also F6).</summary>
+        public static string Invulnerable(bool on)
+        {
+            Units.Unit.GuildInvulnerable = on;
+            string msg = on ? "[디버그] 길드 무적 켬 (F6)" : "[디버그] 길드 무적 끔 (F6)";
+            Debug.Log(msg);
+            if (Services.TryGet<GameLog>(out var log)) log.Add(msg, LogCategory.Info);
+            return msg;
+        }
+
         /// <summary>
         /// Spawns 'count' nest-less monsters a few cells outside town, teleports living guild
         /// members next to them and makes them fight, then points the camera there.

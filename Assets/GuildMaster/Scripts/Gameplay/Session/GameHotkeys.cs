@@ -22,12 +22,27 @@ namespace GuildMaster.Session
 
             if (kb.f3Key.wasPressedThisFrame && Services.TryGet<FogOfWar>(out var fog))
                 fog.Disabled = !fog.Disabled;
+            // F6: guild invulnerable for testing (editor / development builds only).
+            if (Debug.isDebugBuild && kb.f6Key.wasPressedThisFrame) DebugCommands.Invulnerable(!Units.Unit.GuildInvulnerable);
             // F4: unit debug gizmos for every unit (editor Scene view / Game view with Gizmos on).
             if (Application.isEditor && kb.f4Key.wasPressedThisFrame)
             {
                 Units.UnitGizmos.ShowAll = !Units.UnitGizmos.ShowAll;
+                // The drawing is gizmo-based: switch the Game view's Gizmos toggle on with it.
+                if (Units.UnitGizmos.ShowAll) EnableGameViewGizmos();
                 Debug.Log($"[Debug] 유닛 기즈모 전체 표시: {(Units.UnitGizmos.ShowAll ? "켬" : "끔")}");
             }
+        }
+
+        /// <summary>Editor only: turns on the Gizmos toggle of every Game view (internal API, via reflection).</summary>
+        static void EnableGameViewGizmos()
+        {
+#if UNITY_EDITOR
+            var type = typeof(UnityEditor.EditorWindow).Assembly.GetType("UnityEditor.GameView");
+            var prop = type?.GetProperty("drawGizmos", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (prop == null || !prop.CanWrite) { Debug.Log("[Debug] Game 뷰 상단의 Gizmos 버튼을 켜야 기즈모가 보입니다."); return; }
+            foreach (var view in Resources.FindObjectsOfTypeAll(type)) prop.SetValue(view, true);
+#endif
         }
 
         static bool IsTyping()
