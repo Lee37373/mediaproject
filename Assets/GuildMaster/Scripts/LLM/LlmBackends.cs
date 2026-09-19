@@ -13,5 +13,13 @@ namespace GuildMaster.LLM
             return new NullLlmBackend("LLMUnity 패키지가 설치되지 않았습니다");
 #endif
         }
+
+        /// <summary>Call first thing on session start (before the scene's LLM wakes up).</summary>
+        public static void DiscardReloadedDuplicates()
+        {
+#if LLMUNITY_PRESENT
+            LLMUnityBackend.DiscardReloadedDuplicates();
+#endif
+        }
     }
 }

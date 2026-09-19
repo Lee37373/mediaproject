@@ -60,6 +60,7 @@ GuildMaster.Tests.EditMode
   - 제공 메서드: `Status()`, `PostHunt(id, count, gold, exp, party)`, `SetSpeed(i)`
   - 전투 검증: `SpawnSkirmish(speciesId, n)`(마을 밖 교전 생성과 길드원 투입), `SkirmishReport()`, `ClearSkirmish()`, `UnitsNearCamera(r)`
   - 영입 검증: `SpawnVisitor()`, `RecruitSay(말, 제안여부)`(첫 방문자와 대화), `RecruitStatus()`
+  - 호위·게임 오버 검증: `PostEscort(시간당G, 시간당EXP, 시간, 인원)`, `ForceAccept(퀘스트ID, n)`, `MasterWalkOut(방향0~3, 칸)`, `MasterHome()`, `MasterStatus()`, `SpawnNearMaster(종, n, 거리)`
 - MCP 도구가 없는 세션에서는 `unity` CLI(unity-cli 스킬)로 같은 일을 합니다: `unity status`, `unity command eval "<C#>"`, `recompile_status`, `console --level error`, `run_tests --mode editor`, `capture_game_view --source screen --save_path ...`
   - `capture_game_view`의 `save_path`는 `Assets/` 기준으로 저장됩니다. 확인한 뒤 지우세요.
 - 플레이 중 코드를 바꾸면 반드시 `editor_stop` 후에 컴파일하세요.
@@ -68,7 +69,7 @@ GuildMaster.Tests.EditMode
 - `Run In Background`는 켜져 있어야 합니다. 꺼져 있으면 에디터가 비활성일 때 게임이 멈춥니다.
 
 ## LLM (LLMUnity v3.0.3, 로컬)
-- 씬의 `LLM` 오브젝트는 사용자가 다운로드한 **Qwen3.5-4B Q4_K_M** 모델을 씁니다. **Vulkan으로 Intel Arc 130V 내장 GPU**를 씁니다(`numGPULayers=99`, 2026-09-18). 판단 1회 생성 약 10초(CPU만 쓸 때는 약 20초).
+- 씬의 `LLM` 오브젝트는 경량 모델 **llama-3.2-1b-instruct Q4_K_M**을 씁니다(2026-09-19 사용자 전환, 판단 1회 약 3초). 이전 모델은 Qwen3.5-4B Q4_K_M(`C:\unity\LLMModels\qwen35-4b-q4km.gguf`)입니다. **Vulkan으로 Intel Arc 130V 내장 GPU**를 씁니다(`numGPULayers=99`, 2026-09-18). 판단 1회 생성 약 10초(CPU만 쓸 때는 약 20초).
 - **Windows 사용자 경로에 한글이 있으면 llama.cpp가 실패합니다.** 사용자명이 "이재혁"이고 `%APPDATA%`에 한글이 들어갑니다.
   - 모델은 ASCII 경로 `C:\unity\LLMModels\qwen35-4b-q4km.gguf`로 복사해 LLMManager에 등록했습니다.
   - `LlamaEnvironment`가 `LLAMA_CACHE`를 ASCII 경로로 지정합니다.

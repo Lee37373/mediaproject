@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace GuildMaster.Quests
 {
-    public enum QuestType { Hunt, ClearNest, Explore, Defend }
+    public enum QuestType { Hunt, ClearNest, Escort, Defend }
     public enum QuestStatus { Open, InProgress, Completed, TurnedIn, Cancelled, Failed }
 
     /// <summary>Anyone who can take quests (adventurers).</summary>
@@ -28,6 +28,8 @@ namespace GuildMaster.Quests
         public int RewardGold;
         public int RewardExp;
         public int MaxParty;
+        /// <summary>Escort only: maximum paid hours (reward fields hold hourly rate × hours).</summary>
+        public int Hours;
     }
 
     public class Quest
@@ -52,6 +54,23 @@ namespace GuildMaster.Quests
         public float CompletedAtHour { get; internal set; }
         public DangerLevel Danger { get; internal set; }
 
+        // ---- Escort (P3-4a) ----
+        public int MaxHours { get; }
+        /// <summary>Paid escort time so far (game hours outside town with an escort nearby).</summary>
+        public float EscortHours { get; internal set; }
+        /// <summary>True once the guild master has left town under escort.</summary>
+        public bool EscortLeftTown { get; internal set; }
+
+        /// <summary>Amounts actually paid out on completion (escort pays for time used; others pay the full reward).</summary>
+        public int PayGold { get; private set; }
+        public int PayExp { get; private set; }
+
+        internal void SetPayout(int gold, int exp)
+        {
+            PayGold = Mathf.Clamp(gold, 0, RewardGold);
+            PayExp = Mathf.Clamp(exp, 0, RewardExp);
+        }
+
         public IReadOnlyList<IQuestTaker> Assignees => _assignees;
         public bool IsActive => Status is QuestStatus.Open or QuestStatus.InProgress;
         public bool HasFreeSlot => IsActive && _assignees.Count < MaxParty;
@@ -69,6 +88,9 @@ namespace GuildMaster.Quests
             RewardGold = Mathf.Max(0, d.RewardGold);
             RewardExp = Mathf.Max(0, d.RewardExp);
             MaxParty = Mathf.Clamp(d.MaxParty, 1, 4);
+            MaxHours = d.Type == QuestType.Escort ? Mathf.Clamp(d.Hours, 1, 24) : 0;
+            PayGold = RewardGold;
+            PayExp = RewardExp;
             PostedAtHour = postedAtHour;
             Status = QuestStatus.Open;
         }
@@ -77,7 +99,7 @@ namespace GuildMaster.Quests
         {
             QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount}",
             QuestType.ClearNest => $"{Nest?.DisplayName} 소탕",
-            QuestType.Explore => $"탐사 ({Mathf.RoundToInt(Point.x)}, {Mathf.RoundToInt(Point.y)})",
+            QuestType.Escort => $"길드 마스터 호위 (최대 {MaxHours}시간)",
             QuestType.Defend => "마을 방어",
             _ => Id,
         };
@@ -85,8 +107,8 @@ namespace GuildMaster.Quests
         public string ProgressText => Type switch
         {
             QuestType.Hunt => $"{Progress}/{RequiredCount}",
-            QuestType.ClearNest => Nest != null ? $"남은 개체 {Nest.Population}" : "-",
-            QuestType.Explore => $"{Progress}%",
+            QuestType.ClearNest => Nest != null && Core.Services.TryGet<GuildIntel>(out var intel) ? intel.DescribeNest(Nest) : "-",
+            QuestType.Escort => $"{EscortHours:0.0}/{MaxHours}시간",
             _ => "",
         };
 
@@ -123,13 +145,13 @@ namespace GuildMaster.Quests
                 weights[a.TakerId] = w;
                 total += w;
             }
-            int goldLeft = RewardGold, expLeft = RewardExp;
+            int goldLeft = PayGold, expLeft = PayExp;
             for (int i = 0; i < _assignees.Count; i++)
             {
                 var a = _assignees[i];
                 bool last = i == _assignees.Count - 1;
-                int g = last ? goldLeft : Mathf.FloorToInt(RewardGold * weights[a.TakerId] / total);
-                int e = last ? expLeft : Mathf.FloorToInt(RewardExp * weights[a.TakerId] / total);
+                int g = last ? goldLeft : Mathf.FloorToInt(PayGold * weights[a.TakerId] / total);
+                int e = last ? expLeft : Mathf.FloorToInt(PayExp * weights[a.TakerId] / total);
                 goldLeft -= g;
                 expLeft -= e;
                 _payouts[a.TakerId] = (g, e);

@@ -52,7 +52,7 @@ namespace GuildMaster.Adventurers
         internal DecidingState DecidingState;
         internal TravelToQuestState TravelState;
         internal HuntState HuntState;
-        internal ExploreState ExploreState;
+        internal EscortState EscortState;
         internal ReturnToTownState ReturnState;
         internal GuildVisitState VisitState;
         internal RestState RestState;
@@ -99,7 +99,7 @@ namespace GuildMaster.Adventurers
             DecidingState = new DecidingState();
             TravelState = new TravelToQuestState();
             HuntState = new HuntState();
-            ExploreState = new ExploreState();
+            EscortState = new EscortState();
             ReturnState = new ReturnToTownState();
             VisitState = new GuildVisitState();
             RestState = new RestState();

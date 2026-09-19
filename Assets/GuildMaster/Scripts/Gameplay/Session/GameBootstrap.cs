@@ -36,6 +36,8 @@ namespace GuildMaster.Session
 
         void Awake()
         {
+            // Restart reloads the scene; keep the already-loaded model instead of loading it twice.
+            LlmBackends.DiscardReloadedDuplicates();
             EventBus.Clear();
             Services.Clear();
             Time.timeScale = 1f;
@@ -147,6 +149,7 @@ namespace GuildMaster.Session
             // --- Player ---
             var avatar = PlayerAvatar.Create(world.TownCenterWorld + new Vector2(0f, -2f), Balance.playerMoveSpeed, Balance.playerSightRadius);
             Services.Register(avatar);
+            Services.Register(new GameOverService(clock));
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());
 
             // --- Presentation / input ---

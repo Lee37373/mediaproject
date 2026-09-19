@@ -155,6 +155,86 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        // ---------------- Guild master & escort (P3-4a) ----------------
+
+        public static string PostEscort(int goldPerHour, int expPerHour, int hours, int party)
+        {
+            var ok = Services.Get<QuestBoard>().TryPost(new QuestDraft
+            {
+                Type = QuestType.Escort, Hours = hours, RewardGold = goldPerHour * hours, RewardExp = expPerHour * hours,
+                MaxParty = party, Point = Services.Get<Player.PlayerAvatar>().Position,
+            }, out var q, out var err);
+            return ok ? q.Id : err;
+        }
+
+        /// <summary>Makes up to 'count' idle members take the quest, skipping the decision step.</summary>
+        public static string ForceAccept(string questId, int count)
+        {
+            var board = Services.Get<QuestBoard>();
+            var q = board.FindById(questId);
+            if (q == null) return "no quest " + questId;
+            var names = new List<string>();
+            foreach (var a in Services.Get<GuildRoster>().Members)
+            {
+                if (names.Count >= count) break;
+                if (!a.IsAlive || a.CurrentQuest != null || !board.TryAccept(q, a)) continue;
+                a.CurrentQuest = q;
+                a.ChangeState(a.TravelState);
+                names.Add(a.Data.name);
+            }
+            return string.Join(",", names);
+        }
+
+        /// <summary>Orders the guild master to walk to a point 'cells' beyond the town edge in a direction (0=E,1=W,2=N,3=S).</summary>
+        public static string MasterWalkOut(int dir, float cells)
+        {
+            var world = Services.Get<World.WorldService>();
+            var dirs = new[] { Vector2.right, Vector2.left, Vector2.up, Vector2.down };
+            var d = dirs[Mathf.Clamp(dir, 0, 3)];
+            var town = world.Map.TownRect;
+            float reach = (Mathf.Abs(d.x) > 0 ? town.width : town.height) * 0.5f + cells;
+            var cell = World.GridMap.WorldToCell(world.TownCenterWorld + d * reach);
+            if (!world.Grid.TryFindNearestWalkable(cell, 6, out cell)) return "no walkable cell";
+            var target = World.GridMap.CellToWorld(cell);
+            return Services.Get<Player.PlayerAvatar>().MoveTo(target) ? $"walking to {target}" : "no path";
+        }
+
+        public static string MasterHome() => Services.Get<Player.PlayerAvatar>().MoveTo(Services.Get<World.WorldService>().TownCenterWorld) ? "walking home" : "no path";
+
+        public static string MasterStatus()
+        {
+            var m = Services.Get<Player.PlayerAvatar>();
+            var world = Services.Get<World.WorldService>();
+            var t = Services.Get<GuildTreasury>();
+            var sb = new StringBuilder($"master ({m.Position.x:0.0},{m.Position.y:0.0}) hp={m.Hp:0}/{m.Stats.MaxHp:0} inTown={world.Grid.IsInTown(m.Position)} moving={m.Mover.IsMoving} gold={t.Gold} exp={t.Exp}\n");
+            foreach (var q in Services.Get<QuestBoard>().Quests.Concat(Services.Get<QuestBoard>().History).Where(q => q.Type == QuestType.Escort))
+                sb.AppendLine($"  {q.Id} {q.Status} {q.ProgressText} escrow={q.RewardGold}/{q.RewardExp} pay={q.PayGold}/{q.PayExp} assignees={string.Join(",", q.Assignees.Select(x => x.TakerName))}");
+            foreach (var a in Services.Get<GuildRoster>().Members)
+                sb.AppendLine($"  {a.Data.name} {a.StateLabel} d={Vector2.Distance(a.Position, m.Position):0.0} quest={a.CurrentQuest?.Id} gold={a.Data.gold}");
+            return sb.ToString();
+        }
+
+        /// <summary>Spawns monsters next to the guild master (they aggro on it).</summary>
+        public static string SpawnNearMaster(string speciesId, int count, float distance = 4f)
+        {
+            var species = Services.Get<EcosystemManager>().Species.FirstOrDefault(s => s.id == speciesId);
+            if (species == null) return "unknown species: " + speciesId;
+            var world = Services.Get<World.WorldService>();
+            var master = Services.Get<Player.PlayerAvatar>();
+            var rng = GameRandom.Shared;
+            int spawned = 0;
+            for (int i = 0; i < count; i++)
+            {
+                var p = master.Position + rng.InsideUnitCircle().normalized * distance;
+                if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(p), 3, out var c)) continue;
+                var mon = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(c));
+                mon.Setup(species, null);
+                mon.ForceTarget(master);
+                spawned++;
+            }
+            return $"spawned {spawned}";
+        }
+
         public static string SkirmishReport()
             => SkirmishMonitor.Instance != null ? SkirmishMonitor.Instance.Report() : "no monitor (call SpawnSkirmish first)";
 

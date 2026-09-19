@@ -197,6 +197,8 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             if (a.CurrentQuest == null) { a.ChangeState(a.ReturnState); return; }
+            // Escorts walk to (and keep up with) the guild master themselves.
+            if (a.CurrentQuest.Type == QuestType.Escort) { a.ChangeState(a.EscortState); return; }
             _destination = AdvCtx.QuestDestination(a, a.CurrentQuest);
             if (!a.Mover.SetDestination(_destination, 1.5f))
             {
@@ -215,7 +217,7 @@ namespace GuildMaster.Adventurers
 
             if (Vector2.Distance(a.Position, _destination) < 3f)
             {
-                a.ChangeState(a.CurrentQuest.Type == QuestType.Explore ? a.ExploreState : a.HuntState);
+                a.ChangeState(a.HuntState);
                 return;
             }
             if (!a.Mover.IsMoving) a.Mover.SetDestination(_destination, 1.5f);
@@ -306,33 +308,6 @@ namespace GuildMaster.Adventurers
             var world = Services.Get<WorldService>();
             if (world.Grid.TryRandomWalkableNear(GridMap.WorldToCell(_area), 6, GameRandom.Shared, out var cell))
                 a.Mover.SetDestination(GridMap.CellToWorld(cell));
-        }
-    }
-
-    public class ExploreState : State<Adventurer>
-    {
-        public override string Label => "탐사 중";
-
-        public override void Tick(float dt)
-        {
-            var a = Owner;
-            if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
-            if (a.HandleCombat(dt)) return;
-            if (a.Mover.IsMoving) return;
-
-            var q = a.CurrentQuest;
-            var world = Services.Get<WorldService>();
-            Services.TryGet<FogOfWar>(out var fog);
-            Vector2Int best = GridMap.WorldToCell(q.Point);
-            for (int i = 0; i < 12; i++)
-            {
-                var p = q.Point + GameRandom.Shared.InsideUnitCircle() * q.Radius;
-                var c = GridMap.WorldToCell(p);
-                if (!world.Grid.IsWalkable(c)) continue;
-                best = c;
-                if (fog == null || !fog.IsExplored(c)) break;
-            }
-            a.Mover.SetDestination(GridMap.CellToWorld(best));
         }
     }
 

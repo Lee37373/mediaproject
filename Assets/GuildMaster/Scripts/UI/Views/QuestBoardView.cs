@@ -16,26 +16,26 @@ namespace GuildMaster.UI
     {
         public override string Title => "의뢰 게시판";
 
-        static readonly string[] TypeLabels = { "토벌", "둥지 소탕", "탐사" };
-        static readonly QuestType[] Types = { QuestType.Hunt, QuestType.ClearNest, QuestType.Explore };
+        static readonly string[] TypeLabels = { "토벌", "둥지 소탕", "호위" };
+        static readonly QuestType[] Types = { QuestType.Hunt, QuestType.ClearNest, QuestType.Escort };
 
         RectTransform _listContent;
         readonly List<QuestRow> _rows = new();
         Text _emptyLabel;
 
         Dropdown _type;
-        RectTransform _speciesRow, _nestRow, _pointRow, _countRow;
+        RectTransform _speciesRow, _nestRow, _hoursRow, _countRow;
         Dropdown _species;
         Dropdown _nest;
-        Text _pointLabel;
-        InputField _count, _gold, _exp;
+        Text _goldLabel, _expLabel;
+        InputField _count, _gold, _exp, _hours;
         Dropdown _party;
         Text _danger;
         Text _message;
 
         readonly List<MonsterDefinition> _speciesOptions = new();
         readonly List<Nest> _nestOptions = new();
-        Vector2? _pickedPoint;
+
 
         protected override void Build(RectTransform body)
         {
@@ -63,19 +63,24 @@ namespace GuildMaster.UI
             _nest = UIBuilder.Dropdown(_nestRow, new List<string>(), _ => OnFormChanged(false));
             UIBuilder.Button(_nestRow, "지도", PickNest, 56, 30, null, 14);
 
-            _pointRow = FieldRow(form, "탐사 지점");
-            _pointLabel = UIBuilder.Label(_pointRow, "미지정", 15, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, -1, 1);
-            UIBuilder.Button(_pointRow, "지도에서 선택", PickPoint, 120, 30, null, 14);
+            _hoursRow = FieldRow(form, "최대 시간");
+            _hours = UIBuilder.Input(_hoursRow, "6", InputField.ContentType.IntegerNumber);
+            _hours.text = "6";
+            _hours.onValueChanged.AddListener(_ => OnFormChanged(false));
 
             _countRow = FieldRow(form, "토벌 수");
             _count = UIBuilder.Input(_countRow, "5", InputField.ContentType.IntegerNumber);
             _count.text = "5";
             _count.onValueChanged.AddListener(_ => OnFormChanged(false));
 
-            _gold = UIBuilder.Input(FieldRow(form, "보상 골드"), "0", InputField.ContentType.IntegerNumber);
+            var goldRow = FieldRow(form, "보상 골드");
+            _goldLabel = goldRow.GetComponentInChildren<Text>();
+            _gold = UIBuilder.Input(goldRow, "0", InputField.ContentType.IntegerNumber);
             _gold.text = "50";
             _gold.onValueChanged.AddListener(_ => OnFormChanged(false));
-            _exp = UIBuilder.Input(FieldRow(form, "보상 EXP"), "0", InputField.ContentType.IntegerNumber);
+            var expRow = FieldRow(form, "보상 EXP");
+            _expLabel = expRow.GetComponentInChildren<Text>();
+            _exp = UIBuilder.Input(expRow, "0", InputField.ContentType.IntegerNumber);
             _exp.text = "30";
             _exp.onValueChanged.AddListener(_ => OnFormChanged(false));
             _party = UIBuilder.Dropdown(FieldRow(form, "최대 인원"), new[] { "1명", "2명", "3명", "4명" }, _ => OnFormChanged(false));
@@ -143,8 +148,12 @@ namespace GuildMaster.UI
                 case QuestType.ClearNest:
                     d.Nest = _nest.value < _nestOptions.Count ? _nestOptions[_nest.value] : null;
                     break;
-                case QuestType.Explore:
-                    d.Point = _pickedPoint ?? Vector2.zero;
+                case QuestType.Escort:
+                    // Reward fields are hourly rates; the escrow covers the maximum hours.
+                    d.Hours = Mathf.Clamp(ParseInt(_hours.text), 0, 24);
+                    d.RewardGold *= d.Hours;
+                    d.RewardExp *= d.Hours;
+                    if (Services.TryGet<PlayerAvatar>(out var master)) d.Point = master.Position;
                     break;
             }
             return d;
@@ -158,8 +167,9 @@ namespace GuildMaster.UI
             _speciesRow.gameObject.SetActive(type == QuestType.Hunt);
             _countRow.gameObject.SetActive(type == QuestType.Hunt);
             _nestRow.gameObject.SetActive(type == QuestType.ClearNest);
-            _pointRow.gameObject.SetActive(type == QuestType.Explore);
-            _pointLabel.text = _pickedPoint.HasValue ? $"({_pickedPoint.Value.x:0}, {_pickedPoint.Value.y:0}) 반경 8" : "미지정";
+            _hoursRow.gameObject.SetActive(type == QuestType.Escort);
+            _goldLabel.text = type == QuestType.Escort ? "시간당 골드" : "보상 골드";
+            _expLabel.text = type == QuestType.Escort ? "시간당 EXP" : "보상 EXP";
 
             var draft = BuildDraft();
             var danger = EstimateDanger(draft);
@@ -181,21 +191,10 @@ namespace GuildMaster.UI
                     return d.Count >= 8 && d.Species.danger < DangerLevel.High ? d.Species.danger + 1 : d.Species.danger;
                 case QuestType.ClearNest when d.Nest != null:
                     return QuestBoard.NestDanger(d.Nest);
-                case QuestType.Explore when _pickedPoint.HasValue:
-                    return QuestBoard.ExploreDanger(d.Point, d.Radius);
+                case QuestType.Escort:
+                    return DangerLevel.Low;
             }
             return null;
-        }
-
-        void PickPoint()
-        {
-            var picker = Services.Get<MapPicker>();
-            Close();
-            picker.Begin("탐사할 지점을 클릭하세요 (우클릭/ESC: 취소)", p =>
-            {
-                _pickedPoint = p;
-                Open();
-            }, Open);
         }
 
         void PickNest()
@@ -218,15 +217,11 @@ namespace GuildMaster.UI
         void Submit()
         {
             var board = Services.Get<QuestBoard>();
-            if (CurrentType == QuestType.Explore && !_pickedPoint.HasValue)
-            {
-                _message.text = UIBuilder.Colored("탐사 지점을 지도에서 선택하세요.", UITheme.Bad);
-                return;
-            }
             if (board.TryPost(BuildDraft(), out var quest, out var error))
             {
-                _message.text = UIBuilder.Colored($"'{quest.Title}' 의뢰가 등록되었습니다.", UITheme.Good);
-                _pickedPoint = null;
+                _message.text = UIBuilder.Colored(quest.Type == QuestType.Escort
+                    ? $"'{quest.Title}' 의뢰가 등록되었습니다. 호위대가 모이면 마을 밖으로 이동하세요."
+                    : $"'{quest.Title}' 의뢰가 등록되었습니다.", UITheme.Good);
                 RebuildOptions();
                 OnFormChanged(false);
                 Refresh();

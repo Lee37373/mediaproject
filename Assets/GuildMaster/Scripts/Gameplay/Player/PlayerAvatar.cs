@@ -1,5 +1,6 @@
 using GuildMaster.Core;
 using GuildMaster.Fog;
+using GuildMaster.Units;
 using GuildMaster.Visuals;
 using GuildMaster.World;
 using UnityEngine;
@@ -7,46 +8,65 @@ using UnityEngine;
 namespace GuildMaster.Player
 {
     public struct PlayerMoveOrderedEvent { public Vector2 Target; }
+    /// <summary>The guild master fell (HP 0). Ends the game (see GameOverService).</summary>
+    public struct PlayerDownedEvent { public Unit Killer; }
 
     /// <summary>
-    /// The guild master's non-combat avatar: click-to-move, provides vision,
-    /// and walks up to NPCs to interact (e.g. recruitment talks).
+    /// The guild master: click-to-move, provides vision, walks up to NPCs to interact.
+    /// A guild-faction unit so monsters attack it, but it never fights back — adventurers
+    /// escort and protect it. Reaching 0 HP ends the game.
     /// </summary>
     [RequireComponent(typeof(PathFollower))]
-    public class PlayerAvatar : MonoBehaviour
+    public class PlayerAvatar : Unit
     {
-        PathFollower _mover;
-        VisionSource _vision;
-        System.Action _onArrive;
+        const float TownRegenPerHour = 0.10f;
 
-        public PathFollower Mover => _mover;
+        System.Action _onArrive;
+        GameClock _clock;
 
         public static PlayerAvatar Create(Vector2 position, float speed, float sight)
         {
             var go = new GameObject("GuildMaster(Player)");
             go.transform.position = position;
-            var mover = go.AddComponent<PathFollower>();
-            mover.Speed = speed;
+            go.AddComponent<PathFollower>();
             var visual = go.AddComponent<CharacterVisual>();
             visual.Init(PixelArt.GuildMaster());
             var vision = go.AddComponent<VisionSource>();
             vision.SightRadius = sight;
+            go.AddComponent<HealthBar>();
             var avatar = go.AddComponent<PlayerAvatar>();
+            avatar.Setup(speed, sight);
             return avatar;
         }
 
-        void Awake()
+        protected override void Awake()
         {
-            _mover = GetComponent<PathFollower>();
-            _vision = GetComponent<VisionSource>();
-            _mover.Arrived += HandleArrived;
-            _mover.PathFailed += () => _onArrive = null;
+            base.Awake();
+            Faction = Faction.Guild;
+            Mover.Arrived += HandleArrived;
+            Mover.PathFailed += () => _onArrive = null;
+        }
+
+        void Setup(float speed, float sight)
+        {
+            UnitId = "PLAYER";
+            DisplayName = "길드 마스터";
+            Radius = 0.3f;
+            Stats = new CombatStats
+            {
+                MaxHp = 100f, Attack = 0f, Defense = 3f, AttackRange = 1f, AttackCooldown = 1f,
+                MoveSpeed = speed, SightRadius = sight,
+            };
+            ResetVitals();
+            GetComponent<HealthBar>().Init(this, 0.75f, new Color(1f, 0.85f, 0.35f));
+            _clock = Services.TryGet<GameClock>(out var c) ? c : null;
         }
 
         public bool MoveTo(Vector2 target, System.Action onArrive = null, float stopDistance = 0.05f)
         {
+            if (!IsAlive) return false;
             _onArrive = onArrive;
-            bool ok = _mover.SetDestination(target, stopDistance);
+            bool ok = Mover.SetDestination(target, stopDistance);
             if (ok) EventBus.Publish(new PlayerMoveOrderedEvent { Target = target });
             return ok;
         }
@@ -56,6 +76,24 @@ namespace GuildMaster.Player
             var cb = _onArrive;
             _onArrive = null;
             cb?.Invoke();
+        }
+
+        void Update()
+        {
+            if (!IsAlive) return;
+            float dt = Time.deltaTime;
+            TickStatus(dt);
+            if (_clock != null && Services.TryGet<WorldService>(out var world) && world.Grid.IsInTown(Position))
+                Heal(Stats.MaxHp * TownRegenPerHour * dt / _clock.RealSecondsPerGameHour);
+        }
+
+        /// <summary>The guild master never attacks.</summary>
+        public override bool IsHostileTo(Unit other) => false;
+
+        protected override void OnDeath(Unit killer)
+        {
+            Visual.SetTint(new Color(0.5f, 0.5f, 0.5f, 0.8f));
+            EventBus.Publish(new PlayerDownedEvent { Killer = killer });
         }
     }
 }

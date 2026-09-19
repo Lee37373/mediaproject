@@ -33,7 +33,6 @@ namespace GuildMaster.Quests
         EcosystemManager _eco;
         GameClock _clock;
         int _nextId = 101;
-        float _exploreTimer;
 
         public IReadOnlyList<Quest> Quests => _quests;
         public IReadOnlyList<Quest> History => _history;
@@ -78,9 +77,9 @@ namespace GuildMaster.Quests
                         return "마지막 관측에서 비어 있던 둥지입니다.";
                     if (_quests.Any(q => q.IsActive && q.Type == QuestType.ClearNest && q.Nest == d.Nest)) return "이미 등록된 둥지 의뢰가 있습니다.";
                     break;
-                case QuestType.Explore:
-                    if (Services.TryGet<FogOfWar>(out var fog) && fog.ExploredFraction(d.Point, d.Radius <= 0 ? 8f : d.Radius) > 0.85f)
-                        return "이미 탐사된 지역입니다.";
+                case QuestType.Escort:
+                    if (d.Hours < 1 || d.Hours > 24) return "호위 시간은 1~24시간이어야 합니다.";
+                    if (_quests.Any(q => q.IsActive && q.Type == QuestType.Escort)) return "이미 진행 중인 호위 의뢰가 있습니다.";
                     break;
             }
             return null;
@@ -111,8 +110,8 @@ namespace GuildMaster.Quests
                 case QuestType.ClearNest:
                     d = NestDanger(q.Nest);
                     break;
-                case QuestType.Explore:
-                    d = ExploreDanger(q.Point, q.Radius);
+                case QuestType.Escort:
+                    d = DangerLevel.Low; // depends on where the guild master walks
                     break;
                 case QuestType.Defend:
                     d = DangerLevel.Medium;
@@ -206,19 +205,60 @@ namespace GuildMaster.Quests
                 }
         }
 
+        // ---------------- Escort (P3-4a) ----------------
+
+        /// <summary>Escorts within this distance of the guild master count as "on duty".</summary>
+        public const float EscortRange = 8f;
+
+        readonly Dictionary<Quest, Dictionary<IQuestTaker, float>> _escortShares = new();
+
         void Update()
         {
-            _exploreTimer -= Time.deltaTime;
-            if (_exploreTimer > 0f) return;
-            _exploreTimer = 1f;
-            if (!Services.TryGet<FogOfWar>(out var fog)) return;
+            float dt = Time.deltaTime;
+            if (dt <= 0f || !Services.TryGet<Player.PlayerAvatar>(out var master) || !master.IsAlive) return;
+            bool outside = !Services.Get<World.WorldService>().Grid.IsInTown(master.Position);
+            float hours = dt / _clock.RealSecondsPerGameHour;
             foreach (var q in _quests.ToList())
             {
-                if (q.Type != QuestType.Explore || q.Status != QuestStatus.InProgress) continue;
-                int pct = Mathf.RoundToInt(fog.ExploredFraction(q.Point, q.Radius) * 100f);
-                if (pct != q.Progress) { q.Progress = pct; EventBus.Publish(new QuestProgressEvent { Quest = q }); }
-                if (pct >= 85) Complete(q);
+                if (q.Type != QuestType.Escort || q.Status != QuestStatus.InProgress) continue;
+                if (!_escortShares.TryGetValue(q, out var shares)) _escortShares[q] = shares = new Dictionary<IQuestTaker, float>();
+                int onDuty = 0;
+                foreach (var t in q.Assignees)
+                {
+                    if (t is not Units.Unit u || !u.IsAlive || Vector2.Distance(u.Position, master.Position) > EscortRange) continue;
+                    onDuty++;
+                    if (outside) { shares.TryGetValue(t, out var s); shares[t] = s + hours; }
+                }
+                if (outside && onDuty > 0)
+                {
+                    q.EscortLeftTown = true;
+                    int before = Mathf.FloorToInt(q.EscortHours);
+                    q.EscortHours = Mathf.Min(q.MaxHours, q.EscortHours + hours);
+                    if (Mathf.FloorToInt(q.EscortHours) != before) EventBus.Publish(new QuestProgressEvent { Quest = q });
+                }
+                if ((q.EscortLeftTown && !outside) || q.EscortHours >= q.MaxHours) CompleteEscort(q, shares);
             }
+        }
+
+        /// <summary>Pays for the hours actually escorted (split by time on duty) and refunds the rest.</summary>
+        void CompleteEscort(Quest q, Dictionary<IQuestTaker, float> shares)
+        {
+            _escortShares.Remove(q);
+            // Everyone left or died on the way: nobody to pay, refund everything.
+            if (q.Assignees.Count == 0) { Close(q, QuestStatus.Failed, refund: true); return; }
+            var (gold, exp) = EscortPay(q.RewardGold, q.RewardExp, q.EscortHours, q.MaxHours);
+            q.SetPayout(gold, exp);
+            _treasury.AddGold(q.RewardGold - q.PayGold);
+            _treasury.AddExp(q.RewardExp - q.PayExp);
+            foreach (var kv in shares) q.AddContribution(kv.Key, Mathf.RoundToInt(kv.Value * 10f));
+            Complete(q);
+        }
+
+        /// <summary>Escort payment: escrow × (hours escorted / max hours), rounded.</summary>
+        public static (int gold, int exp) EscortPay(int escrowGold, int escrowExp, float hours, int maxHours)
+        {
+            float frac = maxHours <= 0 ? 0f : Mathf.Clamp01(hours / maxHours);
+            return (Mathf.RoundToInt(escrowGold * frac), Mathf.RoundToInt(escrowExp * frac));
         }
 
         void OnHour(HourPassedEvent e)
@@ -245,19 +285,6 @@ namespace GuildMaster.Quests
             return seen >= 5 && d < DangerLevel.High ? d + 1 : d;
         }
 
-        /// <summary>Explore danger: the most dangerous discovered, not-seen-empty nest near the area.</summary>
-        public static DangerLevel ExploreDanger(Vector2 point, float radius)
-        {
-            var level = DangerLevel.Low;
-            if (!Services.TryGet<GuildIntel>(out var intel)) return level;
-            foreach (var n in intel.KnownNests)
-            {
-                var ni = intel.Get(n);
-                if (ni.Observed && ni.LastCount <= 0) continue;
-                if (Vector2.Distance(n.WorldPosition, point) < radius + 6f && n.Species.danger > level) level = n.Species.danger;
-            }
-            return level;
-        }
 
         /// <summary>Removes a dead/departed taker from every quest.</summary>
         public void RemoveTakerEverywhere(IQuestTaker t)

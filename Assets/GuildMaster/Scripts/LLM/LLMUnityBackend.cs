@@ -33,9 +33,31 @@ namespace GuildMaster.LLM
             return backend;
         }
 
+        /// <summary>
+        /// The scene's LLM survives scene reloads (dontDestroyOnLoad), so a restart would load a
+        /// second copy of the model. Must run before the reloaded LLM's Awake: deactivates and
+        /// destroys the new copy when a persistent one is already running.
+        /// </summary>
+        public static void DiscardReloadedDuplicates()
+        {
+            var all = FindObjectsByType<LLMUnity.LLM>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            bool persistentExists = false;
+            foreach (var l in all) if (l.gameObject.scene.name == "DontDestroyOnLoad") persistentExists = true;
+            if (!persistentExists) return;
+            foreach (var l in all)
+            {
+                if (l.gameObject.scene.name == "DontDestroyOnLoad") continue;
+                l.enabled = false;
+                l.gameObject.SetActive(false);
+                Destroy(l.gameObject);
+            }
+        }
+
         IEnumerator Connect()
         {
-            _llm = FindAnyObjectByType<LLMUnity.LLM>();
+            _llm = null;
+            foreach (var l in FindObjectsByType<LLMUnity.LLM>(FindObjectsSortMode.None))
+                if (l.enabled && l.gameObject.activeInHierarchy) { _llm = l; break; }
             if (_llm == null || !_llm.enabled)
             {
                 State = LlmBackendState.NotConfigured;

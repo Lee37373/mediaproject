@@ -63,8 +63,18 @@ namespace GuildMaster.Core
         /// <summary>Converts game hours to real (scaled) seconds.</summary>
         public float HoursToSeconds(float hours) => hours * realSecondsPerGameHour;
 
+        /// <summary>When set (game over) the clock stays paused and speed changes are ignored.</summary>
+        public bool Frozen { get; private set; }
+
+        public void Freeze()
+        {
+            SetSpeed(0);
+            Frozen = true;
+        }
+
         public void SetSpeed(int index)
         {
+            if (Frozen) return;
             SpeedIndex = Mathf.Clamp(index, 0, SpeedScales.Length - 1);
             Time.timeScale = SpeedScales[SpeedIndex];
             EventBus.Publish(new GameSpeedChangedEvent { SpeedIndex = SpeedIndex, Scale = Time.timeScale });
