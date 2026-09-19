@@ -34,8 +34,12 @@ GuildMaster.Tests.EditMode
 - **AI는 하이브리드**입니다.
   - 저수준(이동·전투·생존)은 C# FSM(`StateMachine<T>`, `State<T>`)이 맡습니다.
   - 고수준 판단(퀘스트 선택 등)은 `IAdventurerDecisionMaker`가 맡습니다. LLM 구현체와 `RuleBasedDecisionMaker`(항상 쓸 수 있는 대체 경로)가 있습니다.
-- **아트**: 캐릭터·몬스터는 LAYERLAB 2D Characters(Cute Adventurers 프레임, Casual Monsters 전신 이미지)를 `Assets/GuildMaster/Resources/Art/`에 복사해 씁니다(`Visuals/ArtLibrary.cs`, 가져오기 설정은 `Scripts/Editor/ArtImportSettings.cs`). 이미지가 없으면 `Visuals/PixelArt.cs`의 코드 생성 그림으로 대체합니다. 맵은 같은 카툰풍으로 코드가 그립니다: 지형은 `World/CartoonGroundPainter.cs`(16×16칸 덩어리 텍스처, 1칸 32px, 곡선 경계·외곽선·경계 안티앨리어싱, 시작 시 약 2초), 나무·바위·둥지·건물은 `Visuals/CartoonArt.cs`.
-  - 원본 패키지: `%APPDATA%/Unity/Asset Store-5.x/LAYERLAB/Textures Materials2D Characters/`(Spine·PSB는 쓰지 않음). **Asset Store EULA상 재배포 금지라 `Resources/Art`는 `.gitignore`로 제외**했습니다. 다른 PC에서는 패키지에서 다시 복사해야 합니다.
+- **아트**: 캐릭터·몬스터는 Asset Store의 LAYERLAB **2D Characters** 3종(Cute Adventurers, Casual Monsters, Minimal Characters)을 씁니다.
+  - 패키지는 `Assets/Layer Lab/`에 import된 원본 그대로 쓰고, **EULA상 재배포 금지라 git에서 제외**합니다.
+  - 게임은 `Resources/ArtCatalog.asset`(git 추적, 이미지 없이 GUID 참조만)으로 찾습니다(`Visuals/ArtLibrary.cs`, `Visuals/CharacterArtCatalog.cs`).
+  - **새 PC 설정**: Package Manager → My Assets에서 세 패키지를 import하면 끝입니다. 가져오기 설정(발 기준점, PPU)은 `Scripts/Editor/ArtImportSettings.cs`가 자동 적용하고, 카탈로그는 GUID로 자동 연결됩니다(필요하면 메뉴 `GuildMaster/아트 카탈로그 다시 만들기`).
+  - 패키지가 없으면 `Visuals/PixelArt.cs`의 코드 생성 그림으로 대체합니다.
+  - 맵은 같은 카툰풍으로 코드가 그립니다: 지형 `World/CartoonGroundPainter.cs`(16×16칸 덩어리 텍스처, 1칸 32px, 곡선 경계·외곽선, 시작 시 약 2초), 나무·바위·둥지·건물·건물 내부 `Visuals/CartoonArt.cs`.
 - **UI는 uGUI를 코드로 조립**합니다(`UIBuilder`). 한글은 OS 폰트(맑은 고딕)를 씁니다. 레이아웃은 LayoutGroup 기반입니다.
   - 주의: `childForceExpand`가 켜진 LayoutGroup은 스스로 flexible이 됩니다. 필요하면 `Size(..., flexWidth: 0)`로 막으세요.
 - **정보 은닉**: 플레이어·NPC·UI·로그·LLM 프롬프트는 **시야로 확인한 정보만** 씁니다. 몬스터·둥지 정보는 `EcosystemManager`가 아니라 `GuildIntel`(관측 기록)에서 읽으세요.

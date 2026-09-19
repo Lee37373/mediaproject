@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -18,50 +17,58 @@ namespace GuildMaster.Visuals
     }
 
     /// <summary>
-    /// Imported character art under Resources/Art (LAYERLAB 2D Characters: Cute Adventurers,
-    /// Casual Monsters). Everything is optional: callers fall back to <see cref="PixelArt"/>
-    /// when a sprite is missing, so art can be swapped in piece by piece.
+    /// Character art from the LAYERLAB 2D Characters packages, found through
+    /// <see cref="CharacterArtCatalog"/> (Resources/ArtCatalog). Everything is optional: when the
+    /// packages are not imported the references are empty and callers fall back to
+    /// <see cref="PixelArt"/>.
     /// </summary>
     public static class ArtLibrary
     {
-        const string Root = "Art/";
-
-        static readonly Dictionary<string, Sprite> s_sprites = new();
-        static readonly Dictionary<string, CharacterAnimSet> s_anims = new();
+        static CharacterArtCatalog s_catalog;
+        static bool s_loaded;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetCache()
         {
-            s_sprites.Clear();
-            s_anims.Clear();
+            s_catalog = null;
+            s_loaded = false;
+        }
+
+        static CharacterArtCatalog Catalog
+        {
+            get
+            {
+                if (!s_loaded)
+                {
+                    s_loaded = true;
+                    s_catalog = Resources.Load<CharacterArtCatalog>("ArtCatalog");
+                }
+                return s_catalog;
+            }
         }
 
         /// <summary>Full-body monster image, e.g. "goblin", "slime_king". Null if absent.</summary>
         public static Sprite Monster(string key)
         {
-            if (string.IsNullOrEmpty(key)) return null;
-            if (!s_sprites.TryGetValue(key, out var s))
-                s_sprites[key] = s = Resources.Load<Sprite>(Root + "Monsters/" + key);
-            return s;
+            if (string.IsNullOrEmpty(key) || Catalog == null) return null;
+            var m = Catalog.monsters.FirstOrDefault(x => x.key == key);
+            return m != null && m.sprite != null ? m.sprite : null;
         }
 
         /// <summary>Animated adventurer skin, e.g. "knight". Null if absent.</summary>
         public static CharacterAnimSet Adventurer(string skin)
         {
-            if (string.IsNullOrEmpty(skin)) return null;
-            if (s_anims.TryGetValue(skin, out var set)) return set;
-            var all = Resources.LoadAll<Sprite>(Root + "Adventurers/" + skin);
-            Sprite[] Frames(string prefix) => all.Where(f => f.name.StartsWith(prefix)).OrderBy(f => f.name).ToArray();
-            set = all.Length == 0 ? null : new CharacterAnimSet
+            if (string.IsNullOrEmpty(skin) || Catalog == null) return null;
+            var s = Catalog.skins.FirstOrDefault(x => x.name == skin);
+            var idle = s?.idle?.Where(f => f != null).ToArray();
+            if (idle == null || idle.Length == 0) return null;
+            return new CharacterAnimSet
             {
-                Idle = Frames("idle_"),
-                Run = Frames("run_"),
-                Die = Frames("die_"),
+                Idle = idle,
+                Run = s.run?.Where(f => f != null).ToArray() ?? new Sprite[0],
+                Die = s.die?.Where(f => f != null).ToArray() ?? new Sprite[0],
                 HasShadow = true,
             };
-            if (set != null && set.Idle.Length == 0) set = null;
-            s_anims[skin] = set;
-            return set;
         }
     }
 }

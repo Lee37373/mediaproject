@@ -84,7 +84,8 @@ InitTestScene*.unity*
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
 /[Aa]ssets/[Ss]ceneDependencyCache*
 
-# Asset Store art (LAYERLAB 2D Characters): EULA forbids redistribution; copy locally from the
-# Asset Store cache (see CLAUDE.md). The game falls back to generated sprites without it.
-/Assets/GuildMaster/Resources/Art/
-/Assets/GuildMaster/Resources/Art.meta
+
+# Asset Store packages (LAYERLAB 2D Characters): EULA forbids redistribution. Import them from
+# Package Manager > My Assets; Resources/ArtCatalog (tracked) references them by GUID.
+/Assets/Layer Lab/
+/Assets/Layer Lab.meta

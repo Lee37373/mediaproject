@@ -4,18 +4,23 @@ using UnityEngine;
 namespace GuildMaster.EditorTools
 {
     /// <summary>
-    /// Import settings for character art under Resources/Art (LAYERLAB 2D Characters).
-    /// Pivots sit at the feet so the art lines up with the old 16 px sprites (1 cell ≈ 1 unit):
-    /// - Adventurers/*: 195×182 animation frames, feet (incl. baked shadow) ~23% up, ~105 px tall.
-    /// - Monsters/*: tightly cropped full-body images, feet at the bottom edge.
+    /// Import settings for the LAYERLAB 2D Characters art used by the game, applied automatically
+    /// when the Asset Store packages are imported (so a fresh machine needs no manual setup).
+    /// Pivots sit at the feet so the art lines up with the map (1 cell ≈ 1 unit):
+    /// - Cute Adventurers image sequences: 195×182 frames, feet (incl. baked shadow) ~23% up, ~105 px tall.
+    /// - Casual Monsters PNG/All: tightly cropped full-body images, feet at the bottom edge.
     /// </summary>
     public class ArtImportSettings : AssetPostprocessor
     {
-        const string Root = "Assets/GuildMaster/Resources/Art/";
+        public const string AdventurerFrames = "Assets/Layer Lab/2D Characters-Cute Adventurers/Sprites/ImageSequence/";
+        public const string MonsterImages = "Assets/Layer Lab/2D Characters-CasualMonsters/PNG/All/";
 
         void OnPreprocessTexture()
         {
-            if (!assetPath.StartsWith(Root)) return;
+            bool adventurer = assetPath.StartsWith(AdventurerFrames);
+            bool monster = assetPath.StartsWith(MonsterImages);
+            if (!adventurer && !monster) return;
+
             var ti = (TextureImporter)assetImporter;
             ti.textureType = TextureImporterType.Sprite;
             ti.spriteImportMode = SpriteImportMode.Single;
@@ -29,16 +34,8 @@ namespace GuildMaster.EditorTools
             ti.ReadTextureSettings(settings);
             settings.spriteAlignment = (int)SpriteAlignment.Custom;
             settings.spriteMeshType = SpriteMeshType.FullRect;
-            if (assetPath.StartsWith(Root + "Adventurers/"))
-            {
-                settings.spritePivot = new Vector2(0.5f, 0.23f);
-                settings.spritePixelsPerUnit = 100f;
-            }
-            else
-            {
-                settings.spritePivot = new Vector2(0.5f, 0.02f);
-                settings.spritePixelsPerUnit = 90f;
-            }
+            settings.spritePivot = adventurer ? new Vector2(0.5f, 0.23f) : new Vector2(0.5f, 0.02f);
+            settings.spritePixelsPerUnit = adventurer ? 100f : 90f;
             ti.SetTextureSettings(settings);
         }
     }
