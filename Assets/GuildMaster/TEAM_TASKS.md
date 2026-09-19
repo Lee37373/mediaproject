@@ -23,7 +23,7 @@
 | P4-26 | 전투 지능 등급 재정리(본능 단계 추가, 카이팅·엄폐·분산·재선택을 등급별로) | 이재혁 | 완료 | Units/CombatTier·Combat·TargetSelector, Data/MonsterDefinition·DefaultContent | 9f5ab3a |
 | P4-27 | 파티 역할과 대형(전열·후열, 이동 대형, 집중 공격 지정) | 이재혁 | 완료 | Adventurers/PartyTactics(신규), AdventurerStates, Units/TargetSelector·Combat·Unit, Visuals/TargetMarker(신규) | 1419d87 |
 | P4-28 | 몬스터 전술(숙련 이상: 포위, 후퇴 후 합류, 무리 목표 지정) | 이재혁 | 완료 | Monsters/PackTactics·MonsterRegroupState(신규)·Monster, Units/Combat | 757850a |
-| P4-29 | 사제 직업(치유·보호막, 치유 AI) | 이재혁 | 예정 | Adventurers, Units/Skills, UI | |
+| P4-29 | 사제 직업(치유·광역 치유, 치유 AI, 개구리 스킨, 출현 15%) | 이재혁 | 진행 중 | Adventurers, Units/Skills, UI/World/FloatingTextLayer | |
 | P4-22 | 관측된 몬스터 장비 정보(GuildIntel 기록·둥지 위험도·LLM threat_notes) | 미정 | 예정 | Ecosystem/GuildIntel, Quests/QuestBoard, Adventurers/Prompts/DecisionPrompt | |
 | P4-23 | 안개 속 마지막 목격 표시(시야에서 사라진 적을 회색 정지 모습으로) | 미정 | 예정 | Fog/FogGhostService(신규), UI/Views/MinimapView, UI/Views/InspectorView | |
 | P4-13 | 건물 배치와 감시탑 | 미정 | 예정 | Town, World | |
@@ -61,8 +61,8 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: 없음 (P4-29는 사양 확인 후 시작)
-- **예정**: P4-29
+- **진행 중**: P4-29
+- **예정**: (정해지면 적기)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-15 ~ P4-18, P4-20, P4-21, P4-24 ~ P4-28 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
