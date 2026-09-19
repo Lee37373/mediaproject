@@ -163,9 +163,9 @@ namespace GuildMaster.Session
             var waves = AddSystem<WaveManager>();
             waves.Init(new RaidSettings
             {
-                FirstDay = Balance.raidFirstDay, IntervalDays = Balance.raidIntervalDays, Hour = Balance.raidHour,
-                WarningHours = Balance.raidWarningHours, MaxHours = Balance.raidMaxHours,
-            }, clock, eco, world, pool);
+                ChancePerLevelPerHour = Balance.raidChancePerLevelPerHour, SendFraction = Balance.raidSendFraction, MinParty = Balance.raidMinParty,
+                MaxHours = Balance.raidMaxHours,
+            }, clock, eco, world);
             Services.Register(waves);
             AddSystem<DefenseCoordinator>().Init(waves, roster, world, Balance.raidDefendRadius);
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());

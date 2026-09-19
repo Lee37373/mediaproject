@@ -49,6 +49,10 @@ namespace GuildMaster.Data
         public float wanderRadius = 5f;
         public float leashRadius = 14f;
         public bool canRaid;
+        [Tooltip("Raid-capable nests: population from which raids become possible (danger level 1).")]
+        public int raidThreshold = 99;
+        [Tooltip("Each this many members above the threshold raises the danger level by one.")]
+        public int raidStep = 3;
         [Tooltip("Members of a nest move as a flock following a pack leader.")]
         public bool packHunter;
         public List<string> skillIds = new();

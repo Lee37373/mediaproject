@@ -6,8 +6,8 @@ using UnityEngine.UI;
 namespace GuildMaster.UI
 {
     /// <summary>
-    /// Top-of-screen raid banner (P3-6): the warning with the direction only (information hiding),
-    /// then "raid in progress" until the wave ends, then a short result line.
+    /// Top-of-screen raid banner (P3-6). Nothing is announced in advance: the banner appears when
+    /// the guild first sees the raiders, stays up during the fight, then shows a short result.
     /// </summary>
     public class RaidBannerView : MonoBehaviour
     {
@@ -25,15 +25,13 @@ namespace GuildMaster.UI
             _text = UIBuilder.Label(_root, "", 18, TextAnchor.MiddleCenter, new Color(1f, 0.9f, 0.85f), FontStyle.Bold);
             _text.rectTransform.Stretch();
             _root.gameObject.SetActive(false);
-            EventBus.Subscribe<RaidWarningEvent>(OnWarning);
-            EventBus.Subscribe<RaidStartedEvent>(OnStarted);
+            EventBus.Subscribe<RaidSightedEvent>(OnSighted);
             EventBus.Subscribe<RaidEndedEvent>(OnEnded);
         }
 
         void OnDestroy()
         {
-            EventBus.Unsubscribe<RaidWarningEvent>(OnWarning);
-            EventBus.Unsubscribe<RaidStartedEvent>(OnStarted);
+            EventBus.Unsubscribe<RaidSightedEvent>(OnSighted);
             EventBus.Unsubscribe<RaidEndedEvent>(OnEnded);
         }
 
@@ -44,12 +42,15 @@ namespace GuildMaster.UI
             _hideAt = seconds > 0f ? Time.unscaledTime + seconds : -1f;
         }
 
-        void OnWarning(RaidWarningEvent e) => Show($"침공 경고: {e.HoursLeft}시간 뒤 {e.Direction}쪽에서 무언가 몰려옵니다", -1f);
-        void OnStarted(RaidStartedEvent e) => Show($"{e.Wave}번째 침공! {e.Direction}쪽에서 적이 몰려옵니다", -1f);
+        void OnSighted(RaidSightedEvent e) => Show($"침공! {e.Direction}쪽에서 적 무리가 몰려옵니다", -1f);
 
-        void OnEnded(RaidEndedEvent e) => Show(e.Withdrawn > 0
-            ? $"동이 트자 적이 물러갔습니다 (처치 {e.Killed})"
-            : $"침공을 막아냈습니다! (처치 {e.Killed})", ResultSeconds);
+        void OnEnded(RaidEndedEvent e)
+        {
+            if (!e.Sighted) return; // never seen: the guild does not know it happened
+            Show(e.Withdrawn > 0
+                ? $"적이 물러갔습니다 (처치 {e.Killed})"
+                : $"침공을 막아냈습니다! (처치 {e.Killed})", ResultSeconds);
+        }
 
         void Update()
         {

@@ -95,20 +95,23 @@ namespace GuildMaster.Data
             Loot(wolf, wolfFang, 0.4f);
 
             var goblin = Mon("goblin", "고블린", MonsterShape.Humanoid, new Color(0.35f, 0.65f, 0.25f), new Color(0.55f, 0.35f, 0.2f), 0.85f,
-                28, 6, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.Low, true, 8, 0.05f, 4, 7, Biome.Forest, Biome.Plains);
+                28, 6, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.Low, true, 20, 0.05f, 4, 7, Biome.Forest, Biome.Plains);
             goblin.canRaid = true;
+            goblin.raidThreshold = 10; goblin.raidStep = 4; // raid danger at 10 / 14 / 18
             Loot(goblin, goblinEar, 0.8f);
             Loot(goblin, rustyDagger, 0.2f);
 
             var orc = Mon("orc", "오크", MonsterShape.Humanoid, new Color(0.3f, 0.45f, 0.3f), new Color(0.4f, 0.3f, 0.25f), 1.15f,
-                70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 5, 0.03f, 3, 20, Biome.Mountain, Biome.Forest);
+                70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.03f, 3, 20, Biome.Mountain, Biome.Forest);
             orc.canRaid = true;
+            orc.raidThreshold = 6; orc.raidStep = 3; // 6 / 9 / 12
             Loot(orc, orcTusk, 0.7f);
             Loot(orc, ironOre, 0.35f);
 
             var ogre = Mon("ogre", "오거", MonsterShape.Brute, new Color(0.55f, 0.6f, 0.35f), new Color(0.4f, 0.28f, 0.2f), 1.6f,
-                220, 22, 8, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 2, 0.008f, 1, 80, Biome.Mountain);
+                220, 22, 8, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 4, 0.008f, 1, 80, Biome.Mountain);
             ogre.canRaid = true;
+            ogre.raidThreshold = 2; ogre.raidStep = 1; // 2 / 3 / 4
             ogre.wanderRadius = 4f;
             Loot(ogre, ogreHide, 1f);
             Loot(ogre, giantBone, 0.6f, 1, 2);

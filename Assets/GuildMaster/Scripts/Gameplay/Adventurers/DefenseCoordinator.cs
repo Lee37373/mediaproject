@@ -7,7 +7,7 @@ using UnityEngine;
 namespace GuildMaster.Adventurers
 {
     /// <summary>
-    /// Calls guild members to arms during a raid (P3-6): everyone fit to fight within the defend
+    /// Calls guild members to arms once a raid has been sighted (P3-6): everyone fit to fight within the defend
     /// radius of the town — escorts included (user decision) — switches to <see cref="DefendState"/>;
     /// members coming back into range mid-raid join too. When the raid ends they resume their quest,
     /// rest if badly hurt, or go back to idling.
@@ -29,21 +29,21 @@ namespace GuildMaster.Adventurers
             _roster = roster;
             _world = world;
             _radius = radius;
-            EventBus.Subscribe<RaidStartedEvent>(OnStarted);
+            EventBus.Subscribe<RaidSightedEvent>(OnSighted);
             EventBus.Subscribe<RaidEndedEvent>(OnEnded);
         }
 
         void OnDestroy()
         {
-            EventBus.Unsubscribe<RaidStartedEvent>(OnStarted);
+            EventBus.Unsubscribe<RaidSightedEvent>(OnSighted);
             EventBus.Unsubscribe<RaidEndedEvent>(OnEnded);
         }
 
-        void OnStarted(RaidStartedEvent e) => CallToArms();
+        void OnSighted(RaidSightedEvent e) => CallToArms();
 
         void Update()
         {
-            if (_waves == null || !_waves.RaidActive) return;
+            if (_waves == null || !_waves.RaidSighted) return;
             _timer -= Time.deltaTime;
             if (_timer > 0f) return;
             _timer = CheckInterval;
@@ -52,7 +52,7 @@ namespace GuildMaster.Adventurers
 
         void CallToArms()
         {
-            if (!_waves.RaidActive) return;
+            if (!_waves.RaidSighted) return;
             var center = _world.TownCenterWorld;
             foreach (var a in _roster.Members)
             {
@@ -72,6 +72,8 @@ namespace GuildMaster.Adventurers
 
         void OnEnded(RaidEndedEvent e)
         {
+            // Another raid the guild knows about is still going on: keep defending.
+            if (_waves.RaidSighted) return;
             foreach (var a in _roster.Members)
             {
                 if (a == null || !a.IsAlive || a.Fsm.Current != a.DefendState) continue;

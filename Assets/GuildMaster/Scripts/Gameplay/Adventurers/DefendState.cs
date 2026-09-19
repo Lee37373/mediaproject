@@ -31,7 +31,7 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
-            if (!Services.TryGet<WaveManager>(out var waves) || !waves.RaidActive) return; // coordinator releases us
+            if (!Services.TryGet<WaveManager>(out var waves) || !waves.RaidSighted) return; // coordinator releases us
             var world = Services.Get<WorldService>();
             var rally = waves.RallyPoint;
 

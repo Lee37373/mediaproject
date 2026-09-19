@@ -57,7 +57,7 @@ namespace GuildMaster.Session
             EventBus.Publish(new GameOverEvent
             {
                 Reason = reason, Day = _clock.Day, Members = members, QuestsCompleted = done, Recruits = _recruits,
-                Waves = Services.TryGet<Town.WaveManager>(out var waves) ? waves.Wave : 0,
+                Waves = Services.TryGet<Town.WaveManager>(out var waves) ? waves.RaidCount : 0,
                 ExtinctSpecies = Services.TryGet<Ecosystem.EcosystemManager>(out var eco) ? eco.Species.Count(eco.IsExtinct) : 0,
             });
         }

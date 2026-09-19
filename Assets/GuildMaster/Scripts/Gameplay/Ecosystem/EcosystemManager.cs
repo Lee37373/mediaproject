@@ -106,7 +106,8 @@ namespace GuildMaster.Ecosystem
             };
         }
 
-        Monster Spawn(Nest nest)
+        /// <summary>Adds one member to the nest and updates the population count (also used by debug tools).</summary>
+        internal Monster Spawn(Nest nest)
         {
             var m = nest.SpawnMember();
             ChangePopulation(nest.Species, +1);

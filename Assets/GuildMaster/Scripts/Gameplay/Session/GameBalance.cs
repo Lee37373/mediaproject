@@ -48,12 +48,13 @@ namespace GuildMaster.Session
         public int startingAdventurers = 3;
         public int rosterCapacity = 6;
 
-        [Header("Raids (P3-6)")]
-        public int raidFirstDay = 3;
-        public int raidIntervalDays = 3;
-        public int raidHour = 21;
-        public int raidWarningHours = 2;
-        /// <summary>Game hours after which surviving raiders withdraw (dawn).</summary>
+        [Header("Raids (P3-6): swollen nests raid the town")]
+        /// <summary>Hourly raid chance per danger level of a nest (level = steps above its threshold).</summary>
+        [Range(0f, 0.2f)] public float raidChancePerLevelPerHour = 0.01f;
+        /// <summary>Share of the nest that marches on the town (the rest stays home).</summary>
+        [Range(0.1f, 1f)] public float raidSendFraction = 0.7f;
+        public int raidMinParty = 3;
+        /// <summary>Game hours after which surviving raiders give up and go home.</summary>
         public int raidMaxHours = 10;
         /// <summary>Guild members within this many cells of the town rush to defend.</summary>
         public float raidDefendRadius = 45f;

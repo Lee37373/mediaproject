@@ -285,17 +285,35 @@ namespace GuildMaster.Session
 
         // ---------------- Raids (P3-6) ----------------
 
-        /// <summary>Starts raid wave N right now (warning included).</summary>
-        public static string StartRaid(int wave)
+        /// <summary>
+        /// Makes raid-capable nest #index (see RaidNests) raid now. fill = grow it to capacity first.
+        /// </summary>
+        public static string ForceRaid(int index, bool fill = true)
         {
-            int n = Services.Get<Town.WaveManager>().StartWave(wave);
-            return $"wave {wave}: {n} raiders";
+            var nests = Services.Get<EcosystemManager>().Nests.Where(n => n.Species.canRaid && !n.IsEmpty).ToList();
+            if (index < 0 || index >= nests.Count) return "no such raid nest (count " + nests.Count + ")";
+            var nest = nests[index];
+            var eco = Services.Get<EcosystemManager>();
+            if (fill) while (nest.Population < nest.Capacity) eco.Spawn(nest);
+            int n = Services.Get<Town.WaveManager>().Launch(nest);
+            return $"{nest.DisplayName} pop={nest.Population} → {n} raiders";
+        }
+
+        /// <summary>Raid-capable nests with population, danger level and whether they are out raiding.</summary>
+        public static string RaidNests()
+        {
+            var w = Services.Get<Town.WaveManager>();
+            var sb = new StringBuilder();
+            int i = 0;
+            foreach (var n in Services.Get<EcosystemManager>().Nests.Where(n => n.Species.canRaid && !n.IsEmpty))
+                sb.AppendLine($"  #{i++} {n.DisplayName} pop={n.Population}/{n.Capacity} level={w.LevelOf(n)} raiding={w.IsRaiding(n)} dist={Vector2.Distance(n.WorldPosition, Services.Get<World.WorldService>().TownCenterWorld):0}");
+            return sb.ToString();
         }
 
         public static string RaidStatus()
         {
             var w = Services.Get<Town.WaveManager>();
-            var sb = new StringBuilder($"wave={w.Wave} active={w.RaidActive} raiders={w.Raiders.Count(m => m != null && m.IsAlive)}\n");
+            var sb = new StringBuilder($"raids={w.RaidCount} active={w.RaidActive} sighted={w.RaidSighted} seenRaiders={w.Raiders.Count(m => m != null && m.IsAlive)}\n");
             foreach (var g in w.Raiders.Where(m => m != null && m.IsAlive).GroupBy(m => m.DisplayName))
                 sb.Append($"  {g.Key} x{g.Count()} ({string.Join(",", g.Select(m => m.StateLabel).Distinct())})\n");
             foreach (var b in Services.Get<Town.TownService>().Buildings)
