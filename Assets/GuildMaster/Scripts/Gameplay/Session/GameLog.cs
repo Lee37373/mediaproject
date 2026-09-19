@@ -99,7 +99,7 @@ namespace GuildMaster.Session
                     Add($"[생태계] {e.Nest.DisplayName}에 {e.Nest.Species.displayName}이(가) 다시 자리잡았습니다.", LogCategory.Ecosystem);
             });
             // Territorial routs, only when the guild saw them (GuildIntel rule).
-            EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{e.DrivenBy.displayName}에게 밀린 {e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다.", LogCategory.Ecosystem); });
+            EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 {e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<IntrudersRoutedEvent>(e => { if (e.Observed) Add($"{e.IntruderHome.Species.displayName} 무리가 {e.Territory.DisplayName}의 기세에 눌려 물러났습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {e.Nest.DisplayName}", LogCategory.Ecosystem));
             EventBus.Subscribe<DayPassedEvent>(e => Add($"{e.Day}일차가 밝았습니다.", LogCategory.Info));

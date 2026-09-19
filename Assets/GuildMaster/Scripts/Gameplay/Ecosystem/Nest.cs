@@ -56,13 +56,14 @@ namespace GuildMaster.Ecosystem
         }
 
         /// <summary>
-        /// Someone the residents drive out: a monster of another species or a guild unit inside the
-        /// territory. Visitors (and same-species monsters from other nests) are left alone.
+        /// Someone the residents drive out: a guild unit or any monster from another pack inside the
+        /// territory — other species, and same-species monsters from other nests or with no nest
+        /// (user request: packs are rivals even within a species). Visitors are left alone.
         /// </summary>
         public bool IsIntruder(Unit u)
         {
             if (u == null || !u.IsAlive || !InTerritory(u.Position)) return false;
-            if (u is Monster m) return m.Def != Species;
+            if (u is Monster m) return m.Home != this;
             return u.Faction == Faction.Guild;
         }
 

@@ -301,7 +301,7 @@ namespace GuildMaster.Units
         public override bool TryUse(Unit self, Unit target)
         {
             if (target == null || self is not Monsters.Monster me) return false;
-            UnitRegistry.Collect(self.Position, 7f, u => u != self && u is Monsters.Monster m && m.Def == me.Def, Buffer);
+            UnitRegistry.Collect(self.Position, 7f, u => u != self && u is Monsters.Monster m && m.Def == me.Def && m.Home == me.Home, Buffer); // own pack only
             int called = 0;
             foreach (var u in Buffer.ToArray())
             {

@@ -26,7 +26,7 @@ namespace GuildMaster.Ecosystem
         /// <summary>
         /// Waypoint for <paramref name="self"/>, fleeing <paramref name="pursuer"/> towards
         /// <paramref name="destination"/>, inside the edge of a territory whose residents would attack the
-        /// pursuer (not our own species' nest). False if none is worth the detour.
+        /// pursuer (not our own or the pursuer's pack). False if none is worth the detour.
         /// </summary>
         public static bool FindLurePoint(Unit self, Unit pursuer, Vector2 destination, bool knownNestsOnly, out Vector2 point, out Nest via)
         {
@@ -34,7 +34,6 @@ namespace GuildMaster.Ecosystem
             via = null;
             if (self == null || pursuer == null || !Services.TryGet<EcosystemManager>(out var eco)) return false;
             var world = Services.Get<WorldService>();
-            var selfSpecies = (self as Monster)?.Def;
             var pursuerSpecies = (pursuer as Monster)?.Def;
             // Residents attack guild units and other species; a nest-less non-monster pursuer is ignored.
             if (pursuer.Faction != Faction.Guild && pursuerSpecies == null) return false;
@@ -47,7 +46,11 @@ namespace GuildMaster.Ecosystem
                 if (knownNestsOnly && !n.Discovered) continue;
                 var species = byIntel ? intel.SpeciesOf(n) : n.Species;
                 bool empty = byIntel ? intel.Get(n) is { Observed: true, LastCount: 0 } : n.IsEmpty;
-                if (empty || species == selfSpecies || species == pursuerSpecies) continue;
+                if (empty) continue;
+                // Residents attack every other pack, same species included. Monsters know the packs;
+                // adventurers cannot tell which nest a pursuer came from, so they avoid its species.
+                if (byIntel ? species == pursuerSpecies
+                            : n == (self as Monster)?.Home || n == (pursuer as Monster)?.Home) continue;
                 float radius = knownNestsOnly ? species.territoryRadius * 1.4f : n.TerritoryRadius;
                 if (radius <= 0f || Vector2.Distance(self.Position, n.WorldPosition) > MaxSearch) continue;
                 for (int k = 0; k < Samples; k++)

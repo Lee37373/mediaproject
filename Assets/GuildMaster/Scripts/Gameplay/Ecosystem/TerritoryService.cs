@@ -15,7 +15,7 @@ namespace GuildMaster.Ecosystem
     public struct IntrudersRoutedEvent { public Nest Territory; public Nest IntruderHome; public int Count; public bool Observed; }
 
     /// <summary>
-    /// Territorial clashes between species (P4-18). Fighting itself comes from Monster.IsHostileTo
+    /// Territorial clashes between packs (P4-18; any other nest, same species included). Fighting itself comes from Monster.IsHostileTo
     /// (residents attack intruders in Nest territory). This service handles lopsided encounters:
     /// when one side is <see cref="RoutRatio"/>x stronger, the weaker one does not fight to the death —
     /// outmatched residents abandon the nest and resettle elsewhere, outmatched intruders turn back
@@ -32,7 +32,8 @@ namespace GuildMaster.Ecosystem
         EcosystemManager _eco;
         float _timer;
         readonly Dictionary<Nest, float> _cooldown = new();
-        readonly Dictionary<MonsterDefinition, List<Monster>> _groups = new();
+        /// <summary>Intruders per pack: keyed by their nest, or by species for nest-less strays.</summary>
+        readonly Dictionary<object, List<Monster>> _groups = new();
 
         public void Init(EcosystemManager eco) => _eco = eco;
 
@@ -68,8 +69,9 @@ namespace GuildMaster.Ecosystem
             bool any = false;
             foreach (var u in UnitRegistry.All)
             {
-                if (u is not Monster m || !m.IsAlive || m.Def == nest.Species || !nest.InTerritory(m.Position)) continue;
-                if (!_groups.TryGetValue(m.Def, out var list)) _groups[m.Def] = list = new List<Monster>();
+                if (u is not Monster m || !m.IsAlive || m.Home == nest || !nest.InTerritory(m.Position)) continue;
+                object pack = m.Home != null ? m.Home : m.Def;
+                if (!_groups.TryGetValue(pack, out var list)) _groups[pack] = list = new List<Monster>();
                 list.Add(m);
                 any = true;
             }
@@ -79,14 +81,14 @@ namespace GuildMaster.Ecosystem
             float residentStrength = residents.Sum(Strength);
             foreach (var kv in _groups)
             {
-                var species = kv.Key;
+                var species = kv.Value.Count > 0 ? kv.Value[0].Def : null;
                 var intruders = kv.Value;
                 if (intruders.Count == 0) continue;
                 float intruderStrength = intruders.Sum(Strength);
                 switch (Outcome(residentStrength, intruderStrength))
                 {
                     case -1:
-                        Abandon(nest, residents, species, Centroid(intruders));
+                        Abandon(nest, residents, species, Centroid(intruders), intruders[0].Home);
                         _cooldown[nest] = Time.time + NestCooldown;
                         return;
                     case 1:
@@ -107,10 +109,10 @@ namespace GuildMaster.Ecosystem
         static bool Observed(Vector2 p) => Services.TryGet<FogOfWar>(out var fog) && fog.IsVisible(p);
 
         /// <summary>Outmatched residents move to the best other nest; if there is none they just run.</summary>
-        void Abandon(Nest nest, List<Monster> residents, MonsterDefinition drivenBy, Vector2 threat)
+        void Abandon(Nest nest, List<Monster> residents, MonsterDefinition drivenBy, Vector2 threat, Nest drivenFrom)
         {
             if (residents.Count == 0) return;
-            var dest = FindNewHome(nest, nest.Species, residents.Count, threat);
+            var dest = FindNewHome(nest, nest.Species, residents.Count, threat, drivenFrom);
             bool observed = Observed(nest.WorldPosition);
             if (dest == null)
             {
@@ -130,9 +132,10 @@ namespace GuildMaster.Ecosystem
         /// Nearest empty nest site at a safe distance (preferring the species' biomes), else the
         /// same-species nest with the most free room.
         /// </summary>
-        Nest FindNewHome(Nest from, MonsterDefinition species, int movers, Vector2 threat)
+        Nest FindNewHome(Nest from, MonsterDefinition species, int movers, Vector2 threat, Nest avoid)
         {
-            bool Safe(Nest n) => n != from && Vector2.Distance(n.WorldPosition, threat) >= MinResettleDistance;
+            // Never into the nest of the pack that drove them out (same-species rivals).
+            bool Safe(Nest n) => n != from && n != avoid && Vector2.Distance(n.WorldPosition, threat) >= MinResettleDistance;
             var empty = _eco.Nests.Where(n => n.IsEmpty && Safe(n))
                 .OrderBy(n => species.biomes.Contains(n.Biome) ? 0 : 1)
                 .ThenBy(n => Vector2.Distance(n.WorldPosition, from.WorldPosition))
