@@ -76,10 +76,13 @@ namespace GuildMaster.Monsters
         public override void Tick(float dt)
         {
             var m = Owner;
-            var target = m.Engage.Target;
+            // Far from home we only keep fighting while someone is still hitting us — any attacker,
+            // not just the current target (intruders mobbed by a nest's residents fight back, user request).
+            var attacker = m.LastAttacker;
+            bool underAttack = attacker != null && attacker.IsAlive && m.WasRecentlyAttackedBy(attacker, 3f);
             bool leashed = m.DefaultStateOverride == null
                            && Vector2.Distance(m.Position, m.HomePosition) > m.Def.leashRadius
-                           && (target == null || !m.WasRecentlyAttackedBy(target, 3f));
+                           && !underAttack;
             if (leashed)
             {
                 m.Engage.Clear();
