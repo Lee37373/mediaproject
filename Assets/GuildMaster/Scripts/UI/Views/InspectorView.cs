@@ -119,7 +119,7 @@ namespace GuildMaster.UI
         void HandleFocusKey()
         {
             var kb = Keyboard.current;
-            if (kb == null || !kb.fKey.wasPressedThisFrame) return;
+            if (kb == null || !kb.fKey.wasPressedThisFrame || MenuState.IsOpen) return;
             var es = EventSystem.current;
             if (es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null) return;
             if (_selected is Unit) { ToggleFocus(); return; }

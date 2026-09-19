@@ -12,7 +12,7 @@ namespace GuildMaster.Session
         void Update()
         {
             var kb = Keyboard.current;
-            if (kb == null || IsTyping()) return;
+            if (kb == null || IsTyping() || MenuState.IsOpen) return;
 
             var clock = Services.Get<GameClock>();
             if (kb.spaceKey.wasPressedThisFrame) clock.TogglePause();

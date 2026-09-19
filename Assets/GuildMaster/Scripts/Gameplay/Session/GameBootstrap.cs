@@ -45,7 +45,11 @@ namespace GuildMaster.Session
             Application.runInBackground = true;
 
             Balance = balanceOverride ? balanceOverride : GameBalance.Load();
-            Seed = Balance.seed != 0 ? Balance.seed : System.Environment.TickCount & 0x7fffffff;
+            // A seed typed on the title screen wins (P4-10), then the balance asset, then random.
+            Seed = GameSettings.PendingSeed != 0 ? GameSettings.PendingSeed
+                 : Balance.seed != 0 ? Balance.seed : System.Environment.TickCount & 0x7fffffff;
+            GameSettings.PendingSeed = 0;
+            MenuState.Reset();
             GameRandom.Shared = new GameRandom(Seed);
             Services.Register(this);
             Services.Register(Balance);
@@ -141,6 +145,7 @@ namespace GuildMaster.Session
             // --- AI: LLM gateway (falls back to rules when no model is available) ---
             var llm = AddSystem<LlmGateway>();
             llm.SetBackend(LlmBackends.CreateDefault(_systems));
+            llm.Enabled = GameSettings.LlmEnabled; // settings menu (P4-10)
             Services.Register(llm);
             // LLM decisions with the rule-based maker as the built-in fallback.
             Services.Register<IAdventurerDecisionMaker>(new LlmDecisionMaker(llm));

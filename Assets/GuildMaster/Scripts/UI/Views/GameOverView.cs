@@ -19,12 +19,13 @@ namespace GuildMaster.UI
             _root = dim.rectTransform;
             _root.Stretch();
             var box = UIBuilder.Panel(_root, "Box", UITheme.PanelBg);
-            box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 320));
+            box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 370));
             UIBuilder.VLayout(box, 12, 24).childAlignment = TextAnchor.UpperCenter;
             UIBuilder.Label(box.transform, "게임 오버", 34, TextAnchor.MiddleCenter, UITheme.Bad, FontStyle.Bold).Size(-1, 50);
             _reason = UIBuilder.Label(box.transform, "", 18, TextAnchor.MiddleCenter).Size(-1, 30);
             _stats = UIBuilder.Label(box.transform, "", 16, TextAnchor.MiddleCenter, UITheme.TextMuted).Size(-1, 110);
             UIBuilder.Button(box.transform, "다시 시작", Restart, -1, 44, new Color(0.25f, 0.45f, 0.3f), 18);
+            UIBuilder.Button(box.transform, "타이틀로", () => GameSettings.ReloadScene(showTitle: true), -1, 40, null, 17);
             _root.gameObject.SetActive(false);
             EventBus.Subscribe<GameOverEvent>(Show);
         }
@@ -39,6 +40,7 @@ namespace GuildMaster.UI
             _root.gameObject.SetActive(true);
         }
 
-        static void Restart() => SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+        /// <summary>A fresh world straight away (no title screen, P4-10).</summary>
+        static void Restart() => GameSettings.ReloadScene(showTitle: false);
     }
 }

@@ -97,12 +97,24 @@ namespace GuildMaster.UI
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
+            // Menus (P4-10): pause (ESC) and title over the world, settings above both.
+            _pause = HudLayer.gameObject.AddComponent<PauseMenuView>();
+            _title = HudLayer.gameObject.AddComponent<TitleView>();
+            _settings = HudLayer.gameObject.AddComponent<SettingsView>();
+            _pause.Build(HudLayer, _settings);
+            _title.Build(HudLayer, _settings);
+            _settings.Build(HudLayer);
             // ` key: shortcut reference with toggle states (drawn above everything else).
             HudLayer.gameObject.AddComponent<KeyHelpView>().Build(HudLayer);
             // Hover tooltips sit above every window.
             HudLayer.gameObject.AddComponent<UITooltip>().Build(HudLayer);
             EventBus.Subscribe<MapPickingChangedEvent>(OnPicking);
+            _title.ShowIfRequested();
         }
+
+        PauseMenuView _pause;
+        TitleView _title;
+        SettingsView _settings;
 
         void OnDestroy() => EventBus.Unsubscribe<MapPickingChangedEvent>(OnPicking);
 
@@ -190,15 +202,25 @@ namespace GuildMaster.UI
             bool typing = es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null;
             if (typing) return;
 
+            // Menus (title, pause, settings) swallow window shortcuts; ESC backs out of them.
+            if (MenuState.IsOpen)
+            {
+                if (!kb.escapeKey.wasPressedThisFrame) return;
+                if (_settings.IsOpen) _settings.Hide();
+                else if (_pause.IsOpen) _pause.Hide();
+                return;
+            }
+
             foreach (var (key, panel) in _hotkeys)
                 if (kb[key].wasPressedThisFrame) Focus(panel);
 
             if (kb.escapeKey.wasPressedThisFrame && !(Services.TryGet<MapPicker>(out var picker) && picker.IsPicking))
             {
-                // Newest window first; with no windows left, ESC clears the selection.
+                // Newest window first, then the selection; with nothing left to close, the pause menu.
                 _openOrder.RemoveAll(p => p == null || !p.Visible);
                 if (TopWindow != null) TopWindow.Close();
-                else if (Services.TryGet<InspectorView>(out var inspector)) inspector.Clear();
+                else if (Services.TryGet<InspectorView>(out var inspector) && inspector.Selected != null) inspector.Clear();
+                else _pause.Show();
             }
         }
     }
