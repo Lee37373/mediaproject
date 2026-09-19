@@ -5,6 +5,7 @@ Unity 6 (6000.3.24f1) 2D URP 게임입니다. LLM 기반 길드 경영 시뮬레
 - 설계: `Assets/GuildMaster/Docs/DESIGN.md`. 원본 기획서와 달라진 결정 사항이 표로 정리돼 있습니다.
 - **구현 계획**: `Assets/GuildMaster/Docs/PLAN.md`. 작업 ID별 사양, 파일, 완료 기준, 미결 질문이 있습니다.
 - **진행 상황**: `Assets/GuildMaster/Docs/PROGRESS.md`. 체크리스트, 다음 작업, 세션 기록이 있습니다.
+  - 이 세 문서(`Assets/GuildMaster/Docs/`)는 **git에 올리지 않습니다**(`.gitignore`, 2026-09-19 사용자 요청). 로컬에서만 갱신하고, 문서만 바뀐 것은 커밋하지 않습니다. 세션 기록의 커밋 해시는 코드 커밋 뒤 문서에만 적습니다.
 - **세션 시작 순서**
   1. PROGRESS.md에서 "다음 작업"을 확인합니다.
   2. PLAN.md에서 해당 작업의 사양을 읽습니다.

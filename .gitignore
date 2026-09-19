@@ -89,3 +89,7 @@ InitTestScene*.unity*
 # Package Manager > My Assets; Resources/ArtCatalog (tracked) references them by GUID.
 /Assets/Layer Lab/
 /Assets/Layer Lab.meta
+
+# Design / plan / progress notes stay local (user request 2026-09-19)
+/Assets/GuildMaster/Docs/
+/Assets/GuildMaster/Docs.meta
