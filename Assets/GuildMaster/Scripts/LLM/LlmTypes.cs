@@ -18,6 +18,8 @@ namespace GuildMaster.LLM
         /// <summary>A newer request with the same key supersedes a queued older one.</summary>
         public string DedupeKey;
         public float TimeoutSeconds = 30f;
+        /// <summary>May be cancelled mid-generation when a higher-priority request arrives (small talk).</summary>
+        public bool Preemptible;
         public string Tag;
     }
 

@@ -23,6 +23,8 @@ namespace GuildMaster.Adventurers
 
         public int LlmDecisions { get; private set; }
         public int FallbackDecisions { get; private set; }
+        /// <summary>Decided by rules on purpose (no quest available), not a failure.</summary>
+        public int RuleDecisions { get; private set; }
         public string LastFallbackReason { get; private set; }
 
         public LlmDecisionMaker(LlmGateway gateway) { _gateway = gateway; }
@@ -31,6 +33,13 @@ namespace GuildMaster.Adventurers
         {
             if (_gateway == null || !_gateway.Enabled || !_gateway.IsReady)
                 return Fallback(a, available, "offline");
+            // Nothing to take: rest/shop/wait is a rules question. Keeps the model free for quest
+            // choices, invitations and small talk (it was mostly busy saying "no quests, I'll wait").
+            if (available.Count == 0)
+            {
+                RuleDecisions++;
+                return RuleBasedDecisionMaker.Decide(a, available);
+            }
 
             var result = await _gateway.RequestAsync(DecisionPrompt.BuildRequest(a, available), ct);
             // The adventurer may have died or left while the model was thinking.

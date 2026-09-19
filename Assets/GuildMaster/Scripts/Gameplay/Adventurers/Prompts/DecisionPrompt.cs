@@ -16,11 +16,11 @@ namespace GuildMaster.Adventurers.Prompts
     /// </summary>
     public static class DecisionPrompt
     {
-        public const int ReasonMaxChars = 120;
+        public const int ReasonMaxChars = 40;
         public const int SayMaxChars = 120;
         /// <summary>Safety caps only (a runaway small model would otherwise hit MaxTokens and break
         /// the JSON). A line cut by the cap is trimmed to its last full sentence (LlmJson.CleanSentence).</summary>
-        public const int ReasonGrammarChars = 120;
+        public const int ReasonGrammarChars = 40;
         public const int SayGrammarChars = 120;
         public const int RecentEventCount = 5;
 
@@ -39,7 +39,7 @@ namespace GuildMaster.Adventurers.Prompts
             "idle은 성격상 분명한 이유가 있을 때만 고른다. status.money_status가 '부족'이면 조금 내키지 않는 의뢰라도 맡는다. " +
             "단, 돈이 부족하다는 이유만으로 '무모' 의뢰를 맡지는 않는다.\n" +
             "memories는 이 모험가가 직접 겪은 일이다. 판단과 대사에 자연스럽게 반영한다. 죽을 뻔했거나 동료가 쓰러진 상대는 특히 경계하고, 복수하려고 무리하지 않는다.\n" +
-            "reason은 판단 이유를 한 문장으로 짧게 쓰고, say는 그 모험가가 동료에게 하는 짧은 한국어 대사 한 마디다. " +
+            "reason은 판단 이유를 20자 이내의 짧은 구절로 쓰고(예: \"보수가 좋고 안전해서\"), say는 그 모험가가 동료에게 하는 짧은 한국어 대사 한 마디다. " +
             "반드시 JSON 한 개로만 답한다.";
 
         [Serializable]

@@ -88,7 +88,7 @@ namespace GuildMaster.UI
             if (_selected != null) GUIUtility.systemCopyBuffer = Describe(_selected);
         }
 
-        static string Outcome(LlmExchange x) => x.Ok ? "성공" : x.Error == "cancelled" ? "취소됨(요청 측)" : "실패: " + x.Error;
+        static string Outcome(LlmExchange x) => x.Ok ? "성공" : x.Error == "cancelled" ? "취소됨(요청 측)" : x.Error == "preempted" ? "양보함(우선 요청 처리)" : "실패: " + x.Error;
 
         static string Describe(LlmExchange x)
         {

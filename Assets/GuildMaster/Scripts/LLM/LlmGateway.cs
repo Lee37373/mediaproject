@@ -27,7 +27,12 @@ namespace GuildMaster.LLM
             public long Order;
             public LlmExchange Exchange;
             public bool Started;
+            /// <summary>Cancelled when a higher-priority request arrives (Preemptible requests only).</summary>
+            public readonly CancellationTokenSource Preempt = new();
         }
+
+        /// <summary>The request currently being generated (null when idle).</summary>
+        Pending _current;
 
         const float CancelGraceSeconds = 3f;
         /// <summary>How long a new request waits for a cancelled-but-still-running generation to end.
@@ -124,6 +129,10 @@ namespace GuildMaster.LLM
                 Exchange = new LlmExchange { Id = ++_exchangeId, QueuedAt = Time.realtimeSinceStartup, Request = request },
             };
             _queue.Add(pending);
+            // Small talk yields the model to anything more important.
+            if (_current != null && _current.Request.Preemptible && request.Priority < _current.Request.Priority
+                && !_current.Preempt.IsCancellationRequested)
+                _current.Preempt.Cancel();
             if (!_busy) _ = PumpAsync();
             return pending.Tcs.Task;
         }
@@ -143,7 +152,10 @@ namespace GuildMaster.LLM
                         Finish(next, LlmResult.Fail("cancelled"));
                         continue;
                     }
-                    var result = await RunAsync(next);
+                    _current = next;
+                    LlmResult result;
+                    try { result = await RunAsync(next); }
+                    finally { _current = null; }
                     Finish(next, result);
                     if (this == null) return;
                 }
@@ -159,7 +171,7 @@ namespace GuildMaster.LLM
         {
             int chars = x.Response?.Length ?? 0;
             string rate = x.Ok && x.GenerateSeconds > 0.01f ? $" ({chars / x.GenerateSeconds:0.0}자/s)" : "";
-            string outcome = x.Ok ? "성공" : x.Error == "cancelled" ? "취소됨(요청 측)" : "실패(" + x.Error + ")";
+            string outcome = x.Ok ? "성공" : x.Error == "cancelled" ? "취소됨(요청 측)" : x.Error == "preempted" ? "양보함(우선 요청 처리)" : "실패(" + x.Error + ")";
             return $"[LLM] #{x.Id} {x.Request?.Tag} {outcome} · 대기 {x.QueueSeconds:0.0}s · 생성 {x.GenerateSeconds:0.0}s · 응답 {chars}자{rate}";
         }
 
@@ -225,7 +237,7 @@ namespace GuildMaster.LLM
             _stale = null;
 
             var sw = Stopwatch.StartNew();
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(p.Token);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(p.Token, p.Preempt.Token);
             try
             {
                 var gen = _backend.GenerateAsync(p.Request, timeoutCts.Token);
@@ -235,8 +247,10 @@ namespace GuildMaster.LLM
                 {
                     _backend.CancelCurrent();
                     timeoutCts.Cancel();
-                    // A caller cancelling (e.g. a party invite replacing a decision) is not a failure.
-                    if (!p.Token.IsCancellationRequested) Failed++;
+                    // A caller cancelling (e.g. a party invite replacing a decision) or a preempted
+                    // small talk is not a failure.
+                    bool preempted = p.Preempt.IsCancellationRequested;
+                    if (!p.Token.IsCancellationRequested && !preempted) Failed++;
                     // Give the backend a short grace period to unwind; if it does not, remember it
                     // as stale (see above) instead of blocking the queue forever.
                     await Task.WhenAny(gen, Task.Delay(TimeSpan.FromSeconds(CancelGraceSeconds)));
@@ -245,7 +259,7 @@ namespace GuildMaster.LLM
                         _stale = gen;
                         Debug.LogWarning($"[LLM] '{p.Request.Tag}' did not stop after cancel; later requests fail fast until it ends.");
                     }
-                    return LlmResult.Fail(p.Token.IsCancellationRequested ? "cancelled" : "timeout");
+                    return LlmResult.Fail(p.Token.IsCancellationRequested ? "cancelled" : preempted ? "preempted" : "timeout");
                 }
                 timeoutCts.Cancel();
                 string text = await gen;

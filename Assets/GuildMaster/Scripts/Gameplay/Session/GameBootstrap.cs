@@ -137,6 +137,10 @@ namespace GuildMaster.Session
             Services.Register(new MemoryRecorder(clock, roster));
             // Multi-person quests: the first taker invites idle members (LLM, rule fallback).
             Services.Register(new PartyService(llm, board, roster));
+            // Idle small talk in town (LLM only when the gateway is idle).
+            var banter = AddSystem<BanterService>();
+            banter.Init(llm, roster, world);
+            Services.Register(banter);
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)
                 roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), guildDoor + GameRandom.Shared.InsideUnitCircle());

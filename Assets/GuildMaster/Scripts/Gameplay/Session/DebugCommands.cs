@@ -235,6 +235,31 @@ namespace GuildMaster.Session
             return $"spawned {spawned}";
         }
 
+        // ---------------- Banter (P3-5) ----------------
+
+        /// <summary>Gathers the first two idle members at the plaza and starts a banter right away.</summary>
+        public static string ForceBanter()
+        {
+            var world = Services.Get<World.WorldService>();
+            var idle = Services.Get<GuildRoster>().Members.Where(a => a.IsAlive && a.CurrentQuest == null).Take(2).ToList();
+            if (idle.Count < 2) return "need 2 idle members";
+            var spot = world.TownCenterWorld + new Vector2(2f, 0f);
+            for (int i = 0; i < 2; i++)
+            {
+                var a = idle[i];
+                a.Mover.Stop();
+                a.transform.position = new Vector3(spot.x + i * 1.2f, spot.y, a.transform.position.z);
+                a.ChangeState(a.IdleState);
+            }
+            return Services.Get<BanterService>().TryStart() ? $"started: {idle[0].Data.name}, {idle[1].Data.name}" : "not started (LLM busy?)";
+        }
+
+        public static string BanterStatus()
+        {
+            var b = Services.Get<BanterService>();
+            return $"attempts={b.Attempts} llm={b.LlmBanters} fixed={b.FixedBanters}";
+        }
+
         public static string SkirmishReport()
             => SkirmishMonitor.Instance != null ? SkirmishMonitor.Instance.Report() : "no monitor (call SpawnSkirmish first)";
 
