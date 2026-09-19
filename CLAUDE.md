@@ -58,7 +58,7 @@ GuildMaster.Tests.EditMode
 - `Assets/StreamingAssets/LlamaLib-*`(약 4GB 네이티브 바이너리)와 `*.gguf`는 `.gitignore`로 제외했습니다. LLMUnity가 다시 내려받습니다.
 
 ## 테스트와 검증 (Unity MCP)
-- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 86개가 통과합니다.
+- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 87개가 통과합니다.
 - 컴파일: 먼저 `AssetDatabase.Refresh` + `CompilationPipeline.RequestScriptCompilation`을 eval로 실행하고, 그다음 `recompile_status`와 `console`(error)로 확인합니다.
   - 컴파일 뒤 도메인 리로드 중에는 `wait_for`가 네트워크 에러를 낼 수 있습니다. 정상입니다.
 - `eval`에서는 `using`을 쓸 수 없습니다. 전체 네임스페이스를 쓰거나 `GuildMaster.Session.DebugCommands`를 쓰세요.

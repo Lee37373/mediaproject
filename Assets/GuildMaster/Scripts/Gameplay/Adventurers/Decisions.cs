@@ -56,6 +56,9 @@ namespace GuildMaster.Adventurers
                 && d.gold >= trade.GoodsPrice(db.Item(DefaultContent.Potion)))
                 return new AdventurerDecision { Action = AdventurerAction.Shop, Reason = "물약이 없다", Say = "물약부터 챙기자." };
 
+            if (GearShopping.CanBuy(a))
+                return new AdventurerDecision { Action = AdventurerAction.Shop, Reason = "더 좋은 장비를 살 수 있다", Say = "모은 돈으로 장비를 바꿔야겠어." };
+
             Quest best = null;
             float bestScore = 0f;
             foreach (var q in available)

@@ -464,6 +464,8 @@ namespace GuildMaster.Adventurers
 
             var db = Services.Get<GameDatabase>();
             while (a.Data.potions < 2 && trade.SellGoods(a, DefaultContent.Potion)) a.Data.potions++;
+            // Survival first (potions), then the next gear tier if the gold is left (P4-4).
+            GearShopping.TryBuy(a);
         }
 
         public override void Tick(float dt)

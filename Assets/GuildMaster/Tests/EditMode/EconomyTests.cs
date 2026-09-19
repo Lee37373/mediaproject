@@ -38,6 +38,21 @@ namespace GuildMaster.Tests
         public void TearDown() => EventBus.Clear();
 
         [Test]
+        public void Gear_NextTierOnly_AndHigherTierIsStronger()
+        {
+            var d = new Adventurers.AdventurerData { cls = Adventurers.AdventurerClass.Warrior, level = 1 };
+            Assert.That(Adventurers.GearShopping.NextGear(d, _db).id, Is.EqualTo("gear_t1"));
+            var bare = Adventurers.AdventurerStats.Compute(d, null);
+            d.gearTier = 2;
+            Assert.That(Adventurers.GearShopping.NextGear(d, _db).id, Is.EqualTo("gear_t3"));
+            var geared = Adventurers.AdventurerStats.Compute(d, null);
+            Assert.That(geared.Attack, Is.GreaterThan(bare.Attack));
+            Assert.That(geared.Defense, Is.GreaterThan(bare.Defense));
+            d.gearTier = 3;
+            Assert.That(Adventurers.GearShopping.NextGear(d, _db), Is.Null);
+        }
+
+        [Test]
         public void Treasury_GeneratesExpPerHour_AndTaxPerDay()
         {
             var t = new GuildTreasury(100, 0, 2.5f, 50);

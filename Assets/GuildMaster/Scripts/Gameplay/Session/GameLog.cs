@@ -75,6 +75,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<CraftCompletedEvent>(e => Add($"제작 완료: {_db.Item(e.Recipe.outputItemId)?.displayName ?? e.Recipe.outputItemId} x{e.Count}", LogCategory.Economy));
             EventBus.Subscribe<Town.BuildingLevelChangedEvent>(e => Add($"{e.Building.DisplayName} 업그레이드 완료 (Lv.{e.Level})", LogCategory.Info));
             EventBus.Subscribe<AdventurerLevelUpEvent>(e => Add($"{e.Adventurer.Data.name} 레벨 업! (Lv.{e.Level})", LogCategory.Info));
+            EventBus.Subscribe<AdventurerGearUpgradedEvent>(e => Add($"{e.Adventurer.Data.name}이(가) {e.Tier}등급 장비를 샀습니다 ({e.Price}G).", LogCategory.Economy));
             EventBus.Subscribe<Town.MerchantArrivedEvent>(e => Add("행상인이 마을 광장에 노점을 열었습니다. 창고의 재료와 상품을 팔 수 있습니다. (6시간)", LogCategory.Economy));
             EventBus.Subscribe<Town.MerchantDepartingEvent>(e => Add("행상인이 노점을 접고 마을을 떠납니다.", LogCategory.Economy));
             EventBus.Subscribe<MerchantSaleEvent>(e => Add($"행상인에게 {_db.Item(e.ItemId)?.displayName ?? e.ItemId} x{e.Count} 판매 (+{e.Gold}G)", LogCategory.Economy));

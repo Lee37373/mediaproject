@@ -27,6 +27,7 @@ namespace GuildMaster.Adventurers
             EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Subscribe<AdventurerRetreatedEvent>(OnRetreated);
             EventBus.Subscribe<AdventurerLevelUpEvent>(OnLevelUp);
+            EventBus.Subscribe<AdventurerGearUpgradedEvent>(OnGear);
             EventBus.Subscribe<AdventurerDiedEvent>(OnAdventurerDied);
             EventBus.Subscribe<PartyInviteAnsweredEvent>(OnPartyAnswered);
         }
@@ -40,6 +41,7 @@ namespace GuildMaster.Adventurers
             EventBus.Unsubscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Unsubscribe<AdventurerRetreatedEvent>(OnRetreated);
             EventBus.Unsubscribe<AdventurerLevelUpEvent>(OnLevelUp);
+            EventBus.Unsubscribe<AdventurerGearUpgradedEvent>(OnGear);
             EventBus.Unsubscribe<AdventurerDiedEvent>(OnAdventurerDied);
             EventBus.Unsubscribe<PartyInviteAnsweredEvent>(OnPartyAnswered);
         }
@@ -91,6 +93,7 @@ namespace GuildMaster.Adventurers
         }
 
         void OnLevelUp(AdventurerLevelUpEvent e) => Remember(e.Adventurer, 2, $"레벨 {e.Level}이 되었다");
+        void OnGear(AdventurerGearUpgradedEvent e) => Remember(e.Adventurer, 2, $"{e.Price}G를 모아 {e.Tier}등급 장비를 샀다");
 
         void OnAdventurerDied(AdventurerDiedEvent e)
         {

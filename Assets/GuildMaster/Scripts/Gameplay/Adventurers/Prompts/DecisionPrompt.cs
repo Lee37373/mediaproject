@@ -31,7 +31,7 @@ namespace GuildMaster.Adventurers.Prompts
             "지금 무엇을 할지 스스로 정한다.\n" +
             "- accept_quest: available_quests 중 하나를 맡는다. quest_id는 목록에 있는 값만 쓴다.\n" +
             "- rest: 여관에서 쉰다(체력이 낮거나 피로가 높을 때).\n" +
-            "- shop: 길드에서 물약을 산다. status.can_buy_potion이 true일 때만 고른다.\n" +
+            "- shop: 길드에서 물약이나 다음 등급 장비를 산다. status.can_buy_potion이나 status.can_buy_gear가 true일 때만 고른다. 장비를 바꾸면 강해져 더 어려운 의뢰를 맡을 수 있다.\n" +
             "- idle: 마을에서 기다린다(마음에 드는 의뢰가 없을 때).\n" +
             "risk_for_me가 '무모'인 의뢰는 대담한 성격(용감함, 가치관 명예·모험)만 혼자 맡는다. 다른 성격은 동료가 이미 맡았을 때(members가 있을 때)만 함께 가고, 겁 많거나 안전을 중시하면 맡지 않는다. 체력이 30% 미만이면 의뢰를 맡지 않는다.\n" +
             "모험가는 의뢰를 해야 돈과 경험을 얻는다. 기다리기만 하면 돈이 줄고 성장하지 못한다. " +
@@ -51,6 +51,9 @@ namespace GuildMaster.Adventurers.Prompts
             public int stress;
             public int potions;
             public bool can_buy_potion;
+            /// <summary>Next gear tier in guild stock and affordable (P4-4).</summary>
+            public bool can_buy_gear;
+            public int gear_tier;
             /// <summary>넉넉/보통/부족 — nudges idle adventurers toward work.</summary>
             public string money_status;
         }
@@ -115,7 +118,9 @@ namespace GuildMaster.Adventurers.Prompts
                     fatigue = (int)d.fatigue,
                     stress = (int)d.stress,
                     potions = d.potions,
-                    can_buy_potion = ShopUseful(a),
+                    can_buy_potion = PotionUseful(a),
+                    can_buy_gear = GearShopping.CanBuy(a),
+                    gear_tier = d.gearTier,
                     money_status = MoneyLabel(d.gold),
                 },
                 available_quests = available.Select(q => new QuestDto
@@ -136,11 +141,14 @@ namespace GuildMaster.Adventurers.Prompts
 
         public static string MoneyLabel(int gold) => gold < 40 ? "부족" : gold < 120 ? "보통" : "넉넉";
 
+        /// <summary>Shopping is allowed when a potion or the next gear tier can be bought.</summary>
+        public static bool ShopUseful(Adventurer a) => PotionUseful(a) || GearShopping.CanBuy(a);
+
         /// <summary>
-        /// Shopping only makes sense with 0–1 potions left and when the guild has stock the
+        /// Potions only make sense with 0–1 left and when the guild has stock the
         /// adventurer can afford (the model otherwise tends to "shop" in a loop).
         /// </summary>
-        public static bool ShopUseful(Adventurer a)
+        public static bool PotionUseful(Adventurer a)
         {
             if (a.Data.potions >= 2) return false;
             if (!Services.TryGet<GuildTreasury>(out var t) || t.GetStock(DefaultContent.Potion) <= 0) return false;
