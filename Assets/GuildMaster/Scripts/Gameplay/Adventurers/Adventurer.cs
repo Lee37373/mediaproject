@@ -63,6 +63,8 @@ namespace GuildMaster.Adventurers
         internal VisitorLeaveState VisitorLeaveState;
         internal LureState LureState;
         internal TownGuardState TownGuardState;
+        /// <summary>Picking loot off the ground (P4-21).</summary>
+        internal AdventurerLooting Looting;
         /// <summary>Quest for which the heroic drive hunt was already tried (once per quest).</summary>
         internal Quests.Quest DroveForQuest;
 
@@ -118,6 +120,7 @@ namespace GuildMaster.Adventurers
             VisitorLeaveState = new VisitorLeaveState();
             LureState = new LureState();
             TownGuardState = new TownGuardState();
+            Looting = new AdventurerLooting(this);
         }
 
         /// <summary>Turns a freshly created adventurer into a town visitor (not attacked, no quests).</summary>
@@ -302,6 +305,7 @@ namespace GuildMaster.Adventurers
                 if (HpRatio < RetreatThreshold)
                     EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });
                 Engage.Clear();
+                Looting.Cancel();
                 Data.stress = Mathf.Min(100f, Data.stress + 15f);
                 ReturnState.Retreating = true;
                 Fsm.ChangeState(ReturnState);
@@ -312,6 +316,7 @@ namespace GuildMaster.Adventurers
 
         public void ChangeState(State<Adventurer> s)
         {
+            Looting.Cancel();
             Fsm.ChangeState(s);
             EventBus.Publish(new AdventurerStateChangedEvent { Adventurer = this, Label = s.Label });
         }
@@ -351,6 +356,12 @@ namespace GuildMaster.Adventurers
 
         protected override void OnDeath(Unit killer)
         {
+            Looting.Cancel();
+            // P4-21 (Q-B): the fallen drop their guild gear and whatever loot they carried.
+            var drops = new List<ItemStack>(Data.loot);
+            if (Data.gearTier > 0) drops.Add(new ItemStack(GearShopping.GearItemId(Data.gearTier), 1));
+            if (drops.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, drops);
+            Data.loot.Clear();
             Fsm.ChangeState(DeadState);
             if (Services.TryGet<GuildRoster>(out var roster)) roster.NotifyDeath(this, killer);
         }

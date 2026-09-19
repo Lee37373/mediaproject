@@ -102,6 +102,13 @@ namespace GuildMaster.Session
             EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 {e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<IntrudersRoutedEvent>(e => { if (e.Observed) Add($"{e.IntruderHome.Species.displayName} 무리가 {e.Territory.DisplayName}의 기세에 눌려 물러났습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {e.Nest.DisplayName}", LogCategory.Ecosystem));
+            // Monsters using ground items (P4-21), only when the guild sees it happen.
+            EventBus.Subscribe<Monsters.MonsterItemUsedEvent>(e =>
+            {
+                if (e.Monster == null || e.Item == null || !Services.TryGet<Fog.FogOfWar>(out var fog) || !fog.IsVisibleRaw(e.Monster.Position)) return;
+                Add(e.Absorbed ? $"{e.Monster.DisplayName}이(가) {e.Item.displayName}을(를) 삼켰습니다."
+                               : $"{e.Monster.DisplayName}이(가) {e.Item.displayName}을(를) 주워 착용했습니다.", LogCategory.Ecosystem);
+            });
             EventBus.Subscribe<DayPassedEvent>(e => Add($"{e.Day}일차가 밝았습니다.", LogCategory.Info));
         }
 

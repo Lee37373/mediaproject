@@ -112,6 +112,10 @@ namespace GuildMaster.Session
             particles.Init(pool);
             Services.Register(particles);
             AddSystem<CombatFeedback>().Init(particles, fx);
+            // Items on the ground (P4-21): drops of the dead, picked up by monsters and adventurers.
+            var groundItems = AddSystem<Items.GroundItemService>();
+            groundItems.Init(pool, clock, db);
+            Services.Register(groundItems);
             var telegraphs = AddSystem<TelegraphService>();
             telegraphs.Init(pool);
             Services.Register(telegraphs);

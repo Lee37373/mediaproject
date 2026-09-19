@@ -85,6 +85,7 @@ namespace GuildMaster.Adventurers
             }
 
             if (TownGuardState.TryStart(a, this, ref _guardTimer, dt)) return;
+            if (a.Looting.Tick(dt, AdvCtx.Town.IsInTown)) return;
             AdvCtx.Wander(a, ref _wanderTimer, dt);
             _decisionTimer -= dt;
             if (_decisionTimer > 0f) return;
@@ -215,6 +216,7 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
             if (a.HandleCombat(dt)) return;
+            if (a.Looting.Tick(dt)) return;
 
             if (Vector2.Distance(a.Position, _destination) < 3f)
             {
@@ -292,6 +294,8 @@ namespace GuildMaster.Adventurers
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
             if (TryDrive(a)) return;
             if (a.HandleCombat(dt, IsAreaTarget)) return;
+            // Loot left by the kills (P4-21) before searching on.
+            if (a.Looting.Tick(dt)) return;
 
             _searchTimer -= dt;
             if (_searchTimer <= 0f)
@@ -407,6 +411,7 @@ namespace GuildMaster.Adventurers
                 a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
             }
             if (!Retreating && a.HandleCombat(dt)) return;
+            if (!Retreating && a.Looting.Tick(dt)) return;
             if (Vector2.Distance(a.Position, AdvCtx.GuildDoor) < 1.2f)
             {
                 a.ChangeState(a.VisitState);

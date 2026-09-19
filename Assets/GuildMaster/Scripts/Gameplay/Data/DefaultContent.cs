@@ -46,6 +46,12 @@ namespace GuildMaster.Data
             var crownShard = Item("crown_shard", "왕관 조각", ItemCategory.Material, 60, new Color(0.95f, 0.8f, 0.3f));
             var royalJelly = Item("royal_jelly", "왕의 젤", ItemCategory.Material, 35, new Color(0.35f, 0.85f, 0.4f));
 
+            // Monster use (P4-21): what monsters wear when they find these, and the one unique item.
+            rustyDagger.equipSlot = EquipSlot.Weapon; rustyDagger.monsterAttackBonus = 2f;
+            oldArrowhead.equipSlot = EquipSlot.Weapon; oldArrowhead.monsterAttackBonus = 1.5f;
+            goblinHelm.equipSlot = EquipSlot.Armor; goblinHelm.monsterDefenseBonus = 2f; goblinHelm.monsterHpBonus = 8f;
+            crownShard.equipSlot = EquipSlot.Trinket; crownShard.monsterHpBonus = 10f; crownShard.uniqueEffect = "pack_leader";
+
             var potion = Item(Potion, "체력 물약", ItemCategory.Potion, 20, new Color(0.9f, 0.2f, 0.25f));
             potion.healAmount = 40f;
             for (int tier = 1; tier <= 3; tier++)
@@ -54,6 +60,9 @@ namespace GuildMaster.Data
                 g.gearTier = tier;
                 g.attackBonus = 3f * tier;
                 g.defenseBonus = 2f * tier;
+                g.equipSlot = EquipSlot.Weapon;
+                g.monsterAttackBonus = 3f * tier;
+                g.monsterDefenseBonus = 2f * tier;
             }
 
             // ---------- Monsters ----------
@@ -108,14 +117,16 @@ namespace GuildMaster.Data
             goblin.canRaid = true;
             goblin.raidThreshold = 10; goblin.raidStep = 4; // raid danger at 10 / 14 / 18
             Loot(goblin, goblinEar, 0.8f);
-            Loot(goblin, rustyDagger, 0.2f);
+            goblin.startingGear.Add(new LootEntry { item = rustyDagger, chance = 0.2f, min = 1, max = 1 });
+            goblin.pickupMode = MonsterPickupMode.Equip;
 
             var goblinWarrior = Mon("goblin_warrior", "고블린 전사", MonsterShape.Humanoid, new Color(0.3f, 0.45f, 0.3f), new Color(0.4f, 0.3f, 0.25f), 0.95f,
                 70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.03f, 3, 20, Biome.Mountain, Biome.Forest);
             goblinWarrior.artKey = "goblin_warrior";
             goblinWarrior.canRaid = true;
             goblinWarrior.raidThreshold = 6; goblinWarrior.raidStep = 3; // 6 / 9 / 12
-            Loot(goblinWarrior, goblinHelm, 0.7f);
+            goblinWarrior.startingGear.Add(new LootEntry { item = goblinHelm, chance = 0.7f, min = 1, max = 1 });
+            goblinWarrior.pickupMode = MonsterPickupMode.Equip;
             Loot(goblinWarrior, ironOre, 0.35f);
 
             var slimeKing = Mon("slime_king", "슬라임 킹", MonsterShape.Brute, new Color(0.35f, 0.8f, 0.4f), new Color(0.95f, 0.8f, 0.3f), 1.5f,
@@ -126,6 +137,11 @@ namespace GuildMaster.Data
             slimeKing.wanderRadius = 4f;
             Loot(slimeKing, crownShard, 1f);
             Loot(slimeKing, royalJelly, 0.6f, 1, 2);
+            // The rest pick items up too (P4-21): skeletons wear them, slimes swallow them.
+            skull.pickupMode = MonsterPickupMode.Equip;
+            slime.pickupMode = MonsterPickupMode.Absorb;
+            stoneSlime.pickupMode = MonsterPickupMode.Absorb;
+            slimeKing.pickupMode = MonsterPickupMode.Absorb;
 
             // Territories (base radius; the nest's fill scales it 0.6x..1.4x).
             slime.territoryRadius = 3.5f;

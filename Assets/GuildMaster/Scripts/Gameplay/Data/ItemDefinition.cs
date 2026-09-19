@@ -4,6 +4,9 @@ namespace GuildMaster.Data
 {
     public enum ItemCategory { Material, Potion, Gear }
 
+    /// <summary>Where a monster wears an item (P4-21). None = not wearable (absorbable only).</summary>
+    public enum EquipSlot { None, Weapon, Armor, Trinket }
+
     [CreateAssetMenu(menuName = "GuildMaster/Item", fileName = "Item")]
     public class ItemDefinition : ScriptableObject
     {
@@ -20,6 +23,16 @@ namespace GuildMaster.Data
         public int gearTier;
         public float attackBonus;
         public float defenseBonus;
+
+        [Header("Monster use (P4-21)")]
+        public EquipSlot equipSlot;
+        public float monsterAttackBonus;
+        public float monsterDefenseBonus;
+        public float monsterHpBonus;
+        [Tooltip("Species-unique effect id (e.g. pack_leader). Unique items are worn, never absorbed.")]
+        public string uniqueEffect;
+
+        public bool IsUnique => !string.IsNullOrEmpty(uniqueEffect);
     }
 
     [System.Serializable]

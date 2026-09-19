@@ -17,6 +17,9 @@ namespace GuildMaster.Data
         public int max = 1;
     }
 
+    /// <summary>What a species does with items lying on the ground (P4-21).</summary>
+    public enum MonsterPickupMode { None, Equip, Absorb }
+
     [CreateAssetMenu(menuName = "GuildMaster/Monster", fileName = "Monster")]
     public class MonsterDefinition : ScriptableObject
     {
@@ -78,6 +81,16 @@ namespace GuildMaster.Data
         [Header("Rewards")]
         public List<LootEntry> loot = new();
         public int expValue = 5;
+
+        [Header("Items (P4-21)")]
+        [Tooltip("Equip: wears weapons/armour/trinkets it finds. Absorb: swallows items for extra HP.")]
+        public MonsterPickupMode pickupMode;
+        [Tooltip("Gear worn at spawn (chance each); worn gear always drops on death.")]
+        public List<LootEntry> startingGear = new();
+
+        /// <summary>True if this species can drop the item (loot table or gear it may spawn with).</summary>
+        public bool CanDrop(ItemDefinition item)
+            => item != null && (loot.Exists(l => l.item == item) || startingGear.Exists(l => l.item == item));
 
         public bool IsPredatorOf(MonsterDefinition other) => other != null && prey.Contains(other);
         public bool IsRivalOf(MonsterDefinition other) => other != null && rivals.Contains(other);

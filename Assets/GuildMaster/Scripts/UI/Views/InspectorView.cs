@@ -277,7 +277,19 @@ namespace GuildMaster.UI
                 $"HP {m.Hp:0}/{m.Stats.MaxHp:0} · 공격 {m.Stats.Attack:0.#} · 방어 {m.Stats.Defense:0.#}\n" +
                 $"성향: {(d.aggressiveToHumans ? UIBuilder.Colored("사람을 공격함", UITheme.Bad) : "먼저 공격하지 않음")} · 전투 {CombatTiers.Label(m.Tier)}\n" +
                 $"먹이: {prey} · 적대: {rivals}\n" +
+                GearText(m) +
                 $"{Muted("전리품: " + string.Join(", ", d.loot.Where(l => l.item).Select(l => $"{l.item.displayName}({l.chance * 100:0}%)")))}";
+        }
+
+        /// <summary>Worn items and swallowed HP (P4-21); empty when it has none.</summary>
+        static string GearText(Monster m)
+        {
+            var worn = m.Equipment.Worn.Select(i => i.IsUnique ? UIBuilder.Colored(i.displayName, UITheme.Accent) : i.displayName).ToList();
+            var parts = new System.Collections.Generic.List<string>();
+            if (worn.Count > 0) parts.Add("착용: " + string.Join(", ", worn));
+            if (m.Equipment.AbsorbedHp > 0f) parts.Add($"삼킨 아이템으로 HP +{m.Equipment.AbsorbedHp:0}");
+            if (m.Equipment.Has(MonsterEquipment.PackLeaderEffect)) parts.Add(UIBuilder.Colored("무리 우두머리(주변 무리 공격 +10%)", UITheme.Accent));
+            return parts.Count == 0 ? "" : string.Join(" · ", parts) + "\n";
         }
 
         void ShowNest(Nest n)

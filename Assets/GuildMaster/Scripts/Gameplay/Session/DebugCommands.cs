@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
+using GuildMaster.Data;
 using GuildMaster.Ecosystem;
 using GuildMaster.Economy;
 using GuildMaster.Monsters;
@@ -469,6 +470,43 @@ namespace GuildMaster.Session
                 Tag = "debug",
             });
             UnityEngine.Debug.Log($"[LLM TEST] ok={result.Ok} {result.Seconds:0.00}s err={result.Error} text={result.Text}");
+        }
+
+        // ---------------- Items on the ground (P4-21) ----------------
+
+        /// <summary>Drops an item stack at (x, y); without a point, next to the guild master.</summary>
+        public static string DropItem(string itemId, int count = 1, float x = -1f, float y = -1f)
+        {
+            var db = Services.Get<GameDatabase>();
+            if (db.Item(itemId) == null) return "unknown item: " + itemId;
+            var at = x < 0f || y < 0f ? Services.Get<Player.PlayerAvatar>().Position + new Vector2(1.5f, 0f) : new Vector2(x, y);
+            Services.Get<Items.GroundItemService>().Drop(at, new[] { new ItemStack(itemId, count) });
+            return $"dropped {itemId} x{count} at {at}";
+        }
+
+        /// <summary>Every item on the ground: id, count, position, age, who is walking to it.</summary>
+        public static string GroundItems()
+        {
+            var ground = Services.Get<Items.GroundItemService>();
+            var clock = Services.Get<GameClock>();
+            var sb = new StringBuilder($"{ground.Items.Count} items\n");
+            foreach (var g in ground.Items)
+                sb.AppendLine($"  {g.Item.id} x{g.Count} at {g.Position} age {clock.TotalHours - g.DroppedAtHour:0.0}h reserved={(g.ReservedBy == null ? "-" : g.ReservedBy.DisplayName)}");
+            return sb.ToString();
+        }
+
+        /// <summary>Monsters within radius of the camera that wear or swallowed something.</summary>
+        public static string MonsterGear(float radius = 15f)
+        {
+            var cam = Services.Get<CameraControl.CameraController>().Camera.transform.position;
+            var sb = new StringBuilder();
+            foreach (var u in Units.UnitRegistry.All)
+            {
+                if (u is not Monster m || !m.IsAlive || Vector2.Distance(m.Position, cam) > radius) continue;
+                if (m.Equipment.WornCount == 0 && m.Equipment.AbsorbedHp <= 0f) continue;
+                sb.AppendLine($"  {m.DisplayName}({m.Home?.DisplayName ?? "-"}) worn=[{string.Join(",", m.Equipment.Worn.Select(i => i.id))}] absorbed={m.Equipment.AbsorbedHp:0} atk={m.Stats.Attack:0.#} def={m.Stats.Defense:0.#} hp={m.Hp:0}/{m.Stats.MaxHp:0} state={m.StateLabel}");
+            }
+            return sb.Length == 0 ? "none" : sb.ToString();
         }
     }
 }

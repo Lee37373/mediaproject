@@ -9,6 +9,9 @@ using UnityEngine;
 
 namespace GuildMaster.Monsters
 {
+    /// <summary>A monster wore or swallowed an item from the ground (P4-21).</summary>
+    public struct MonsterItemUsedEvent { public Monster Monster; public ItemDefinition Item; public bool Absorbed; }
+
     /// <summary>Receives loot and kill experience when this unit lands a killing blow.</summary>
     public interface ILootReceiver
     {
@@ -38,6 +41,7 @@ namespace GuildMaster.Monsters
         internal float NextLureTime;
         internal MonsterReturnState ReturnState;
         internal RaidState RaidState;
+        internal MonsterPickupState PickupState;
 
         /// <summary>Optional override (e.g. raid waves) that replaces the default idle behaviour.</summary>
         public State<Monster> DefaultStateOverride { get; set; }
@@ -59,6 +63,7 @@ namespace GuildMaster.Monsters
             LureState = new MonsterLureState();
             ReturnState = new MonsterReturnState();
             RaidState = new RaidState();
+            PickupState = new MonsterPickupState();
         }
 
         public static GameObject CreatePooledInstance()
@@ -96,7 +101,14 @@ namespace GuildMaster.Monsters
             Radius = 0.28f * def.scale;
             Mass = def.scale * def.scale;
             SkillFactory.Assign(this, def.skillIds);
-            ResetVitals();
+            // P4-21: base stats kept apart from gear; some spawn already wearing something.
+            _baseStats = Stats;
+            Equipment.Clear();
+            _crownAura = false;
+            _pickupTimer = GameRandom.Shared.Range(0f, PickupCheckInterval);
+            foreach (var g in def.startingGear)
+                if (g.item != null && GameRandom.Shared.Chance(g.chance)) Equipment.Equip(g.item);
+            RefreshStats(fullHeal: true);
             // Imported Casual Monsters art when available (archer variants have their own image).
             var art = ArtLibrary.Monster(IsRangedVariant && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
             Visual.Init(art != null ? art : PixelArt.Monster(def), def.scale);
@@ -125,7 +137,10 @@ namespace GuildMaster.Monsters
         {
             get
             {
-                if (!Def.packHunter || Home == null) return null;
+                if (Home == null) return null;
+                // The crown holder leads, whatever the species (P4-21).
+                foreach (var m in Home.Members) if (m.IsAlive && m.Equipment.Has(MonsterEquipment.PackLeaderEffect)) return m;
+                if (!Def.packHunter) return null;
                 foreach (var m in Home.Members) if (m.IsAlive) return m;
                 return null;
             }
@@ -208,6 +223,7 @@ namespace GuildMaster.Monsters
             }
 
             TickStatus(Time.deltaTime);
+            TickCrownAura(Time.deltaTime);
             if (IsStunned) return;
 
             _senseTimer -= Time.deltaTime;
@@ -236,7 +252,36 @@ namespace GuildMaster.Monsters
             {
                 Engage.SetTarget(target);
                 Fsm.ChangeState(EngageState);
+                return;
             }
+            if (Fsm.Current == WanderState) TryStartPickup();
+        }
+
+        const float PickupCheckInterval = 1.5f;
+        /// <summary>Pack mates leave a fresh drop to the leader for this long.</summary>
+        const float LeaderFirstSeconds = 3f;
+        float _pickupTimer;
+
+        /// <summary>
+        /// While idling at home: walk to a visible item worth taking (P4-21), only within the home
+        /// range (wander radius + 3) so monsters do not roam off after loot.
+        /// </summary>
+        void TryStartPickup()
+        {
+            if (Def.pickupMode == MonsterPickupMode.None || DefaultStateOverride != null) return;
+            _pickupTimer -= SenseInterval;
+            if (_pickupTimer > 0f) return;
+            _pickupTimer = PickupCheckInterval;
+            if (!Services.TryGet<Items.GroundItemService>(out var ground) || ground.Items.Count == 0) return;
+            var home = HomePosition;
+            float range = Def.wanderRadius + 3f;
+            var leader = PackLeader;
+            var item = ground.FindNearest(Position, Stats.SightRadius, g =>
+                g.IsFreeFor(this) && (g.Position - home).sqrMagnitude <= range * range && WantsItem(g.Item)
+                && (leader == null || leader == this || g.Age >= LeaderFirstSeconds || !leader.WantsItem(g.Item)));
+            if (item == null || !item.Reserve(this)) return;
+            PickupState.Begin(item);
+            Fsm.ChangeState(PickupState);
         }
 
         protected override void OnDamaged(float amount, Unit source)
@@ -251,18 +296,103 @@ namespace GuildMaster.Monsters
 
         protected override void OnDeath(Unit killer)
         {
-            if (killer is ILootReceiver receiver)
-            {
-                s_loot.Clear();
-                var rng = GameRandom.Shared;
-                foreach (var entry in Def.loot)
-                {
-                    if (entry.item == null || !rng.Chance(entry.chance)) continue;
-                    s_loot.Add(new ItemStack(entry.item.id, rng.Range(entry.min, entry.max + 1)));
-                }
-                receiver.ReceiveKillRewards(Def, s_loot);
-            }
+            // P4-21: everything falls to the ground (worn gear always, the loot table when killed);
+            // a killing adventurer still gets the kill and its EXP, but must pick the loot up.
+            if (killer != null) MonsterEquipment.BuildDrops(Def, Equipment.Worn, GameRandom.Shared, s_loot);
+            else MonsterEquipment.BuildDrops(null, Equipment.Worn, GameRandom.Shared, s_loot);
+            if (s_loot.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, s_loot);
+            Equipment.Clear();
+            if (killer is ILootReceiver receiver) receiver.ReceiveKillRewards(Def, s_noLoot);
             Home?.OnMemberDied(this, killer);
+        }
+
+        static readonly System.Collections.Generic.List<ItemStack> s_noLoot = new();
+
+        // ---------------- Equipment (P4-21) ----------------
+
+        public MonsterEquipment Equipment { get; } = new();
+        CombatStats _baseStats;
+        bool _crownAura;
+        float _auraTimer;
+        SpriteRenderer _gearIcon;
+
+        /// <summary>Base stats + worn gear + swallowed HP + crown aura; keeps the HP ratio (or heals fully).</summary>
+        public void RefreshStats(bool fullHeal = false)
+        {
+            float ratio = Stats.MaxHp > 0f ? HpRatio : 1f;
+            var s = _baseStats;
+            Equipment.Apply(ref s);
+            if (_crownAura) s.Attack *= 1.1f;
+            Stats = s;
+            if (fullHeal) ResetVitals();
+            else if (IsAlive) SetHp(Mathf.Max(1f, s.MaxHp * ratio));
+            UpdateGearIcon();
+        }
+
+        /// <summary>Largest HP a slime can gain by swallowing items.</summary>
+        public float AbsorbCap => _baseStats.MaxHp * MonsterEquipment.AbsorbCapShare;
+
+        /// <summary>Would this monster pick the item up (wear it or swallow it)?</summary>
+        public bool WantsItem(ItemDefinition item)
+            => Def != null && MonsterEquipment.Wants(Def.pickupMode, item, item == null ? null : Equipment.InSlot(item.equipSlot), Equipment.AbsorbedHp, AbsorbCap);
+
+        /// <summary>Takes the item: wear it (dropping what it replaces) or swallow it for HP.</summary>
+        public void UseItem(ItemDefinition item)
+        {
+            if (item == null) return;
+            if (item.IsUnique || Def.pickupMode == MonsterPickupMode.Equip)
+            {
+                var old = Equipment.Equip(item);
+                if (old != null && Services.TryGet<Items.GroundItemService>(out var ground))
+                    ground.Drop(Position, new[] { new ItemStack(old.id, 1) });
+                RefreshStats();
+            }
+            else
+            {
+                float gain = Equipment.Absorb(item, AbsorbCap);
+                RefreshStats();
+                Heal(gain);
+            }
+            EventBus.Publish(new MonsterItemUsedEvent { Monster = this, Item = item, Absorbed = !item.IsUnique && Def.pickupMode == MonsterPickupMode.Absorb });
+        }
+
+        /// <summary>Holders of the crown lead the pack; pack mates near it hit 10% harder.</summary>
+        void TickCrownAura(float dt)
+        {
+            _auraTimer -= dt;
+            if (_auraTimer > 0f) return;
+            _auraTimer = 1f;
+            bool aura = false;
+            if (Home != null && !Equipment.Has(MonsterEquipment.PackLeaderEffect))
+                foreach (var m in Home.Members)
+                    if (m != this && m.IsAlive && m.Equipment.Has(MonsterEquipment.PackLeaderEffect)
+                        && (m.Position - Position).sqrMagnitude <= 6f * 6f) { aura = true; break; }
+            if (aura == _crownAura) return;
+            _crownAura = aura;
+            RefreshStats();
+        }
+
+        /// <summary>Small marker for worn gear: a gold crown dot for the leader, else the item's colour.</summary>
+        void UpdateGearIcon()
+        {
+            ItemDefinition shown = null;
+            foreach (var i in Equipment.Worn) if (shown == null || MonsterEquipment.Score(i) > MonsterEquipment.Score(shown)) shown = i;
+            if (shown == null) { if (_gearIcon != null) _gearIcon.enabled = false; return; }
+            if (_gearIcon == null)
+            {
+                var go = new GameObject("GearIcon");
+                go.transform.SetParent(transform, false);
+                _gearIcon = go.AddComponent<SpriteRenderer>();
+                _gearIcon.sprite = SpriteFactory.Circle(10, Color.white, new Color(0.1f, 0.08f, 0.06f, 1f));
+                GetComponent<FogHideable>().Refresh();
+            }
+            _gearIcon.enabled = true;
+            _gearIcon.color = shown.color;
+            float size = shown.IsUnique ? 0.3f : 0.22f;
+            float s = size / _gearIcon.sprite.bounds.size.x;
+            _gearIcon.transform.localScale = new Vector3(s, s, 1f);
+            _gearIcon.transform.localPosition = shown.IsUnique ? new Vector3(0f, 0.95f * Def.scale, 0f) : new Vector3(0.28f * Def.scale, 0.55f * Def.scale, 0f);
+            _gearIcon.sortingOrder = CharacterVisual.BaseSortingOrder + 900;
         }
 
         /// <summary>Removes the monster without a killer (starvation, despawn).</summary>

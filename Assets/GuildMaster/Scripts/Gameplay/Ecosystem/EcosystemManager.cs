@@ -198,7 +198,7 @@ namespace GuildMaster.Ecosystem
             bool any = false;
             foreach (var s in _db.monsters)
             {
-                if (s == null || !s.loot.Any(l => l.item == item)) continue;
+                if (s == null || !s.CanDrop(item)) continue;
                 any = true;
                 pop += GetPopulation(s);
                 cap += Mathf.Max(1, NestsOf(s).Sum(n => n.Capacity));
