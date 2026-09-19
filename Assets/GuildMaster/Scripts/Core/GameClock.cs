@@ -103,8 +103,30 @@ namespace GuildMaster.Core
 
         void ApplyScale()
         {
-            Time.timeScale = _holds > 0 ? 0f : SpeedScales[SpeedIndex];
+            Time.timeScale = _holds > 0 ? 0f : SpeedScales[SpeedIndex] * (_hitStopUntil > 0f ? HitStopScale : 1f);
             EventBus.Publish(new GameSpeedChangedEvent { SpeedIndex = SpeedIndex, Scale = Time.timeScale });
+        }
+
+        const float HitStopScale = 0.05f;
+        float _hitStopUntil;
+
+        /// <summary>
+        /// Brief near-freeze for impact (critical hits, P4-8): time runs at 5% for the given real
+        /// seconds, then the chosen speed resumes. Ignored while paused or held.
+        /// </summary>
+        public void HitStop(float realSeconds)
+        {
+            if (Frozen || _holds > 0 || SpeedIndex == 0) return;
+            bool started = _hitStopUntil <= 0f;
+            _hitStopUntil = Mathf.Max(_hitStopUntil, Time.unscaledTime + realSeconds);
+            if (started) ApplyScale();
+        }
+
+        void LateUpdate()
+        {
+            if (_hitStopUntil <= 0f || Time.unscaledTime < _hitStopUntil) return;
+            _hitStopUntil = 0f;
+            ApplyScale();
         }
 
         public void TogglePause() => SetSpeed(SpeedIndex == 0 ? 1 : 0);

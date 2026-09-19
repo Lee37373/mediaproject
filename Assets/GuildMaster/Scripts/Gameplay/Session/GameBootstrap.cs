@@ -107,6 +107,11 @@ namespace GuildMaster.Session
             var fx = AddSystem<FxService>();
             fx.Init(pool);
             Services.Register(fx);
+            // Combat juice (P4-8): particle bursts, hit-stop, death/level-up effects, shake.
+            var particles = AddSystem<HitParticles>();
+            particles.Init(pool);
+            Services.Register(particles);
+            AddSystem<CombatFeedback>().Init(particles, fx);
             var telegraphs = AddSystem<TelegraphService>();
             telegraphs.Init(pool);
             Services.Register(telegraphs);
