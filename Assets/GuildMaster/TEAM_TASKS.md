@@ -19,7 +19,6 @@
 
 | ID | 작업 | 담당 | 상태 | 주요 파일·모듈 | 커밋 |
 | --- | --- | --- | --- | --- | --- |
-| P4-21 | 몬스터 장비와 바닥 아이템 순환 | 이재혁 | 진행 중 | Monsters, Items(신규), Data/ItemDefinition, Data/DefaultContent, Adventurers(줍기) | |
 | P4-9 | 사운드(효과음·BGM) | 미정 | 예정 | Audio(신규) | |
 | P4-10 | 메뉴와 설정(타이틀·일시정지·설정) | 미정 | 예정 | UI/Views(신규), UI/UIRoot | |
 | P4-11 | 의뢰 등록 위험 경고 | 미정 | 예정 | UI/Views/QuestBoardView | |
@@ -32,6 +31,7 @@
 | P5-5 | Windows 빌드 | 미정 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 | 미정 | 예정 | 영상·발표 자료 | |
 | P4-12 | 대화 묶음 생성과 미리 받기 | 미정 | 보류 | LLM, Adventurers/BanterService | |
+| P4-21 | 몬스터 장비와 바닥 아이템 순환 | 이재혁 | 완료 | Monsters, Items(신규), Data/ItemDefinition, Data/DefaultContent, Adventurers(줍기) | 27997c4 |
 | P4-8 | 전투 연출(타격 파티클, 치명타 히트스톱, 사망·레벨업 연출, 화면 흔들림) | 이재혁 | 완료 | Visuals/HitParticles, Visuals/CombatFeedback, Core/GameClock | f0df622 |
 | P4-7 | 안개 비주얼(부드러운 경계, 탐색 지역 톤 다운) | 이재혁 | 완료 | Fog/FogOfWar | d895847 |
 | P4-6 | 모험가 상세 창과 툴팁 | 이재혁 | 완료 | UI/Views/AdventurerDetailView, UI/Framework/UITooltip | 60b5bc8 |
@@ -52,9 +52,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-21 몬스터 장비와 바닥 아이템 순환
+- **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-15 ~ P4-18, P4-20 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-15 ~ P4-18, P4-20, P4-21 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
 - **진행 중**:
