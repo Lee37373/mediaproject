@@ -34,7 +34,7 @@ namespace GuildMaster.UI
         void Show(GameOverEvent e)
         {
             _reason.text = e.Reason;
-            _stats.text = $"생존 {e.Day}일\n남은 길드원 {e.Members}명 · 영입 {e.Recruits}명\n완료한 의뢰 {e.QuestsCompleted}건";
+            _stats.text = $"생존 {e.Day}일 · 침공 {e.Waves}회\n남은 길드원 {e.Members}명 · 영입 {e.Recruits}명\n완료한 의뢰 {e.QuestsCompleted}건 · 멸종한 종 {e.ExtinctSpecies}";
             _root.SetAsLastSibling();
             _root.gameObject.SetActive(true);
         }

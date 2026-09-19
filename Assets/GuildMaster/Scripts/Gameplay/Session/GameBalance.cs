@@ -48,6 +48,16 @@ namespace GuildMaster.Session
         public int startingAdventurers = 3;
         public int rosterCapacity = 6;
 
+        [Header("Raids (P3-6)")]
+        public int raidFirstDay = 3;
+        public int raidIntervalDays = 3;
+        public int raidHour = 21;
+        public int raidWarningHours = 2;
+        /// <summary>Game hours after which surviving raiders withdraw (dawn).</summary>
+        public int raidMaxHours = 10;
+        /// <summary>Guild members within this many cells of the town rush to defend.</summary>
+        public float raidDefendRadius = 45f;
+
         public static GameBalance Load()
         {
             var asset = Resources.Load<GameBalance>("Data/GameBalance");

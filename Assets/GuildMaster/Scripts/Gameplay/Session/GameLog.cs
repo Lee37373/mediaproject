@@ -65,7 +65,14 @@ namespace GuildMaster.Session
             {
                 if (e.Outcome == Recruitment.RecruitOutcome.Left) Add($"{e.Visitor.Data.name}이(가) 영입 제안을 거절했습니다.", LogCategory.Info);
             });
-            EventBus.Subscribe<AdventurerDiedEvent>(e => Add($"{e.Adventurer.Data.name}이(가) {(e.Killer != null ? e.Killer.DisplayName + "에게" : "")} 쓰러졌습니다...", LogCategory.Danger));
+            EventBus.Subscribe<AdventurerDiedEvent>(e => Add($"{e.Adventurer.Data.name}이(가) {(e.Killer != null ? e.Killer.DisplayName + "에게 " : "")}목숨을 잃었습니다...", LogCategory.Danger));
+            EventBus.Subscribe<Town.RaidWarningEvent>(e => Add(
+                $"[침공 경고] {e.HoursLeft}시간 뒤 {e.Direction}쪽에서 무언가 몰려오고 있습니다!", LogCategory.Danger));
+            EventBus.Subscribe<Town.RaidStartedEvent>(e => Add($"[침공] {e.Wave}번째 침공이 {e.Direction}쪽에서 시작되었습니다! 길드원들이 방어에 나섭니다.", LogCategory.Danger));
+            EventBus.Subscribe<Town.RaidEndedEvent>(e => Add(e.Withdrawn > 0
+                ? $"[침공] 동이 트자 남은 적 {e.Withdrawn}마리가 물러갔습니다. (처치 {e.Killed})"
+                : $"[침공] {e.Wave}번째 침공을 막아냈습니다! (처치 {e.Killed})", LogCategory.Danger));
+            EventBus.Subscribe<Town.BuildingDestroyedEvent>(e => Add($"[침공] {e.Building.DisplayName}이(가) 무너졌습니다!", LogCategory.Danger));
             EventBus.Subscribe<AdventurerLevelUpEvent>(e => Add($"{e.Adventurer.Data.name} 레벨 업! (Lv.{e.Level})", LogCategory.Info));
             EventBus.Subscribe<TradeEvent>(e =>
             {

@@ -158,6 +158,16 @@ namespace GuildMaster.Session
             var avatar = PlayerAvatar.Create(world.TownCenterWorld + new Vector2(0f, -2f), Balance.playerMoveSpeed, Balance.playerSightRadius);
             Services.Register(avatar);
             Services.Register(new GameOverService(clock));
+
+            // --- Raids (P3-6) ---
+            var waves = AddSystem<WaveManager>();
+            waves.Init(new RaidSettings
+            {
+                FirstDay = Balance.raidFirstDay, IntervalDays = Balance.raidIntervalDays, Hour = Balance.raidHour,
+                WarningHours = Balance.raidWarningHours, MaxHours = Balance.raidMaxHours,
+            }, clock, eco, world, pool);
+            Services.Register(waves);
+            AddSystem<DefenseCoordinator>().Init(waves, roster, world, Balance.raidDefendRadius);
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());
 
             // --- Presentation / input ---

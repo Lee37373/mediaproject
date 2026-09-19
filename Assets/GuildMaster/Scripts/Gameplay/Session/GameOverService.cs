@@ -14,11 +14,15 @@ namespace GuildMaster.Session
         public int Members;
         public int QuestsCompleted;
         public int Recruits;
+        /// <summary>Raid waves the town has faced (the current one included).</summary>
+        public int Waves;
+        /// <summary>Species wiped out by the end (revealed on the result screen only).</summary>
+        public int ExtinctSpecies;
     }
 
     /// <summary>
     /// Ends the session: freezes the clock and publishes the summary for the game-over screen.
-    /// Triggers: guild master downed (P3-4a). The town-hall trigger comes with raids (P3-6).
+    /// Triggers: guild master downed (P3-4a), town hall destroyed (P3-6).
     /// </summary>
     public class GameOverService
     {
@@ -31,6 +35,7 @@ namespace GuildMaster.Session
         {
             _clock = clock;
             EventBus.Subscribe<PlayerDownedEvent>(OnPlayerDowned);
+            EventBus.Subscribe<Town.BuildingDestroyedEvent>(e => { if (e.Building.Type == Town.BuildingType.TownHall) End("마을회관이 파괴되었습니다."); });
             EventBus.Subscribe<RecruitmentEndedEvent>(e => { if (e.Outcome == RecruitOutcome.Joined) _recruits++; });
         }
 
@@ -52,6 +57,8 @@ namespace GuildMaster.Session
             EventBus.Publish(new GameOverEvent
             {
                 Reason = reason, Day = _clock.Day, Members = members, QuestsCompleted = done, Recruits = _recruits,
+                Waves = Services.TryGet<Town.WaveManager>(out var waves) ? waves.Wave : 0,
+                ExtinctSpecies = Services.TryGet<Ecosystem.EcosystemManager>(out var eco) ? eco.Species.Count(eco.IsExtinct) : 0,
             });
         }
     }

@@ -275,6 +275,36 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        /// <summary>Deals damage to roster member #index (no attacker). For death checks.</summary>
+        public static string Hurt(int index, float amount)
+        {
+            var a = Services.Get<GuildRoster>().Members[index];
+            a.ReceiveDamage(amount, null, false);
+            return $"{a.Data.name} hp={a.Hp:0} alive={a.IsAlive} state={a.StateLabel}";
+        }
+
+        // ---------------- Raids (P3-6) ----------------
+
+        /// <summary>Starts raid wave N right now (warning included).</summary>
+        public static string StartRaid(int wave)
+        {
+            int n = Services.Get<Town.WaveManager>().StartWave(wave);
+            return $"wave {wave}: {n} raiders";
+        }
+
+        public static string RaidStatus()
+        {
+            var w = Services.Get<Town.WaveManager>();
+            var sb = new StringBuilder($"wave={w.Wave} active={w.RaidActive} raiders={w.Raiders.Count(m => m != null && m.IsAlive)}\n");
+            foreach (var g in w.Raiders.Where(m => m != null && m.IsAlive).GroupBy(m => m.DisplayName))
+                sb.Append($"  {g.Key} x{g.Count()} ({string.Join(",", g.Select(m => m.StateLabel).Distinct())})\n");
+            foreach (var b in Services.Get<Town.TownService>().Buildings)
+                sb.Append($"  {b.DisplayName} {b.Hp:0}/{b.MaxHp:0}\n");
+            foreach (var a in Services.Get<GuildRoster>().Members)
+                sb.Append($"  {a.Data.name} {a.StateLabel} hp={a.Hp:0}/{a.Stats.MaxHp:0}\n");
+            return sb.ToString();
+        }
+
         public static string BanterStatus()
         {
             var b = Services.Get<BanterService>();

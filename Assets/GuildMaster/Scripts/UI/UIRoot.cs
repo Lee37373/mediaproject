@@ -83,6 +83,7 @@ namespace GuildMaster.UI
             AddWindow<RecruitDialogView>(null, null, Key.None, new Vector2(980, 600));
 
             BuildBanner();
+            HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
             EventBus.Subscribe<MapPickingChangedEvent>(OnPicking);
         }

@@ -98,7 +98,7 @@ namespace GuildMaster.Adventurers
             string dead = e.Adventurer.Data.name;
             string by = e.Killer != null ? $"{e.Killer.DisplayName}에게 " : "";
             foreach (var other in _roster.Members)
-                if (other != e.Adventurer) Remember(other, 3, $"동료 {dead}{Josa(dead, "이", "가")} {by}쓰러졌다");
+                if (other != e.Adventurer) Remember(other, 3, $"동료 {dead}{Josa(dead, "이", "가")} {by}목숨을 잃었다");
         }
 
         /// <summary>Korean particle by final consonant (e.g. 을/를, 이/가).</summary>

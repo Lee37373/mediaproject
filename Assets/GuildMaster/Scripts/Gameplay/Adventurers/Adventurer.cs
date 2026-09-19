@@ -54,6 +54,7 @@ namespace GuildMaster.Adventurers
         internal HuntState HuntState;
         internal EscortState EscortState;
         internal PartyGatherState GatherState;
+        internal DefendState DefendState;
         internal ReturnToTownState ReturnState;
         internal GuildVisitState VisitState;
         internal RestState RestState;
@@ -102,6 +103,7 @@ namespace GuildMaster.Adventurers
             HuntState = new HuntState();
             EscortState = new EscortState();
             GatherState = new PartyGatherState();
+            DefendState = new DefendState();
             ReturnState = new ReturnToTownState();
             VisitState = new GuildVisitState();
             RestState = new RestState();
@@ -208,7 +210,7 @@ namespace GuildMaster.Adventurers
         /// Shared combat logic for out-of-town states. Returns true while fighting
         /// (the calling state should skip its own movement that frame).
         /// </summary>
-        internal bool HandleCombat(float dt, System.Func<Unit, bool> extraTargets = null)
+        internal bool HandleCombat(float dt, System.Func<Unit, bool> extraTargets = null, System.Func<Unit, bool> allowed = null)
         {
             // Highest priority: step out of enemy area-attack telegraphs.
             if (Services.TryGet<TelegraphService>(out var telegraphs) && telegraphs.TryGetEscape(this, out var safe))
@@ -228,6 +230,8 @@ namespace GuildMaster.Adventurers
                 Mover.SpeedMultiplier = 1f;
             }
 
+            // Optional zone (town defense): drop targets outside it instead of chasing them.
+            if (Engage.Target != null && allowed != null && !allowed(Engage.Target)) Engage.Clear();
             if (Engage.Target != null)
             {
                 if (Engage.Tick(dt) != EngageStatus.Lost) return true;
@@ -239,8 +243,8 @@ namespace GuildMaster.Adventurers
 
             // Threats first (aggressive monsters or anything that hit us), then optional quest targets.
             var threat = UnitRegistry.FindNearest(Position, Stats.SightRadius * 0.8f,
-                u => u is Monster m && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m))));
-            var target = threat ?? (extraTargets != null ? UnitRegistry.FindNearest(Position, Stats.SightRadius, u => extraTargets(u) && CanSee(u)) : null);
+                u => u is Monster m && (allowed == null || allowed(m)) && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m))));
+            var target = threat ?? (extraTargets != null ? UnitRegistry.FindNearest(Position, Stats.SightRadius, u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u)) : null);
             if (target == null) return false;
             Engage.SetTarget(target);
             return Engage.Tick(dt) != EngageStatus.Lost;

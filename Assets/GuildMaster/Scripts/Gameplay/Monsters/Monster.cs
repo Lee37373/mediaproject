@@ -34,6 +34,7 @@ namespace GuildMaster.Monsters
         internal MonsterEngageState EngageState;
         internal MonsterFleeState FleeState;
         internal MonsterReturnState ReturnState;
+        internal RaidState RaidState;
 
         /// <summary>Optional override (e.g. raid waves) that replaces the default idle behaviour.</summary>
         public State<Monster> DefaultStateOverride { get; set; }
@@ -53,6 +54,7 @@ namespace GuildMaster.Monsters
             EngageState = new MonsterEngageState();
             FleeState = new MonsterFleeState();
             ReturnState = new MonsterReturnState();
+            RaidState = new RaidState();
         }
 
         public static GameObject CreatePooledInstance()
@@ -130,6 +132,9 @@ namespace GuildMaster.Monsters
 
         public void GoToDefaultState() => Fsm.ChangeState(DefaultStateOverride ?? WanderState);
 
+        /// <summary>Walks back to the home position (nest, or spawn point for nest-less monsters).</summary>
+        public void GoToReturn() { Engage.Clear(); Fsm.ChangeState(ReturnState); }
+
         public override bool IsHostileTo(Unit other)
         {
             if (other == null || other == this || !other.IsAlive) return false;
@@ -171,7 +176,8 @@ namespace GuildMaster.Monsters
         void Sense()
         {
             if (Fsm.Current == FleeState) return;
-            var predator = FindPredator();
+            // Raiders march together; they do not scatter from predators in their own wave.
+            var predator = DefaultStateOverride == null ? FindPredator() : null;
             if (predator != null && !WasRecentlyAttackedBy(predator, 2f))
             {
                 FleeState.From = predator;
