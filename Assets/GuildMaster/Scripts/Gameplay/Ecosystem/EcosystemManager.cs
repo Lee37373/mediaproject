@@ -187,6 +187,25 @@ namespace GuildMaster.Ecosystem
 
         public IEnumerable<Nest> NestsOf(MonsterDefinition species) => _nests.Where(n => n.Species == species);
 
+        /// <summary>
+        /// Real (not observed) population fill 0..1 of the species that drop an item, or null if no
+        /// species drops it. For the outside market only — guild-facing code must use GuildIntel.
+        /// </summary>
+        public float? LootAbundance(ItemDefinition item)
+        {
+            if (item == null) return null;
+            int pop = 0, cap = 0;
+            bool any = false;
+            foreach (var s in _db.monsters)
+            {
+                if (s == null || !s.loot.Any(l => l.item == item)) continue;
+                any = true;
+                pop += GetPopulation(s);
+                cap += Mathf.Max(1, NestsOf(s).Sum(n => n.Capacity));
+            }
+            return any ? Mathf.Clamp01(pop / (float)cap) : (float?)null;
+        }
+
         public Nest FindNearestNest(Vector2 from, MonsterDefinition species, bool requireMembers)
         {
             Nest best = null;

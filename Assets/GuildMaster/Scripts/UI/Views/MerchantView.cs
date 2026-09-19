@@ -37,7 +37,7 @@ namespace GuildMaster.UI
             _status = UIBuilder.Label(body, "", 16).Size(-1, 48);
             _status.verticalOverflow = VerticalWrapMode.Overflow;
             UIBuilder.Label(body,
-                $"판매가 = 기준가 x{MerchantMarket.SaleRate:0.0} x 수요.  길드가 최근 많이 사들인 재료는 흔해서 싸고, 드물게 잡히는 재료는 비쌉니다. 같은 품목을 팔수록 값이 내려가고, 하루가 지나면 조금씩 회복합니다.",
+                $"판매가 = 기준가 x{MerchantMarket.SaleRate:0.0} x 수요.  행상인은 바깥 시세로 값을 매깁니다: 이 지역에서 개체가 줄어든 몬스터의 재료일수록 비싸게 사 갑니다(생태계의 힌트). 같은 품목을 팔수록 값이 내려가고, 하루가 지나면 조금씩 회복합니다.",
                 13, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 40);
             _content = UIBuilder.ScrollList(body, out var scroll);
             scroll.GetComponent<RectTransform>().Size(-1, -1, -1, 1);
@@ -107,7 +107,7 @@ namespace GuildMaster.UI
             var crafting = Services.TryGet<CraftingService>(out var c) ? c : null;
             var items = t.Stock.Where(kv => kv.Value > 0).Select(kv => (item: db.Item(kv.Key), count: kv.Value))
                 .Where(x => market.CanSell(x.item))
-                .OrderBy(x => x.item.category).ThenByDescending(x => market.Demand(x.item.id)).ThenBy(x => x.item.displayName).ToList();
+                .OrderBy(x => x.item.category).ThenByDescending(x => market.Demand(x.item)).ThenBy(x => x.item.displayName).ToList();
 
             EnsureSellRows(items.Count);
             for (int i = 0; i < items.Count; i++)
@@ -115,7 +115,7 @@ namespace GuildMaster.UI
                 var (item, count) = items[i];
                 var row = _rows[i];
                 row.ItemId = item.id;
-                float demand = market.Demand(item.id);
+                float demand = market.Demand(item);
                 var demandColor = demand >= 1.15f ? UITheme.Good : demand >= 0.9f ? UITheme.Text : UITheme.Bad;
                 string cat = item.category switch { ItemCategory.Material => "재료", ItemCategory.Potion => "물약", _ => "장비" };
                 bool usedInCrafting = crafting != null && crafting.Recipes.Any(r => r.inputs.Any(x => x.itemId == item.id));

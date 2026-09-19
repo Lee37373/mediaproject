@@ -21,19 +21,24 @@ namespace GuildMaster.Tests
         public void TearDown() => EventBus.Clear();
 
         [Test]
-        public void Demand_IsHighWithoutSupply_AndFallsTowardsMinimum()
+        public void Scarcity_FollowsSpeciesAbundance_GoodsAreNeutral()
         {
-            Assert.AreEqual(MerchantMarket.MaxDemand, MerchantMarket.DemandFor(0f), 1e-4f);
-            Assert.Less(MerchantMarket.DemandFor(10f), MerchantMarket.DemandFor(5f));
-            Assert.Greater(MerchantMarket.DemandFor(10000f), MerchantMarket.MinDemand);
-            Assert.AreEqual(MerchantMarket.MinDemand, MerchantMarket.DemandFor(10000f), 0.01f);
+            var t = new GuildTreasury(0, 0, 0, 0);
+            float? earAbundance = 1f;
+            var market = new MerchantMarket(t, _db, item => item.id == "goblin_ear" ? earAbundance : null);
+            var ear = _db.Item("goblin_ear");
+
+            Assert.AreEqual(MerchantMarket.CommonDemand, market.Scarcity(ear), 1e-4f);
+            earAbundance = 0f;   // species wiped out: the outside market pays the most
+            Assert.AreEqual(MerchantMarket.RareDemand, market.Scarcity(ear), 1e-4f);
+            Assert.AreEqual(1f, market.Scarcity(_db.Item(DefaultContent.Potion)), 1e-4f);
         }
 
         [Test]
         public void Sell_ConvertsStockToGold_AndLowersNextPrice()
         {
             var t = new GuildTreasury(0, 0, 0, 0);
-            var market = new MerchantMarket(t, _db);
+            var market = new MerchantMarket(t, _db, _ => 0.5f);
             var ore = _db.Item("iron_ore");
             t.AddStock(ore.id, 5);
             int before = market.Price(ore);
@@ -45,28 +50,23 @@ namespace GuildMaster.Tests
             Assert.AreEqual(gold, t.Gold);
             Assert.AreEqual(2, t.GetStock(ore.id));
             Assert.Less(market.Price(ore), before);
-            // Cannot sell more than the guild has.
             Assert.AreEqual(0, market.Sell(ore.id, 0));
             market.Sell(ore.id, 99);
             Assert.AreEqual(0, t.GetStock(ore.id));
         }
 
         [Test]
-        public void GuildLootPurchases_AddSupply_WhichFadesDaily()
+        public void SoldVolume_FadesDaily()
         {
             var t = new GuildTreasury(0, 0, 0, 0);
-            var market = new MerchantMarket(t, _db);
-            var ear = _db.Item("goblin_ear");
-            var dagger = _db.Item("rusty_dagger");
-            EventBus.Publish(new TradeEvent { ItemId = ear.id, Count = 20, GuildBought = true });
-            EventBus.Publish(new TradeEvent { ItemId = dagger.id, Count = 20, GuildBought = false });
-
-            Assert.AreEqual(20f, market.Supply(ear.id), 1e-4f);
-            Assert.AreEqual(0f, market.Supply(dagger.id), 1e-4f);   // guild sales to adventurers are not market supply
-            Assert.Less(market.Demand(ear.id), market.Demand(dagger.id));
+            var market = new MerchantMarket(t, _db, _ => null);
+            t.AddStock("goblin_ear", 20);
+            market.Sell("goblin_ear", 20);
+            Assert.AreEqual(20f, market.Sold("goblin_ear"), 1e-4f);
+            Assert.Less(MerchantMarket.SaturationFor(20f), 1f);
 
             EventBus.Publish(new DayPassedEvent { Day = 2 });
-            Assert.AreEqual(20f * MerchantMarket.DailyRetention, market.Supply(ear.id), 1e-3f);
+            Assert.AreEqual(20f * MerchantMarket.DailyRetention, market.Sold("goblin_ear"), 1e-3f);
         }
     }
 }

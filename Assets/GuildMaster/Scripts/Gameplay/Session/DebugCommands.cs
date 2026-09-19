@@ -348,7 +348,7 @@ namespace GuildMaster.Session
             foreach (var kv in t.Stock.Where(kv => kv.Value > 0))
             {
                 var item = db.Item(kv.Key);
-                sb.Append($"  {kv.Key} x{kv.Value} supply={s.Market.Supply(kv.Key):0.0} demand={s.Market.Demand(kv.Key):0.00} price={s.Market.Price(item)} base={item?.baseValue}\n");
+                sb.Append($"  {kv.Key} x{kv.Value} scarcity={s.Market.Scarcity(item):0.00} sold={s.Market.Sold(kv.Key):0.0} demand={s.Market.Demand(item):0.00} price={s.Market.Price(item)} base={item?.baseValue}\n");
             }
             return sb.ToString();
         }

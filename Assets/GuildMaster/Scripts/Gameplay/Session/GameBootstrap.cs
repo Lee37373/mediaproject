@@ -156,7 +156,7 @@ namespace GuildMaster.Session
             crafting.Init(treasury, db, clock, town);
             Services.Register(crafting);
             // Travelling merchant buying the guild's stock (P4-3).
-            var market = new MerchantMarket(treasury, db);
+            var market = new MerchantMarket(treasury, db, eco.LootAbundance);
             Services.Register(market);
             var merchant = AddSystem<MerchantService>();
             merchant.Init(clock, world, market);
