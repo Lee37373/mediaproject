@@ -28,6 +28,7 @@ namespace GuildMaster.Adventurers
             EventBus.Subscribe<AdventurerRetreatedEvent>(OnRetreated);
             EventBus.Subscribe<AdventurerLevelUpEvent>(OnLevelUp);
             EventBus.Subscribe<AdventurerDiedEvent>(OnAdventurerDied);
+            EventBus.Subscribe<PartyInviteAnsweredEvent>(OnPartyAnswered);
         }
 
         public void Dispose()
@@ -40,6 +41,7 @@ namespace GuildMaster.Adventurers
             EventBus.Unsubscribe<AdventurerRetreatedEvent>(OnRetreated);
             EventBus.Unsubscribe<AdventurerLevelUpEvent>(OnLevelUp);
             EventBus.Unsubscribe<AdventurerDiedEvent>(OnAdventurerDied);
+            EventBus.Unsubscribe<PartyInviteAnsweredEvent>(OnPartyAnswered);
         }
 
         void Remember(Adventurer a, int importance, string text, string key = null)
@@ -52,6 +54,22 @@ namespace GuildMaster.Adventurers
 
         void OnAccepted(QuestAcceptedEvent e)
             => Remember(e.Taker as Adventurer, 1, $"'{e.Quest.Title}' 의뢰를 맡았다");
+
+        /// <summary>Both sides remember the invitation — this is what "relationship" means in later prompts.</summary>
+        void OnPartyAnswered(PartyInviteAnsweredEvent e)
+        {
+            string leader = e.Leader.Data.name, invitee = e.Invitee.Data.name;
+            if (e.Accepted)
+            {
+                Remember(e.Invitee, 2, $"{leader}의 제안으로 함께 '{e.Quest.Title}' 의뢰에 나섰다");
+                Remember(e.Leader, 2, $"{invitee}이(가) 내 파티 제안을 받아들였다");
+            }
+            else
+            {
+                Remember(e.Invitee, 1, $"{leader}의 파티 제안을 거절했다");
+                Remember(e.Leader, 1, $"{invitee}이(가) 내 파티 제안을 거절했다");
+            }
+        }
 
         void OnRewardPaid(QuestRewardPaidEvent e)
             => Remember(e.Taker as Adventurer, 2, $"'{e.Quest.Title}' 의뢰를 끝내고 {e.Gold}G를 받았다");

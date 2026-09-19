@@ -93,7 +93,10 @@ namespace GuildMaster.Adventurers
 
             AdvCtx.Wander(a, ref _wanderTimer, dt);
             _decisionTimer -= dt;
-            if (_decisionTimer <= 0f) a.ChangeState(a.DecidingState);
+            if (_decisionTimer > 0f) return;
+            // A pending party invitation is this member's decision for now.
+            if (Services.TryGet<PartyService>(out var party) && party.IsInvited(a)) { _decisionTimer = 2f; return; }
+            a.ChangeState(a.DecidingState);
         }
     }
 
@@ -197,6 +200,8 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             if (a.CurrentQuest == null) { a.ChangeState(a.ReturnState); return; }
+            // Wait for party invitations to be answered, then leave together.
+            if (Services.TryGet<PartyService>(out var party) && party.IsGathering(a.CurrentQuest)) { a.ChangeState(a.GatherState); return; }
             // Escorts walk to (and keep up with) the guild master themselves.
             if (a.CurrentQuest.Type == QuestType.Escort) { a.ChangeState(a.EscortState); return; }
             _destination = AdvCtx.QuestDestination(a, a.CurrentQuest);

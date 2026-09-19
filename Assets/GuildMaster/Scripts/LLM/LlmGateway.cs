@@ -30,7 +30,9 @@ namespace GuildMaster.LLM
         }
 
         const float CancelGraceSeconds = 3f;
-        const float StaleWaitSeconds = 2f;
+        /// <summary>How long a new request waits for a cancelled-but-still-running generation to end.
+        /// Must cover one full generation (4B model: ~10 s), or requests after any cancel fail as "busy".</summary>
+        const float StaleWaitSeconds = 25f;
         /// <summary>Generation that timed out and ignored cancellation (still running natively).</summary>
         Task _stale;
 

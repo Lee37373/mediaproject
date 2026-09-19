@@ -53,7 +53,7 @@ GuildMaster.Tests.EditMode
 - `Assets/StreamingAssets/LlamaLib-*`(약 4GB 네이티브 바이너리)와 `*.gguf`는 `.gitignore`로 제외했습니다. LLMUnity가 다시 내려받습니다.
 
 ## 테스트와 검증 (Unity MCP)
-- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 42개가 통과합니다.
+- 테스트: `run_tests`(assembly `GuildMaster.Tests.EditMode`). 현재 51개가 통과합니다.
 - 컴파일: 먼저 `AssetDatabase.Refresh` + `CompilationPipeline.RequestScriptCompilation`을 eval로 실행하고, 그다음 `recompile_status`와 `console`(error)로 확인합니다.
   - 컴파일 뒤 도메인 리로드 중에는 `wait_for`가 네트워크 에러를 낼 수 있습니다. 정상입니다.
 - `eval`에서는 `using`을 쓸 수 없습니다. 전체 네임스페이스를 쓰거나 `GuildMaster.Session.DebugCommands`를 쓰세요.
@@ -65,11 +65,12 @@ GuildMaster.Tests.EditMode
   - `capture_game_view`의 `save_path`는 `Assets/` 기준으로 저장됩니다. 확인한 뒤 지우세요.
 - 플레이 중 코드를 바꾸면 반드시 `editor_stop` 후에 컴파일하세요.
   - **LLM이 생성 중일 때는 스크립트 파일도 건드리지 마세요.** 에디터가 포커스를 받아 자동 리로드하면 네이티브 스레드 때문에 "Reloading Domain"에서 멈춥니다(에디터 재시작 필요). 먼저 `editor_stop`한 뒤 파일을 고치세요.
+  - 멈추기 전에 `LlmGateway.IsBusy`가 false가 될 때까지 기다리면 안전합니다(2026-09-19 생성 중에 멈추고 컴파일했다가 도메인 리로드가 한 번 멈췄습니다).
 - LLM 요청/응답은 플레이 중 **F2**(LLM 디버그 창, 에디터·개발 빌드 전용)로 볼 수 있습니다. 판정(채택/대체 이유), 대기·생성 시간, 전체 프롬프트가 나오고 복사할 수 있습니다.
 - `Run In Background`는 켜져 있어야 합니다. 꺼져 있으면 에디터가 비활성일 때 게임이 멈춥니다.
 
 ## LLM (LLMUnity v3.0.3, 로컬)
-- 씬의 `LLM` 오브젝트는 경량 모델 **llama-3.2-1b-instruct Q4_K_M**을 씁니다(2026-09-19 사용자 전환, 판단 1회 약 3초). 이전 모델은 Qwen3.5-4B Q4_K_M(`C:\unity\LLMModels\qwen35-4b-q4km.gguf`)입니다. **Vulkan으로 Intel Arc 130V 내장 GPU**를 씁니다(`numGPULayers=99`, 2026-09-18). 판단 1회 생성 약 10초(CPU만 쓸 때는 약 20초).
+- 씬의 `LLM` 오브젝트는 **Qwen3.5-4B Q4_K_M**(`C:\unity\LLMModels\qwen35-4b-q4km.gguf`)을 씁니다. 2026-09-19에 llama-3.2-1b(판단 약 3초, 같은 폴더)를 시험했지만 한국어·판단 품질이 낮아 되돌렸습니다. **Vulkan으로 Intel Arc 130V 내장 GPU**를 씁니다(`numGPULayers=99`, 2026-09-18). 판단 1회 생성 약 10초(CPU만 쓸 때는 약 20초).
 - **Windows 사용자 경로에 한글이 있으면 llama.cpp가 실패합니다.** 사용자명이 "이재혁"이고 `%APPDATA%`에 한글이 들어갑니다.
   - 모델은 ASCII 경로 `C:\unity\LLMModels\qwen35-4b-q4km.gguf`로 복사해 LLMManager에 등록했습니다.
   - `LlamaEnvironment`가 `LLAMA_CACHE`를 ASCII 경로로 지정합니다.

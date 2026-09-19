@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
@@ -47,6 +48,10 @@ namespace GuildMaster.Session
                 if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
                 else if (e.Status == QuestStatus.Failed) Add($"의뢰 실패: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
             });
+            EventBus.Subscribe<PartyInviteAnsweredEvent>(e => Add(
+                $"{e.Invitee.Data.name}이(가) {e.Leader.Data.name}의 파티 제안을 {(e.Accepted ? "수락" : "거절")}했습니다.", LogCategory.Quest));
+            EventBus.Subscribe<PartyFormedEvent>(e => Add(
+                $"파티 출발: {e.Leader.Data.name}, {string.Join(", ", e.Members.Select(m => m.Data.name))} → '{e.Quest.Title}'", LogCategory.Quest));
             EventBus.Subscribe<AdventurerJoinedEvent>(e => Add($"{e.Adventurer.Data.name}({AdventurerData.ClassLabel(e.Adventurer.Data.cls)})이(가) 길드에 합류했습니다.", LogCategory.Info));
             EventBus.Subscribe<Recruitment.VisitorArrivedEvent>(e => Add($"방문자 {e.Visitor.Data.name}({AdventurerData.ClassLabel(e.Visitor.Data.cls)} Lv.{e.Visitor.Data.level})이(가) 마을 광장에 왔습니다. 말을 걸어 영입해 보세요.", LogCategory.Info));
             EventBus.Subscribe<VisitorLeftTownEvent>(e => Add($"방문자 {e.Visitor.Data.name}이(가) 마을을 떠났습니다.", LogCategory.Info));

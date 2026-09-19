@@ -134,6 +134,8 @@ namespace GuildMaster.Session
             Services.Register(roster);
             // Per-adventurer memories; before recruiting so the starting members remember joining.
             Services.Register(new MemoryRecorder(clock, roster));
+            // Multi-person quests: the first taker invites idle members (LLM, rule fallback).
+            Services.Register(new PartyService(llm, board, roster, clock));
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)
                 roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), guildDoor + GameRandom.Shared.InsideUnitCircle());

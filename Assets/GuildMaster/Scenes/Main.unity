@@ -248,16 +248,16 @@ MonoBehaviour:
   _parallelPrompts: -1
   _contextSize: 8192
   _batchSize: 512
-  _model: llama-3.2-1b-instruct-q4_k_m.gguf
+  _model: qwen35-4b-q4km.gguf
   _flashAttention: 0
   _reasoning: 0
   _lora: 
   _loraWeights: 
   dontDestroyOnLoad: 1
   _embeddingsOnly: 0
-  _embeddingLength: 2048
+  _embeddingLength: 2560
   minContextLength: 0
-  maxContextLength: 131072
+  maxContextLength: 262144
 --- !u!4 &421123124
 Transform:
   m_ObjectHideFlags: 0
