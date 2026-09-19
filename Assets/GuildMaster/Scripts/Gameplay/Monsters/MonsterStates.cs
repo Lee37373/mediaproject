@@ -16,6 +16,7 @@ namespace GuildMaster.Monsters
         public override void Enter()
         {
             _idleTimer = GameRandom.Shared.Range(0.5f, 3f);
+            Owner.Engage.Clear();
         }
 
         public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
@@ -86,6 +87,19 @@ namespace GuildMaster.Monsters
                 return;
             }
 
+            // Veterans losing a fight drag the pursuer through another species' territory (P4-18).
+            if (m.Tier >= CombatTier.Veteran && m.HpRatio < 0.35f && Time.time >= m.NextLureTime)
+            {
+                m.NextLureTime = Time.time + 20f;
+                var pursuer = Ecosystem.TerritoryTactics.FindPursuer(m);
+                if (pursuer != null && Ecosystem.TerritoryTactics.FindLurePoint(m, pursuer, m.Position + (m.Position - pursuer.Position).normalized * 8f, false, out var point, out _))
+                {
+                    m.LureState.Point = point;
+                    Machine.ChangeState(m.LureState);
+                    return;
+                }
+            }
+
             if (m.Engage.Tick(dt) == EngageStatus.Lost)
             {
                 // Look for another target before giving up.
@@ -101,7 +115,9 @@ namespace GuildMaster.Monsters
     /// <summary>Run directly away from a predator until out of sight.</summary>
     public class MonsterFleeState : State<Monster>
     {
+        /// <summary>Run from this unit, or (when null) from <see cref="FromPoint"/>.</summary>
         public Unit From;
+        public Vector2 FromPoint;
         float _repath;
 
         public override string Label => "도주";
@@ -115,7 +131,10 @@ namespace GuildMaster.Monsters
         public override void Tick(float dt)
         {
             var m = Owner;
-            bool safe = From == null || !From.IsAlive || Vector2.Distance(m.Position, From.Position) > m.Stats.SightRadius + 3f;
+            var threat = From != null ? From.Position : FromPoint;
+            bool safe = From != null
+                ? !From.IsAlive || Vector2.Distance(m.Position, threat) > m.Stats.SightRadius + 3f
+                : Vector2.Distance(m.Position, threat) > m.Stats.SightRadius + 3f;
             if (safe || TimeInState > 8f)
             {
                 m.GoToDefaultState();
@@ -124,12 +143,41 @@ namespace GuildMaster.Monsters
             _repath -= dt;
             if (_repath > 0f && m.Mover.IsMoving) return;
             _repath = 1f;
-            var away = (m.Position - From.Position).normalized;
+            var away = (m.Position - threat).normalized;
             if (away == Vector2.zero) away = Random.insideUnitCircle.normalized;
             var world = Services.Get<WorldService>();
             var target = m.Position + away * 6f;
             if (world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(target), 4, out var cell))
                 m.Mover.SetDestination(GridMap.CellToWorld(cell));
+        }
+
+        public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
+    }
+
+    /// <summary>
+    /// Runs past another species' territory so the pursuer has to cross it (veteran monsters, P4-18),
+    /// then resumes; the third-party wait in Engagement keeps it out of the brawl for a while.
+    /// </summary>
+    public class MonsterLureState : State<Monster>
+    {
+        const float Timeout = 10f;
+        public Vector2 Point;
+
+        public override string Label => "유인";
+
+        public override void Enter()
+        {
+            var m = Owner;
+            m.Engage.Clear();
+            m.Mover.SpeedMultiplier = 1.2f;
+            if (!m.Mover.SetDestination(Point, 0.5f)) m.GoToDefaultState();
+        }
+
+        public override void Tick(float dt)
+        {
+            var m = Owner;
+            if (Vector2.Distance(m.Position, Point) < 0.8f || !m.Mover.IsMoving || TimeInState > Timeout)
+                m.GoToDefaultState();
         }
 
         public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
@@ -142,6 +190,7 @@ namespace GuildMaster.Monsters
 
         public override void Enter()
         {
+            Owner.Engage.Clear();   // no stale target (it would count as piling on in TargetSelector)
             if (!Owner.Mover.SetDestination(Owner.HomePosition, 1f)) Owner.GoToDefaultState();
         }
 

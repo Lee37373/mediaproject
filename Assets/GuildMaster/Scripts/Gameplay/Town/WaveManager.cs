@@ -75,9 +75,21 @@ namespace GuildMaster.Town
             _eco = eco;
             _world = world;
             EventBus.Subscribe<HourPassedEvent>(OnHour);
+            EventBus.Subscribe<IntrudersRoutedEvent>(OnRouted);
         }
 
-        void OnDestroy() => EventBus.Unsubscribe<HourPassedEvent>(OnHour);
+        void OnDestroy()
+        {
+            EventBus.Unsubscribe<HourPassedEvent>(OnHour);
+            EventBus.Unsubscribe<IntrudersRoutedEvent>(OnRouted);
+        }
+
+        /// <summary>A raid ran into a much stronger nest on the way (P4-18): it turns back home.</summary>
+        void OnRouted(IntrudersRoutedEvent e)
+        {
+            foreach (var raid in _raids.ToList())
+                if (raid.Nest == e.IntruderHome) GiveUp(raid);
+        }
 
         // ---------------- Danger level (pure, tested) ----------------
 

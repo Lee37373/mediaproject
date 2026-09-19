@@ -329,6 +329,43 @@ namespace GuildMaster.Session
             return $"attempts={b.Attempts} llm={b.LlmBanters} fixed={b.FixedBanters}";
         }
 
+        // ---------------- Territories (P4-18) ----------------
+
+        /// <summary>Every nest with population, territory radius and fighting strength.</summary>
+        public static string Territories()
+        {
+            var eco = Services.Get<EcosystemManager>();
+            var sb = new StringBuilder();
+            int i = 0;
+            foreach (var n in eco.Nests)
+            {
+                float str = n.Members.Where(m => m.IsAlive).Sum(TerritoryService.Strength);
+                sb.Append($"  #{i++} {n.DisplayName} pop={n.Population}/{n.Capacity} r={n.TerritoryRadius:0.0} str={str:0} at {n.WorldPosition}\n");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Spawns nest-less monsters of a species at the edge of nest #index's territory and points the camera there.</summary>
+        public static string InvadeNest(int index, string speciesId, int count)
+        {
+            var eco = Services.Get<EcosystemManager>();
+            if (index < 0 || index >= eco.Nests.Count) return "bad index";
+            var nest = eco.Nests[index];
+            var species = eco.Species.FirstOrDefault(s => s.id == speciesId);
+            if (species == null) return "unknown species";
+            var world = Services.Get<World.WorldService>();
+            var pool = Services.Get<PoolService>();
+            var edge = nest.WorldPosition + Vector2.right * Mathf.Max(1f, nest.TerritoryRadius * 0.8f);
+            for (int k = 0; k < count; k++)
+            {
+                world.Grid.TryRandomWalkableNear(World.GridMap.WorldToCell(edge), 1, GameRandom.Shared, out var c);
+                pool.Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(c)).Setup(species, null);
+            }
+            if (Services.TryGet<CameraControl.CameraController>(out var cam)) { cam.Follow(null); cam.JumpTo(nest.WorldPosition); }
+            SkirmishMonitor.Ensure().ResetStats();
+            return $"{count} {species.id} into {nest.DisplayName} (r={nest.TerritoryRadius:0.0}, residents={nest.Population})";
+        }
+
         // ---------------- Merchant (P4-3) ----------------
 
         /// <summary>Sends the travelling merchant now.</summary>

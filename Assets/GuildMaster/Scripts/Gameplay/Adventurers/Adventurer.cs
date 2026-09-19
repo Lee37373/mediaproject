@@ -61,6 +61,9 @@ namespace GuildMaster.Adventurers
         internal DeadState DeadState;
         internal VisitorWanderState VisitorWanderState;
         internal VisitorLeaveState VisitorLeaveState;
+        internal LureState LureState;
+        /// <summary>Quest for which the heroic drive hunt was already tried (once per quest).</summary>
+        internal Quests.Quest DroveForQuest;
 
         float _senseTimer;
         bool _dodging;
@@ -112,6 +115,7 @@ namespace GuildMaster.Adventurers
             DeadState = new DeadState();
             VisitorWanderState = new VisitorWanderState();
             VisitorLeaveState = new VisitorLeaveState();
+            LureState = new LureState();
         }
 
         /// <summary>Turns a freshly created adventurer into a town visitor (not attacked, no quests).</summary>

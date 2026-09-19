@@ -31,6 +31,51 @@ namespace GuildMaster.Ecosystem
         public Vector2 WorldPosition => GridMap.CellToWorld(Cell);
         public string DisplayName => $"{Species.displayName} 둥지 #{NestId.Substring(2)}";
 
+        /// <summary>
+        /// Territory radius: the species' base scaled by how full the nest is (0.6x nearly empty,
+        /// 1.4x full); 0 when nobody lives here. Real simulation value — guild-facing UI must not show it.
+        /// </summary>
+        public float TerritoryRadius => TerritoryRadiusFor(Species.territoryRadius, Population, Capacity);
+
+        public static float TerritoryRadiusFor(float baseRadius, int population, int capacity)
+            => population <= 0 ? 0f : baseRadius * (0.6f + 0.8f * Mathf.Clamp01(population / (float)Mathf.Max(1, capacity)));
+
+        public bool InTerritory(Vector2 p)
+        {
+            float r = TerritoryRadius;
+            return r > 0f && (p - WorldPosition).sqrMagnitude <= r * r;
+        }
+
+        /// <summary>
+        /// Someone the residents drive out: a monster of another species or a guild unit inside the
+        /// territory. Visitors (and same-species monsters from other nests) are left alone.
+        /// </summary>
+        public bool IsIntruder(Unit u)
+        {
+            if (u == null || !u.IsAlive || !InTerritory(u.Position)) return false;
+            if (u is Monster m) return m.Def != Species;
+            return u.Faction == Faction.Guild;
+        }
+
+        /// <summary>Moves a living member to another nest (migration). Population per species is unchanged.</summary>
+        internal void TransferMember(Monster m, Nest to)
+        {
+            if (to == null || to == this || !_members.Remove(m)) return;
+            to._members.Add(m);
+            m.ChangeHome(to);
+        }
+
+        /// <summary>An empty nest taken over by migrants of another species.</summary>
+        internal void ChangeSpecies(MonsterDefinition species)
+        {
+            if (!IsEmpty || species == null || species == Species) return;
+            Species = species;
+            Capacity = species.nestCapacity;
+            GrowthAccumulator = 0f;
+            name = $"Nest {NestId} ({species.id})";
+            _renderer.sprite = CartoonArt.Nest(species);
+        }
+
         EcosystemManager _eco;
 
         public void Init(EcosystemManager eco, string id, MonsterDefinition species, NestSite site)
@@ -67,6 +112,16 @@ namespace GuildMaster.Ecosystem
         {
             if (!_members.Remove(m)) return;
             _eco.NotifyMemberDied(this, m, killer);
+        }
+
+        void OnDrawGizmos()
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying || !UnitGizmos.ShowAll || Species == null) return;
+            UnityEditor.Handles.color = new Color(Species.bodyColor.r, Species.bodyColor.g, Species.bodyColor.b, 0.8f);
+            UnityEditor.Handles.DrawWireDisc(WorldPosition, Vector3.forward, TerritoryRadius, 2f);
+            UnityEditor.Handles.Label(WorldPosition + new Vector2(0f, TerritoryRadius), $"{DisplayName} {Population}/{Capacity} 영역 {TerritoryRadius:0.0}");
+#endif
         }
 
         void Update()

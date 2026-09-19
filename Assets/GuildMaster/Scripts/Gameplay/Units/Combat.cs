@@ -108,6 +108,7 @@ namespace GuildMaster.Units
             _repathTimer = 0f;
             _tacticTimer = 0f;
             _retargetTimer = CombatTiers.RetargetInterval(_self.Tier);
+            _holdOffTime = 0f;
             ResetChase();
         }
 
@@ -190,9 +191,56 @@ namespace GuildMaster.Units
                 }
             }
 
+            if (HoldOffTick(dt, dist)) return EngageStatus.Chasing;
             if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
 
             return _self.Stats.IsRanged ? RangedTick(dt, dist) : MeleeTick(dt, dist);
+        }
+
+        // ---------------- Third-party wait ("어부지리", Skilled+) ----------------
+
+        const float HoldOffMaxSeconds = 12f;
+        float _holdOffTime;
+
+        /// <summary>True while waiting at a distance for the target to be worn down by someone else.</summary>
+        public bool IsHoldingOff { get; private set; }
+
+        /// <summary>
+        /// The target is busy fighting a third party that is also our enemy (e.g. two monster species,
+        /// or a monster and the guild) and nobody is hitting us: stay just out of the brawl until the
+        /// target is weakened, its opponent falls, or we have waited long enough.
+        /// </summary>
+        public static bool ShouldHoldOff(Unit self, Unit target, float waited)
+        {
+            if (self.Tier < CombatTier.Skilled || target == null || waited >= HoldOffMaxSeconds) return false;
+            if (Time.time - self.LastAttackedTime < 3f) return false;
+            var other = target.CurrentTarget;
+            if (other == null || other == self || !other.IsAlive || TargetSelector.IsAlly(self, other)) return false;
+            if (!(self.IsHostileTo(other) || other.IsHostileTo(self))) return false;
+            return target.HpRatio > 0.4f && other.HpRatio > 0.3f;
+        }
+
+        bool HoldOffTick(float dt, float dist)
+        {
+            if (!ShouldHoldOff(_self, Target, _holdOffTime))
+            {
+                IsHoldingOff = false;   // the wait budget resets only with a new target (SetTarget)
+                return false;
+            }
+            IsHoldingOff = true;
+            _holdOffTime += dt;
+            ResetChase();
+            float keep = Mathf.Max(_self.Stats.AttackRange + 1.5f, 4.5f);
+            if (dist < keep - 0.5f)
+            {
+                var away = (_self.Position - Target.Position).normalized;
+                if (away == Vector2.zero) away = Vector2.right;
+                _self.Mover.SetDestination(Target.Position + away * keep, 0.3f);
+            }
+            else if (dist > keep + 2f) _self.Mover.SetDestination(Target.Position, keep);
+            else if (_self.Mover.IsMoving) _self.Mover.Stop();
+            _self.Visual?.FaceTowards(Target.Position);
+            return true;
         }
 
         bool IsChanneling()

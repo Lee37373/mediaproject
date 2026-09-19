@@ -64,6 +64,7 @@ namespace GuildMaster.Units
             }
 
             string label = $"{u.DisplayName} [{CombatTiers.Label(u.Tier)}] {u.DebugState}";
+            if (engage != null && engage.IsHoldingOff) label += " (어부지리 대기)";
             if (engage != null && engage.StallTime > 0.5f) label += $"\n추격 정체 {engage.StallTime:0.0}/{CombatTiers.ChaseGiveUp(u.Tier):0.0}s";
             var style = new GUIStyle(EditorStyles.miniBoldLabel) { normal = { textColor = guild ? GuildTargetColor : EnemyTargetColor } };
             Handles.Label(p + new Vector2(0.4f, 1.1f), label, style);

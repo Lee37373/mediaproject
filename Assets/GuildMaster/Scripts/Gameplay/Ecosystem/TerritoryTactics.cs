@@ -1,0 +1,78 @@
+using GuildMaster.Core;
+using GuildMaster.Monsters;
+using GuildMaster.Units;
+using GuildMaster.World;
+using UnityEngine;
+
+namespace GuildMaster.Ecosystem
+{
+    /// <summary>
+    /// Luring with territories (P4-18). A pursuer follows right behind us, so we cannot make it cross a
+    /// territory we avoid ourselves. Instead we clip the edge of another species' territory on the way
+    /// to where we are going: residents strike whoever is inside — the pursuer included — and its
+    /// retaliation scoring (TargetSelector) turns it on them while we keep running.
+    /// Adventurers only use nests the guild knows (assuming the species' largest territory);
+    /// monsters know their surroundings.
+    /// </summary>
+    public static class TerritoryTactics
+    {
+        const float MaxSearch = 16f;
+        /// <summary>Waypoint depth inside the territory, as a fraction of its radius from the centre.</summary>
+        const float EdgeDepth = 0.6f;
+        const int Samples = 16;
+        /// <summary>Longest acceptable extra walk for the lure.</summary>
+        public const float MaxDetour = 12f;
+
+        /// <summary>
+        /// Waypoint for <paramref name="self"/>, fleeing <paramref name="pursuer"/> towards
+        /// <paramref name="destination"/>, inside the edge of a territory whose residents would attack the
+        /// pursuer (not our own species' nest). False if none is worth the detour.
+        /// </summary>
+        public static bool FindLurePoint(Unit self, Unit pursuer, Vector2 destination, bool knownNestsOnly, out Vector2 point, out Nest via)
+        {
+            point = default;
+            via = null;
+            if (self == null || pursuer == null || !Services.TryGet<EcosystemManager>(out var eco)) return false;
+            var world = Services.Get<WorldService>();
+            var selfSpecies = (self as Monster)?.Def;
+            var pursuerSpecies = (pursuer as Monster)?.Def;
+            // Residents attack guild units and other species; a nest-less non-monster pursuer is ignored.
+            if (pursuer.Faction != Faction.Guild && pursuerSpecies == null) return false;
+            float best = float.MaxValue;
+            foreach (var n in eco.Nests)
+            {
+                if (knownNestsOnly && !n.Discovered) continue;
+                if (n.IsEmpty || n.Species == selfSpecies || n.Species == pursuerSpecies) continue;
+                float radius = knownNestsOnly ? n.Species.territoryRadius * 1.4f : n.TerritoryRadius;
+                if (radius <= 0f || Vector2.Distance(self.Position, n.WorldPosition) > MaxSearch) continue;
+                for (int k = 0; k < Samples; k++)
+                {
+                    float ang = k * Mathf.PI * 2f / Samples;
+                    var candidate = n.WorldPosition + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * (radius * EdgeDepth);
+                    float detour = Detour(self.Position, candidate, destination);
+                    if (!IsGoodLure(self.Position, pursuer.Position, candidate, detour)) continue;
+                    if (!world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(candidate), 1, out var cell)) continue;
+                    if (detour < best) { best = detour; point = GridMap.CellToWorld(cell); via = n; }
+                }
+            }
+            return via != null;
+        }
+
+        /// <summary>Extra distance for going via <paramref name="waypoint"/> instead of straight (pure).</summary>
+        public static float Detour(Vector2 from, Vector2 waypoint, Vector2 to)
+            => Vector2.Distance(from, waypoint) + Vector2.Distance(waypoint, to) - Vector2.Distance(from, to);
+
+        /// <summary>We reach the waypoint before the pursuer, and it is not too far out of the way (pure, tested).</summary>
+        public static bool IsGoodLure(Vector2 self, Vector2 pursuer, Vector2 waypoint, float detour)
+            => detour <= MaxDetour && Vector2.Distance(self, waypoint) < Vector2.Distance(pursuer, waypoint);
+
+        /// <summary>Closest live unit chasing <paramref name="self"/>: its last attacker, or anything targeting it.</summary>
+        public static Unit FindPursuer(Unit self, float radius = 10f)
+        {
+            if (self.LastAttacker != null && self.LastAttacker.IsAlive && Time.time - self.LastAttackedTime < 5f
+                && Vector2.Distance(self.Position, self.LastAttacker.Position) <= radius)
+                return self.LastAttacker;
+            return UnitRegistry.FindNearest(self.Position, radius, u => u != self && u.CurrentTarget == self);
+        }
+    }
+}

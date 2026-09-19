@@ -115,6 +115,10 @@ namespace GuildMaster.Session
             var eco = AddSystem<EcosystemManager>();
             Services.Register(eco);
             eco.Init(db, map, GameRandom.Shared);
+            // Territorial clashes: lopsided fights rout the weaker side (P4-18).
+            var territory = AddSystem<TerritoryService>();
+            territory.Init(eco);
+            Services.Register(territory);
             // What the guild has actually seen; UI and adventurers read this, not the simulation.
             var intel = AddSystem<GuildIntel>();
             intel.Init(eco, fog, clock, world);

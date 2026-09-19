@@ -260,6 +260,26 @@ namespace GuildMaster.Adventurers
             else _area = AdvCtx.QuestDestination(a, q);
         }
 
+        /// <summary>
+        /// Heroic drive hunt (P4-18), once per quest: after hitting a target that has at least two
+        /// friends nearby, run the pack past a known nest of another species and let them brawl there.
+        /// </summary>
+        bool TryDrive(Adventurer a)
+        {
+            if (a.Tier < CombatTier.Heroic || a.DroveForQuest == a.CurrentQuest) return false;
+            var target = a.Engage.Target;
+            if (target == null || !target.WasRecentlyAttackedBy(a, 2f)) return false;
+            int pack = UnitRegistry.CountInRadius(target.Position, 5f, IsQuestTarget);
+            if (pack < 3) return false;
+            a.DroveForQuest = a.CurrentQuest;
+            // Keep running away from the pack; the waypoint clips another species' territory on the way.
+            var away = a.Position + (a.Position - target.Position).normalized * 8f;
+            if (!TerritoryTactics.FindLurePoint(a, target, away, true, out var point, out _)) return false;
+            a.LureState.Begin(point, this, "따라와 봐라!");
+            a.ChangeState(a.LureState);
+            return true;
+        }
+
         bool IsQuestTarget(Unit u)
         {
             var q = Owner.CurrentQuest;
@@ -271,6 +291,7 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
+            if (TryDrive(a)) return;
             if (a.HandleCombat(dt, IsQuestTarget)) return;
 
             _searchTimer -= dt;
@@ -318,16 +339,74 @@ namespace GuildMaster.Adventurers
 
     // ------------------------------------------------------------------ Returning & guild services
 
+    /// <summary>
+    /// Runs to a lure point past another species' territory (heroic drive hunt, P4-18), ignoring
+    /// fights except area-attack dodging, then hands back to <see cref="Next"/> — whose combat logic
+    /// usually waits out the brawl (third-party wait) before joining.
+    /// </summary>
+    public class LureState : State<Adventurer>
+    {
+        const float Timeout = 10f;
+        Vector2 _point;
+        string _line;
+        public State<Adventurer> Next { get; private set; }
+
+        public override string Label => "몰이 중";
+
+        public void Begin(Vector2 point, State<Adventurer> next, string line)
+        {
+            _point = point;
+            Next = next;
+            _line = line;
+        }
+
+        public override void Enter()
+        {
+            var a = Owner;
+            a.Engage.Clear();
+            a.Mover.SpeedMultiplier = 1.1f;
+            a.Mover.SetDestination(_point, 0.5f);
+            if (!string.IsNullOrEmpty(_line)) a.Say(_line);
+        }
+
+        public override void Tick(float dt)
+        {
+            var a = Owner;
+            if (a.CheckRetreat()) return;
+            bool arrived = Vector2.Distance(a.Position, _point) < 0.8f || !a.Mover.IsMoving;
+            if (arrived || TimeInState > Timeout) a.ChangeState(Next ?? a.ReturnState);
+        }
+
+        public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
+    }
+
     public class ReturnToTownState : State<Adventurer>
     {
         public bool Retreating;
 
-        public override string Label => Retreating ? "후퇴 중" : "귀환 중";
+        const float LureTimeout = 12f;
+        bool _luring;
+        Vector2 _lurePoint;
+
+        public override string Label => _luring ? "유인 후퇴" : Retreating ? "후퇴 중" : "귀환 중";
 
         public override void Enter()
         {
             var a = Owner;
             a.Mover.SpeedMultiplier = Retreating ? 1.15f : 1f;
+            _luring = false;
+            // Veterans drag their pursuer past a known hostile nest on the way out (P4-18).
+            if (Retreating && a.Tier >= CombatTier.Veteran)
+            {
+                var pursuer = TerritoryTactics.FindPursuer(a);
+                if (pursuer != null && TerritoryTactics.FindLurePoint(a, pursuer, AdvCtx.GuildDoor, true, out _lurePoint, out _)
+                    && a.Mover.SetDestination(_lurePoint, 0.5f))
+                {
+                    _luring = true;
+                    a.Say("저쪽 둥지로 끌고 가자!");
+                    return;
+                }
+            }
             if (Retreating) a.Say("위험해! 일단 물러나자!");
             a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
         }
@@ -335,6 +414,12 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
+            if (_luring)
+            {
+                if (Vector2.Distance(a.Position, _lurePoint) > 0.8f && TimeInState < LureTimeout && a.Mover.IsMoving) return;
+                _luring = false;
+                a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
+            }
             if (!Retreating && a.HandleCombat(dt)) return;
             if (Vector2.Distance(a.Position, AdvCtx.GuildDoor) < 1.2f)
             {

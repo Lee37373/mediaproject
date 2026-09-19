@@ -33,6 +33,9 @@ namespace GuildMaster.Monsters
         internal MonsterWanderState WanderState;
         internal MonsterEngageState EngageState;
         internal MonsterFleeState FleeState;
+        internal MonsterLureState LureState;
+        /// <summary>Earliest time the next lure retreat may start (veteran monsters).</summary>
+        internal float NextLureTime;
         internal MonsterReturnState ReturnState;
         internal RaidState RaidState;
 
@@ -53,6 +56,7 @@ namespace GuildMaster.Monsters
             WanderState = new MonsterWanderState();
             EngageState = new MonsterEngageState();
             FleeState = new MonsterFleeState();
+            LureState = new MonsterLureState();
             ReturnState = new MonsterReturnState();
             RaidState = new RaidState();
         }
@@ -158,8 +162,30 @@ namespace GuildMaster.Monsters
         public override bool IsHostileTo(Unit other)
         {
             if (other == null || other == this || !other.IsAlive) return false;
+            // Residents at home drive intruders (other species, guild units) out of their territory.
+            if (IsDefendingTerritory && Home.IsIntruder(other)) return true;
             if (other is Monster m) return Def.IsPredatorOf(m.Def) || Def.IsRivalOf(m.Def);
             return other.Faction == Faction.Guild && Def.aggressiveToHumans;
+        }
+
+        /// <summary>Lives in a nest and is not away raiding (raiders do not guard their home).</summary>
+        public bool IsDefendingTerritory => Home != null && DefaultStateOverride == null;
+
+        /// <summary>Runs away from a point (territorial rout) for a few seconds, then resumes.</summary>
+        public void FleeFrom(Vector2 point)
+        {
+            if (!IsAlive) return;
+            Engage.Clear();
+            FleeState.From = null;
+            FleeState.FromPoint = point;
+            Fsm.ChangeState(FleeState);
+        }
+
+        /// <summary>Migration to another nest (see Nest.TransferMember): heads for the new home.</summary>
+        internal void ChangeHome(Nest nest)
+        {
+            Home = nest;
+            if (IsAlive && Fsm.Current != EngageState) GoToReturn();
         }
 
         /// <summary>A living predator (a monster that preys on us) within sight, if any.</summary>
@@ -195,7 +221,7 @@ namespace GuildMaster.Monsters
 
         void Sense()
         {
-            if (Fsm.Current == FleeState) return;
+            if (Fsm.Current == FleeState || Fsm.Current == LureState) return;
             // Raiders march together; they do not scatter from predators in their own wave.
             var predator = DefaultStateOverride == null ? FindPredator() : null;
             if (predator != null && !WasRecentlyAttackedBy(predator, 2f))
@@ -216,7 +242,7 @@ namespace GuildMaster.Monsters
         protected override void OnDamaged(float amount, Unit source)
         {
             // Retaliate immediately unless already fighting something.
-            if (source != null && source.IsAlive && Fsm.Current != EngageState && Fsm.Current != FleeState)
+            if (source != null && source.IsAlive && Fsm.Current != EngageState && Fsm.Current != FleeState && Fsm.Current != LureState)
             {
                 Engage.SetTarget(source);
                 Fsm.ChangeState(EngageState);

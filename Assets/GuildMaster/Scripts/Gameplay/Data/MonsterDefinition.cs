@@ -48,6 +48,8 @@ namespace GuildMaster.Data
         public List<MonsterDefinition> rivals = new();
         public float wanderRadius = 5f;
         public float leashRadius = 14f;
+        [Tooltip("Base territory radius around a nest; scales with how full the nest is (Nest.TerritoryRadius).")]
+        public float territoryRadius = 5f;
         public bool canRaid;
         [Tooltip("Raid-capable nests: population from which raids become possible (danger level 1).")]
         public int raidThreshold = 99;

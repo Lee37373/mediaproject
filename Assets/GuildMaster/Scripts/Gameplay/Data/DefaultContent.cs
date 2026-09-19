@@ -127,6 +127,14 @@ namespace GuildMaster.Data
             Loot(slimeKing, crownShard, 1f);
             Loot(slimeKing, royalJelly, 0.6f, 1, 2);
 
+            // Territories (base radius; the nest's fill scales it 0.6x..1.4x).
+            slime.territoryRadius = 3.5f;
+            stoneSlime.territoryRadius = 4f;
+            skull.territoryRadius = 5f;
+            goblin.territoryRadius = 5.5f;
+            goblinWarrior.territoryRadius = 6f;
+            slimeKing.territoryRadius = 6.5f;
+
             // Tactics & skills.
             stoneSlime.skillIds.Add("charge");
             skull.packHunter = true;
