@@ -24,11 +24,14 @@ namespace GuildMaster.UI
             var frameImg = UIBuilder.Panel(parent, $"Window:{Title}", UITheme.PanelBg);
             Frame = frameImg.rectTransform;
             Frame.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), anchoredPos, size);
+            HomePosition = anchoredPos;
             transform.SetParent(Frame, false);
             gameObject.name = GetType().Name;
 
             var header = UIBuilder.Panel(Frame, "Header", UITheme.Header);
             header.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), Vector2.zero, new Vector2(0, 38));
+            // Drag the title bar to move the window (several windows can be open at once).
+            header.gameObject.AddComponent<WindowDragger>().Init(Frame);
             var title = UIBuilder.Label(header.transform, Title, 19, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold);
             title.rectTransform.Stretch(14, 50, 0, 0);
             var close = UIBuilder.Button(header.transform, "X", Close, 30, 30, UITheme.ButtonDanger);
@@ -46,14 +49,28 @@ namespace GuildMaster.UI
 
         public void Open()
         {
+            bool wasOpen = Frame.gameObject.activeSelf;
             Frame.gameObject.SetActive(true);
             Frame.SetAsLastSibling();
+            if (Core.Services.TryGet<UIRoot>(out var root)) root.NotifyOpened(this, wasOpen);
             _refreshTimer = 0f;
             OnOpened();
             Refresh();
         }
 
-        public void Close() => Frame.gameObject.SetActive(false);
+        public void Close()
+        {
+            Frame.gameObject.SetActive(false);
+            if (Core.Services.TryGet<UIRoot>(out var root)) root.NotifyClosed(this);
+        }
+
+        /// <summary>Raises the window above the others without re-running OnOpened.</summary>
+        public void BringToFront()
+        {
+            if (!Visible) return;
+            Frame.SetAsLastSibling();
+            if (Core.Services.TryGet<UIRoot>(out var root)) root.NotifyOpened(this, true);
+        }
 
         public void Toggle()
         {
@@ -62,6 +79,9 @@ namespace GuildMaster.UI
         }
 
         public bool Visible => Frame != null && Frame.gameObject.activeSelf;
+        internal RectTransform WindowFrame => Frame;
+        /// <summary>Position given at creation; windows return here when opened alone.</summary>
+        internal Vector2 HomePosition { get; private set; }
 
         protected virtual void Update()
         {

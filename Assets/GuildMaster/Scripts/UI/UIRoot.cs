@@ -17,6 +17,10 @@ namespace GuildMaster.UI
     {
         readonly List<(Key key, UIPanel panel)> _hotkeys = new();
         readonly List<UIPanel> _panels = new();
+        /// <summary>Open windows, oldest first (last = top-most, closed first by ESC).</summary>
+        readonly List<UIPanel> _openOrder = new();
+        readonly List<RaycastResult> _hits = new();
+        const float CascadeStep = 28f;
         RectTransform _banner;
         Text _bannerText;
 
@@ -105,12 +109,50 @@ namespace GuildMaster.UI
             return panel;
         }
 
+        /// <summary>Menu button / hotkey: open (on top), raise if buried, close if already on top.</summary>
         void Focus(UIPanel panel)
         {
-            bool wasOpen = panel.Visible;
-            foreach (var p in _panels) if (p != panel) p.Close();
-            if (wasOpen) panel.Close();
-            else panel.Open();
+            if (!panel.Visible) panel.Open();
+            else if (TopWindow != panel) panel.BringToFront();
+            else panel.Close();
+        }
+
+        UIPanel TopWindow => _openOrder.Count > 0 ? _openOrder[_openOrder.Count - 1] : null;
+
+        /// <summary>Called by UIPanel.Open/BringToFront: moves the window to the top of the open order.</summary>
+        internal void NotifyOpened(UIPanel panel, bool wasOpen)
+        {
+            _openOrder.Remove(panel);
+            _openOrder.RemoveAll(p => p == null || !p.Visible);
+            // A freshly opened window steps aside from any open window sitting at the same spot.
+            if (!wasOpen)
+            {
+                var frame = panel.WindowFrame;
+                if (_openOrder.Count == 0) frame.anchoredPosition = panel.HomePosition;
+                for (int guard = 0; guard < 12 && _openOrder.Exists(p => (p.WindowFrame.anchoredPosition - frame.anchoredPosition).sqrMagnitude < 12f * 12f); guard++)
+                    frame.anchoredPosition += new Vector2(CascadeStep, -CascadeStep);
+            }
+            _openOrder.Add(panel);
+        }
+
+        internal void NotifyClosed(UIPanel panel) => _openOrder.Remove(panel);
+
+        /// <summary>A press anywhere on a window raises it above the others.</summary>
+        void RaiseClickedWindow()
+        {
+            var mouse = Mouse.current;
+            var es = EventSystem.current;
+            if (mouse == null || es == null || !mouse.leftButton.wasPressedThisFrame || _openOrder.Count < 2) return;
+            _hits.Clear();
+            es.RaycastAll(new PointerEventData(es) { position = mouse.position.ReadValue() }, _hits);
+            if (_hits.Count == 0) return;
+            for (var t = _hits[0].gameObject.transform; t != null; t = t.parent)
+            {
+                var panel = _openOrder.Find(p => p.WindowFrame == t);
+                if (panel == null) continue;
+                if (panel != TopWindow) panel.BringToFront();
+                return;
+            }
         }
 
         void BuildBanner()
@@ -131,6 +173,7 @@ namespace GuildMaster.UI
 
         void Update()
         {
+            RaiseClickedWindow();
             var kb = Keyboard.current;
             if (kb == null) return;
             var es = EventSystem.current;
@@ -142,9 +185,10 @@ namespace GuildMaster.UI
 
             if (kb.escapeKey.wasPressedThisFrame && !(Services.TryGet<MapPicker>(out var picker) && picker.IsPicking))
             {
-                bool closedAny = false;
-                foreach (var p in _panels) if (p.Visible) { p.Close(); closedAny = true; }
-                if (!closedAny && Services.TryGet<InspectorView>(out var inspector)) inspector.Clear();
+                // Newest window first; with no windows left, ESC clears the selection.
+                _openOrder.RemoveAll(p => p == null || !p.Visible);
+                if (TopWindow != null) TopWindow.Close();
+                else if (Services.TryGet<InspectorView>(out var inspector)) inspector.Clear();
             }
         }
     }
