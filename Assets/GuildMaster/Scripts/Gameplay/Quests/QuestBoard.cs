@@ -280,8 +280,9 @@ namespace GuildMaster.Quests
         /// <summary>Clear-nest danger: species danger, +1 when at least 5 were last observed there.</summary>
         public static DangerLevel NestDanger(Nest nest)
         {
-            var d = nest.Species.danger;
-            int seen = Services.TryGet<GuildIntel>(out var intel) ? intel.Get(nest).LastCount : 0;
+            bool hasIntel = Services.TryGet<GuildIntel>(out var intel);
+            var d = (hasIntel ? intel.SpeciesOf(nest) : nest.Species).danger;
+            int seen = hasIntel ? intel.Get(nest).LastCount : 0;
             return seen >= 5 && d < DangerLevel.High ? d + 1 : d;
         }
 

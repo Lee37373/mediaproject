@@ -65,7 +65,7 @@ namespace GuildMaster.UI
             {
                 var n = nestsList[i];
                 var btn = _nestRows[i];
-                btn.SetLabel($"{n.DisplayName} — {intel.DescribeNest(n)}");
+                btn.SetLabel($"{intel.NameOf(n)} — {intel.DescribeNest(n)}");
                 btn.onClick.RemoveAllListeners();
                 btn.onClick.AddListener(() => Services.Get<CameraController>().JumpTo(n.WorldPosition));
             }

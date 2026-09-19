@@ -274,11 +274,13 @@ namespace GuildMaster.UI
         {
             // Observations only (GuildIntel): live count while in view, otherwise the last sighting.
             var intel = Services.Get<GuildIntel>();
-            _title.text = n.DisplayName;
+            // Owners can change out of sight: name, capacity and totals follow the last seen species.
+            var species = intel.SpeciesOf(n);
+            _title.text = intel.NameOf(n);
             _body.text =
-                $"개체 수: {intel.DescribeNest(n)} · 최대 {n.Capacity} · 지형 {n.Biome}\n" +
-                $"이 종의 발견한 둥지 {intel.KnownNestCount(n.Species)}곳 · 관측 합계 {intel.ObservedPopulation(n.Species)}마리\n" +
-                Muted("시야에 들어와야 개체 수가 갱신됩니다. 둥지가 비면 다른 둥지의 개체가 다시 정착할 수 있습니다.");
+                $"개체 수: {intel.DescribeNest(n)} · 최대 {species.nestCapacity} · 지형 {n.Biome}\n" +
+                $"이 종의 발견한 둥지 {intel.KnownNestCount(species)}곳 · 관측 합계 {intel.ObservedPopulation(species)}마리\n" +
+                Muted("시야에 들어와야 개체 수와 주인이 갱신됩니다. 둥지가 비거나 다른 종에게 밀려나면 다른 무리가 자리잡을 수 있습니다.");
         }
 
         void ShowBuilding(Building b)

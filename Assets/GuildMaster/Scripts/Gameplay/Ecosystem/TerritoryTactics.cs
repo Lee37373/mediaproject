@@ -39,11 +39,16 @@ namespace GuildMaster.Ecosystem
             // Residents attack guild units and other species; a nest-less non-monster pursuer is ignored.
             if (pursuer.Faction != Faction.Guild && pursuerSpecies == null) return false;
             float best = float.MaxValue;
+            Services.TryGet<GuildIntel>(out var intel);
             foreach (var n in eco.Nests)
             {
+                // Adventurers go by what the guild saw: last seen owners, skip nests last seen empty.
+                bool byIntel = knownNestsOnly && intel != null;
                 if (knownNestsOnly && !n.Discovered) continue;
-                if (n.IsEmpty || n.Species == selfSpecies || n.Species == pursuerSpecies) continue;
-                float radius = knownNestsOnly ? n.Species.territoryRadius * 1.4f : n.TerritoryRadius;
+                var species = byIntel ? intel.SpeciesOf(n) : n.Species;
+                bool empty = byIntel ? intel.Get(n) is { Observed: true, LastCount: 0 } : n.IsEmpty;
+                if (empty || species == selfSpecies || species == pursuerSpecies) continue;
+                float radius = knownNestsOnly ? species.territoryRadius * 1.4f : n.TerritoryRadius;
                 if (radius <= 0f || Vector2.Distance(self.Position, n.WorldPosition) > MaxSearch) continue;
                 for (int k = 0; k < Samples; k++)
                 {

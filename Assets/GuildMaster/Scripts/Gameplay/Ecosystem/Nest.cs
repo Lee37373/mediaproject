@@ -29,7 +29,16 @@ namespace GuildMaster.Ecosystem
         public int Population => _members.Count;
         public bool IsEmpty => _members.Count == 0;
         public Vector2 WorldPosition => GridMap.CellToWorld(Cell);
-        public string DisplayName => $"{Species.displayName} 둥지 #{NestId.Substring(2)}";
+        /// <summary>Real name (simulation/debug). Guild-facing text uses GuildIntel.NameOf (last seen species).</summary>
+        public string DisplayName => NameFor(Species);
+
+        public string NameFor(MonsterDefinition species) => $"{(species ?? Species).displayName} 둥지 #{NestId.Substring(2)}";
+
+        /// <summary>Draws the nest as the given species' den (GuildIntel calls this when it sees the nest).</summary>
+        public void ShowAs(MonsterDefinition species)
+        {
+            if (species != null && _renderer != null) _renderer.sprite = CartoonArt.Nest(species);
+        }
 
         /// <summary>
         /// Territory radius: the species' base scaled by how full the nest is (0.6x nearly empty,
@@ -73,7 +82,7 @@ namespace GuildMaster.Ecosystem
             Capacity = species.nestCapacity;
             GrowthAccumulator = 0f;
             name = $"Nest {NestId} ({species.id})";
-            _renderer.sprite = CartoonArt.Nest(species);
+            // The map keeps the old den art until the guild sees the new owners (GuildIntel).
         }
 
         EcosystemManager _eco;

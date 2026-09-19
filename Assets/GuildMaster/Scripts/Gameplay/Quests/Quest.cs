@@ -42,6 +42,7 @@ namespace GuildMaster.Quests
         public QuestType Type { get; }
         public MonsterDefinition Species { get; }
         public Nest Nest { get; }
+        readonly string _nestName;
         public Vector2 Point { get; }
         public float Radius { get; }
         public int RequiredCount { get; }
@@ -80,8 +81,13 @@ namespace GuildMaster.Quests
         {
             Id = id;
             Type = d.Type;
-            Species = d.Type == QuestType.ClearNest && d.Nest != null ? d.Nest.Species : d.Species;
+            // A clear-nest quest names the owners as the guild knew them when posting (GuildIntel).
+            bool hasIntel = Core.Services.TryGet<GuildIntel>(out var intel);
+            Species = d.Type == QuestType.ClearNest && d.Nest != null
+                ? (hasIntel ? intel.SpeciesOf(d.Nest) : d.Nest.Species)
+                : d.Species;
             Nest = d.Nest;
+            _nestName = d.Nest == null ? null : hasIntel ? intel.NameOf(d.Nest) : d.Nest.DisplayName;
             Point = d.Type == QuestType.ClearNest && d.Nest != null ? d.Nest.WorldPosition : d.Point;
             Radius = d.Radius <= 0f ? 8f : d.Radius;
             RequiredCount = Mathf.Max(1, d.Count);
@@ -98,7 +104,7 @@ namespace GuildMaster.Quests
         public string Title => Type switch
         {
             QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount}",
-            QuestType.ClearNest => $"{Nest?.DisplayName} 소탕",
+            QuestType.ClearNest => $"{_nestName} 소탕",
             QuestType.Escort => $"길드 마스터 호위 (최대 {MaxHours}시간)",
             QuestType.Defend => "마을 방어",
             _ => Id,

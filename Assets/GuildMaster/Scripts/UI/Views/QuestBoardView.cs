@@ -122,7 +122,7 @@ namespace GuildMaster.UI
             _nest.ClearOptions();
             _nest.AddOptions(_nestOptions.Count == 0
                 ? new List<string> { "(발견한 둥지 없음)" }
-                : _nestOptions.Select(n => $"{n.DisplayName} ({intel.DescribeNest(n)})").ToList());
+                : _nestOptions.Select(n => $"{intel.NameOf(n)} ({intel.DescribeNest(n)})").ToList());
             int idx = prevNest != null ? _nestOptions.IndexOf(prevNest) : 0;
             _nest.SetValueWithoutNotify(Mathf.Max(0, idx));
         }

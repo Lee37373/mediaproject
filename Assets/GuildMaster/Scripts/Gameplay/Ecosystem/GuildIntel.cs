@@ -25,6 +25,8 @@ namespace GuildMaster.Ecosystem
             public int LastCount;
             public float LastSeenHour;
             public bool VisibleNow;
+            /// <summary>Species the guild last saw living here (owners can change out of sight).</summary>
+            public MonsterDefinition Species;
         }
 
         readonly HashSet<MonsterDefinition> _known = new();
@@ -69,9 +71,15 @@ namespace GuildMaster.Ecosystem
             foreach (var n in _eco.Nests)
             {
                 if (!n.Discovered) continue;
-                _known.Add(n.Species);
                 var ni = Get(n);
                 ni.VisibleNow = _fog.IsVisibleRaw(n.Cell);
+                // New owners are only noticed when the nest is in view (or on discovery).
+                if (ni.Species == null || (ni.VisibleNow && ni.Species != n.Species))
+                {
+                    ni.Species = n.Species;
+                    n.ShowAs(n.Species);
+                }
+                _known.Add(ni.Species);
                 if (!ni.VisibleNow) continue;
                 ni.Observed = true;
                 ni.LastCount = n.Population;
@@ -92,11 +100,17 @@ namespace GuildMaster.Ecosystem
             return ni;
         }
 
+        /// <summary>Species the guild believes lives in the nest (last seen; the real one right at discovery).</summary>
+        public MonsterDefinition SpeciesOf(Nest n) => n == null ? null : Get(n).Species ?? n.Species;
+
+        /// <summary>Guild-facing nest name, e.g. "고블린 둥지 #04", by the last seen owners.</summary>
+        public string NameOf(Nest n) => n == null ? "" : n.NameFor(SpeciesOf(n));
+
         /// <summary>Sum of the last observed counts of the species' discovered nests.</summary>
         public int ObservedPopulation(MonsterDefinition species)
-            => KnownNests.Where(n => n.Species == species).Sum(n => Get(n).LastCount);
+            => KnownNests.Where(n => SpeciesOf(n) == species).Sum(n => Get(n).LastCount);
 
-        public int KnownNestCount(MonsterDefinition species) => KnownNests.Count(n => n.Species == species);
+        public int KnownNestCount(MonsterDefinition species) => KnownNests.Count(n => SpeciesOf(n) == species);
 
         /// <summary>Observed count shown to the player: live when in view, otherwise the last sighting.</summary>
         public string DescribeNest(Nest n)
@@ -119,7 +133,7 @@ namespace GuildMaster.Ecosystem
             float bestSq = float.MaxValue;
             foreach (var n in KnownNests)
             {
-                if (n.Species != species) continue;
+                if (SpeciesOf(n) != species) continue;
                 var ni = Get(n);
                 if (ni.Observed && ni.LastCount <= 0) continue;
                 float sq = (n.WorldPosition - from).sqrMagnitude;
