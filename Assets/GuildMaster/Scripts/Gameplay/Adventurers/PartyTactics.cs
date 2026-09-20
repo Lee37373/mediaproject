@@ -39,9 +39,10 @@ namespace GuildMaster.Adventurers
             public TargetMarker Marker;
         }
 
-        readonly Dictionary<Quest, PartyState> _parties = new();
+        /// <summary>Keyed by what holds the party together: a Quest, or a HuntBand (P4-37).</summary>
+        readonly Dictionary<object, PartyState> _parties = new();
         readonly List<Adventurer> _members = new();
-        readonly List<Quest> _stale = new();
+        readonly List<object> _stale = new();
         PoolService _pool;
         float _callTimer;
 
@@ -89,16 +90,35 @@ namespace GuildMaster.Adventurers
 
         /// <summary>Out on the quest (travelling to it or working its area), so part of the formation.</summary>
         static bool IsOut(Adventurer a)
-            => a != null && a.IsAlive && a.IsGuildMember && (a.Fsm.Current == a.TravelState || a.Fsm.Current == a.HuntState);
+            => a != null && a.IsAlive && a.IsGuildMember
+               && (a.Fsm.Current == a.TravelState || a.Fsm.Current == a.HuntState || a.Fsm.Current == a.FreeHuntState);
 
-        /// <summary>Members of the adventurer's party out on the quest, leader first (acceptance order).</summary>
+        /// <summary>
+        /// What holds this adventurer's party together: its quest, or the hunting band it went out
+        /// with (P4-37). Null when it is on its own.
+        /// </summary>
+        static object GroupOf(Adventurer a)
+        {
+            if (IsPartyQuest(a.CurrentQuest)) return a.CurrentQuest;
+            if (a.Fsm.Current != a.FreeHuntState || !Services.TryGet<HuntBandService>(out var bands)) return null;
+            var band = bands.BandOf(a);
+            return band != null && band.Members.Count >= 2 ? band : null;
+        }
+
+        /// <summary>Members of the adventurer's party who are out, leader first (joining order).</summary>
         public List<Adventurer> Party(Adventurer a, List<Adventurer> into)
         {
             into.Clear();
-            var q = a.CurrentQuest;
-            if (!IsPartyQuest(q)) return into;
-            foreach (var t in q.Assignees)
-                if (t is Adventurer m && m.CurrentQuest == q && IsOut(m)) into.Add(m);
+            switch (GroupOf(a))
+            {
+                case Quest q:
+                    foreach (var t in q.Assignees)
+                        if (t is Adventurer m && m.CurrentQuest == q && IsOut(m)) into.Add(m);
+                    break;
+                case HuntBand band:
+                    foreach (var m in band.Members) if (IsOut(m)) into.Add(m);
+                    break;
+            }
             if (into.Count < 2) into.Clear();
             return into;
         }
@@ -108,7 +128,8 @@ namespace GuildMaster.Adventurers
         /// <summary>The target the adventurer's party leader called (for members who follow calls), or null.</summary>
         public Unit CalledTargetFor(Adventurer a)
         {
-            if (a.Tier < CombatTier.Skilled || a.CurrentQuest == null || !_parties.TryGetValue(a.CurrentQuest, out var p)) return null;
+            var group = GroupOf(a);
+            if (a.Tier < CombatTier.Skilled || group == null || !_parties.TryGetValue(group, out var p)) return null;
             return p.Called != null && p.Called.IsAlive ? p.Called : null;
         }
 
@@ -161,8 +182,9 @@ namespace GuildMaster.Adventurers
                 if (members[i] == a) index = count;
                 count++;
             }
-            var state = StateOf(a.CurrentQuest);
-            var slot = leader.Position + SlotOffset(state.Heading, role, index, Mathf.Max(1, count));
+            var group = GroupOf(a);
+            var heading = group != null ? StateOf(group).Heading : Vector2.up;
+            var slot = leader.Position + SlotOffset(heading, role, index, Mathf.Max(1, count));
             return Services.Get<WorldService>().Grid.IsWalkable(GridMap.WorldToCell(slot)) ? slot : leader.Position;
         }
 
@@ -198,11 +220,18 @@ namespace GuildMaster.Adventurers
 
         // ---------------- Leader calls (focus fire) ----------------
 
-        PartyState StateOf(Quest q)
+        PartyState StateOf(object group)
         {
-            if (!_parties.TryGetValue(q, out var s)) _parties[q] = s = new PartyState();
+            if (!_parties.TryGetValue(group, out var s)) _parties[group] = s = new PartyState();
             return s;
         }
+
+        static bool StillAParty(object group) => group switch
+        {
+            Quest q => IsPartyQuest(q),
+            HuntBand b => b.Members.Count >= 2,
+            _ => false,
+        };
 
         void Update()
         {
@@ -210,26 +239,42 @@ namespace GuildMaster.Adventurers
             if (_callTimer > 0f) return;
             _callTimer = CallInterval;
 
-            foreach (var q in _parties.Keys) if (!IsPartyQuest(q)) _stale.Add(q);
-            foreach (var q in _stale) { Forget(_parties[q]); _parties.Remove(q); }
+            foreach (var group in _parties.Keys) if (!StillAParty(group)) _stale.Add(group);
+            foreach (var group in _stale) { Forget(_parties[group]); _parties.Remove(group); }
             _stale.Clear();
 
-            if (!Services.TryGet<QuestBoard>(out var board)) return;
-            foreach (var q in board.Quests)
-            {
-                if (!IsPartyQuest(q)) continue;
-                Adventurer leader = null;
-                foreach (var t in q.Assignees)
-                    if (t is Adventurer m && m.CurrentQuest == q && IsOut(m)) { leader = m; break; }
-                if (leader == null) continue;
-                var state = StateOf(q);
-                if (leader.Mover.IsMoving && leader.Mover.Velocity.sqrMagnitude > 0.01f) state.Heading = leader.Mover.Velocity.normalized;
-                UpdateCall(q, state, leader);
-            }
+            if (Services.TryGet<QuestBoard>(out var board))
+                foreach (var q in board.Quests)
+                    if (IsPartyQuest(q)) Track(q, LeaderOfQuest(q));
+            if (Services.TryGet<HuntBandService>(out var bands))
+                foreach (var band in bands.Bands)
+                    if (band.Members.Count >= 2) Track(band, LeaderOfBand(band));
+        }
+
+        static Adventurer LeaderOfQuest(Quest q)
+        {
+            foreach (var t in q.Assignees)
+                if (t is Adventurer m && m.CurrentQuest == q && IsOut(m)) return m;
+            return null;
+        }
+
+        static Adventurer LeaderOfBand(HuntBand band)
+        {
+            foreach (var m in band.Members) if (IsOut(m)) return m;
+            return null;
+        }
+
+        /// <summary>Keeps the party's heading current and refreshes the leader's call.</summary>
+        void Track(object group, Adventurer leader)
+        {
+            if (leader == null) return;
+            var state = StateOf(group);
+            if (leader.Mover.IsMoving && leader.Mover.Velocity.sqrMagnitude > 0.01f) state.Heading = leader.Mover.Velocity.normalized;
+            UpdateCall(group, state, leader);
         }
 
         /// <summary>Skilled+ leaders call their own target; lower tiers and quiet moments call nothing.</summary>
-        void UpdateCall(Quest q, PartyState state, Adventurer leader)
+        void UpdateCall(object group, PartyState state, Adventurer leader)
         {
             var target = leader.Tier >= CombatTier.Skilled ? leader.Engage.Target : null;
             if (target != null && !target.IsAlive) target = null;
@@ -239,7 +284,7 @@ namespace GuildMaster.Adventurers
             if (target == null) return;
             state.Marker = TargetMarker.Show(_pool, target);
             leader.Say(CallLines[GameRandom.Shared.Range(0, CallLines.Length)]);
-            EventBus.Publish(new PartyTargetCalledEvent { Quest = q, Leader = leader, Target = target });
+            EventBus.Publish(new PartyTargetCalledEvent { Quest = group as Quest, Leader = leader, Target = target });
         }
 
         static void Forget(PartyState s)

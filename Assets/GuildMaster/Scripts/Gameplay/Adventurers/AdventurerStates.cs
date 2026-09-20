@@ -172,6 +172,10 @@ namespace GuildMaster.Adventurers
                     a.Say(d.Say);
                     a.ChangeState(a.VisitState);
                     return;
+                case AdventurerAction.Hunt:
+                    a.Say(d.Say);
+                    a.ChangeState(a.FreeHuntState);
+                    return;
             }
             if (!string.IsNullOrEmpty(d.Say)) a.Say(d.Say);
             a.ChangeState(a.IdleState);

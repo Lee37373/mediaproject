@@ -802,6 +802,82 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator AHuntingBandLeavesTogether_AndAHealerNeverGoesAlone()
+        {
+            // P4-37 (user request): free hunts move as a party, and a priest alone makes no sense.
+            yield return Boot();
+            var bands = Services.Get<HuntBandService>();
+            var first = Roster.Members.First(a => a.IsAlive);
+            var second = Roster.Members.First(a => a.IsAlive && a != first);
+
+            first.ChangeState(first.FreeHuntState);
+            second.ChangeState(second.FreeHuntState);
+            yield return null;
+
+            var band = bands.BandOf(first);
+            Assert.That(band, Is.Not.Null);
+            Assert.That(bands.BandOf(second), Is.SameAs(band), "the second to decide joins the first, it does not set off alone");
+            Assert.That(band.Leader, Is.EqualTo(first), "the first to decide leads");
+            Assert.That(band.Mustering, Is.True, "they wait at the gate for company");
+            Assert.That(Services.Get<PartyTactics>().LeaderOf(second), Is.EqualTo(first),
+                        "so the band gets a quest party's formation and focus fire");
+
+            // A priest on its own turns back rather than hunt without a party.
+            second.ChangeState(second.IdleState);
+            first.ChangeState(first.IdleState);
+            yield return null;
+            var priest = Roster.Members.FirstOrDefault(a => a.IsAlive && a.Data.cls == AdventurerClass.Priest);
+            if (priest == null)
+            {
+                priest = first;
+                priest.Data.cls = AdventurerClass.Priest;
+            }
+            priest.ChangeState(priest.FreeHuntState);
+            var solo = bands.BandOf(priest);
+            Assert.That(solo.Members.Count, Is.EqualTo(1));
+            solo.MusterUntilHour = 0f; // its wait is over and nobody came
+            yield return WaitFor(() => priest.Fsm.Current != priest.FreeHuntState, 5f);
+            Assert.That(priest.Fsm.Current, Is.EqualTo(priest.ReturnState), "the healer turns back instead of hunting alone");
+        }
+
+        [UnityTest]
+        public IEnumerator WithAnEmptyBoard_MembersHuntOnTheirOwn_AndLeaveWhatTheyCannotTakeAlone()
+        {
+            // P4-37: an empty quest board used to mean standing in the plaza all day.
+            yield return Boot();
+            var member = Roster.Members.First(a => a.IsAlive && a.Data.cls != AdventurerClass.Priest);
+            member.Data.potions = 2;
+            member.ChangeState(member.FreeHuntState);
+            yield return null;
+            // Skip the muster: this test is about what it hunts, not who it goes with.
+            Services.Get<HuntBandService>().BandOf(member).MusterUntilHour = 0f;
+            yield return null;
+            yield return null;
+
+            var master = MasterOnOpenGround();
+            Assert.That(master, Is.Not.Null);
+            member.Mover.Stop();
+            member.transform.position = master.Position;
+            yield return null;
+
+            // Something it can handle walks into view: it goes for it.
+            var slime = SpawnMonster("slime", member.Position + Vector2.right * 3f);
+            Assert.That(slime, Is.Not.Null);
+            yield return WaitFor(() => member.CurrentTarget == slime, 8f);
+            Assert.That(member.CurrentTarget, Is.EqualTo(slime), "a Lv1 member hunts a slime on its own");
+            Assert.That(member.DebugState, Is.EqualTo("자율 사냥"));
+
+            // Something it cannot: left alone until it strikes first.
+            slime.Perish();
+            member.Engage.Clear();
+            var king = SpawnMonster("slime_king", member.Position + Vector2.left * 4f);
+            Assert.That(king, Is.Not.Null);
+            yield return WaitFor(() => member.CurrentTarget == king, 4f);
+            Assert.That(member.CurrentTarget, Is.Not.EqualTo(king), "a Lv1 member does not pick a fight with a slime king");
+            king.Perish();
+        }
+
+        [UnityTest]
         public IEnumerator AtTheStart_TheGuildKnowsNoNest()
         {
             // P5-1 handed over the two nearest nests; removed on 2026-09-20 (user decision) because

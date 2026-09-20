@@ -36,7 +36,8 @@ namespace GuildMaster.Ecosystem
         int _day = 1;
 
         [SerializeField] float starvationChancePerHour = 0.03f;
-        [SerializeField] float recolonizeChancePerDay = 0.35f;
+        // P4-37: free hunting empties near-town nests regularly, so survivors move back in faster.
+        [SerializeField] float recolonizeChancePerDay = 0.5f;
 
         /// <summary>Days a wiped-out species stays away before it settles again (0 = never).</summary>
         public int SpeciesReturnDays { get; set; } = 3;

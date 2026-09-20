@@ -166,6 +166,10 @@ namespace GuildMaster.Session
             Services.Register(new MemoryRecorder(clock, roster));
             // Multi-person quests: the first taker invites idle members (LLM, rule fallback).
             Services.Register(new PartyService(llm, board, roster));
+            // Bands that go out hunting without a quest (P4-37); PartyTactics formats them like a party.
+            var bands = AddSystem<HuntBandService>();
+            bands.Init(clock, Balance.rosterCapacity);
+            Services.Register(bands);
             // Party roles, formation and focus fire on the leader's call (P4-27).
             var partyTactics = AddSystem<PartyTactics>();
             partyTactics.Init(pool);

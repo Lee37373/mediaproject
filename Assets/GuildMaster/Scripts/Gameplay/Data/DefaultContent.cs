@@ -92,27 +92,32 @@ namespace GuildMaster.Data
 
             // Species follow the imported Casual Monsters art; roles in the ecosystem are unchanged
             // from the previous roster (prey / skittish prey / pack predator / raiders / boss).
+            //
+            // growthPerHour was raised about 1.5x over the P5-1 values on 2026-09-20 (P4-37): with
+            // free hunting the guild clears the near rings even on an empty board, and at the old
+            // rates the species nearest town were farmed down to the recolonisation floor. The far
+            // ones (goblin warrior, slime king) go up least, so the walk out stays graded.
             var slime = Mon("slime", "슬라임", MonsterShape.Slime, new Color(0.4f, 0.85f, 0.45f), new Color(0.8f, 1f, 0.8f), 0.75f,
-                18, 3, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 8, 0.06f, 5, 6, Biome.Plains, Biome.Shore, Biome.Forest);
+                18, 3, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 8, 0.095f, 5, 6, Biome.Plains, Biome.Shore, Biome.Forest);
             slime.artKey = "slime";
             Loot(slime, jelly, 0.85f, 1, 2);
 
             var stoneSlime = Mon("stone_slime", "돌 슬라임", MonsterShape.Slime, new Color(0.55f, 0.58f, 0.55f), new Color(0.8f, 0.82f, 0.8f), 0.9f,
-                35, 6, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 6, 0.045f, 4, 12, Biome.Plains, Biome.Forest);
+                35, 6, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 6, 0.07f, 4, 12, Biome.Plains, Biome.Forest);
             stoneSlime.artKey = "stone_slime";
             stoneSlime.fleesFromPredators = true;
             Loot(stoneSlime, stoneShard, 0.7f);
             Loot(stoneSlime, denseJelly, 0.6f, 1, 2);
 
             var skull = Mon("skull", "해골", MonsterShape.Humanoid, new Color(0.9f, 0.88f, 0.8f), new Color(0.3f, 0.3f, 0.35f), 0.8f,
-                30, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 6, 0.03f, 3, 16, Biome.Forest, Biome.Plains);
+                30, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 6, 0.06f, 3, 16, Biome.Forest, Biome.Plains);
             skull.artKey = "skull";
             skull.rangedArtKey = "skull_archer";
             Loot(skull, boneShard, 0.7f);
             Loot(skull, oldArrowhead, 0.4f);
 
             var goblin = Mon("goblin", "고블린", MonsterShape.Humanoid, new Color(0.35f, 0.65f, 0.25f), new Color(0.55f, 0.35f, 0.2f), 0.85f,
-                28, 6, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.Low, true, 20, 0.03f, 4, 14, Biome.Forest, Biome.Plains);
+                28, 6, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.Low, true, 20, 0.048f, 4, 14, Biome.Forest, Biome.Plains);
             goblin.artKey = "goblin";
             goblin.rangedArtKey = "goblin_archer";
             goblin.canRaid = true;
@@ -122,7 +127,7 @@ namespace GuildMaster.Data
             goblin.pickupMode = MonsterPickupMode.Equip;
 
             var goblinWarrior = Mon("goblin_warrior", "고블린 전사", MonsterShape.Humanoid, new Color(0.3f, 0.45f, 0.3f), new Color(0.4f, 0.3f, 0.25f), 0.95f,
-                70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.018f, 2, 40, Biome.Mountain, Biome.Forest);
+                70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.025f, 2, 40, Biome.Mountain, Biome.Forest);
             goblinWarrior.artKey = "goblin_warrior";
             goblinWarrior.canRaid = true;
             // P5-1: warriors live far out (band 0.75), so their raids are a late-game threat.
@@ -132,7 +137,7 @@ namespace GuildMaster.Data
             Loot(goblinWarrior, ironOre, 0.35f);
 
             var slimeKing = Mon("slime_king", "슬라임 킹", MonsterShape.Brute, new Color(0.35f, 0.8f, 0.4f), new Color(0.95f, 0.8f, 0.3f), 1.5f,
-                220, 22, 8, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 4, 0.008f, 1, 160, Biome.Mountain);
+                220, 22, 8, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 4, 0.011f, 1, 160, Biome.Mountain);
             slimeKing.artKey = "slime_king";
             slimeKing.canRaid = true;
             slimeKing.raidThreshold = 2; slimeKing.raidStep = 1; // 2 / 3 / 4

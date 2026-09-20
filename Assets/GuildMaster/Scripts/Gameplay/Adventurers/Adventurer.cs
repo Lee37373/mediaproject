@@ -52,6 +52,8 @@ namespace GuildMaster.Adventurers
         internal DecidingState DecidingState;
         internal TravelToQuestState TravelState;
         internal HuntState HuntState;
+        /// <summary>Hunting without a quest (P4-37).</summary>
+        internal FreeHuntState FreeHuntState;
         internal EscortState EscortState;
         internal PartyGatherState GatherState;
         internal DefendState DefendState;
@@ -114,6 +116,7 @@ namespace GuildMaster.Adventurers
             DecidingState = new DecidingState();
             TravelState = new TravelToQuestState();
             HuntState = new HuntState();
+            FreeHuntState = new FreeHuntState();
             EscortState = new EscortState();
             GatherState = new PartyGatherState();
             DefendState = new DefendState();
