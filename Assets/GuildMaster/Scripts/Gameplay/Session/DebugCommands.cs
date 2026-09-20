@@ -209,7 +209,7 @@ namespace GuildMaster.Session
             foreach (var a in Services.Get<GuildRoster>().Members)
             {
                 if (names.Count >= count) break;
-                if (!a.IsAlive || a.CurrentQuest != null || !board.TryAccept(q, a)) continue;
+                if (!a.IsAlive || a.CurrentQuest != null || !board.TryAccept(q, a, invited: true)) continue;
                 a.CurrentQuest = q;
                 a.ChangeState(a.TravelState);
                 names.Add(a.Data.name);

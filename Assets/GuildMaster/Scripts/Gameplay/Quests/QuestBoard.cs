@@ -147,25 +147,54 @@ namespace GuildMaster.Quests
             return d;
         }
 
+        /// <summary>
+        /// Takes a quest off the board. Nobody on it yet: the escrow comes back. Someone already
+        /// took it: they are paid as if they had finished it, so the player cannot let adventurers
+        /// do the work and pull the reward back at the last moment (2026-09-20 user report).
+        /// Escorts pay for the hours actually escorted, which is what they were posted to pay.
+        /// </summary>
         public bool Cancel(Quest q)
         {
             if (!q.IsActive) return false;
-            Close(q, QuestStatus.Cancelled, refund: true);
+            if (q.Assignees.Count == 0)
+            {
+                Close(q, QuestStatus.Cancelled, refund: true);
+                return true;
+            }
+            if (q.Type == QuestType.Escort)
+            {
+                _escortShares.TryGetValue(q, out var shares);
+                CompleteEscort(q, shares ?? new Dictionary<IQuestTaker, float>());
+                return true;
+            }
+            Complete(q);
             return true;
         }
 
         // ---------------- Adventurer API ----------------
 
+        /// <summary>
+        /// Quests a taker may pick up on their own: only ones nobody has claimed yet. A quest is
+        /// done by one group (2026-09-20 user decision) — a lone adventurer counts as a group of
+        /// one — so the rest of a party joins by invitation, not by walking up to the board.
+        /// </summary>
         public IEnumerable<Quest> AvailableFor(IQuestTaker t)
-            => _quests.Where(q => q.HasFreeSlot && !q.IsAssigned(t));
+            => _quests.Where(q => q.Status == QuestStatus.Open && q.Assignees.Count == 0);
 
         public Quest FindById(string id) => _quests.FirstOrDefault(q => q.Id == id);
 
         public Quest ActiveQuestOf(IQuestTaker t) => _quests.FirstOrDefault(q => q.IsAssigned(t) && q.Status != QuestStatus.TurnedIn);
 
-        public bool TryAccept(Quest q, IQuestTaker t)
+        /// <summary>
+        /// Takes the quest. Only the first taker claims it; everyone after that must have been
+        /// invited by the one who claimed it (<paramref name="invited"/>), so a quest is never
+        /// worked by two separate groups and two adventurers cannot claim the same one at once
+        /// — their LLM decisions arrive seconds apart (2026-09-20 user report).
+        /// </summary>
+        public bool TryAccept(Quest q, IQuestTaker t, bool invited = false)
         {
             if (q == null || !q.HasFreeSlot || q.IsAssigned(t) || !t.IsAvailableForQuest) return false;
+            if (q.Assignees.Count > 0 && !invited) return false;
             q.AddAssignee(t);
             if (q.Status == QuestStatus.Open) q.Status = QuestStatus.InProgress;
             EventBus.Publish(new QuestAcceptedEvent { Quest = q, Taker = t });

@@ -181,7 +181,7 @@ namespace GuildMaster.Adventurers
             var q = g.Quest;
             // The member may have taken another quest while thinking; the slot may be gone.
             bool alreadyOnQuest = c.CurrentQuest == q && q.IsAssigned(c);
-            if (accept && !alreadyOnQuest && (c.CurrentQuest != null || !_board.TryAccept(q, c))) accept = false;
+            if (accept && !alreadyOnQuest && (c.CurrentQuest != null || !_board.TryAccept(q, c, invited: true))) accept = false;
             if (!string.IsNullOrEmpty(say)) c.Say(say);
             // Before the state change: the last answer ends the gathering (PartyFormedEvent).
             EventBus.Publish(new PartyInviteAnsweredEvent { Quest = q, Leader = g.Leader, Invitee = c, Accepted = accept, FromLlm = fromLlm });

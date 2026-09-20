@@ -170,6 +170,45 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// 2026-09-20 user reports: a quest is worked by one group (a lone adventurer counts as
+        /// one), and taking a quest off the board after someone accepted it still pays them.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Quest_IsClaimedByOneGroup_AndCancellingStillPaysTheTaker()
+        {
+            yield return Boot();
+            var board = Services.Get<QuestBoard>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            MakeKnown(Services.Get<EcosystemManager>().Species.First(s2 => s2.id == "slime"));
+
+            // A one-person quest: nobody can be invited, so the claim rule is what is measured.
+            var solo = board.FindById(DebugCommands.PostHunt("slime", 2, 40, 10, party: 1));
+            Assert.That(solo, Is.Not.Null);
+            var free = Roster.Members.Where(a => a.IsAlive && a.CurrentQuest == null).Take(2).ToList();
+            Assert.That(free.Count, Is.EqualTo(2), "two idle members to try with");
+
+            Assert.That(board.AvailableFor(free[1]).Contains(solo), Is.True, "unclaimed: anyone may take it");
+            Assert.That(board.TryAccept(solo, free[0]), Is.True, "the first taker claims it");
+            free[0].CurrentQuest = solo;
+            Assert.That(board.AvailableFor(free[1]).Contains(solo), Is.False, "claimed quests leave the board");
+            Assert.That(board.TryAccept(solo, free[1]), Is.False, "and cannot be joined uninvited");
+            Assert.That(solo.Assignees.Count, Is.EqualTo(1));
+
+            // Cancelling now must not claw the reward back.
+            int goldBefore = treasury.Gold;
+            Assert.That(board.Cancel(solo), Is.True);
+            Assert.That(solo.Status, Is.EqualTo(QuestStatus.Completed), "paid out, not cancelled");
+            Assert.That(treasury.Gold, Is.EqualTo(goldBefore), "the escrow does not come back to the guild");
+            Assert.That(solo.PendingPayouts, Is.EqualTo(1), "the taker has a reward waiting");
+
+            // Invitations still fill a party: accepting a three-person quest pulls companions in.
+            var group = board.FindById(DebugCommands.PostHunt("slime", 2, 60, 20, party: 3));
+            var leader = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
+            Assert.That(board.TryAccept(group, leader), Is.True);
+            Assert.That(group.Assignees.Count, Is.GreaterThan(1), "the leader brought companions along");
+        }
+
+        /// <summary>
         /// P4-13: a watchtower costs gold and materials, lights up ground the town watch cannot
         /// reach on its own, and gives half of that back when it is taken down again.
         /// </summary>
