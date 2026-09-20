@@ -19,9 +19,9 @@ namespace GuildMaster.Adventurers
         public static IReadOnlyList<string> LearnPool(AdventurerClass cls) => cls switch
         {
             AdventurerClass.Warrior => new[] { "taunt", "whirlwind", "charge", "slam" },
-            AdventurerClass.Ranger => new[] { "pierce", "blink", "charge", "slam" },
+            AdventurerClass.Ranger => new[] { "pierce", "stealth", "blink", "charge", "slam" },
             AdventurerClass.Priest => new[] { "massheal", "heal", "blink", "slam" },
-            _ => new[] { "fireball", "blink", "slam", "charge" },
+            _ => new[] { "fireball", "warp", "blink", "slam", "charge" },
         };
 
         /// <summary>Skills of this class not learned yet, in pool order. Empty when there is nothing left.</summary>

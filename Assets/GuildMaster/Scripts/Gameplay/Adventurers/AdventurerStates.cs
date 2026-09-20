@@ -390,6 +390,12 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             if (a.CheckRetreat()) return;
+            // P4-19: once the pack is right behind at the spot, break the chase with a skill.
+            if (TerritoryTactics.TryBreakAway(a, TerritoryTactics.FindPursuer(a), _point, AdvCtx.GuildDoor))
+            {
+                a.ChangeState(Next ?? a.ReturnState);
+                return;
+            }
             bool arrived = Vector2.Distance(a.Position, _point) < 0.8f || !a.Mover.IsMoving;
             if (arrived || TimeInState > Timeout) a.ChangeState(Next ?? a.ReturnState);
         }
@@ -443,6 +449,15 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             if (_luring)
             {
+                // P4-19: walking away alone leaves the pursuer on our heels, so it follows us back
+                // out again. A skill cuts the thread and leaves it among the residents.
+                if (TerritoryTactics.TryBreakAway(a, TerritoryTactics.FindPursuer(a), _lurePoint, AdvCtx.GuildDoor))
+                {
+                    _luring = false;
+                    a.Say("여기까지다!");
+                    a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
+                    return;
+                }
                 if (Vector2.Distance(a.Position, _lurePoint) > 0.8f && TimeInState < LureTimeout && a.Mover.IsMoving) return;
                 _luring = false;
                 a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);

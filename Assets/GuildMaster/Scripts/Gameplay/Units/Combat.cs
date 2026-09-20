@@ -38,6 +38,7 @@ namespace GuildMaster.Units
 
         public static void ApplyHit(Unit attacker, Unit target)
         {
+            attacker?.BreakStealth(); // hitting someone gives the hiding place away (P4-19)
             if (target == null || !target.IsAlive) return;
             var rng = GameRandom.Shared;
             float atk = attacker != null ? attacker.Stats.Attack : 5f;

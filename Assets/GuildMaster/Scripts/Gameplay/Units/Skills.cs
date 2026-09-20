@@ -34,6 +34,13 @@ namespace GuildMaster.Units
         protected void StartCooldown() => _readyAt = Time.time + Cooldown;
 
         public abstract bool TryUse(Unit self, Unit target);
+
+        /// <summary>
+        /// Asked for on purpose by tactics (P4-19), rather than fired by its own trigger. The
+        /// cooldown still applies; skills whose automatic condition is about survival override
+        /// this so a deliberate escape is not blocked by "you are not hurt enough yet".
+        /// </summary>
+        public virtual bool TryUseDeliberately(Unit self, Unit target) => TryUse(self, target);
         /// <summary>Blast radius for area skills (0 = single target); used by heroic skill timing.</summary>
         public virtual float AreaRadius => 0f;
         /// <summary>True if the area is centred on the user rather than the target.</summary>
@@ -414,6 +421,95 @@ namespace GuildMaster.Units
         }
     }
 
+    /// <summary>
+    /// Ranger (P4-19): slips out of sight. Whoever was chasing loses its target and cannot pick
+    /// this unit again while it lasts, which leaves the pursuer standing wherever it stopped —
+    /// inside someone else's territory, if it was lured there. Attacking gives the position away.
+    /// </summary>
+    public class StealthSkill : Skill
+    {
+        public const float Duration = 5f;
+        const float ThreatRange = 6f;
+
+        public StealthSkill() { Cooldown = 18f; }
+        public override string Name => "은신";
+        public override string Description => "5초간 모습을 감춥니다. 쫓던 적은 목표를 잃고 새로 노리지 못합니다(공격하면 바로 풀림).";
+        public override Color Color => new(0.55f, 0.55f, 0.75f);
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            // On its own: only worth it while actually being chased and already hurt.
+            if (self.HpRatio > 0.6f) return false;
+            var chaser = Tactics.NearestMeleeThreat(self, ThreatRange);
+            if (chaser == null) return false;
+            return Hide(self);
+        }
+
+        /// <summary>A lure asks for this while unhurt, so the survival condition does not apply.</summary>
+        public override bool TryUseDeliberately(Unit self, Unit target) => Hide(self);
+
+        bool Hide(Unit self)
+        {
+            self.EnterStealth(Duration);
+            // Everyone chasing loses the thread right now.
+            UnitRegistry.Collect(self.Position, 14f, u => u.IsAlive && u.CurrentTarget == self, Buffer);
+            foreach (var u in Buffer)
+            {
+                u.CombatEngagement?.Clear();
+                u.Mover.Stop();
+            }
+            Fx?.Ring(self.Position, 1.2f, Color, 0.5f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Mage (P4-19): a long hop that carries the caster clear over ground the pursuer has to walk.
+    /// Used to put a hostile territory between the two — the chaser must cross what we skipped.
+    /// </summary>
+    public class WarpSkill : Skill
+    {
+        public const float Range = 7f;
+
+        public WarpSkill() { Cooldown = 16f; }
+        public override string Name => "차원 도약";
+        public override string Description => "최대 7칸 앞으로 뛰어넘습니다. 쫓아오는 적은 그 사이를 걸어서 지나야 합니다.";
+        public override Color Color => new(0.75f, 0.6f, 1f);
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (self.HpRatio > 0.5f) return false;
+            var threat = Tactics.NearestMeleeThreat(self, 2f);
+            if (threat == null) return false;
+            return WarpTowards(self, self.Position + (self.Position - threat.Position).normalized * Range);
+        }
+
+        /// <summary>Hops as far towards a point as the ground allows (tactics ask for this).</summary>
+        public bool WarpTowards(Unit self, Vector2 towards)
+        {
+            if (!Services.TryGet<WorldService>(out var world)) return false;
+            var dir = (towards - self.Position);
+            if (dir.sqrMagnitude < 0.01f) return false;
+            float distance = Mathf.Min(Range, dir.magnitude);
+            var wanted = self.Position + dir.normalized * distance;
+            if (!world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(wanted), 3, out var cell)) return false;
+            var landing = GridMap.CellToWorld(cell);
+            Fx?.Spark(self.Position, Color, 1f);
+            self.Mover.Stop();
+            self.transform.position = new Vector3(landing.x, landing.y, self.transform.position.z);
+            Fx?.Spark(landing, Color, 1f);
+            Announce(self);
+            return true;
+        }
+
+        /// <summary>A lure asks for a hop towards a point, not away from a threat.</summary>
+        public bool WarpToPoint(Unit self, Vector2 point) => WarpTowards(self, point);
+
+        public override bool TryUseDeliberately(Unit self, Unit target)
+            => target != null && WarpTowards(self, target.Position);
+    }
+
     public static class SkillFactory
     {
         public static Skill Create(string id) => id switch
@@ -423,6 +519,8 @@ namespace GuildMaster.Units
             "pierce" => new PiercingShotSkill(),
             "fireball" => new FireballSkill(),
             "blink" => new BlinkSkill(),
+            "stealth" => new StealthSkill(),
+            "warp" => new WarpSkill(),
             "heal" => new HealSkill(),
             "massheal" => new MassHealSkill(),
             "charge" => new ChargeSkill(),

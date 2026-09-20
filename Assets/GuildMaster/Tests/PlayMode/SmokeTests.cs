@@ -170,6 +170,44 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-19: hiding cuts the chase — the pursuer loses its target and cannot pick the hidden
+        /// unit again, which is what leaves it standing in someone else's territory. Striking
+        /// someone gives the position away again.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Stealth_DropsThePursuit_AndAttackingGivesItAway()
+        {
+            yield return Boot();
+            var member = Roster.Members.First(a => a.IsAlive);
+            member.Data.skillIds.Clear();
+            member.Data.skillIds.Add("stealth");
+            SkillFactory.Assign(member, member.Data.skillIds);
+
+            DebugCommands.SpawnNearMaster("goblin", 1, 2f);
+            var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.Home == null);
+            goblin.transform.position = member.Position + new Vector2(1.5f, 0f);
+            goblin.ForceTarget(member);
+            yield return null;
+            Assert.That(goblin.CurrentTarget, Is.EqualTo((Unit)member), "the goblin is chasing");
+            Assert.That(member.IsTargetableBy(goblin), Is.True);
+
+            Assert.That(member.TryUseSkill<StealthSkill>(goblin), Is.True, "the skill is ready");
+            Assert.That(member.IsHidden, Is.True);
+            Assert.That(goblin.CurrentTarget, Is.Not.EqualTo((Unit)member), "it lost the thread");
+            Assert.That(member.IsTargetableBy(goblin), Is.False, "and cannot pick it up again");
+            Assert.That(member.Visual.Fade, Is.LessThan(1f), "drawn faded while hidden");
+            // Allies still see it.
+            var ally = Roster.Members.FirstOrDefault(a => a.IsAlive && a != member);
+            if (ally != null) Assert.That(member.IsTargetableBy(ally), Is.True, "its own side still sees it");
+
+            // Striking someone shows where it is.
+            Combat.ApplyHit(member, goblin);
+            Assert.That(member.IsHidden, Is.False, "attacking gives the hiding place away");
+            Assert.That(member.IsTargetableBy(goblin), Is.True);
+            Assert.That(member.Visual.Fade, Is.EqualTo(1f));
+        }
+
+        /// <summary>
         /// P4-33: loot is planned as one round and walked in a single pass, and a monster in sight
         /// ends the round — the adventurer used to set off home and turn back for each drop.
         /// </summary>

@@ -139,6 +139,8 @@ namespace GuildMaster.Units
                     transform.position = new Vector3(next.x, next.y, transform.position.z);
             }
             foreach (var s in Skills) s.Tick(this, dt);
+            // Stealth runs out on its own; put the sprite back when it does (P4-19).
+            if (!IsHidden && Visual != null && Visual.Fade < 1f) BreakStealth();
         }
 
         /// <summary>Tries each ready skill in order; returns true if one was used.</summary>
@@ -240,10 +242,51 @@ namespace GuildMaster.Units
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetDebugStatics() => GuildInvulnerable = GuildUntargetable = false;
 
-        /// <summary>False when <paramref name="attacker"/> may not pick this unit as a target (debug untargetable).</summary>
+        // ---------------- Stealth (P4-19) ----------------
+
+        float _hiddenUntil;
+
+        /// <summary>Hidden right now: enemies cannot pick it as a target and it is drawn faded.</summary>
+        public bool IsHidden => Time.time < _hiddenUntil;
+
+        /// <summary>Disappears for a few seconds; whoever was chasing it loses the thread.</summary>
+        public void EnterStealth(float seconds)
+        {
+            _hiddenUntil = Time.time + Mathf.Max(0f, seconds);
+            if (Visual != null) Visual.Fade = 0.35f;
+        }
+
+        /// <summary>Back in plain sight (it attacked, or the time ran out).</summary>
+        public void BreakStealth()
+        {
+            _hiddenUntil = 0f;
+            if (Visual != null) Visual.Fade = 1f;
+        }
+
+        /// <summary>False when the attacker may not pick this unit as a target (hidden, or debug untargetable).</summary>
         public bool IsTargetableBy(Unit attacker)
-            => !(GuildInvulnerable && GuildUntargetable && Faction == Faction.Guild
-                 && attacker != null && attacker.Faction != Faction.Guild);
+        {
+            // Hidden from anyone not on its own side; allies still see it.
+            if (IsHidden && attacker != null && attacker.Faction != Faction) return false;
+            return !(GuildInvulnerable && GuildUntargetable && Faction == Faction.Guild
+                     && attacker != null && attacker.Faction != Faction.Guild);
+        }
+
+        /// <summary>A known skill of this type that is off cooldown, or null (tactics ask for these).</summary>
+        public T FindReadySkill<T>() where T : Skill
+        {
+            if (IsStunned) return null;
+            foreach (var s in Skills)
+                if (s is T typed && s.IsReady) return typed;
+            return null;
+        }
+
+        /// <summary>Uses a known skill of this type on purpose (tactics ask for it); false when it cannot.</summary>
+        public bool TryUseSkill<T>(Unit target) where T : Skill
+        {
+            var skill = FindReadySkill<T>();
+            return skill != null && skill.TryUseDeliberately(this, target);
+        }
 
         internal void ReceiveDamage(float amount, Unit source, bool critical)
         {
