@@ -18,19 +18,18 @@ namespace GuildMaster.UI
         public override string Title => "의뢰 게시판";
 
         static readonly string[] TypeLabels = { "토벌", "둥지 소탕", "호위" };
-        static readonly QuestType[] Types = { QuestType.Hunt, QuestType.ClearNest, QuestType.Escort };
+        static readonly QuestType[] Types = { QuestType.Hunt, QuestType.Escort };
 
         RectTransform _listContent;
         readonly List<QuestRow> _rows = new();
         Text _emptyLabel;
 
         Dropdown _type;
-        RectTransform _speciesRow, _nestRow, _hoursRow, _countRow, _pointRow;
+        RectTransform _speciesRow, _hoursRow, _countRow, _pointRow;
         Text _pointLabel;
         /// <summary>Centre of the hunting area picked on the map (hunt quests).</summary>
         Vector2? _huntPoint;
         Dropdown _species;
-        Dropdown _nest;
         Text _goldLabel, _expLabel;
         InputField _count, _gold, _exp, _hours;
         Dropdown _party;
@@ -38,7 +37,6 @@ namespace GuildMaster.UI
         Text _message;
 
         readonly List<MonsterDefinition> _speciesOptions = new();
-        readonly List<Nest> _nestOptions = new();
 
 
         protected override void Build(RectTransform body)
@@ -62,10 +60,6 @@ namespace GuildMaster.UI
 
             _speciesRow = FieldRow(form, "대상 몬스터");
             _species = UIBuilder.Dropdown(_speciesRow, new List<string>(), _ => OnFormChanged(false));
-
-            _nestRow = FieldRow(form, "대상 둥지");
-            _nest = UIBuilder.Dropdown(_nestRow, new List<string>(), _ => OnFormChanged(false));
-            UIBuilder.Button(_nestRow, "지도", PickNest, 56, 30, null, 14);
 
             _hoursRow = FieldRow(form, "최대 시간");
             _hours = UIBuilder.Input(_hoursRow, "6", InputField.ContentType.IntegerNumber);
@@ -126,18 +120,26 @@ namespace GuildMaster.UI
                 : _speciesOptions.Select(s => $"{s.displayName} (위험 {Quest.DangerLabel(s.danger)}, 관측 {intel.ObservedPopulation(s)}마리)").ToList());
             _species.SetValueWithoutNotify(Mathf.Clamp(prevSpecies, 0, Mathf.Max(0, _speciesOptions.Count - 1)));
 
-            var prevNest = _nest.value < _nestOptions.Count ? _nestOptions[_nest.value] : null;
-            _nestOptions.Clear();
-            _nestOptions.AddRange(intel.KnownNests.Where(n => !intel.Get(n).Observed || intel.Get(n).LastCount > 0));
-            _nest.ClearOptions();
-            _nest.AddOptions(_nestOptions.Count == 0
-                ? new List<string> { "(발견한 둥지 없음)" }
-                : _nestOptions.Select(n => $"{intel.NameOf(n)} ({intel.DescribeNest(n)})").ToList());
-            int idx = prevNest != null ? _nestOptions.IndexOf(prevNest) : 0;
-            _nest.SetValueWithoutNotify(Mathf.Max(0, idx));
         }
 
         QuestType CurrentType => Types[Mathf.Clamp(_type.value, 0, Types.Length - 1)];
+
+        /// <summary>
+        /// Names the known nest the hunting area covers (P4-32): wiping it out finishes the quest
+        /// whatever the kill count says, so it is worth pointing at when picking the spot.
+        /// </summary>
+        string NestHint()
+        {
+            var species = _species.value < _speciesOptions.Count ? _speciesOptions[_species.value] : null;
+            if (species == null || !_huntPoint.HasValue || !Services.TryGet<GuildIntel>(out var intel)) return "";
+            foreach (var n in intel.KnownNests)
+            {
+                if (intel.SpeciesOf(n) != species) continue;
+                if (Vector2.Distance(n.WorldPosition, _huntPoint.Value) > QuestBoard.HuntRadius) continue;
+                return UIBuilder.Colored($"  {intel.NameOf(n)} 포함 — 비우면 바로 완료", UITheme.Good);
+            }
+            return "";
+        }
 
         QuestDraft BuildDraft()
         {
@@ -158,9 +160,6 @@ namespace GuildMaster.UI
                     d.Point = _huntPoint ?? default;
                     d.Radius = QuestBoard.HuntRadius;
                     break;
-                case QuestType.ClearNest:
-                    d.Nest = _nest.value < _nestOptions.Count ? _nestOptions[_nest.value] : null;
-                    break;
                 case QuestType.Escort:
                     // Reward fields are hourly rates; the escrow covers the maximum hours.
                     d.Hours = Mathf.Clamp(ParseInt(_hours.text), 0, 24);
@@ -180,8 +179,7 @@ namespace GuildMaster.UI
             _speciesRow.gameObject.SetActive(type == QuestType.Hunt);
             _countRow.gameObject.SetActive(type == QuestType.Hunt);
             _pointRow.gameObject.SetActive(type == QuestType.Hunt);
-            _pointLabel.text = _huntPoint.HasValue ? QuestBoard.DescribeArea(_huntPoint.Value) : UIBuilder.Colored("지정 안 됨", UITheme.Bad);
-            _nestRow.gameObject.SetActive(type == QuestType.ClearNest);
+            _pointLabel.text = _huntPoint.HasValue ? QuestBoard.DescribeArea(_huntPoint.Value) + NestHint() : UIBuilder.Colored("지정 안 됨", UITheme.Bad);
             _hoursRow.gameObject.SetActive(type == QuestType.Escort);
             _goldLabel.text = type == QuestType.Escort ? "시간당 골드" : "보상 골드";
             _expLabel.text = type == QuestType.Escort ? "시간당 EXP" : "보상 EXP";
@@ -234,29 +232,10 @@ namespace GuildMaster.UI
                     return d.HasPoint
                         ? QuestBoard.HuntDanger(d.Species, d.Count, d.Point, d.Radius <= 0f ? 8f : d.Radius)
                         : QuestBoard.HuntDanger(d.Species, d.Count);
-                case QuestType.ClearNest when d.Nest != null:
-                    return QuestBoard.NestDanger(d.Nest);
                 case QuestType.Escort:
                     return DangerLevel.Low;
             }
             return null;
-        }
-
-        void PickNest()
-        {
-            var picker = Services.Get<MapPicker>();
-            Close();
-            picker.Begin("소탕할 둥지를 클릭하세요 (우클릭/ESC: 취소)", p =>
-            {
-                Open();
-                var nest = _nestOptions.OrderBy(n => Vector2.Distance(n.WorldPosition, p)).FirstOrDefault();
-                if (nest != null && Vector2.Distance(nest.WorldPosition, p) < 3f)
-                {
-                    _nest.SetValueWithoutNotify(_nestOptions.IndexOf(nest));
-                    OnFormChanged(false);
-                }
-                else _message.text = UIBuilder.Colored("그 위치에 발견된 둥지가 없습니다.", UITheme.Bad);
-            }, Open);
         }
 
         void PickHuntPoint()

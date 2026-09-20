@@ -72,13 +72,6 @@ namespace GuildMaster.Quests
                     if (!d.HasPoint) return "사냥할 위치를 지도에서 지정하세요.";
                     if (HuntPointError(d.Point) is { } pointError) return pointError;
                     break;
-                case QuestType.ClearNest:
-                    if (d.Nest == null) return "소탕할 둥지를 선택하세요.";
-                    if (!d.Nest.Discovered) return "발견하지 못한 둥지입니다.";
-                    if (Services.TryGet<GuildIntel>(out var intel) && intel.Get(d.Nest) is { Observed: true, LastCount: 0 })
-                        return "마지막 관측에서 비어 있던 둥지입니다.";
-                    if (_quests.Any(q => q.IsActive && q.Type == QuestType.ClearNest && q.Nest == d.Nest)) return "이미 등록된 둥지 의뢰가 있습니다.";
-                    break;
                 case QuestType.Escort:
                     if (d.Hours < 1 || d.Hours > 24) return "호위 시간은 1~24시간이어야 합니다.";
                     if (_quests.Any(q => q.IsActive && q.Type == QuestType.Escort)) return "이미 진행 중인 호위 의뢰가 있습니다.";
@@ -133,9 +126,6 @@ namespace GuildMaster.Quests
             {
                 case QuestType.Hunt:
                     d = HuntDanger(q.Species, q.RequiredCount, q.Point, q.Radius);
-                    break;
-                case QuestType.ClearNest:
-                    d = NestDanger(q.Nest);
                     break;
                 case QuestType.Escort:
                     d = DangerLevel.Low; // depends on where the guild master walks
@@ -235,19 +225,33 @@ namespace GuildMaster.Quests
                     EventBus.Publish(new QuestProgressEvent { Quest = q });
                     if (q.Progress >= q.RequiredCount) Complete(q);
                 }
-                else if (q.Type == QuestType.ClearNest && q.Nest == m.Home)
-                {
-                    q.AddContribution(taker, 1);
-                    EventBus.Publish(new QuestProgressEvent { Quest = q });
-                }
             }
         }
 
+        /// <summary>
+        /// A hunt is also done when the area's nest is wiped out, even with kills to spare
+        /// (2026-09-20 user decision): the point of the quest was that nest.
+        /// </summary>
         void OnNestCleared(NestClearedEvent e)
         {
             foreach (var q in _quests.ToList())
-                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.ClearNest && q.Nest == e.Nest)
-                    Complete(q);
+                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && IsInArea(q, e.Nest)) Complete(q);
+        }
+
+        /// <summary>The nest of the quest's species inside its hunting area, or null.</summary>
+        public static Nest NestInArea(Quest q)
+        {
+            if (q == null || q.Type != QuestType.Hunt || !Services.TryGet<GuildIntel>(out var intel)) return null;
+            foreach (var n in intel.KnownNests)
+                if (IsInArea(q, n)) return n;
+            return null;
+        }
+
+        static bool IsInArea(Quest q, Nest n)
+        {
+            if (n == null || q.Species == null) return false;
+            var species = Services.TryGet<GuildIntel>(out var intel) ? intel.SpeciesOf(n) : n.Species;
+            return species == q.Species && Vector2.Distance(n.WorldPosition, q.Point) <= q.Radius;
         }
 
         void OnSpeciesExtinct(SpeciesExtinctEvent e)
@@ -319,15 +323,11 @@ namespace GuildMaster.Quests
 
         void OnHour(HourPassedEvent e)
         {
-            Services.TryGet<GuildIntel>(out var intel);
             foreach (var q in _quests.ToList())
             {
                 // Rewards not collected in time (e.g. the adventurer died) return to the guild.
                 if (q.Status == QuestStatus.Completed && _clock.TotalHours - q.CompletedAtHour > TurnInDeadlineHours && q.Assignees.Count == 0)
                     Close(q, QuestStatus.TurnedIn, refund: true);
-                // A nest that emptied out of sight: once someone actually sees it empty, refund.
-                else if (q.IsActive && q.Type == QuestType.ClearNest && q.Nest.IsEmpty && intel != null && intel.Get(q.Nest).VisibleNow)
-                    Close(q, QuestStatus.Failed, refund: true);
             }
         }
 

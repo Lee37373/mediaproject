@@ -294,7 +294,7 @@ namespace GuildMaster.Adventurers
         {
             var q = Owner.CurrentQuest;
             if (q == null || u is not Monster m) return false;
-            return q.Type == QuestType.ClearNest ? m.Home == q.Nest : m.Def == q.Species;
+            return m.Def == q.Species;
         }
 
         /// <summary>A quest target inside the quest area (hunts), or any resident of the nest (clearing).</summary>

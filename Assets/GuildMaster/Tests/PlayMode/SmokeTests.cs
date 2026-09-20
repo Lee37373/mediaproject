@@ -170,6 +170,36 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-32: the clear-nest quest is gone. A hunt finishes on its kill count, or as soon as
+        /// the nest inside its marked area is wiped out, whichever comes first.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Hunt_AlsoFinishesWhenTheAreaNestIsWipedOut()
+        {
+            yield return Boot();
+            var board = Services.Get<QuestBoard>();
+            var eco = Services.Get<EcosystemManager>();
+            var nest = eco.Nests.First(n => n.Population >= 2);
+            MakeKnown(nest.Species);
+            // Post far more kills than the nest holds, so only clearing it can finish the quest.
+            string id = DebugCommands.PostHunt(nest.Species.id, 99, 40, 10, 1, nest.WorldPosition.x, nest.WorldPosition.y);
+            var quest = board.FindById(id);
+            Assert.That(quest, Is.Not.Null, id);
+            Assert.That(quest.Species, Is.EqualTo(nest.Species));
+
+            var taker = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
+            Assert.That(board.TryAccept(quest, taker), Is.True);
+            taker.CurrentQuest = quest;
+            Assert.That(quest.Status, Is.EqualTo(QuestStatus.InProgress));
+
+            foreach (var m in nest.Members.ToList()) if (m.IsAlive) m.Perish();
+            // Completed, or already collected by the time we look.
+            yield return WaitFor(() => quest.Status is QuestStatus.Completed or QuestStatus.TurnedIn, 5f);
+            Assert.That(quest.Status is QuestStatus.Completed or QuestStatus.TurnedIn, Is.True, $"an emptied nest finishes the hunt (was {quest.Status})");
+            Assert.That(quest.Progress, Is.LessThan(quest.RequiredCount), "with kills to spare");
+        }
+
+        /// <summary>
         /// 2026-09-20 user reports: a quest is worked by one group (a lone adventurer counts as
         /// one), and taking a quest off the board after someone accepted it still pays them.
         /// </summary>
