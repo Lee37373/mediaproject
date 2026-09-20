@@ -170,6 +170,55 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-13: a watchtower costs gold and materials, lights up ground the town watch cannot
+        /// reach on its own, and gives half of that back when it is taken down again.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Watchtower_IsBuiltForMaterials_SeesFurther_AndRefundsOnDemolish()
+        {
+            yield return Boot();
+            var construction = Services.Get<Town.ConstructionService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var world = Services.Get<World.WorldService>();
+            var fog = Services.Get<Fog.FogOfWar>();
+            var cost = construction.CostOf(Town.BuildingType.Watchtower);
+
+            // Materials gate the build before gold does.
+            Assert.That(construction.CannotAffordReason(Town.BuildingType.Watchtower), Is.Not.Null, "no materials yet");
+            treasury.AddGold(cost.goldCost);
+            foreach (var c in cost.itemCosts) treasury.AddStock(c.itemId, c.count);
+            Assert.That(construction.CannotAffordReason(Town.BuildingType.Watchtower), Is.Null, "stocked up");
+
+            var center = world.TownCenterWorld;
+            // Two cells of a gate are kept clear so a tower can never plug the way in.
+            Assert.That(construction.CannotPlaceAt(Town.BuildingType.Watchtower, center + new Vector2(12f, 0f)), Is.Not.Null, "on the gate");
+
+            var spot = center + new Vector2(15f, 0f);
+            var far = center + new Vector2(24f, 0f);
+            Assert.That(fog.IsVisibleRaw(far), Is.False, "the town watch alone does not reach out there");
+
+            int goldBefore = treasury.Gold;
+            Assert.That(construction.TryBuild(Town.BuildingType.Watchtower, spot, out var error), Is.True, error);
+            Assert.That(treasury.Gold, Is.EqualTo(goldBefore - cost.goldCost), "gold paid");
+            foreach (var c in cost.itemCosts) Assert.That(treasury.GetStock(c.itemId), Is.EqualTo(0), "materials used up");
+
+            yield return WaitFor(() => fog.IsVisibleRaw(far), 5f);
+            Assert.That(fog.IsVisibleRaw(far), Is.True, "the tower watches the road out of town");
+
+            var tower = Services.Get<Town.TownService>().Get(Town.BuildingType.Watchtower);
+            Assert.That(tower, Is.Not.Null);
+            goldBefore = treasury.Gold;
+            Assert.That(construction.TryDemolish(tower, out error), Is.True, error);
+            Assert.That(treasury.Gold, Is.EqualTo(goldBefore + Town.ConstructionRules.Refund(cost.goldCost)), "half the gold back");
+            foreach (var c in cost.itemCosts)
+                Assert.That(treasury.GetStock(c.itemId), Is.EqualTo(Town.ConstructionRules.Refund(c.count)), "half the materials back");
+
+            yield return WaitFor(() => !fog.IsVisibleRaw(far), 5f);
+            Assert.That(fog.IsVisibleRaw(far), Is.False, "and it stops watching once it is gone");
+            Assert.That(world.Grid.IsWalkable(World.GridMap.WorldToCell(spot)), Is.True, "its ground is free again");
+        }
+
+        /// <summary>
         /// P4-23: the fog leaves a frozen grey copy of what the guild last saw, it does not follow
         /// the real monster, and seeing the spot again settles the question and removes it.
         /// </summary>

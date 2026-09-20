@@ -226,6 +226,19 @@ namespace GuildMaster.Data
                 new BuildingLevel { maxHp = 600, dailyTax = 60, effectText = "내구도 600 · 세금 하루 60G" },
                 new BuildingLevel { goldCost = 400, itemCosts = { I("stone_shard", 10), I("iron_ore", 6) }, maxHp = 900, dailyTax = 90, effectText = "내구도 900 · 세금 하루 90G" },
                 new BuildingLevel { goldCost = 1000, itemCosts = { I("crown_shard", 1), I("iron_ore", 15) }, maxHp = 1300, dailyTax = 130, effectText = "내구도 1300 · 세금 하루 130G" });
+
+            // The watchtower is placed by the player (P4-13), so its one level is the build cost.
+            // Fixed price however many are already standing (user decision, 2026-09-20).
+            B(Town.BuildingType.Watchtower,
+                new BuildingLevel
+                {
+                    goldCost = 150,
+                    itemCosts = { I("stone_shard", 8), I("iron_ore", 4) },
+                    maxHp = 220,
+                    sightRadius = 14f,
+                    footprint = 2,
+                    effectText = "주변 14칸을 성벽 너머까지 감시",
+                });
         }
 
         /// <summary>Crafting recipes (P4-2). Agreed with the user 2026-09-19; tune in P5-1.</summary>

@@ -26,7 +26,7 @@ namespace GuildMaster.Town
             Place(BuildingType.TrainingGround, new RectInt(c.x - 9, c.y - 8, 7, 6), new Vector2Int(c.x - 5, c.y - 5), false, 150f, mapRenderer);
         }
 
-        void Place(BuildingType type, RectInt rect, Vector2Int door, bool blocks, float hp, MapRenderer mapRenderer)
+        Building Place(BuildingType type, RectInt rect, Vector2Int door, bool blocks, float hp, MapRenderer mapRenderer)
         {
             var go = new GameObject();
             go.transform.SetParent(transform, false);
@@ -35,6 +35,25 @@ namespace GuildMaster.Town
             if (blocks) _world.Grid.SetBlocked(rect, true);
             mapRenderer.ClearDecor(rect);
             _buildings.Add(b);
+            return b;
+        }
+
+        /// <summary>
+        /// Puts up a building the player placed (P4-13). Its door is the cell below it, so NPCs
+        /// walking to it stand in front rather than inside.
+        /// </summary>
+        public Building Build(BuildingType type, RectInt rect, float hp, MapRenderer mapRenderer)
+        {
+            var door = new Vector2Int(rect.xMin + rect.width / 2, rect.yMin - 1);
+            return Place(type, rect, door, blocks: true, hp, mapRenderer);
+        }
+
+        /// <summary>Takes a building away again (demolished); its ground becomes walkable.</summary>
+        public void Remove(Building b)
+        {
+            if (b == null || !_buildings.Remove(b)) return;
+            if (b.BlocksMovement) _world.Grid.SetBlocked(b.Footprint, false);
+            Destroy(b.gameObject);
         }
 
         public Building Get(BuildingType type) => _buildings.Find(b => b.Type == type);

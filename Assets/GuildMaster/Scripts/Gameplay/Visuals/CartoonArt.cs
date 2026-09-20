@@ -218,6 +218,7 @@ namespace GuildMaster.Visuals
             int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
             var c = new Canvas(w, h);
             if (type == Town.BuildingType.TrainingGround) return TrainingYard(c, key);
+            if (type == Town.BuildingType.Watchtower) return Watchtower(c, key);
 
             var roof = type switch
             {
@@ -270,7 +271,7 @@ namespace GuildMaster.Visuals
         /// </summary>
         public static Sprite BuildingInterior(Town.BuildingType type, int tilesW, int tilesH)
         {
-            if (type == Town.BuildingType.TrainingGround) return null;
+            if (type is Town.BuildingType.TrainingGround or Town.BuildingType.Watchtower) return null;
             string key = $"c_interior:{type}:{tilesW}x{tilesH}";
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
@@ -318,6 +319,40 @@ namespace GuildMaster.Visuals
                     c.Shape(RoundRect(cx - 18, 26, cx + 18, 36, 2f), Hex(0xA56B3A), Ink, 2f);                              // counter
                     break;
             }
+            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+        }
+
+        /// <summary>A stone shaft with battlements, a lookout window and a pennant (P4-13).</summary>
+        static Sprite Watchtower(Canvas c, string key)
+        {
+            int w = c.W, h = c.H;
+            var stone = Hex(0xB9BCC6);
+            float shaftW = w * 0.34f;
+            float cx = w * 0.5f;
+            // Shaft, slightly tapered by drawing a wider base block underneath.
+            c.Shape(RoundRect(cx - shaftW * 0.72f, 2, cx + shaftW * 0.72f, h * 0.22f, 4f), Darker(stone, 0.85f), Ink, 3.5f);
+            var shaft = RoundRect(cx - shaftW, h * 0.16f, cx + shaftW, h * 0.74f, 4f);
+            c.Shape(shaft, stone, Ink, 3.5f);
+            // Stone courses.
+            for (float y = h * 0.24f; y < h * 0.70f; y += 13)
+            {
+                float yy = y;
+                c.ShapeClipped(RoundRect(cx - shaftW, yy, cx + shaftW, yy + 2f, 1f), (x, y2) => shaft(x, y2) + 3.5f, Darker(stone, 0.82f));
+            }
+            // Lookout window.
+            c.Shape(RoundRect(cx - 9, h * 0.46f, cx + 9, h * 0.62f, 7f), Hex(0x2B3242), Ink, 2.5f);
+            // Battlemented top: a wider band with three merlons.
+            var top = RoundRect(cx - shaftW * 1.25f, h * 0.70f, cx + shaftW * 1.25f, h * 0.82f, 3f);
+            c.Shape(top, Lighter(stone, 0.12f), Ink, 3.5f);
+            float merlonW = shaftW * 0.5f;
+            for (int i = -1; i <= 1; i++)
+            {
+                float mx = cx + i * shaftW * 0.8f;
+                c.Shape(RoundRect(mx - merlonW * 0.5f, h * 0.81f, mx + merlonW * 0.5f, h * 0.92f, 2f), Lighter(stone, 0.12f), Ink, 3f);
+            }
+            // Pennant on the middle merlon.
+            c.Shape(RoundRect(cx - 1.5f, h * 0.88f, cx + 1.5f, h - 3, 1f), Hex(0x8A5A30), Ink, 2f);
+            c.Shape(RoundRect(cx + 1.5f, h - 14, cx + 18, h - 4, 2f), Hex(0xD9534F), Ink, 2.5f);
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
         }
 

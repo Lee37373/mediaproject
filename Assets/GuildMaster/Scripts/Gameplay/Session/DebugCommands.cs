@@ -530,6 +530,51 @@ namespace GuildMaster.Session
 
         // ---------------- Fog memory (P4-23) ----------------
 
+        // ---------------- Player-placed buildings (P4-13) ----------------
+
+        /// <summary>Builds a watchtower at a map point (defaults to next to the guild master).</summary>
+        public static string BuildTower(float x = -1f, float y = -1f)
+        {
+            var construction = Services.Get<Town.ConstructionService>();
+            var point = x < 0f || y < 0f ? Services.Get<Player.PlayerAvatar>().Position + new Vector2(3f, 0f) : new Vector2(x, y);
+            return construction.TryBuild(Town.BuildingType.Watchtower, point, out var error)
+                ? $"built at ({point.x:0.0}, {point.y:0.0})"
+                : "failed: " + error;
+        }
+
+        /// <summary>Every player-placed building, with durability and what it sees.</summary>
+        public static string Towers()
+        {
+            var town = Services.Get<Town.TownService>();
+            var sb = new StringBuilder();
+            foreach (var b in town.Buildings)
+            {
+                if (System.Array.IndexOf(Town.ConstructionService.Placeable, b.Type) < 0) continue;
+                var vision = b.GetComponent<Fog.VisionSource>();
+                sb.AppendLine($"  {b.DisplayName} at ({b.Center.x:0.0}, {b.Center.y:0.0}) hp={b.Hp:0}/{b.MaxHp:0} sight={(vision != null ? vision.SightRadius : 0f):0}");
+            }
+            return sb.Length == 0 ? "none" : sb.ToString();
+        }
+
+        /// <summary>Tears down the nearest player-placed building to a point (default: the master).</summary>
+        public static string Demolish(float x = -1f, float y = -1f)
+        {
+            var construction = Services.Get<Town.ConstructionService>();
+            var town = Services.Get<Town.TownService>();
+            var point = x < 0f || y < 0f ? Services.Get<Player.PlayerAvatar>().Position : new Vector2(x, y);
+            Town.Building best = null;
+            float bestSq = float.MaxValue;
+            foreach (var b in town.Buildings)
+            {
+                if (!construction.CanDemolish(b)) continue;
+                float sq = ((Vector2)b.Center - point).sqrMagnitude;
+                if (sq < bestSq) { bestSq = sq; best = b; }
+            }
+            if (best == null) return "nothing to demolish";
+            string name = best.DisplayName;
+            return construction.TryDemolish(best, out var error) ? "demolished " + name : "failed: " + error;
+        }
+
         /// <summary>Last-seen ghosts standing under the fog right now.</summary>
         public static string FogGhosts()
         {

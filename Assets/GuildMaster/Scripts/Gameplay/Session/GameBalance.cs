@@ -24,7 +24,8 @@ namespace GuildMaster.Session
         [Header("Fog of War")]
         public float fogTickInterval = 0.1f;
         public float playerSightRadius = 7f;
-        public float townSightRadius = 16f;
+        /// <summary>Just inside the walls (P4-13); seeing further out needs a watchtower.</summary>
+        public float townSightRadius = 8f;
         [Range(0f, 1f)] public float exploredFogAlpha = 0.55f;
 
         [Header("Camera")]

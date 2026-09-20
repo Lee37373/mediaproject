@@ -16,6 +16,9 @@ namespace GuildMaster.Tests
             {
                 var def = db.Building(type);
                 Assert.That(def, Is.Not.Null, type.ToString());
+                // Player-placed buildings (P4-13) are bought outright, so their one level is the
+                // build cost; ConstructionTests checks those instead.
+                if (System.Array.IndexOf(ConstructionService.Placeable, type) >= 0) continue;
                 Assert.That(def.MaxLevel, Is.EqualTo(3), type.ToString());
                 Assert.That(def.Level(1).goldCost, Is.EqualTo(0), "Lv.1 is free: " + type);
                 for (int lv = 2; lv <= def.MaxLevel; lv++)

@@ -103,6 +103,11 @@ namespace GuildMaster.Session
             town.Init(world, mapRenderer);
             Services.Register(town);
 
+            // Player-placed buildings (P4-13): the watchtower and what comes after it.
+            var construction = AddSystem<ConstructionService>();
+            construction.Init(town, world, mapRenderer, treasury, db);
+            Services.Register(construction);
+
             // --- Units, ecosystem, quests ---
             var pool = Services.Get<PoolService>();
             var projectiles = AddSystem<ProjectileService>();
