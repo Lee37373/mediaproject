@@ -132,6 +132,35 @@ namespace GuildMaster.LLM
         {
             if (_agent != null) _agent.CancelRequests();
         }
+
+        /// <summary>
+        /// Recovery (P4-35): cancel whatever is running, throw the agent away and connect again.
+        /// The LLM component itself (and the loaded model) is left alone — reloading a 4B model
+        /// takes far longer than the failures this is meant to clear, and a native generation that
+        /// is genuinely stuck will not let go here either; that case ends as a failed recovery.
+        /// </summary>
+        public async Task<bool> TryRecoverAsync()
+        {
+            CancelCurrent();
+            if (_agent != null)
+            {
+                Destroy(_agent);
+                _agent = null;
+            }
+            State = LlmBackendState.Loading;
+            Description = "LLM 복구 중…";
+            // Let the destroyed agent go away before a new one is attached.
+            await Task.Yield();
+            var done = new TaskCompletionSource<bool>();
+            StartCoroutine(Recover(done));
+            return await done.Task;
+        }
+
+        IEnumerator Recover(TaskCompletionSource<bool> done)
+        {
+            yield return Connect();
+            done.TrySetResult(State == LlmBackendState.Ready);
+        }
     }
 }
 #endif

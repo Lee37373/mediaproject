@@ -528,6 +528,26 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        // ---------------- LLM health (P4-35) ----------------
+
+        /// <summary>Gateway state: queue, counters and where recovery stands.</summary>
+        public static string LlmStatus()
+        {
+            var g = Services.Get<LLM.LlmGateway>();
+            return $"{g.StatusText}\n  enabled={g.Enabled} ready={g.IsReady} busy={g.IsBusy} queue={g.QueueCount}\n" +
+                   $"  completed={g.Completed} failed={g.Failed} consecutiveFailures={g.ConsecutiveFailures}/{LLM.LlmGateway.FailuresBeforeRecovery}\n" +
+                   $"  recovering={g.IsRecovering} attempts={g.RecoveryAttempts}/{LLM.LlmGateway.MaxRecoveryAttempts} gaveUp={g.GaveUpOnRecovery}\n" +
+                   $"  backend={g.Backend.State} ({g.Backend.Description})";
+        }
+
+        /// <summary>Restarts the LLM backend by hand (the same thing the gateway does on its own).</summary>
+        public static string LlmRecover()
+        {
+            var g = Services.Get<LLM.LlmGateway>();
+            g.TryRecoverNow();
+            return "recovery requested; poll LlmStatus()";
+        }
+
         // ---------------- Fog memory (P4-23) ----------------
 
         // ---------------- Player-placed buildings (P4-13) ----------------

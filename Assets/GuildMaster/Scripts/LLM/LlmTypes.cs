@@ -63,6 +63,12 @@ namespace GuildMaster.LLM
         string Description { get; }
         Task<string> GenerateAsync(LlmRequest request, CancellationToken ct);
         void CancelCurrent();
+        /// <summary>
+        /// Tries to bring a backend that stopped answering back to Ready (P4-35). False when it
+        /// cannot — a native generation that is truly wedged cannot be rescued from here, and the
+        /// game simply stays on its rule-based path.
+        /// </summary>
+        Task<bool> TryRecoverAsync();
     }
 
     /// <summary>Backend used when no model is available: always reports not configured.</summary>
@@ -73,5 +79,6 @@ namespace GuildMaster.LLM
         public string Description { get; }
         public Task<string> GenerateAsync(LlmRequest request, CancellationToken ct) => Task.FromResult<string>(null);
         public void CancelCurrent() { }
+        public Task<bool> TryRecoverAsync() => Task.FromResult(false);
     }
 }

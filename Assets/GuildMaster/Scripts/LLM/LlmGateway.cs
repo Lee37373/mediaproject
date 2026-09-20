@@ -40,6 +40,80 @@ namespace GuildMaster.LLM
         const float StaleWaitSeconds = 25f;
         /// <summary>Generation that timed out and ignored cancellation (still running natively).</summary>
         Task _stale;
+        /// <summary>When that generation was set aside (realtime), so it cannot block the queue forever.</summary>
+        float _staleSince;
+
+        // ---------------- Recovery (P4-35) ----------------
+
+        /// <summary>Real failures in a row (a cancel or a preemption is not one) before recovering.</summary>
+        public const int FailuresBeforeRecovery = 3;
+        /// <summary>A stale generation is given up on after this long, and recovery is tried instead.</summary>
+        public const float StaleDeadlineSeconds = 90f;
+        /// <summary>Recovery is not tried more than this many times before the LLM is left alone.</summary>
+        public const int MaxRecoveryAttempts = 5;
+
+        int _consecutiveFailures;
+        int _recoveryAttempts;
+        bool _recovering;
+        bool _gaveUp;
+        float _nextRecoveryAt;
+
+        /// <summary>Recovery is under way right now.</summary>
+        public bool IsRecovering => _recovering;
+        /// <summary>Recovery was tried to the limit and did not work; the game stays rule-based.</summary>
+        public bool GaveUpOnRecovery => _gaveUp;
+        public int RecoveryAttempts => _recoveryAttempts;
+        public int ConsecutiveFailures => _consecutiveFailures;
+
+        /// <summary>How long to wait before the next attempt: 30 s, doubling, capped at five minutes.</summary>
+        public static float RecoveryDelay(int attempt)
+            => Mathf.Min(300f, 30f * Mathf.Pow(2f, Mathf.Max(0, attempt)));
+
+        /// <summary>Enough has gone wrong in a row that the backend is worth restarting.</summary>
+        public static bool ShouldRecover(int consecutiveFailures) => consecutiveFailures >= FailuresBeforeRecovery;
+
+        void NoteSuccess()
+        {
+            _consecutiveFailures = 0;
+            _recoveryAttempts = 0;
+            _gaveUp = false;
+        }
+
+        /// <summary>A real failure (not a cancel or a preemption).</summary>
+        void NoteFailure()
+        {
+            Failed++;
+            _consecutiveFailures++;
+        }
+
+        /// <summary>Restarts the backend once, from Update's schedule or a debug command.</summary>
+        public async void TryRecoverNow()
+        {
+            if (_recovering) return;
+            _recovering = true;
+            _recoveryAttempts++;
+            Debug.LogWarning($"[LLM] recovering after {_consecutiveFailures} failures (attempt {_recoveryAttempts}/{MaxRecoveryAttempts})");
+            bool ok = false;
+            try { ok = await _backend.TryRecoverAsync(); }
+            catch (Exception e) { Debug.LogWarning($"[LLM] recovery threw: {e.Message}"); }
+            _recovering = false;
+            _stale = null;
+            if (ok)
+            {
+                NoteSuccess();
+                Debug.Log("[LLM] recovered");
+            }
+            else
+            {
+                _consecutiveFailures = 0; // start counting again rather than retrying every request
+                _nextRecoveryAt = Time.realtimeSinceStartup + RecoveryDelay(_recoveryAttempts);
+                if (_recoveryAttempts >= MaxRecoveryAttempts)
+                {
+                    _gaveUp = true;
+                    Debug.LogWarning("[LLM] recovery gave up; staying on the rule-based path");
+                }
+            }
+        }
 
         const int HistorySize = 40;
         readonly List<LlmExchange> _history = new();
@@ -80,8 +154,8 @@ namespace GuildMaster.LLM
                     LlmBackendState.Ready => _busy
                         ? $"AI: 생각 중… (대기 {_queue.Count})"
                         : $"AI: LLM 준비됨 ({AverageSeconds:0.0}s)",
-                    LlmBackendState.Loading => "AI: 모델 로딩 중…",
-                    LlmBackendState.Failed => "AI: LLM 오류 → 규칙 기반",
+                    LlmBackendState.Loading => _recovering ? "AI: LLM 복구 중…" : "AI: 모델 로딩 중…",
+                    LlmBackendState.Failed => _gaveUp ? "AI: LLM 복구 실패 → 규칙 기반" : "AI: LLM 오류 → 규칙 기반",
                     _ => "AI: 규칙 기반 (모델 없음)",
                 };
             }
@@ -95,6 +169,26 @@ namespace GuildMaster.LLM
                 _lastState = state;
                 EventBus.Publish(new LlmStatusChangedEvent { State = state, Description = _backend.Description });
             }
+            TickRecovery();
+        }
+
+        /// <summary>
+        /// Two ways the LLM stops answering without anything throwing: a generation that ignored
+        /// cancellation and never ends (every later request fails fast as "busy"), and a backend
+        /// that quietly went bad. Both are cleared by restarting the backend, with a backoff so a
+        /// model that is simply gone is not restarted over and over.
+        /// </summary>
+        void TickRecovery()
+        {
+            if (!Enabled || _recovering || _gaveUp) return;
+            if (_stale != null && !_stale.IsCompleted && Time.realtimeSinceStartup - _staleSince > StaleDeadlineSeconds)
+            {
+                Debug.LogWarning($"[LLM] a generation has been stuck for {StaleDeadlineSeconds:0}s; restarting the backend");
+                _consecutiveFailures = Mathf.Max(_consecutiveFailures, FailuresBeforeRecovery);
+            }
+            if (!ShouldRecover(_consecutiveFailures)) return;
+            if (Time.realtimeSinceStartup < _nextRecoveryAt) return;
+            TryRecoverNow();
         }
 
         /// <summary>Queues a request. Never throws; returns Ok=false when the LLM is unavailable, busy-dropped, timed out or failed.</summary>
@@ -230,7 +324,7 @@ namespace GuildMaster.LLM
                 await Task.WhenAny(_stale, Task.Delay(TimeSpan.FromSeconds(StaleWaitSeconds)));
                 if (!_stale.IsCompleted)
                 {
-                    Failed++;
+                    NoteFailure();
                     return LlmResult.Fail("busy");
                 }
             }
@@ -250,13 +344,14 @@ namespace GuildMaster.LLM
                     // A caller cancelling (e.g. a party invite replacing a decision) or a preempted
                     // small talk is not a failure.
                     bool preempted = p.Preempt.IsCancellationRequested;
-                    if (!p.Token.IsCancellationRequested && !preempted) Failed++;
+                    if (!p.Token.IsCancellationRequested && !preempted) NoteFailure();
                     // Give the backend a short grace period to unwind; if it does not, remember it
                     // as stale (see above) instead of blocking the queue forever.
                     await Task.WhenAny(gen, Task.Delay(TimeSpan.FromSeconds(CancelGraceSeconds)));
                     if (!gen.IsCompleted)
                     {
                         _stale = gen;
+                        _staleSince = Time.realtimeSinceStartup;
                         Debug.LogWarning($"[LLM] '{p.Request.Tag}' did not stop after cancel; later requests fail fast until it ends.");
                     }
                     return LlmResult.Fail(p.Token.IsCancellationRequested ? "cancelled" : preempted ? "preempted" : "timeout");
@@ -266,17 +361,18 @@ namespace GuildMaster.LLM
                 float seconds = (float)sw.Elapsed.TotalSeconds;
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    Failed++;
+                    NoteFailure();
                     return LlmResult.Fail("empty");
                 }
                 Completed++;
+                NoteSuccess();
                 LastSeconds = seconds;
                 AverageSeconds = Completed == 1 ? seconds : Mathf.Lerp(AverageSeconds, seconds, 0.2f);
                 return new LlmResult { Ok = true, Text = text, Seconds = seconds };
             }
             catch (Exception e)
             {
-                Failed++;
+                NoteFailure();
                 Debug.LogWarning($"[LLM] request '{p.Request.Tag}' failed: {e.Message}");
                 return LlmResult.Fail(e.Message);
             }
