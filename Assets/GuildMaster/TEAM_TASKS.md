@@ -33,7 +33,7 @@
 | P4-33 | 전리품 획득 루트(한 번에 돌며 줍기, 중간에 적 보이면 전투 우선) | 이재혁 | 완료 | Adventurers/AdventurerLooting | 00eb604 |
 | P4-34 | 스킬 습득: 레벨업 때 LLM이 선택, 최대 3개(초과 시 LLM이 잊을 것 선택), 쿨타임 UI | 이재혁 | 완료 | Adventurers/SkillCatalog·SkillChoiceService·Prompts/SkillPrompt(신규)·Adventurer·AdventurerData, UI/World/SkillBarLayer(신규)·UIRoot·UIBuilder, Session/GameBootstrap | c3c380e |
 | P4-35 | LLM 고장 리커버리(stale 마감 시한, 연속 실패 시 재기동, HUD 표시) | 이재혁 | 완료 | LLM/LlmGateway·LLMUnityBackend·LlmTypes, Session/DebugCommands | e7ad181 |
-| P4-19 | 스킬 기반 유인(은신·순간이동) | 미정 | 예정 | Units/Skills, Ecosystem/TerritoryTactics | |
+| P4-19 | 스킬 기반 유인(은신·순간이동) | 이재혁 | 완료 | Units/Skills·Unit·Combat, Ecosystem/TerritoryTactics, Adventurers/AdventurerStates·SkillCatalog, Visuals/CharacterVisual | 71dc597 |
 | P5-1 | 밸런스 | 미정 | 예정 | Data/DefaultContent, GameBalance | |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
@@ -69,7 +69,7 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-18, P4-20 ~ P4-29, P4-31 ~ P4-35 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-35 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
 - **진행 중**:
