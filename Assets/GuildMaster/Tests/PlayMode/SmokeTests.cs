@@ -170,6 +170,50 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-33: loot is planned as one round and walked in a single pass, and a monster in sight
+        /// ends the round — the adventurer used to set off home and turn back for each drop.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Looting_PlansOneRound_AndAFightEndsIt()
+        {
+            yield return Boot();
+            var ground = Services.Get<GroundItemService>();
+            var grid = Services.Get<World.WorldService>().Grid;
+            var member = Roster.Members.First(a => a.IsAlive);
+            int before = member.Data.LootCount;
+
+            // Three drops around the member, all on ground it can stand on.
+            var spots = new[] { new Vector2(1.5f, 0f), new Vector2(3f, 1f), new Vector2(4.5f, 0f) };
+            foreach (var offset in spots)
+            {
+                var at = member.Position + offset;
+                if (grid.TryFindNearestWalkable(World.GridMap.WorldToCell(at), 3, out var cell)) at = World.GridMap.CellToWorld(cell);
+                DebugCommands.DropItem("slime_jelly", 1, at.x, at.y);
+            }
+            Assert.That(ground.Items.Count, Is.EqualTo(3));
+
+            // The round is planned in one go, so more than one stop is queued at once.
+            int longestRound = 0;
+            float end = Time.realtimeSinceStartup + 15f;
+            while (Time.realtimeSinceStartup < end && ground.Items.Count > 0)
+            {
+                longestRound = Mathf.Max(longestRound, member.Looting.RouteLength);
+                yield return null;
+            }
+            Assert.That(longestRound, Is.GreaterThan(1), "several stops were queued as one round");
+            Assert.That(member.Data.LootCount, Is.EqualTo(before + 3), "and all of it came back in that pass");
+
+            // With a monster in sight the round is dropped rather than walked.
+            var at2 = member.Position + new Vector2(2f, 0f);
+            DebugCommands.DropItem("slime_jelly", 1, at2.x, at2.y);
+            DebugCommands.SpawnNearMaster("goblin", 1, 2f);
+            var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.Home == null);
+            goblin.transform.position = member.Position + new Vector2(0f, 1.5f);
+            yield return WaitFor(() => !member.Looting.IsBusy, 3f);
+            Assert.That(member.Looting.IsBusy, Is.False, "fighting comes before tidying up");
+        }
+
+        /// <summary>
         /// P4-32: the clear-nest quest is gone. A hunt finishes on its kill count, or as soon as
         /// the nest inside its marked area is wiped out, whichever comes first.
         /// </summary>
