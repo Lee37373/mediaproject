@@ -53,7 +53,8 @@ namespace GuildMaster.Tests
             var db = DefaultContent.Build();
             db.BuildIndex();
             var hall = db.Building(BuildingType.TownHall);
-            Assert.That(new[] { hall.Level(1).maxHp, hall.Level(2).maxHp, hall.Level(3).maxHp }, Is.EqualTo(new[] { 600f, 900f, 1300f }));
+            // P5-1 raised these from 600/900/1300: the hall fell to the first raid in seconds.
+            Assert.That(new[] { hall.Level(1).maxHp, hall.Level(2).maxHp, hall.Level(3).maxHp }, Is.EqualTo(new[] { 1000f, 1500f, 2100f }));
             Assert.That(new[] { hall.Level(1).dailyTax, hall.Level(2).dailyTax, hall.Level(3).dailyTax }, Is.EqualTo(new[] { 60, 90, 130 }));
             var guild = db.Building(BuildingType.GuildHall);
             Assert.That(new[] { guild.Level(1).rosterCapacity, guild.Level(2).rosterCapacity, guild.Level(3).rosterCapacity }, Is.EqualTo(new[] { 6, 9, 12 }));

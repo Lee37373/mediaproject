@@ -74,7 +74,14 @@ namespace GuildMaster.Data
         public string rangedArtKey;
 
         [Header("Ecosystem")]
+        [Range(0f, 1f)]
+        [Tooltip("How far from town this species lives (P5-1): 0 = just outside the walls, 1 = the far " +
+                 "edge of the map. Nests are handed out by this, so the danger grows with the distance.")]
+        public float distanceBand = 0.5f;
         public List<Biome> biomes = new();
+        [Tooltip("Nests this species is guaranteed on a map (P5-1). The weak ring around town needs " +
+                 "several, or the early economy runs dry: potions are made from slime jelly.")]
+        public int minNests = 1;
         public int nestCapacity = 6;
         [Tooltip("Logistic growth rate per game hour.")]
         public float growthPerHour = 0.05f;

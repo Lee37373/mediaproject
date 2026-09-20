@@ -90,6 +90,8 @@ namespace GuildMaster.Ecosystem
             _fog = fog;
             _clock = clock;
             _world = world;
+            // Nests already discovered at this point are the ones the town knows about (P5-1).
+            foreach (var n in _eco.Nests) SeedKnownNest(n);
             EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
         }
 
@@ -108,6 +110,22 @@ namespace GuildMaster.Ecosystem
             if (_timer > 0f) return;
             _timer = ScanInterval;
             Scan();
+        }
+
+        /// <summary>
+        /// Writes down what the town already knows about a nest on its doorstep (P5-1). Nests
+        /// revealed at the start are marked discovered but were never in anyone's view, so without
+        /// this their observed count stays 0 and nothing can be posted against them.
+        /// </summary>
+        public void SeedKnownNest(Nest nest)
+        {
+            if (nest == null || !nest.Discovered) return;
+            var ni = Get(nest);
+            ni.Species = nest.Species;
+            ni.Observed = true;
+            ni.LastCount = nest.Population;
+            ni.LastSeenHour = _clock != null ? _clock.TotalHours : 0f;
+            _known.Add(nest.Species);
         }
 
         void Scan()

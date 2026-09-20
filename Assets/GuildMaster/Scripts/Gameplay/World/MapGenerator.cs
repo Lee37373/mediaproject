@@ -105,7 +105,12 @@ namespace GuildMaster.World
                 foreach (var n in map.Nests)
                     if ((n.Cell - cell).sqrMagnitude < 15 * 15) { tooClose = true; break; }
                 if (tooClose) continue;
-                map.Nests.Add(new NestSite { Cell = cell, Biome = ClassifyBiome(map, cell) });
+                map.Nests.Add(new NestSite
+                {
+                    Cell = cell,
+                    Biome = ClassifyBiome(map, cell),
+                    DistanceFromTown = dist[map.Index(cell.x, cell.y)],
+                });
             }
 
             // 5. Edge spawn cells for raid waves.

@@ -609,5 +609,43 @@ namespace GuildMaster.Session
             }
             return sb.ToString();
         }
+
+        // ---------- P5-1 balance runs ----------
+
+        /// <summary>
+        /// Starts a metered run: samples the economy/roster/ecosystem every game hour and, unless
+        /// <paramref name="autoPost"/> is false, keeps hunt quests on the board in the player's place.
+        /// Writes a CSV under the project root when it finishes (or on BalanceStop).
+        /// </summary>
+        public static string BalanceRun(int days = 10, bool autoPost = true, int speed = 3, string label = null)
+        {
+            var probe = BalanceProbe.Ensure();
+            if (probe.Running) return "already running: " + probe.Report();
+            string name = string.IsNullOrEmpty(label) ? "baseline" : label;
+            string path = System.IO.Path.Combine(Application.dataPath, "..", "BalanceLogs", $"{name}.csv");
+            path = System.IO.Path.GetFullPath(path);
+            probe.Begin(days, path);
+            if (autoPost) BalanceAutoPlayer.Ensure().Begin();
+            Services.Get<GameClock>().SetSpeed(speed);
+            return $"balance run '{name}' started: {days} game days, autoPost={autoPost}, speed=x{GameClock.SpeedScales[Mathf.Clamp(speed, 0, GameClock.SpeedScales.Length - 1)]:0}\n  csv: {path}";
+        }
+
+        /// <summary>Ends the run early and writes the CSV.</summary>
+        public static string BalanceStop()
+        {
+            if (BalanceAutoPlayer.Instance != null) BalanceAutoPlayer.Instance.Stop();
+            if (BalanceProbe.Instance == null) return "no run";
+            BalanceProbe.Instance.Stop();
+            return BalanceProbe.Instance.Report();
+        }
+
+        /// <summary>Where the run stands right now (it keeps sampling).</summary>
+        public static string BalanceReport()
+        {
+            if (BalanceProbe.Instance == null) return "no run";
+            var sb = new StringBuilder(BalanceProbe.Instance.Report());
+            if (BalanceAutoPlayer.Instance != null) sb.AppendLine(BalanceAutoPlayer.Instance.Report());
+            return sb.ToString();
+        }
     }
 }

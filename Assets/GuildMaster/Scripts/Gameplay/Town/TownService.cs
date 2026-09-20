@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using GuildMaster.Data;
 using GuildMaster.World;
 using UnityEngine;
 
@@ -9,14 +10,21 @@ namespace GuildMaster.Town
     {
         readonly List<Building> _buildings = new();
         WorldService _world;
+        GameDatabase _db;
 
         public IReadOnlyList<Building> Buildings => _buildings;
         public RectInt TownRect => _world.Map.TownRect;
         public Vector2 PlazaPosition => _world.TownCenterWorld;
 
-        public void Init(WorldService world, MapRenderer mapRenderer)
+        /// <summary>
+        /// Lays out the starting town. Durability comes from the building data when it is there
+        /// (P5-1: it used to be hard-coded here, so tuning the town hall in DefaultContent quietly
+        /// did nothing until an upgrade); the numbers below are only the fallback.
+        /// </summary>
+        public void Init(WorldService world, MapRenderer mapRenderer, GameDatabase db = null)
         {
             _world = world;
+            _db = db;
             var c = world.Map.TownCenter;
             // Layout relative to the plaza (roads run along c.x and c.y).
             Place(BuildingType.TownHall, new RectInt(c.x + 2, c.y + 2, 6, 5), new Vector2Int(c.x + 5, c.y + 1), true, 600f, mapRenderer);
@@ -26,12 +34,20 @@ namespace GuildMaster.Town
             Place(BuildingType.TrainingGround, new RectInt(c.x - 9, c.y - 8, 7, 6), new Vector2Int(c.x - 5, c.y - 5), false, 150f, mapRenderer);
         }
 
-        Building Place(BuildingType type, RectInt rect, Vector2Int door, bool blocks, float hp, MapRenderer mapRenderer)
+        /// <summary>Level-1 durability from the building data, or the given fallback.</summary>
+        float StartingHp(BuildingType type, float fallback)
+        {
+            var def = _db != null ? _db.Building(type) : null;
+            float fromData = def != null ? def.Level(1).maxHp : 0f;
+            return fromData > 0f ? fromData : fallback;
+        }
+
+        Building Place(BuildingType type, RectInt rect, Vector2Int door, bool blocks, float fallbackHp, MapRenderer mapRenderer)
         {
             var go = new GameObject();
             go.transform.SetParent(transform, false);
             var b = go.AddComponent<Building>();
-            b.Init(type, rect, door, blocks, hp);
+            b.Init(type, rect, door, blocks, StartingHp(type, fallbackHp));
             if (blocks) _world.Grid.SetBlocked(rect, true);
             mapRenderer.ClearDecor(rect);
             _buildings.Add(b);

@@ -583,12 +583,37 @@ namespace GuildMaster.Tests
                 for (int dx = -8; dx <= 8 && open; dx++)
                     if (!grid.IsWalkable(c + new Vector2Int(dx, dy))) open = false;
                 if (!open) continue;
+                // Clear of any nest's territory too: residents would join the fight and these tests
+                // are about the spawned units alone (P5-1 moved nests closer to town).
+                if (!ClearOfTerritories(World.GridMap.CellToWorld(c), 24f)) continue;
                 var master = Services.Get<PlayerAvatar>();
                 master.Mover.Stop();
                 master.transform.position = World.GridMap.CellToWorld(c);
                 return master;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Clears loose monsters of a species that have no nest. Units spawned by these tests are
+        /// homeless, and pack membership is "same species, same home" — so any other stray of that
+        /// species counts as a pack mate and can be rallied to instead of the ones we placed.
+        /// </summary>
+        static void ClearHomelessOf(string speciesId)
+        {
+            foreach (var u in UnitRegistry.All.ToList())
+                if (u is Monster m && m.IsAlive && m.Home == null && m.Def.id == speciesId) m.Perish();
+        }
+
+        /// <summary>No nest close enough for its residents to wander into the test.</summary>
+        static bool ClearOfTerritories(Vector2 at, float margin)
+        {
+            foreach (var n in Services.Get<EcosystemManager>().Nests)
+            {
+                if (n.IsEmpty) continue;
+                if (Vector2.Distance(n.WorldPosition, at) < n.TerritoryRadius + margin) return false;
+            }
+            return true;
         }
 
         static Monster SpawnMonster(string speciesId, Vector2 at, bool meleeOnly = false)
@@ -663,18 +688,26 @@ namespace GuildMaster.Tests
             {
                 var master = MasterOnOpenGround();
                 Assume.That(master, Is.Not.Null, "open ground on this map");
+                ClearHomelessOf("goblin_warrior");
                 var lone = SpawnMonster("goblin_warrior", master.Position + new Vector2(1.5f, 0f));
+                // Beyond the 6-cell "already together" radius, but inside the ground MasterOnOpenGround
+                // guarantees walkable (+-8): at 12 the walk back could not be pathed and the warrior
+                // dropped straight out of the fall-back, with a 20s cooldown before it would try again.
                 var mates = new[]
                 {
-                    SpawnMonster("goblin_warrior", master.Position + new Vector2(0f, 12f)),
-                    SpawnMonster("goblin_warrior", master.Position + new Vector2(1f, 12.5f)),
+                    SpawnMonster("goblin_warrior", master.Position + new Vector2(0f, 7f)),
+                    SpawnMonster("goblin_warrior", master.Position + new Vector2(1f, 7.5f)),
                 };
                 typeof(Unit).GetProperty(nameof(Unit.Hp)).SetValue(lone, lone.Stats.MaxHp * 0.3f);
                 lone.ForceTarget(master);
                 bool regrouped = false;
                 yield return WaitFor(() => (regrouped |= lone.StateLabel == "재집결") && mates.Any(m => m.CurrentTarget == master), 15f);
                 Assert.That(regrouped, Is.True, "the hurt warrior fell back");
-                Assert.That(mates.Any(m => m.CurrentTarget == master), Is.True, "a pack mate came back with it for the enemy");
+                string diag = $"lone state={lone.StateLabel} hp={lone.HpRatio:P0} " +
+                              $"distToMates={mates.Select(m => Vector2.Distance(lone.Position, m.Position)).Min():0.0} | " +
+                              string.Join(" | ", mates.Select(m => $"mate state={m.StateLabel} hp={m.HpRatio:P0} target={m.CurrentTarget?.DisplayName ?? "-"} " +
+                                                                  $"distToLone={Vector2.Distance(lone.Position, m.Position):0.0}"));
+                Assert.That(mates.Any(m => m.CurrentTarget == master), Is.True, "a pack mate came back with it for the enemy. " + diag);
             }
             finally { Unit.GuildInvulnerable = false; }
         }
@@ -687,8 +720,15 @@ namespace GuildMaster.Tests
             data.cls = AdventurerClass.Priest;
             var patient = Roster.Members.First(a => a.IsAlive);
             var other = Roster.Members.First(a => a.IsAlive && a != patient);
+            // Stand them on open ground: heals need line of sight, and where members happen to idle
+            // in town can put a building between them (this broke once when nests moved, P5-1).
+            var master = MasterOnOpenGround();
+            Assume.That(master, Is.Not.Null, "open ground on this map");
+            patient.Mover.Stop();
+            patient.transform.position = (Vector3)master.Position;
             var priest = Roster.Recruit(data, patient.Position + new Vector2(1f, 0f));
             // Out of the mass heal's reach (4) but within a single heal's (6): the priest must choose.
+            other.Mover.Stop();
             other.transform.position = (Vector3)(patient.Position + new Vector2(0f, 5f));
             yield return WaitFor(() => priest.Skills.All(s => s.IsReady), 3f); // skills start staggered
             patient.ReceiveDamage(patient.Hp - patient.Stats.MaxHp * 0.2f, null, false);  // 20%

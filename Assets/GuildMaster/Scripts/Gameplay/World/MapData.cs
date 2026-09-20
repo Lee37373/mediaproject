@@ -22,6 +22,8 @@ namespace GuildMaster.World
     {
         public Vector2Int Cell;
         public Biome Biome;
+        /// <summary>Walk distance from the town centre in cells; species are placed by it (P5-1).</summary>
+        public int DistanceFromTown;
     }
 
     /// <summary>Pure data result of map generation (no Unity objects).</summary>

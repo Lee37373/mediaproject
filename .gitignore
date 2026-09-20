@@ -97,3 +97,6 @@ InitTestScene*.unity*
 # Claude Code files stay local (user request 2026-09-19)
 /CLAUDE.md
 /.claude/
+
+# Balance measurement runs (P5-1): local CSV output only
+/BalanceLogs/

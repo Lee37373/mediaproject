@@ -143,6 +143,18 @@ namespace GuildMaster.Ecosystem
 #endif
         }
 
+        /// <summary>
+        /// Marks this nest as already known (P5-1): the town knows what lives on its doorstep, so a
+        /// new guild has something to post on day one instead of a day of walking into fog.
+        /// </summary>
+        public void RevealAtStart()
+        {
+            if (Discovered) return;
+            Discovered = true;
+            if (_renderer != null) _renderer.enabled = true;
+            EventBus.Publish(new NestDiscoveredEvent { Nest = this });
+        }
+
         void Update()
         {
             if (Discovered) return;

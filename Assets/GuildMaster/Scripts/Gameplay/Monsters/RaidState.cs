@@ -20,6 +20,13 @@ namespace GuildMaster.Monsters
         const float TownHallWeight = 0.6f;
         const float RepathSeconds = 1f;
 
+        /// <summary>
+        /// Share of a raider's attack that a building takes (P5-1, <see cref="Session.GameBalance"/>).
+        /// Stone takes hits far better than flesh; without this a dozen raiders flattened the town
+        /// hall in seconds and nobody could walk back in time to defend it.
+        /// </summary>
+        public static float BuildingDamageMul { get; set; } = 0.4f;
+
         Building _target;
         Vector2 _spot;
         float _repath;
@@ -51,7 +58,7 @@ namespace GuildMaster.Monsters
                 if (Time.time >= m.NextAttackTime)
                 {
                     m.NextAttackTime = Time.time + m.Stats.AttackCooldown;
-                    _target.Damage(m.Stats.Attack);
+                    _target.Damage(m.Stats.Attack * BuildingDamageMul);
                     m.Visual.Flash();
                 }
                 return;

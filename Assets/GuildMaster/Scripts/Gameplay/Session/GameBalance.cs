@@ -18,8 +18,12 @@ namespace GuildMaster.Session
         public int mapWidth = 128;
         public int mapHeight = 128;
         public int townHalfSize = 11;
-        public int nestCount = 14;
-        public int minNestDistanceFromTown = 24;
+        public int nestCount = 16;
+        /// <summary>
+        /// P5-1: was 24, which left no nest inside the first day's walk. Species are placed by
+        /// distance now, so the closest ring is the weakest one and it should be findable early.
+        /// </summary>
+        public int minNestDistanceFromTown = 16;
 
         [Header("Fog of War")]
         public float fogTickInterval = 0.1f;
@@ -39,8 +43,10 @@ namespace GuildMaster.Session
         [Header("Economy")]
         public int startingGold = 300;
         public int startingExp = 120;
-        public float expPerHour = 8f;
-        public int dailyTax = 60;
+        public float expPerHour = 5f; // P5-1: EXP piled up unused while gold ran dry
+        // P5-1: quest rewards leave the treasury and sit in the members' own purses, so the only
+        // steady inflow is the tax; at 60 the guild was broke from day 3 on.
+        public int dailyTax = 90;
         public int startingPotions = 6;
         [Range(0.3f, 2f)] public float lootBuyRate = 1f;
         [Range(1f, 2f)] public float goodsSellRate = 1.2f;
@@ -51,14 +57,23 @@ namespace GuildMaster.Session
 
         [Header("Raids (P3-6): swollen nests raid the town")]
         /// <summary>Hourly raid chance per danger level of a nest (level = steps above its threshold).</summary>
-        [Range(0f, 0.2f)] public float raidChancePerLevelPerHour = 0.01f;
-        /// <summary>Share of the nest that marches on the town (the rest stays home).</summary>
-        [Range(0.1f, 1f)] public float raidSendFraction = 0.7f;
+        [Range(0f, 0.2f)] public float raidChancePerLevelPerHour = 0.02f; // P5-1: was 0.01, first raid landed on day 7
+        /// <summary>Share of the nest that marches on the town (the rest stays home). P5-1: was 0.7.</summary>
+        [Range(0.1f, 1f)] public float raidSendFraction = 0.5f;
         public int raidMinParty = 3;
         /// <summary>Game hours after which surviving raiders give up and go home.</summary>
         public int raidMaxHours = 10;
         /// <summary>Guild members within this many cells of the town rush to defend.</summary>
-        public float raidDefendRadius = 45f;
+        public float raidDefendRadius = 80f;
+        /// <summary>
+        /// Share of a monster's attack that lands on a building (P5-1). Walls are not people: without
+        /// this a dozen raiders flattened the town hall before anyone could walk back.
+        /// </summary>
+        [Range(0.05f, 1f)] public float monsterBuildingDamageMul = 0.4f;
+
+        [Header("Ecosystem (P5-1)")]
+        /// <summary>Days a wiped-out species stays gone before settling again (0 = extinction is final).</summary>
+        public int speciesReturnDays = 3;
 
         public static GameBalance Load()
         {

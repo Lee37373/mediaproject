@@ -100,7 +100,7 @@ namespace GuildMaster.Session
 
             // --- Town ---
             var town = AddSystem<TownService>();
-            town.Init(world, mapRenderer);
+            town.Init(world, mapRenderer, db); // P5-1: level-1 durability comes from the building data
             Services.Register(town);
 
             // Player-placed buildings (P4-13): the watchtower and what comes after it.
@@ -132,6 +132,7 @@ namespace GuildMaster.Session
 
             var eco = AddSystem<EcosystemManager>();
             Services.Register(eco);
+            eco.SpeciesReturnDays = Balance.speciesReturnDays; // P5-1: extinction is not permanent
             eco.Init(db, map, GameRandom.Shared);
             // Territorial clashes: lopsided fights rout the weaker side (P4-18).
             var territory = AddSystem<TerritoryService>();
@@ -208,6 +209,7 @@ namespace GuildMaster.Session
             Services.Register(new GameOverService(clock));
 
             // --- Raids (P3-6) ---
+            Monsters.RaidState.BuildingDamageMul = Balance.monsterBuildingDamageMul; // P5-1
             var waves = AddSystem<WaveManager>();
             waves.Init(new RaidSettings
             {

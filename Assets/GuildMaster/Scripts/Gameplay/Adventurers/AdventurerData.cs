@@ -46,7 +46,11 @@ namespace GuildMaster.Adventurers
         public Color hairColor;
         public Color skinColor;
 
-        public int ExpToNextLevel => 60 + level * 40;
+        /// <summary>
+        /// P5-1: the first level-up should land inside day 1. The old curve (60 + level*40) needed
+        /// 100 EXP for Lv2, which at the old kill values took roughly three days of quests.
+        /// </summary>
+        public int ExpToNextLevel => 30 + level * 25;
 
         public int LootCount
         {
