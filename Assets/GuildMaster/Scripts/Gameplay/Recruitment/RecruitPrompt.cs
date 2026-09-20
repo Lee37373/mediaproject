@@ -42,6 +42,11 @@ namespace GuildMaster.Recruitment
             sb.Append($"현재 길드 마스터에 대한 호감도는 {affinity}/100이다.\n");
             sb.Append("규칙:\n");
             sb.Append("- 성격과 가치관대로, 대화 상대에게 하듯 자연스러운 한국어로 짧게 대답한다(reply).\n");
+            // The 4B model's two habits: echoing the question back at itself ("나는 내 의뢰금을
+            // 얼마나 원할까...") and forgetting it is the outsider (user report 2026-09-20).
+            sb.Append("- 길드 마스터가 바로 앞에서 한 말에 대답한다. 그 말을 그대로 따라 쓰거나 질문을 되묻지 않는다.\n");
+            sb.Append("- 질문을 받으면 네 생각·조건·사정을 직접 말한다. 혼잣말로 되뇌지 않는다.\n");
+            sb.Append("- 너는 아직 이 길드의 길드원이 아니라 영입 제안을 받는 쪽이다. 네가 길드 마스터인 것처럼 말하지 않는다.\n");
             sb.Append($"- 길드 마스터의 말이 네 가치관이나 성격에 맞으면 affinity_delta를 올리고, 무례하거나 안 맞으면 내린다(-{MaxDelta}~{MaxDelta}).\n");
             sb.Append("- 아직 결정하지 않았으면 decision은 undecided, 길드에 들어가고 싶으면 join, 확실히 싫으면 refuse다.\n");
             sb.Append("- 길드 마스터가 정식으로 영입을 제안하면 호감도에 따라 join 또는 refuse로 분명히 답하고, reply도 그 결정과 일치해야 한다.\n");
@@ -76,6 +81,14 @@ namespace GuildMaster.Recruitment
             for (int i = start; i < turns.Count; i++)
                 sb.Append(turns[i].FromPlayer ? "길드 마스터: " : $"{visitorName}: ").Append(turns[i].Text).Append('\n');
             if (proposal) sb.Append("(길드 마스터가 정식으로 영입을 제안했다. join 또는 refuse로 답한다.)\n");
+            // Pointing at the line to answer: with the bare transcript the model often replied to an
+            // older turn, or repeated the question to itself (user report 2026-09-20).
+            for (int i = turns.Count - 1; i >= 0; i--)
+            {
+                if (!turns[i].FromPlayer) continue;
+                sb.Append($"({visitorName}이(가) 대답할 말은 바로 위 \"{turns[i].Text}\"이다.)\n");
+                break;
+            }
             sb.Append($"{visitorName}의 대답:");
             return sb.ToString();
         }
@@ -104,7 +117,8 @@ namespace GuildMaster.Recruitment
             User = BuildUser(turns, v.Data.name, proposal),
             Grammar = proposal ? ProposalGrammar : Grammar,
             MaxTokens = 400,
-            Temperature = 0.8f,
+            // Lowered from 0.8 (2026-09-20): at 0.8 the 4B model drifted off the player's line.
+            Temperature = 0.65f,
             Priority = LlmPriority.Dialogue,
             DedupeKey = "recruit:" + v.Data.id,
             TimeoutSeconds = 40f,

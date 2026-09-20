@@ -776,5 +776,38 @@ namespace GuildMaster.Tests
             EventBus.Unsubscribe(onRetreat);
             Assert.That(retreated, Is.True, "fighting on the way home, it retreats instead of fighting to the death");
         }
+
+        [UnityTest]
+        public IEnumerator LuredIntoAnotherPacksTerritory_TheIntruderFightsInsteadOfTurningBack()
+        {
+            // A monster the player drags into a nest is alone against the whole pack, so the rout
+            // rule used to send it home within half a second and luring never started a brawl
+            // (user report 2026-09-20).
+            yield return Boot();
+            var nest = Services.Get<EcosystemManager>().Nests.First(n => n.Population >= 2);
+            var resident = nest.Members.First(m => m.IsAlive);
+            var intruderSpecies = Services.Get<EcosystemManager>().Species.First(s => s != nest.Species);
+            var intruder = SpawnMonster(intruderSpecies.id, nest.WorldPosition + Vector2.up * (nest.TerritoryRadius * 0.6f));
+            Assert.That(intruder, Is.Not.Null);
+            Assert.That(nest.InTerritory(intruder.Position), Is.True, "the lure ends inside the territory");
+
+            // What a lure looks like on arrival: already swinging at something.
+            intruder.ForceTarget(resident);
+            float startHp = intruder.Hp;
+            yield return WaitFor(() => intruder.DebugState == "도주" || intruder.Hp < startHp || !intruder.IsAlive, 8f);
+
+            Assert.That(intruder.DebugState, Is.Not.EqualTo("도주"), "a fight in progress is not called off by the rout rule");
+            Assert.That(!intruder.IsAlive || intruder.Hp < startHp || intruder.CurrentTarget != null,
+                Is.True, "the residents and the intruder actually trade blows");
+        }
+
+        [UnityTest]
+        public IEnumerator AtTheStart_TheGuildKnowsNoNest()
+        {
+            // P5-1 handed over the two nearest nests; removed on 2026-09-20 (user decision) because
+            // an orange minimap dot on unwalked ground breaks the information rule.
+            yield return Boot();
+            Assert.That(Services.Get<GuildIntel>().KnownNests.Any(), Is.False, "every nest has to be found by looking at it");
+        }
     }
 }

@@ -41,7 +41,12 @@ namespace GuildMaster.Session
         public float playerMoveSpeed = 4.5f;
 
         [Header("Economy")]
-        public int startingGold = 300;
+        /// <summary>
+        /// 2026-09-20 (user decision): 300 ran out in two or three days of posting quests. Reward
+        /// gold leaves the treasury for the members' purses and only trickles back through potion
+        /// and gear sales, so the guild needs a float to work with before that loop spins up.
+        /// </summary>
+        public int startingGold = 800;
         public int startingExp = 120;
         public float expPerHour = 5f; // P5-1: EXP piled up unused while gold ran dry
         // P5-1: quest rewards leave the treasury and sit in the members' own purses, so the only

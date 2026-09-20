@@ -41,22 +41,9 @@ namespace GuildMaster.Ecosystem
         /// <summary>Days a wiped-out species stays away before it settles again (0 = never).</summary>
         public int SpeciesReturnDays { get; set; } = 3;
 
-        /// <summary>
-        /// Nests the town already knows about at the start (P5-1). Species are placed by distance,
-        /// so the nearest ones are the weakest — this is the guild's first quest, not a spoiler.
-        /// </summary>
-        public const int StartingKnownNests = 2;
-
-        /// <summary>Marks the closest nests as discovered so day one has something to hunt.</summary>
-        void RevealNearestNests(MapData map, int count)
-        {
-            if (count <= 0) return;
-            foreach (var nest in _nests
-                         .Where(n => !n.IsEmpty)
-                         .OrderBy(n => (n.Cell - map.TownCenter).sqrMagnitude)
-                         .Take(count))
-                nest.RevealAtStart();
-        }
+        // P5-1 handed the guild its two nearest nests so day one was not pure fog. Removed on
+        // 2026-09-20 (user decision): an orange minimap dot on ground nobody had walked broke the
+        // information rule. Every nest is found by looking at it now.
 
         public IReadOnlyList<Nest> Nests => _nests;
         public IEnumerable<MonsterDefinition> Species => _db.monsters;
@@ -81,8 +68,6 @@ namespace GuildMaster.Ecosystem
                 _nests.Add(nest);
                 for (int k = 0; k < assignment[i].initialPopulation; k++) Spawn(nest);
             }
-
-            RevealNearestNests(map, StartingKnownNests);
 
             EventBus.Subscribe<HourPassedEvent>(OnHourPassed);
             EventBus.Subscribe<DayPassedEvent>(OnDayPassed);

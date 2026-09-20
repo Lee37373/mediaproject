@@ -15,7 +15,12 @@ namespace GuildMaster.Units
     {
         /// <summary>Draw every unit, not just the selected one (toggled by F4 in editor/dev builds).</summary>
         public static bool ShowAll;
-        /// <summary>Unit picked in the game's inspector; drawn in full like a hierarchy selection.</summary>
+        /// <summary>
+        /// Unit picked in the game's inspector. Only drawn while <see cref="ShowAll"/> is on:
+        /// clicking a unit is ordinary play, not debugging, and it used to paint sight and range
+        /// circles over the game whenever the Game view's Gizmos button happened to be on
+        /// (user report 2026-09-20).
+        /// </summary>
         public static Unit Focus;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -35,7 +40,7 @@ namespace GuildMaster.Units
         public static void Draw(Unit u, bool selected)
         {
 #if UNITY_EDITOR
-            selected |= u == Focus;
+            selected |= ShowAll && u == Focus;
             if (u == null || !u.IsAlive || (!selected && !ShowAll) || !Application.isPlaying) return;
             var p = u.Position;
             var guild = u.Faction == Faction.Guild;

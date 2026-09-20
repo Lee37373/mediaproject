@@ -28,20 +28,26 @@ namespace GuildMaster.Session
             if (Application.isEditor && kb.f4Key.wasPressedThisFrame)
             {
                 Units.UnitGizmos.ShowAll = !Units.UnitGizmos.ShowAll;
-                // The drawing is gizmo-based: switch the Game view's Gizmos toggle on with it.
-                if (Units.UnitGizmos.ShowAll) EnableGameViewGizmos();
+                // The drawing is gizmo-based: the Game view's Gizmos toggle follows F4 both ways.
+                // Leaving it on turned every inspector click into a sight/range overlay long after
+                // debug mode was off (user report 2026-09-20).
+                SetGameViewGizmos(Units.UnitGizmos.ShowAll);
                 Debug.Log($"[Debug] 유닛 기즈모 전체 표시: {(Units.UnitGizmos.ShowAll ? "켬" : "끔")}");
             }
         }
 
-        /// <summary>Editor only: turns on the Gizmos toggle of every Game view (internal API, via reflection).</summary>
-        static void EnableGameViewGizmos()
+        /// <summary>Editor only: drives the Gizmos toggle of every Game view (internal API, via reflection).</summary>
+        static void SetGameViewGizmos(bool on)
         {
 #if UNITY_EDITOR
             var type = typeof(UnityEditor.EditorWindow).Assembly.GetType("UnityEditor.GameView");
             var prop = type?.GetProperty("drawGizmos", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (prop == null || !prop.CanWrite) { Debug.Log("[Debug] Game 뷰 상단의 Gizmos 버튼을 켜야 기즈모가 보입니다."); return; }
-            foreach (var view in Resources.FindObjectsOfTypeAll(type)) prop.SetValue(view, true);
+            if (prop == null || !prop.CanWrite)
+            {
+                if (on) Debug.Log("[Debug] Game 뷰 상단의 Gizmos 버튼을 켜야 기즈모가 보입니다.");
+                return;
+            }
+            foreach (var view in Resources.FindObjectsOfTypeAll(type)) prop.SetValue(view, on);
 #endif
         }
 

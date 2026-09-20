@@ -25,6 +25,19 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void AFightAlreadyUnderway_IsNeverCalledOff()
+        {
+            // A monster lured into a nest is alone against the whole pack, so the plain rule always
+            // sends it home; mid-fight it has to stay and take it (user report 2026-09-20).
+            float residents = 100f * TerritoryService.RoutRatio;
+            Assert.AreEqual(1, TerritoryService.Outcome(residents, 100f, alreadyFighting: false));
+            Assert.AreEqual(0, TerritoryService.Outcome(residents, 100f, alreadyFighting: true));
+            // Same for the residents' side of a lopsided encounter.
+            Assert.AreEqual(-1, TerritoryService.Outcome(100f, residents, alreadyFighting: false));
+            Assert.AreEqual(0, TerritoryService.Outcome(100f, residents, alreadyFighting: true));
+        }
+
+        [Test]
         public void Lure_WaypointMustBeAheadOfThePursuer_AndWorthTheDetour()
         {
             var self = new Vector2(0f, 0f);
