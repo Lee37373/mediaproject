@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-20
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-30**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-31**).
 
 ## 사용 규칙
 
@@ -26,7 +26,8 @@
 | P4-29 | 사제 직업(치유·광역 치유, 치유 AI, 개구리 스킨, 출현 15%) | 이재혁 | 완료 | Adventurers/AdventurerData·Adventurer, Units/Skills·Unit, UI/World/FloatingTextLayer | 47b6896 |
 | P4-22 | 관측된 몬스터 장비 정보(GuildIntel 기록·둥지 위험도·LLM threat_notes) | 이재혁 | 완료 | Ecosystem/GuildIntel, Quests/QuestBoard, Adventurers/Prompts/DecisionPrompt, UI/Views/EcologyView·InspectorView·QuestBoardView, Session/DebugCommands | 5fe074e |
 | P4-23 | 안개 속 마지막 목격 표시(시야에서 사라진 적을 회색 정지 모습으로) | 이재혁 | 완료 | Fog/FogGhostService·FogGhost(신규)·FogComponents, Monsters/Monster, Items/GroundItem, Ecosystem/Nest, UI/Views/MinimapView·InspectorView, Session/GameBootstrap·DebugCommands | 9704a34 |
-| P4-13 | 건물 배치와 감시탑 | 미정 | 예정 | Town, World | |
+| P4-13 | 건물 배치와 감시탑(배치 시스템·감시탑·철거·시야 교체) | 이재혁 | 완료 | Town/ConstructionService·ConstructionRules(신규)·TownService·Building, Data/BuildingDefinition·DefaultContent, UI/Views/BuildView(신규)·BuildingView·UIRoot, Visuals/CartoonArt, Session/GameBalance·GameBootstrap·DebugCommands | 7ea3d7e |
+| P4-30 | 감시탑 주둔(길드원 인원 배치) | 미정 | 보류 | Adventurers, Town | |
 | P4-19 | 스킬 기반 유인(은신·순간이동) | 미정 | 예정 | Units/Skills, Ecosystem/TerritoryTactics | |
 | P5-1 | 밸런스 | 미정 | 예정 | Data/DefaultContent, GameBalance | |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
@@ -63,7 +64,7 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-15 ~ P4-18, P4-20 ~ P4-29 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-18, P4-20 ~ P4-29 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
 - **진행 중**:
