@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-20
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-37**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-38**).
 
 ## 사용 규칙
 
@@ -36,6 +36,7 @@
 | P4-19 | 스킬 기반 유인(은신·순간이동) | 이재혁 | 완료 | Units/Skills·Unit·Combat, Ecosystem/TerritoryTactics, Adventurers/AdventurerStates·SkillCatalog, Visuals/CharacterVisual | 71dc597 |
 | P5-1 | 밸런스 | 이재혁 | 완료 | Data/DefaultContent·MonsterDefinition, Session/GameBalance·BalanceProbe·BalanceAutoPlayer(신규), Ecosystem/EcosystemManager·EcologyWarning(신규)·GuildIntel·Nest, World/MapData·MapGenerator, Town/TownService, Monsters/RaidState, UI/Views | 2750a2e |
 | P4-36 | 사용자 보고 5건: 유인해도 안 싸움, 디버그 아닌데 범위 표시, 안 가본 둥지 미니맵 표시, 골드 부족, 영입 대화 문맥 | 이재혁 | 완료 | Ecosystem/TerritoryService·EcosystemManager·GuildIntel·Nest, Session/GameHotkeys·GameBalance, Units/UnitGizmos, Recruitment/RecruitPrompt·RuleBasedRecruiter | 201312e |
+| P4-37 | 의뢰가 없을 때 자율 사냥(파티 단위 밴드, 무리 추정, 길드 공유 정보, 생태계 제동) + 몬스터 젠율 상향 | 이재혁 | 완료 | Adventurers/FreeHunt·FreeHuntState·HuntBandService(신규)·PartyTactics·Decisions·LlmDecisionMaker·Prompts/DecisionPrompt, Data/DefaultContent, Ecosystem/EcosystemManager, Session/GameBootstrap | 37b5f32 |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
@@ -70,7 +71,7 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-36, P5-1 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-37, P5-1 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
 - **진행 중**:
