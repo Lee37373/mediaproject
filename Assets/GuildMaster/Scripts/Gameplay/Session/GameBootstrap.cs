@@ -169,6 +169,10 @@ namespace GuildMaster.Session
             var partyTactics = AddSystem<PartyTactics>();
             partyTactics.Init(pool);
             Services.Register(partyTactics);
+            // Learning on level-up (P4-34): the model picks from what the class can still learn.
+            var skillChoice = AddSystem<SkillChoiceService>();
+            skillChoice.Init(llm);
+            Services.Register(skillChoice);
             // Idle small talk in town (LLM only when the gateway is idle).
             var banter = AddSystem<BanterService>();
             banter.Init(llm, roster, world);

@@ -83,6 +83,17 @@ namespace GuildMaster.UI
             return (RectTransform)go.transform;
         }
 
+        /// <summary>A stretched sprite image (skill icons, badges). Never a raycast target.</summary>
+        public static Image SpriteImage(Transform parent, string name, Sprite sprite, Color color)
+        {
+            var rt = Rect(parent, name).Stretch();
+            var img = rt.gameObject.AddComponent<Image>();
+            img.sprite = sprite;
+            img.color = color;
+            img.raycastTarget = false;
+            return img;
+        }
+
         public static Image Panel(Transform parent, string name, Color color, bool raycast = true)
         {
             var rt = Rect(parent, name);

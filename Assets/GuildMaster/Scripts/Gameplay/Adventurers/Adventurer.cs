@@ -163,7 +163,11 @@ namespace GuildMaster.Adventurers
             UnitId = data.id;
             DisplayName = data.name;
             Radius = 0.3f;
-            SkillFactory.Assign(this, ClassSkills(data.cls));
+            if (data.skillIds == null || data.skillIds.Count == 0)
+            {
+                data.skillIds = new System.Collections.Generic.List<string>(ClassSkills(data.cls));
+            }
+            SkillFactory.Assign(this, data.skillIds);
             Traits = TraitSet.FromIds(data.traitIds, Services.TryGet<GameDatabase>(out var db) ? db : null);
             RecalculateStats(fullHeal: true);
             // Imported Cute Adventurers skin when available, generated pixel art otherwise.
@@ -185,6 +189,23 @@ namespace GuildMaster.Adventurers
             AdventurerClass.Priest => new[] { "massheal", "heal" },
             _ => new[] { "blink", "fireball" },
         };
+
+        /// <summary>
+        /// Learns a skill (P4-34), giving up <paramref name="forgetId"/> when the cap is reached.
+        /// Returns false when there is nothing to learn or no room and nothing named to drop.
+        /// </summary>
+        public bool LearnSkill(string learnId, string forgetId)
+        {
+            if (string.IsNullOrEmpty(learnId) || SkillFactory.Create(learnId) == null) return false;
+            if (Data.skillIds.Contains(learnId)) return false;
+            if (Data.skillIds.Count >= SkillCatalog.MaxSkills)
+            {
+                if (string.IsNullOrEmpty(forgetId) || !Data.skillIds.Remove(forgetId)) return false;
+            }
+            Data.skillIds.Add(learnId);
+            SkillFactory.Assign(this, Data.skillIds);
+            return true;
+        }
 
         public override void ForceTarget(Unit target)
         {

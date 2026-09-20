@@ -28,6 +28,8 @@ namespace GuildMaster.Adventurers
         public string mbti;
         public string values;
         public List<string> traitIds = new();
+        /// <summary>Skills known right now (P4-34); starts as the class skills, at most SkillCatalog.MaxSkills.</summary>
+        public List<string> skillIds = new();
         public List<MemoryEntry> memories = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>
         public List<RelationEntry> relations = new();

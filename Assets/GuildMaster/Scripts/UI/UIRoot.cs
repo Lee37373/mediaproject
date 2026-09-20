@@ -54,6 +54,9 @@ namespace GuildMaster.UI
             nameTags.Build(UIBuilder.Rect(WorldLayer, "NameTags").Stretch());
             var bubbles = WorldLayer.gameObject.AddComponent<SpeechBubbleLayer>();
             bubbles.Build(UIBuilder.Rect(WorldLayer, "Bubbles").Stretch());
+            // Skill icons with their cooldowns, above the health bar (P4-34).
+            var skillBars = WorldLayer.gameObject.AddComponent<SkillBarLayer>();
+            skillBars.Build(UIBuilder.Rect(WorldLayer, "SkillBars").Stretch());
             Services.Register(floating);
             Services.Register(bubbles);
 
