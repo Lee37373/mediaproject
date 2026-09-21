@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-21
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-40**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-41**).
 
 ## 사용 규칙
 
@@ -39,6 +39,7 @@
 | P4-37 | 의뢰가 없을 때 자율 사냥(파티 단위 밴드, 무리 추정, 길드 공유 정보, 생태계 제동) + 몬스터 젠율 상향 | 이재혁 | 완료 | Adventurers/FreeHunt·FreeHuntState·HuntBandService(신규)·PartyTactics·Decisions·LlmDecisionMaker·Prompts/DecisionPrompt, Data/DefaultContent, Ecosystem/EcosystemManager, Session/GameBootstrap | 37b5f32 |
 | P4-38 | 전투 밸런스 재조정: 방어 비율 공식, 자율 사냥 판단을 실제 스탯 기반 전투 추정으로·전력에 따라 넓어지는 반경, 파티 결속(리더 기준 줄·기다리기·함께 귀가), 시작 4인·방문 간격·모집 공고 | 이재혁 | 완료 | Units/Combat·Skills, Adventurers/FreeHunt·FreeHuntState·HuntBandService·PartyTactics·Adventurer·AdventurerStates·AdventurerGenerator, Recruitment/VisitorService, UI/Views/RosterView, Session/GameBalance·GameBootstrap | f0e6f14 |
 | P4-39 | 성문: 길드는 자유 출입, 몬스터는 성문을 부숴야 진입(성벽은 못 부숨, 쫓던 몬스터도 부숨), 성문 공격 시 침공 경보, 골드로 수리 | 이재혁 | 완료 | World/GridMap·Pathfinder·PathFollower·WorldService, Town/TownGate·GateService(신규)·WaveManager, Monsters/MonsterGateBreakState(신규)·Monster·MonsterStates·RaidState, Units/Unit·CrowdSimulation·Skills, Visuals/CartoonArt, UI/Views/InspectorView, Session/GameBootstrap·GameBalance·GameLog | 0c03114 |
+| P4-40 | 사용자 보고: 레벨업 느림(파티 EXP 공유)·초반 교전 부족(사냥터 선택·모집 대기)·약한 몬스터 증식 상향·침공대(벽 너머 사격·성문 앞 몰림·우회)·침공 뒤 전리품 안 줍기 | 이재혁 | 진행 중 | Adventurers/Adventurer·FreeHuntState·HuntBandService·DefendState·AdventurerStates·TownGuardState, Monsters/RaidState·MonsterGateBreakState, Town/GateService, Data/DefaultContent | |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
