@@ -77,7 +77,7 @@ namespace GuildMaster.UI
             WindowLayer = UIBuilder.Rect(HudLayer, "Windows").Stretch();
 
             var menu = UIBuilder.Rect(HudLayer, "SideMenu");
-            menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, 300));
+            menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, 410));
             UIBuilder.VLayout(menu, 6, 0);
 
             AddWindow<QuestBoardView>(menu, "의뢰 게시판 (Q)", Key.Q, new Vector2(1180, 680));
@@ -85,17 +85,33 @@ namespace GuildMaster.UI
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             AddWindow<MerchantView>(menu, "행상인 (T)", Key.T, new Vector2(760, 600));
+            // Daily accounts: income, spending and events per game day (F-3).
+            AddWindow<DailyReportView>(menu, "정산 (B)", Key.B, new Vector2(960, 760));
+            // The wall of the fallen: relics to fetch, memorials (F-6).
+            AddWindow<MemorialView>(menu, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
+            // Notification list (F-1); the side-menu button shows the unread count (kept up to date by ToastLayer).
+            var notificationView = AddWindow<NotificationView>(null, null, Key.N, new Vector2(820, 560));
+            var notificationButton = UIBuilder.Button(menu, "알림 (N)", () => Focus(notificationView), -1, 40);
             // Debug-only: LLM request/response viewer (no side-menu button).
             if (Debug.isDebugBuild) AddWindow<LlmDebugView>(null, null, Key.F2, new Vector2(1180, 680));
             // Opened from the inspector ("영입 대화"), no menu button or hotkey.
             AddWindow<RecruitDialogView>(null, null, Key.None, new Vector2(980, 600));
+            // Opened from the quest board ("설득") once a quest has stayed untaken (P4-24).
+            AddWindow<PersuadeDialogView>(null, null, Key.None, new Vector2(1040, 700));
             AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 380));
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
             // Opened from the inspector and roster [상세] buttons (P4-6).
             AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 700));
+            AddWindow<MemberCareView>(null, null, Key.None, new Vector2(640, 700));
+            // Ready-made quests to choose from (F-8); opened from the quest board and the proposal notification.
+            AddWindow<QuestProposalView>(null, null, Key.None, new Vector2(920, 640));
 
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);
+            // Toasts for new notifications on the right edge, above the windows (F-1).
+            var toasts = HudLayer.gameObject.AddComponent<ToastLayer>();
+            toasts.MenuButton = notificationButton;
+            toasts.Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
             // Menus (P4-10): pause (ESC) and title over the world, settings above both.
             _pause = HudLayer.gameObject.AddComponent<PauseMenuView>();

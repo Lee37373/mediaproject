@@ -58,6 +58,11 @@ namespace GuildMaster.UI
                 if (!detail.TryGetComponent<LayoutElement>(out var le)) le = detail.gameObject.AddComponent<LayoutElement>();
                 le.ignoreLayout = true;
                 ((RectTransform)detail.transform).Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-10, -8), new Vector2(72, 28));
+                // Care window (F-2): interview, leave, bonus, dismissal.
+                var care = UIBuilder.Button(bg.transform, "관리", row.OpenCare, 72, 28, UITheme.Header, 14);
+                if (!care.TryGetComponent<LayoutElement>(out var careLe)) careLe = care.gameObject.AddComponent<LayoutElement>();
+                careLe.ignoreLayout = true;
+                ((RectTransform)care.transform).Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-10, -42), new Vector2(72, 28));
                 return row;
             }
 
@@ -70,13 +75,30 @@ namespace GuildMaster.UI
                 _main.text = $"{d.name} {InspectorView.GradeTag(d.grade)}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
                              $"<color=#{hpColor}>HP {a.Hp:0}/{a.Stats.MaxHp:0}</color>  {UIBuilder.Colored(a.StateLabel, UITheme.Accent)}";
                 string quest = a.CurrentQuest != null ? $" · 의뢰 {a.CurrentQuest.Title}" : "";
+                var level = Welfare.StressRules.LevelOf(d.stress);
+                string stress = level == Welfare.StressLevel.Calm ? $"{d.stress:0}"
+                    : UIBuilder.Colored($"{d.stress:0}({Welfare.StressRules.Label(level)})", MemberCareView.LevelColor(level));
+                if (Services.TryGet<Welfare.GuildWelfare>(out var welfare))
+                {
+                    var care = welfare.Care(a);
+                    if (care.Demand != Welfare.CareDemand.None)
+                        stress += UIBuilder.Colored($" [{Welfare.CareRules.Label(care.Demand)} 요구]", UITheme.Warn);
+                    else if (welfare.IsOnLeave(a)) stress += UIBuilder.Colored(" [휴가]", UITheme.Exp);
+                }
+                if (Services.TryGet<Legacy.GuildLegacy>(out var legacy) && legacy.IsWounded(a))
+                    stress += UIBuilder.Colored(" [중상]", UITheme.Bad);
                 _traits.text = "특성: " + Traits.TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad);
-                _sub.text = $"골드 {d.gold} · EXP {d.exp}/{d.ExpToNextLevel} · 피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 물약 {d.potions} · 전리품 {d.LootCount} · 처치 {d.kills} · 완료 {d.questsCompleted}{quest}";
+                _sub.text = $"골드 {d.gold} · EXP {d.exp}/{d.ExpToNextLevel} · 피로 {d.fatigue:0} · 스트레스 {stress} · 물약 {d.potions} · 전리품 {d.LootCount} · 처치 {d.kills} · 완료 {d.questsCompleted}{quest}";
             }
 
             void OpenDetail()
             {
                 if (_adv != null && Services.TryGet<AdventurerDetailView>(out var view)) view.Show(_adv);
+            }
+
+            void OpenCare()
+            {
+                if (_adv != null && Services.TryGet<MemberCareView>(out var view)) view.Show(_adv);
             }
 
             void Focus()

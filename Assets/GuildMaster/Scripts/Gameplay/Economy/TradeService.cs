@@ -60,7 +60,7 @@ namespace GuildMaster.Economy
                 int affordable = Mathf.Min(stack.count, _treasury.Gold / price);
                 if (affordable <= 0) continue;
                 int total = affordable * price;
-                if (!_treasury.TrySpendGold(total)) continue;
+                if (!_treasury.TrySpendGold(total, GoldReason.Loot)) continue;
                 seller.Gold += total;
                 _treasury.AddStock(item.id, affordable);
                 paid += total;
@@ -81,7 +81,7 @@ namespace GuildMaster.Economy
             if (buyer.Gold < total || _treasury.GetStock(itemId) < count) return false;
             _treasury.TryRemoveStock(itemId, count);
             buyer.Gold -= total;
-            _treasury.AddGold(total);
+            _treasury.AddGold(total, GoldReason.Goods);
             EventBus.Publish(new TradeEvent { TraderName = buyer.TraderName, ItemId = itemId, Count = count, Gold = total, GuildBought = false });
             return true;
         }

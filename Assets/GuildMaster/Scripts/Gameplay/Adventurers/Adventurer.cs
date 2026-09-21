@@ -16,7 +16,8 @@ namespace GuildMaster.Adventurers
     public struct AdventurerLevelUpEvent { public Adventurer Adventurer; public int Level; }
     /// <summary>Retreat because of low HP (not fatigue). Threat = last unit that hit us, if any.</summary>
     public struct AdventurerRetreatedEvent { public Adventurer Adventurer; public Unit Threat; }
-    public struct AdventurerSpeechEvent { public Adventurer Adventurer; public string Text; }
+    /// <summary>NoFeed: the line already appears in a dialogue window, so the bottom-left feed skips it (the speech bubble still shows).</summary>
+    public struct AdventurerSpeechEvent { public Adventurer Adventurer; public string Text; public bool NoFeed; }
     public struct AdventurerStateChangedEvent { public Adventurer Adventurer; public string Label; }
 
     /// <summary>
@@ -63,10 +64,16 @@ namespace GuildMaster.Adventurers
         internal VisitorLeaveState VisitorLeaveState;
         internal LureState LureState;
         internal TownGuardState TownGuardState;
+        /// <summary>Sent out to bring a fallen comrade's relics home (F-6).</summary>
+        internal Legacy.RelicRetrievalState RetrievalState;
         /// <summary>Picking loot off the ground (P4-21).</summary>
         internal AdventurerLooting Looting;
         /// <summary>Quest for which the heroic drive hunt was already tried (once per quest).</summary>
         internal Quests.Quest DroveForQuest;
+        /// <summary>What this member dropped on the ground when they died (F-6: tracked as relics by GuildLegacy).</summary>
+        public IReadOnlyList<Items.GroundItem> DeathDrops { get; private set; }
+        /// <summary>Until this time (Time.time) nothing can hurt the member: a few seconds after a last stand (F-6).</summary>
+        float _graceUntil;
 
         float _senseTimer;
         bool _dodging;
@@ -120,6 +127,7 @@ namespace GuildMaster.Adventurers
             VisitorLeaveState = new VisitorLeaveState();
             LureState = new LureState();
             TownGuardState = new TownGuardState();
+            RetrievalState = new Legacy.RelicRetrievalState();
             Looting = new AdventurerLooting(this);
         }
 
@@ -325,7 +333,8 @@ namespace GuildMaster.Adventurers
         const float RepeatWindowHours = 6f;
         readonly List<(string key, float hour)> _recentLines = new();
 
-        public void Say(string text)
+        /// <param name="toFeed">False for lines that belong to a dialogue window (recruitment): only the speech bubble shows them, not the bottom-left feed.</param>
+        public void Say(string text, bool toFeed = true)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
             float now = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : Time.time / 60f;
@@ -334,7 +343,7 @@ namespace GuildMaster.Adventurers
             if (_recentLines.Exists(l => l.key == key)) return;
             _recentLines.Add((key, now));
             if (_recentLines.Count > 8) _recentLines.RemoveAt(0);
-            EventBus.Publish(new AdventurerSpeechEvent { Adventurer = this, Text = text });
+            EventBus.Publish(new AdventurerSpeechEvent { Adventurer = this, Text = text, NoFeed = !toFeed });
         }
 
         /// <summary>Letters/digits only, so "좀 쉬어야겠어..." and "좀 쉬어야겠어!" count as the same line.</summary>
@@ -351,7 +360,24 @@ namespace GuildMaster.Adventurers
 
         protected override void OnDamaged(float amount, Unit source)
         {
+            // Just after a last stand (F-6): a few seconds in which nothing can finish the member off, so they can get away.
+            if (Time.time < _graceUntil)
+            {
+                Hp = Mathf.Min(Stats.MaxHp, Hp + amount);
+                return;
+            }
             Data.stress = Mathf.Min(100f, Data.stress + amount * 0.3f);
+            // F-6: a lethal blow may leave a guild member alive at 1 HP; they are then wounded and flee (see GuildLegacy.TryLastStand).
+            if (Hp <= 0f && IsGuildMember && !IsVisitor && Services.TryGet<Legacy.GuildLegacy>(out var legacy) && legacy.TryLastStand(this, source))
+            {
+                Hp = 1f;
+                _graceUntil = Time.time + Legacy.LegacyRules.GraceSeconds;
+                Engage.Clear();
+                Looting.Cancel();
+                ApplySpeedBuff(1.4f, Legacy.LegacyRules.GraceSeconds + 2f);
+                ReturnState.Retreating = true;
+                ChangeState(ReturnState);
+            }
         }
 
         protected override void OnDeath(Unit killer)
@@ -360,7 +386,7 @@ namespace GuildMaster.Adventurers
             // P4-21 (Q-B): the fallen drop their guild gear and whatever loot they carried.
             var drops = new List<ItemStack>(Data.loot);
             if (Data.gearTier > 0) drops.Add(new ItemStack(GearShopping.GearItemId(Data.gearTier), 1));
-            if (drops.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, drops);
+            if (drops.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) DeathDrops = ground.Drop(Position, drops);
             Data.loot.Clear();
             Fsm.ChangeState(DeadState);
             if (Services.TryGet<GuildRoster>(out var roster)) roster.NotifyDeath(this, killer);

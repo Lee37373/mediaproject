@@ -61,7 +61,7 @@ namespace GuildMaster.Town
             error = CannotUpgradeReason(b);
             if (error != null) return false;
             var next = Definition(b).Level(b.Level + 1);
-            if (!_treasury.TrySpendGold(next.goldCost)) { error = "골드가 부족합니다."; return false; }
+            if (!_treasury.TrySpendGold(next.goldCost, GoldReason.Upgrade)) { error = "골드가 부족합니다."; return false; }
             foreach (var c in next.itemCosts) _treasury.TryRemoveStock(c.itemId, c.count);
             b.SetLevel(b.Level + 1);
             Apply(b, next);

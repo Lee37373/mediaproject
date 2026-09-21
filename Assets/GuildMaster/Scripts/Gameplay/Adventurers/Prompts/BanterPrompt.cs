@@ -23,6 +23,7 @@ namespace GuildMaster.Adventurers.Prompts
             "각 대사는 자연스러운 한국어 구어체 한두 문장으로 짧게 쓴다. 영어를 섞지 않는다.\n" +
             "feeling_to_other는 상대에 대한 현재 감정이다(친함/호감/보통/껄끄러움/적대). 말투에 반영한다: 친하면 편하고 다정하게, 껄끄러우면 퉁명스럽거나 비꼬게.\n" +
             "a_to_b와 b_to_a는 이 대화 뒤 감정의 변화다(-5~5). 대화가 즐겁거나 공감되면 +, 서운하거나 성격이 부딪치면 -, 별일 없으면 0 근처. " +
+            "형식 예: {\"a\":\"(a의 대사)\",\"b\":\"(b의 대사)\",\"a_to_b\":1,\"b_to_a\":0} — a와 b에는 반드시 말로 된 대사만 쓰고 숫자나 설명은 쓰지 않는다. 숫자는 a_to_b, b_to_a에만 쓴다. " +
             "반드시 JSON 한 개로만 답한다.";
 
         [Serializable]
@@ -114,8 +115,8 @@ namespace GuildMaster.Adventurers.Prompts
         /// <summary>Both lines cleaned to whole sentences; false if either is empty (→ fixed pair).</summary>
         public static bool TryInterpret(ResponseDto dto, out string lineA, out string lineB, string nameA = null, string nameB = null)
         {
-            lineA = StripOwnName(LlmJson.CleanSentence(dto?.a, LineMaxChars, LineMaxChars, true), nameA);
-            lineB = StripOwnName(LlmJson.CleanSentence(dto?.b, LineMaxChars, LineMaxChars, true), nameB);
+            lineA = StripOwnName(StripLeadingMarks(LlmJson.CleanSentence(dto?.a, LineMaxChars, LineMaxChars, true)), nameA);
+            lineB = StripOwnName(StripLeadingMarks(LlmJson.CleanSentence(dto?.b, LineMaxChars, LineMaxChars, true)), nameB);
             return !string.IsNullOrEmpty(lineA) && !string.IsNullOrEmpty(lineB);
         }
 
@@ -123,6 +124,26 @@ namespace GuildMaster.Adventurers.Prompts
 
         /// <summary>Model's feeling change clamped to ±MaxDelta (the grammar allows one digit).</summary>
         public static int ClampDelta(int d) => Math.Max(-MaxDelta, Math.Min(MaxDelta, d));
+
+        static readonly System.Text.RegularExpressions.Regex LeadingMark =
+            new(@"^\s*[\(（][^\)）]{0,20}[\)）]\s*");
+
+        /// <summary>
+        /// Small models sometimes open a line with a score ("(0) ...") or a stage direction
+        /// ("(고개를 끄덕이며) ..."); drop such a leading parenthesis (keeps the line if nothing else is left).
+        /// </summary>
+        public static string StripLeadingMarks(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return line;
+            string cur = line;
+            for (int i = 0; i < 2; i++)
+            {
+                string next = LeadingMark.Replace(cur, "");
+                if (next.Length == 0) return cur;
+                cur = next;
+            }
+            return cur;
+        }
 
         static readonly string[] VocativeSuffixes = { "아", "야", "이", "" };
 

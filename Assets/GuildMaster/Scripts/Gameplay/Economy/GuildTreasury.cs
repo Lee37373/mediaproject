@@ -8,6 +8,29 @@ namespace GuildMaster.Economy
     public struct InventoryChangedEvent { public string ItemId; public int Count; }
 
     /// <summary>
+    /// One movement of gold (positive = in, negative = out) and what it was for, so the daily report (F-3)
+    /// can tell income and spending apart. Reason null = the quest board's escrow and refunds.
+    /// </summary>
+    public struct GoldFlowEvent { public int Amount; public string Reason; }
+
+    /// <summary>Reasons passed to <see cref="GuildTreasury"/> when gold moves.</summary>
+    public static class GoldReason
+    {
+        public const string Tax = "tax";
+        public const string Goods = "goods";
+        public const string Loot = "loot";
+        public const string Merchant = "merchant";
+        public const string Craft = "craft";
+        public const string Upgrade = "upgrade";
+        /// <summary>A bonus paid to a guild member (F-2).</summary>
+        public const string Bonus = "bonus";
+        /// <summary>A memorial for a fallen member (F-6).</summary>
+        public const string Memorial = "memorial";
+        /// <summary>Treating a badly wounded member (F-6).</summary>
+        public const string Medical = "medical";
+    }
+
+    /// <summary>
     /// The player's guild funds: gold, the hourly EXP pool used for quest rewards,
     /// and the stockpile of materials/goods. All mutations publish change events.
     /// </summary>
@@ -46,23 +69,25 @@ namespace GuildMaster.Economy
 
         void OnDay(DayPassedEvent e)
         {
-            if (DailyTax > 0) AddGold(DailyTax);
+            if (DailyTax > 0) AddGold(DailyTax, GoldReason.Tax);
         }
 
         public bool CanAfford(int gold, int exp = 0) => Gold >= gold && Exp >= exp;
 
-        public void AddGold(int amount)
+        public void AddGold(int amount, string reason = null)
         {
             if (amount == 0) return;
             Gold += amount;
             Notify();
+            EventBus.Publish(new GoldFlowEvent { Amount = amount, Reason = reason });
         }
 
-        public bool TrySpendGold(int amount)
+        public bool TrySpendGold(int amount, string reason = null)
         {
             if (amount < 0 || Gold < amount) return false;
             Gold -= amount;
             Notify();
+            if (amount > 0) EventBus.Publish(new GoldFlowEvent { Amount = -amount, Reason = reason });
             return true;
         }
 
@@ -73,12 +98,13 @@ namespace GuildMaster.Economy
             Notify();
         }
 
-        public bool TrySpend(int gold, int exp)
+        public bool TrySpend(int gold, int exp, string reason = null)
         {
             if (gold < 0 || exp < 0 || !CanAfford(gold, exp)) return false;
             Gold -= gold;
             Exp -= exp;
             Notify();
+            if (gold > 0) EventBus.Publish(new GoldFlowEvent { Amount = -gold, Reason = reason });
             return true;
         }
 
