@@ -38,7 +38,7 @@
 | P4-36 | 사용자 보고 5건: 유인해도 안 싸움, 디버그 아닌데 범위 표시, 안 가본 둥지 미니맵 표시, 골드 부족, 영입 대화 문맥 | 이재혁 | 완료 | Ecosystem/TerritoryService·EcosystemManager·GuildIntel·Nest, Session/GameHotkeys·GameBalance, Units/UnitGizmos, Recruitment/RecruitPrompt·RuleBasedRecruiter | 201312e |
 | P4-37 | 의뢰가 없을 때 자율 사냥(파티 단위 밴드, 무리 추정, 길드 공유 정보, 생태계 제동) + 몬스터 젠율 상향 | 이재혁 | 완료 | Adventurers/FreeHunt·FreeHuntState·HuntBandService(신규)·PartyTactics·Decisions·LlmDecisionMaker·Prompts/DecisionPrompt, Data/DefaultContent, Ecosystem/EcosystemManager, Session/GameBootstrap | 37b5f32 |
 | P4-38 | 전투 밸런스 재조정: 방어 비율 공식, 자율 사냥 판단을 실제 스탯 기반 전투 추정으로·전력에 따라 넓어지는 반경, 파티 결속(리더 기준 줄·기다리기·함께 귀가), 시작 4인·방문 간격·모집 공고 | 이재혁 | 완료 | Units/Combat·Skills, Adventurers/FreeHunt·FreeHuntState·HuntBandService·PartyTactics·Adventurer·AdventurerStates·AdventurerGenerator, Recruitment/VisitorService, UI/Views/RosterView, Session/GameBalance·GameBootstrap | f0e6f14 |
-| P4-39 | 성문: 길드는 자유 출입, 몬스터는 성문을 부숴야 진입(성벽은 못 부숨), 골드로 수리 | 이재혁 | 진행 중 | World/GridMap·Pathfinder·PathFollower, Town(성문), Monsters, UI/Views | |
+| P4-39 | 성문: 길드는 자유 출입, 몬스터는 성문을 부숴야 진입(성벽은 못 부숨, 쫓던 몬스터도 부숨), 성문 공격 시 침공 경보, 골드로 수리 | 이재혁 | 완료 | World/GridMap·Pathfinder·PathFollower·WorldService, Town/TownGate·GateService(신규)·WaveManager, Monsters/MonsterGateBreakState(신규)·Monster·MonsterStates·RaidState, Units/Unit·CrowdSimulation·Skills, Visuals/CartoonArt, UI/Views/InspectorView, Session/GameBootstrap·GameBalance·GameLog | 0c03114 |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
@@ -73,7 +73,7 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-37, P5-1 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-39, P5-1 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
 - **진행 중**:
