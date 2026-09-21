@@ -64,8 +64,12 @@ namespace GuildMaster.Session
         [Header("Raids (P3-6): swollen nests raid the town")]
         /// <summary>Hourly raid chance per danger level of a nest (level = steps above its threshold).</summary>
         [Range(0f, 0.2f)] public float raidChancePerLevelPerHour = 0.02f; // P5-1: was 0.01, first raid landed on day 7
-        /// <summary>Share of the nest that marches on the town (the rest stays home). P5-1: was 0.7.</summary>
-        [Range(0.1f, 1f)] public float raidSendFraction = 0.5f;
+        /// <summary>
+        /// Share of the nest that marches on the town (the rest stays home). P5-1 lowered it from 0.7
+        /// to 0.5; back to 0.7 on 2026-09-21 (P4-40, user decision: "not the whole group comes").
+        /// Gates (P4-39) and the gate alarm give the defence time the town did not have in P5-1.
+        /// </summary>
+        [Range(0.1f, 1f)] public float raidSendFraction = 0.7f;
         public int raidMinParty = 3;
         /// <summary>Game hours after which surviving raiders give up and go home.</summary>
         public int raidMaxHours = 10;
