@@ -32,6 +32,7 @@ namespace GuildMaster.UI
         Button _recruitButton;
         Button _dialogueButton;
         Button _detailButton;
+        Button _repairButton;
         object _selected;
         float _timer;
         const float DoubleClickSeconds = 0.35f;
@@ -52,6 +53,10 @@ namespace GuildMaster.UI
             _recruitButton = UIBuilder.Button(_panel, "영입 대화", OnRecruitClicked, 120, 30, UITheme.Header, 15);
             _recruitButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(120, 30));
             _recruitButton.gameObject.SetActive(false);
+            // Gate repair (P4-39), in the recruit button's corner: the two never show together.
+            _repairButton = UIBuilder.Button(_panel, "수리", OnRepairClicked, 150, 30, UITheme.Header, 15);
+            _repairButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(150, 30));
+            _repairButton.gameObject.SetActive(false);
             _dialogueButton = UIBuilder.Button(_panel, "대화 기록", OnDialogueClicked, 100, 30, null, 15);
             _dialogueButton.gameObject.SetActive(false);
             _detailButton = UIBuilder.Button(_panel, "상세", OnDetailClicked, 80, 30, UITheme.Header, 15);
@@ -172,6 +177,7 @@ namespace GuildMaster.UI
             _dialogueButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(visitor ? -136 : -8, 8), new Vector2(100, 30));
             _detailButton.gameObject.SetActive(_selected is Adventurer);
             _detailButton.GetComponent<RectTransform>().Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(visitor ? -244 : -116, 8), new Vector2(80, 30));
+            RefreshRepairButton();
             _followButton.gameObject.SetActive(_selected is Unit);
             _followButton.SetLabel(IsFollowingSelected ? "추적 해제" : "추적 (F)");
         }
@@ -197,6 +203,7 @@ namespace GuildMaster.UI
             var nest = eco.Nests.Where(n => n.Discovered && Vector2.Distance(n.WorldPosition, p) < 1.2f)
                 .OrderBy(n => Vector2.Distance(n.WorldPosition, p)).FirstOrDefault();
             if (nest != null) return nest;
+            if (Services.TryGet<GateService>(out var gates) && gates.GateAt(p) is TownGate gate) return gate;
             var cell = World.GridMap.WorldToCell(p);
             return Services.Get<TownService>().Buildings.FirstOrDefault(b => b.Footprint.Contains(cell));
         }
@@ -210,6 +217,7 @@ namespace GuildMaster.UI
                 case Unit u: pos = u.Position + new Vector2(0, -0.28f); if (u is Monster m) scale = m.Def.scale; break;
                 case Nest n: pos = n.WorldPosition; scale = 1.4f; break;
                 case FogGhost g: pos = g.Position + new Vector2(0, -0.28f); break;
+                case TownGate gate: pos = gate.Center; scale = 2.4f; break;
                 default: _ring.gameObject.SetActive(false); return;
             }
             _ring.gameObject.SetActive(true);
@@ -225,6 +233,7 @@ namespace GuildMaster.UI
                 case Monster m: ShowMonster(m); break;
                 case Nest n: ShowNest(n); break;
                 case Building b: ShowBuilding(b); break;
+                case TownGate g: ShowGate(g); break;
                 case Merchant m: ShowMerchant(m); break;
                 case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
@@ -350,6 +359,39 @@ namespace GuildMaster.UI
             string line = intel.DescribeGear(gear);
             if (GuildIntel.RaisesDanger(gear)) line += " · 위험 +1";
             return UIBuilder.Colored(line, gear.HasCrown ? UITheme.Accent : UITheme.Warn) + "\n";
+        }
+
+        /// <summary>A town gate (P4-39): its state and what a repair would cost.</summary>
+        void ShowGate(TownGate g)
+        {
+            var gates = Services.Get<GateService>();
+            string state = g.IsBroken
+                ? UIBuilder.Colored("부서짐 — 몬스터가 드나들 수 있습니다", UITheme.Bad)
+                : g.Hp < g.MaxHp ? UIBuilder.Colored("손상됨", UITheme.Warn) : UIBuilder.Colored("온전함", UITheme.Good);
+            _title.text = $"{g.DisplayName}  {Muted("성문")}";
+            _body.text = $"내구도 {g.Hp:0}/{g.MaxHp:0} · {state}\n" +
+                         Muted("길드원과 손님은 자유롭게 드나들고, 몬스터는 성문을 부숴야 들어옵니다. 성벽은 부서지지 않습니다.") + "\n" +
+                         Muted($"수리비: 손상 1당 {gates.RepairGoldPerHp:0.#}G");
+            RefreshRepairButton();
+        }
+
+        void RefreshRepairButton()
+        {
+            var gate = _selected as TownGate;
+            _repairButton.gameObject.SetActive(gate != null);
+            if (gate == null || !Services.TryGet<GateService>(out var gates)) return;
+            var reason = gates.CannotRepairReason(gate);
+            _repairButton.interactable = reason == null;
+            _repairButton.SetLabel(reason == null ? $"수리 ({gates.RepairCost(gate)}G)"
+                : reason == "손상이 없습니다" ? "수리 필요 없음"
+                : reason == "골드가 부족합니다" ? $"골드 부족 ({gates.RepairCost(gate)}G)" : "적이 가까이 있음");
+        }
+
+        void OnRepairClicked()
+        {
+            if (_selected is TownGate gate && Services.TryGet<GateService>(out var gates)) gates.TryRepair(gate);
+            RefreshText();
+            RefreshRepairButton();
         }
 
         void ShowBuilding(Building b)

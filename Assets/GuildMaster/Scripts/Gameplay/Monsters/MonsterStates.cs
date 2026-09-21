@@ -116,6 +116,9 @@ namespace GuildMaster.Monsters
 
             if (m.Engage.Tick(dt) == EngageStatus.Lost)
             {
+                // Chased someone back behind the walls (P4-39, user decision): the gate is what is
+                // in the way, so break it.
+                if (target != null && target.IsAlive && m.Engage.IsIgnoring(target) && m.TryBreakGateToward(target.Position, false)) return;
                 // Look for another target before giving up.
                 var next = m.FindTarget();
                 if (next != null) m.Engage.SetTarget(next);

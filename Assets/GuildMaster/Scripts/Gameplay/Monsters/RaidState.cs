@@ -71,7 +71,12 @@ namespace GuildMaster.Monsters
             if (world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(edge), 3, out var cell))
             {
                 _spot = GridMap.CellToWorld(cell);
-                if (!m.Mover.SetDestination(_spot, 0.4f)) _target = null; // unreachable: try another
+                if (!m.Mover.SetDestination(_spot, 0.4f))
+                {
+                    // Behind a standing gate (P4-39): break it first, then come back to the building.
+                    if (m.TryBreakGateToward(_spot, true)) return;
+                    _target = null; // unreachable: try another
+                }
             }
         }
 

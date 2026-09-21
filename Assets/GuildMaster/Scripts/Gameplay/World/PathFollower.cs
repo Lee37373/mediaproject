@@ -29,6 +29,8 @@ namespace GuildMaster.World
         public Vector2 Destination => _destination;
         public Vector2 Velocity { get; private set; }
         public bool FacingLeft { get; private set; }
+        /// <summary>Whether intact town gates open for this walker (P4-39): false for monsters.</summary>
+        public bool PassesGates { get; set; } = true;
 
         public event Action Arrived;
         public event Action PathFailed;
@@ -70,7 +72,7 @@ namespace GuildMaster.World
             _waypoints.Clear();
             _index = 0;
             Vector2 from = transform.position;
-            if (!World.FindPath(from, _destination, _cells)) return false;
+            if (!World.FindPath(from, _destination, _cells, PassesGates)) return false;
 
             for (int i = 1; i < _cells.Count; i++) _waypoints.Add(GridMap.CellToWorld(_cells[i]));
             // End exactly at the requested point if it is inside the last cell.
@@ -91,7 +93,7 @@ namespace GuildMaster.World
             if (_gridVersion != World.Grid.Version)
             {
                 _gridVersion = World.Grid.Version;
-                if (_index < _waypoints.Count && !World.Grid.IsWalkable(GridMap.WorldToCell(_waypoints[_index])))
+                if (_index < _waypoints.Count && !World.Grid.IsWalkable(GridMap.WorldToCell(_waypoints[_index]), PassesGates))
                 {
                     if (!BuildPath()) { Stop(); PathFailed?.Invoke(); return; }
                 }

@@ -209,6 +209,61 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.1f));
         }
 
+        /// <summary>
+        /// A town gate spanning <paramref name="cells"/> cells (P4-39): a wooden double door seen
+        /// from the front when it runs along x (north/south gates), a plank strip seen from above
+        /// when it runs along y (east/west). Broken, it is a few splintered stumps.
+        /// </summary>
+        public static Sprite GateDoor(bool alongX, int cells, bool broken)
+        {
+            string key = $"c_gate_{(alongX ? "x" : "y")}{cells}{(broken ? "_broken" : "")}";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var wood = Hex(0x9A6436);
+            var woodDark = Hex(0x6B4224);
+            var woodInk = Hex(0x3E2512);
+            var iron = Hex(0x5A6068);
+            int len = cells * PixelsPerUnit;
+            int w = alongX ? len : 30, h = alongX ? 40 : len;
+            var c = new Canvas(w, h);
+            if (broken)
+            {
+                // Splintered stumps along the sill.
+                int stumps = cells * 2;
+                for (int i = 0; i < stumps; i++)
+                {
+                    float t = (i + 0.5f) / stumps * len;
+                    float tall = 6f + (i * 7 % 5) * 2f;
+                    if (alongX) c.Shape(RoundRect(t - 5f, 1f, t + 5f, 1f + tall, 1.5f), woodDark, woodInk, 2f);
+                    else c.Shape(RoundRect(4f, t - 5f, 26f, t + 5f, 1.5f), woodDark, woodInk, 2f);
+                }
+                return c.ToSprite(key, new Vector2(0.5f, alongX ? 0f : 0.5f));
+            }
+            if (alongX)
+            {
+                // Two leaves, vertical planks, iron bands and a ring on each.
+                float mid = len * 0.5f;
+                foreach (var (x0, x1) in new[] { (2f, mid - 1f), (mid + 1f, len - 2f) })
+                {
+                    var leaf = RoundRect(x0, 1f, x1, h - 2f, 3f);
+                    c.Shape(leaf, wood, woodInk, 2.5f);
+                    for (float px = x0 + 8f; px < x1 - 3f; px += 8f)
+                        c.ShapeClipped(RoundRect(px, 0f, px + 1.5f, h, 0f), (x, y) => leaf(x, y) + 2.5f, woodDark);
+                    foreach (float by in new[] { 9f, h - 11f })
+                        c.ShapeClipped(RoundRect(x0, by, x1, by + 4f, 0f), (x, y) => leaf(x, y) + 2.5f, iron);
+                }
+                c.Shape(Circle(mid - 5f, h * 0.5f, 2.2f), Hex(0xC9A24A), woodInk, 1f);
+                c.Shape(Circle(mid + 5f, h * 0.5f, 2.2f), Hex(0xC9A24A), woodInk, 1f);
+                return c.ToSprite(key, new Vector2(0.5f, 0f));
+            }
+            var strip = RoundRect(3f, 2f, w - 3f, h - 2f, 3f);
+            c.Shape(strip, wood, woodInk, 2.5f);
+            for (float py = 10f; py < h - 4f; py += 9f)
+                c.ShapeClipped(RoundRect(0f, py, w, py + 1.5f, 0f), (x, y) => strip(x, y) + 2.5f, woodDark);
+            foreach (float bx in new[] { 8f, w - 12f })
+                c.ShapeClipped(RoundRect(bx, 0f, bx + 4f, h, 0f), (x, y) => strip(x, y) + 2.5f, iron);
+            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+        }
+
         // ---------------- Buildings ----------------
 
         public static Sprite Building(Town.BuildingType type, int tilesW, int tilesH)

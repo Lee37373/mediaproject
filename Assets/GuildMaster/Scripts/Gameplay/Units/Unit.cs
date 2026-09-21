@@ -126,6 +126,9 @@ namespace GuildMaster.Units
             _knockUntil = Time.time + duration;
         }
 
+        /// <summary>Whether intact town gates open for this unit (P4-39): monsters must break them.</summary>
+        public bool PassesGates => Mover == null || Mover.PassesGates;
+
         /// <summary>Forces this unit to attack a specific target (taunts, pack calls). Override per AI.</summary>
         public virtual void ForceTarget(Unit target) { }
 
@@ -135,7 +138,7 @@ namespace GuildMaster.Units
             if (Time.time < _knockUntil)
             {
                 var next = Position + _knockVelocity * dt;
-                if (Core.Services.TryGet<WorldService>(out var world) && world.Grid.IsWalkable(GridMap.WorldToCell(next)))
+                if (Core.Services.TryGet<WorldService>(out var world) && world.Grid.IsWalkable(GridMap.WorldToCell(next), PassesGates))
                     transform.position = new Vector3(next.x, next.y, transform.position.z);
             }
             foreach (var s in Skills) s.Tick(this, dt);

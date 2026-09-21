@@ -76,12 +76,26 @@ namespace GuildMaster.Town
             _world = world;
             EventBus.Subscribe<HourPassedEvent>(OnHour);
             EventBus.Subscribe<IntrudersRoutedEvent>(OnRouted);
+            EventBus.Subscribe<GateDamagedEvent>(OnGateDamaged);
         }
 
         void OnDestroy()
         {
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
             EventBus.Unsubscribe<IntrudersRoutedEvent>(OnRouted);
+            EventBus.Unsubscribe<GateDamagedEvent>(OnGateDamaged);
+        }
+
+        /// <summary>
+        /// Raiders battering a gate (P4-39) are heard even where nobody can see them: the gate is
+        /// outside every sight line from the plaza, and the first measured raid broke it and was
+        /// half through the town hall before anyone came.
+        /// </summary>
+        void OnGateDamaged(GateDamagedEvent e)
+        {
+            if (e.Attacker is not Monster m) return;
+            foreach (var raid in _raids)
+                if (!raid.Sighted && raid.Members.Contains(m)) Sight(raid, m);
         }
 
         /// <summary>A raid ran into a much stronger nest on the way (P4-18): it turns back home.</summary>
@@ -196,13 +210,18 @@ namespace GuildMaster.Town
             {
                 if (raid.Sighted) continue;
                 var seen = raid.Members.FirstOrDefault(m => m != null && m.IsAlive && fog.IsVisibleRaw(m.Position));
-                if (seen == null) continue;
-                raid.Sighted = true;
-                _seenRaiders.AddRange(raid.Members.Where(m => m != null && m.IsAlive));
-                RallyPoint = RallyInside(seen.Position);
-                EventBus.Publish(new RaidSightedEvent { RaidId = raid.Id, Direction = DirectionFromTown(seen.Position), Position = seen.Position });
-                if (Services.TryGet<CameraController>(out var cam)) cam.Shake(0.7f);
+                if (seen != null) Sight(raid, seen);
             }
+        }
+
+        /// <summary>Raises the alarm for a raid: the defenders rally at the gate nearest to <paramref name="seen"/>.</summary>
+        void Sight(Raid raid, Monster seen)
+        {
+            raid.Sighted = true;
+            _seenRaiders.AddRange(raid.Members.Where(m => m != null && m.IsAlive));
+            RallyPoint = RallyInside(seen.Position);
+            EventBus.Publish(new RaidSightedEvent { RaidId = raid.Id, Direction = DirectionFromTown(seen.Position), Position = seen.Position });
+            if (Services.TryGet<CameraController>(out var cam)) cam.Shake(0.7f);
         }
 
         /// <summary>동/서/남/북 of the town centre (dominant axis).</summary>

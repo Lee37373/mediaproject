@@ -43,6 +43,7 @@ namespace GuildMaster.Monsters
         internal RaidState RaidState;
         internal MonsterPickupState PickupState;
         internal MonsterRegroupState RegroupState;
+        internal MonsterGateBreakState GateBreakState;
         /// <summary>Earliest time the next fall-back-and-regroup may start (skilled+ monsters, P4-28).</summary>
         internal float NextRegroupTime;
 
@@ -68,7 +69,10 @@ namespace GuildMaster.Monsters
             RaidState = new RaidState();
             PickupState = new MonsterPickupState();
             RegroupState = new MonsterRegroupState();
+            GateBreakState = new MonsterGateBreakState();
             Engage.ApproachSpot = EncircleSpot;
+            // Town gates stay shut to monsters until broken (P4-39).
+            if (Mover) Mover.PassesGates = false;
         }
 
         public static GameObject CreatePooledInstance()
@@ -162,6 +166,23 @@ namespace GuildMaster.Monsters
 
         /// <summary>Best target by <see cref="TargetSelector"/> (tier-dependent), or null.</summary>
         public Unit FindTarget() => TargetSelector.Pick(this, Stats.SightRadius, IsTargetCandidate, Engage);
+
+        /// <summary>
+        /// What we want is on the other side of the town wall and no path leads there (P4-39): go
+        /// and break the nearest standing gate. Callers try the path first, so a gate that is
+        /// already broken is simply walked through. Raiders keep at it (<paramref name="untilBroken"/>),
+        /// chasers give up after a while.
+        /// </summary>
+        internal bool TryBreakGateToward(Vector2 goal, bool untilBroken)
+        {
+            if (!Services.TryGet<Town.GateService>(out var gates) || !Services.TryGet<World.WorldService>(out var world)) return false;
+            if (world.Grid.IsInTown(Position) == world.Grid.IsInTown(goal)) return false;
+            var gate = gates.NearestStanding(Position);
+            if (gate == null) return false;
+            GateBreakState.Begin(gate, untilBroken);
+            Fsm.ChangeState(GateBreakState);
+            return true;
+        }
 
         public override void ForceTarget(Unit target)
         {

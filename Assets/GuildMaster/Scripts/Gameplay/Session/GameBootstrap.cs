@@ -102,6 +102,10 @@ namespace GuildMaster.Session
             var town = AddSystem<TownService>();
             town.Init(world, mapRenderer, db); // P5-1: level-1 durability comes from the building data
             Services.Register(town);
+            // Gates (P4-39): open for the guild, shut to monsters until broken.
+            var gates = AddSystem<GateService>();
+            gates.Init(world, treasury, Balance.gateMaxHp, Balance.gateRepairGoldPerHp);
+            Services.Register(gates);
 
             // Player-placed buildings (P4-13): the watchtower and what comes after it.
             var construction = AddSystem<ConstructionService>();

@@ -151,6 +151,56 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator Gate_ShutsAChaserOut_ItBreaksTheGate_AndRepairCostsGold()
+        {
+            // P4-39, user request 2026-09-21: the guild comes and goes, monsters must break a gate.
+            yield return Boot();
+            var gates = Services.Get<Town.GateService>();
+            var grid = Services.Get<World.WorldService>().Grid;
+            var gate = gates.Gates[0];
+            Assert.That(gates.Gates.Count, Is.EqualTo(4));
+            Assert.That(grid.TownSealed, Is.True, "every gate stands at the start");
+
+            var member = Roster.Members.First(a => a.IsAlive);
+            member.Mover.Stop();
+            member.transform.position = gate.InsidePoint - (Vector2)gate.Outward * 2f;
+            ClearHomelessOf("goblin");
+            var goblin = SpawnMonster("goblin", gate.OutsidePoint + (Vector2)gate.Outward * 2f, meleeOnly: true);
+            goblin.ForceTarget(member);
+
+            bool slippedIn = false;
+            float until = Time.time + 6f;
+            while (Time.time < until && gate.Hp >= gate.MaxHp)
+            {
+                if (grid.IsInTown(goblin.Position) && !grid.IsClosedGate(World.GridMap.WorldToCell(goblin.Position))) slippedIn = true;
+                yield return null;
+            }
+            Assert.That(slippedIn, Is.False, "the goblin never got past the standing gate");
+            Assert.That(gate.Hp, Is.LessThan(gate.MaxHp), "it went for the gate instead");
+            Assert.That(goblin.StateLabel, Is.EqualTo("성문 공격"));
+
+            // Near its end: the goblin's next blows break it and the way in opens.
+            gate.Damage(gate.Hp - 1f);
+            yield return WaitFor(() => gate.IsBroken, 5f);
+            Assert.That(gate.IsBroken, Is.True);
+            Assert.That(grid.TownSealed, Is.False);
+            Assert.That(grid.IsWalkable(gate.CenterCell, passesGates: false), Is.True, "a broken gate lets monsters through");
+
+            // Repairs wait until the attacker is gone, then cost gold.
+            Assert.That(gates.CannotRepairReason(gate), Is.Not.Null, "not with a goblin in the gateway");
+            goblin.Perish();
+            yield return null;
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            int gold = treasury.Gold, cost = gates.RepairCost(gate);
+            Assert.That(cost, Is.GreaterThan(0));
+            Assert.That(gates.TryRepair(gate), Is.True, gates.CannotRepairReason(gate));
+            Assert.That(treasury.Gold, Is.EqualTo(gold - cost));
+            Assert.That(gate.IsBroken, Is.False);
+            Assert.That(grid.TownSealed, Is.True);
+            Assert.That(grid.IsWalkable(gate.CenterCell, passesGates: false), Is.False);
+        }
+
+        [UnityTest]
         public IEnumerator Title_HoldsTheClock_UntilNewGame()
         {
             yield return Boot(showTitle: true);

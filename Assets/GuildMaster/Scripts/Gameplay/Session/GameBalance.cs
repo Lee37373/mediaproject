@@ -77,6 +77,15 @@ namespace GuildMaster.Session
         /// </summary>
         [Range(0.05f, 1f)] public float monsterBuildingDamageMul = 0.4f;
 
+        [Header("Gates (P4-39)")]
+        /// <summary>
+        /// Durability of each town gate. Raiders hit it at the building rate above, so five goblins
+        /// need about half a minute (three game hours) — time for the guild to come back and defend.
+        /// </summary>
+        public float gateMaxHp = 300f;
+        /// <summary>Gold per point of damage to repair a gate (a broken one: 150G at 300 HP).</summary>
+        public float gateRepairGoldPerHp = 0.5f;
+
         [Header("Ecosystem (P5-1)")]
         /// <summary>Days a wiped-out species stays gone before settling again (0 = extinction is final).</summary>
         public int speciesReturnDays = 3;

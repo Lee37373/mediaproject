@@ -342,7 +342,7 @@ namespace GuildMaster.Units
             if (!_active) return;
             _time += dt;
             var next = self.Position + _dir * self.Stats.MoveSpeed * SpeedMultiplier * dt;
-            bool blocked = !World.Grid.IsWalkable(GridMap.WorldToCell(next));
+            bool blocked = !World.Grid.IsWalkable(GridMap.WorldToCell(next), self.PassesGates);
             if (!blocked) self.transform.position = new Vector3(next.x, next.y, self.transform.position.z);
 
             if (_target != null && _target.IsAlive && Combat.Distance(self, _target) <= self.Radius + _target.Radius + 0.35f)
