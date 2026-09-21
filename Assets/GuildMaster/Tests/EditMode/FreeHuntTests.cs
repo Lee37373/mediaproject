@@ -74,6 +74,34 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void TheHuntGoesWhereTheFightsAre()
+        {
+            // P4-40, user report 2026-09-21: 55% of the time hunting, 3% fighting.
+            var db = DefaultContent.Build();
+            MonsterDefinition M(string id) => db.monsters.Find(m => m.id == id);
+            var slime = M("slime");
+            var skull = M("skull");
+
+            Assert.That(FreeHunt.DenScore(slime, 0, 10f), Is.EqualTo(0f), "an emptied den is not worth the walk");
+            Assert.That(FreeHunt.DenScore(slime, 6, 10f), Is.GreaterThan(FreeHunt.DenScore(slime, 6, 40f)), "nearer is better");
+            Assert.That(FreeHunt.DenScore(slime, 6, 20f), Is.GreaterThan(FreeHunt.DenScore(slime, 2, 20f)), "fuller is better");
+            Assert.That(FreeHunt.DenScore(slime, 30, 20f), Is.EqualTo(FreeHunt.DenScore(slime, 20, 20f)),
+                        "a trip only takes so many");
+
+            // The last few of a den are left to breed (first measured run: slimes gone on day 3).
+            Assert.That(FreeHunt.SpareAtDen(FreeHunt.LeaveAtDen), Is.True);
+            Assert.That(FreeHunt.SpareAtDen(FreeHunt.LeaveAtDen + 1), Is.False);
+            Assert.That(FreeHunt.DenScore(slime, FreeHunt.LeaveAtDen, 5f), Is.EqualTo(0f), "nothing left worth taking there");
+            Assert.That(FreeHunt.DenScore(skull, 4, 30f), Is.GreaterThan(FreeHunt.DenScore(slime, 4, 30f)), "richer prey is worth more");
+
+            // Scouting is spread evenly out to the reach, so the near rings get walked too.
+            float reach = 65f;
+            Assert.That(FreeHunt.ScoutDistance(0f, reach), Is.EqualTo(12f).Within(0.01f), "just outside the walls");
+            Assert.That(FreeHunt.ScoutDistance(1f, reach), Is.EqualTo(reach).Within(0.01f));
+            Assert.That(FreeHunt.ScoutDistance(0.5f, reach), Is.EqualTo((12f + reach) / 2f).Within(0.01f), "uniform in distance, not area");
+        }
+
+        [Test]
         public void SeeingOneTellsThemThereAreProbablyMore()
         {
             // User request 2026-09-20: spotting an enemy should suggest the rest of its pack.

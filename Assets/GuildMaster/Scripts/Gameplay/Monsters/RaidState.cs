@@ -50,9 +50,13 @@ namespace GuildMaster.Monsters
                 _repath = 0f;
             }
 
-            // Close enough to the wall of the building: hit it.
+            // Close enough to the wall of the building, with a clear shot: hit it. The sight line
+            // matters for archers (P4-40): without it they stood outside the town wall and shot
+            // the buildings over it, and never came in through a gate.
+            var world = Services.Get<WorldService>();
             var edge = _target.ClosestPoint(m.Position);
-            if (Vector2.Distance(m.Position, edge) <= m.Stats.AttackRange + m.Radius + 0.9f)
+            if (Vector2.Distance(m.Position, edge) <= m.Stats.AttackRange + m.Radius + 0.9f
+                && world.HasLineOfSight(m.Position, edge, 2))
             {
                 m.Mover.Stop();
                 if (Time.time >= m.NextAttackTime)
@@ -67,7 +71,6 @@ namespace GuildMaster.Monsters
             _repath -= dt;
             if (_repath > 0f && m.Mover.IsMoving) return;
             _repath = RepathSeconds;
-            var world = Services.Get<WorldService>();
             if (world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(edge), 3, out var cell))
             {
                 _spot = GridMap.CellToWorld(cell);

@@ -40,8 +40,11 @@ namespace GuildMaster.Adventurers
     /// </summary>
     public class HuntBandService : MonoBehaviour
     {
-        /// <summary>Game hours the first member waits at the gate before setting off.</summary>
-        public const float MusterHours = 1.5f;
+        /// <summary>
+        /// Game hours the first member waits at the gate before setting off. P4-40: was 1.5 — a
+        /// measured day spent 14% of everyone's time waiting at the gate.
+        /// </summary>
+        public const float MusterHours = 0.75f;
 
         readonly List<HuntBand> _bands = new();
         GameClock _clock;

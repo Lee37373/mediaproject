@@ -88,7 +88,7 @@ namespace GuildMaster.Adventurers
             }
 
             // Clear what the intruders dropped inside the walls (P4-21).
-            if (a.Looting.Tick(dt, town.IsInTown)) { _calm = CalmSeconds; return; }
+            if (a.Looting.Tick(dt, AdvCtx.TownLootZone)) { _calm = CalmSeconds; return; }
 
             _calm -= dt;
             if (_calm > 0f) return;

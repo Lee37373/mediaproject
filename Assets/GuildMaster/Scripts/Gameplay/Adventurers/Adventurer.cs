@@ -447,11 +447,20 @@ namespace GuildMaster.Adventurers
             if (Services.TryGet<GuildRoster>(out var roster)) roster.NotifyDeath(this, killer);
         }
 
+        /// <summary>Guild members this close to a kill share its EXP (P4-40).</summary>
+        public const float ExpShareRadius = 10f;
+        static readonly List<Unit> s_expShare = new();
+
         public void ReceiveKillRewards(MonsterDefinition victim, List<ItemStack> loot)
         {
             Data.kills++;
             foreach (var s in loot) Data.AddLoot(s.itemId, s.count);
             GainExp(victim.expValue);
+            // Everyone fighting alongside gets the full EXP too (P4-40, user report 2026-09-21:
+            // "levelling is too slow"). Parties focus one target, so the last hit is luck, and a
+            // priest that heals the whole fight never landed one at all — Lv1 after three days.
+            UnitRegistry.Collect(Position, ExpShareRadius, u => u != this && u is Adventurer m && m.IsGuildMember, s_expShare);
+            foreach (var u in s_expShare) ((Adventurer)u).GainExp(victim.expValue);
         }
 
         public void GainExp(int amount)

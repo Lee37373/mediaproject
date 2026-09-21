@@ -71,6 +71,21 @@ namespace GuildMaster.Town
             return best;
         }
 
+        /// <summary>How far out from a gate still counts as the town's doorstep.</summary>
+        public const float ApronRadius = 8f;
+
+        /// <summary>
+        /// Inside the walls or on the ground just outside a gate (P4-40): where raiders fall, so
+        /// members in town clear what they dropped — it used to lie there for good, because town
+        /// pickups stopped at the wall and raiders mostly die at a gate.
+        /// </summary>
+        public bool InTownOrApron(Vector2 p)
+        {
+            if (_world.Grid.IsInTown(p)) return true;
+            foreach (var g in _gates) if ((g.Center - p).sqrMagnitude <= ApronRadius * ApronRadius) return true;
+            return false;
+        }
+
         /// <summary>The gate a world point falls on (for clicks), or null.</summary>
         public TownGate GateAt(Vector2 p)
         {

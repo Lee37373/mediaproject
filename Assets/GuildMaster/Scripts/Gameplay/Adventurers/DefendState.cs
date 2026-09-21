@@ -39,6 +39,9 @@ namespace GuildMaster.Adventurers
 
             if (a.CheckRetreat()) return;
             if (a.HandleCombat(dt, u => u is Monster m && m.DefaultStateOverride != null && m.IsAlive, InZone)) return;
+            // A lull: pick up what the fallen raiders dropped at the gate (P4-40, user report
+            // 2026-09-21: after a raid the loot was left lying). Looting stops when an enemy shows.
+            if (a.Looting.Tick(dt, p => world.Grid.IsInTown(p) || Vector2.Distance(p, rally) <= HoldRadius + 2f)) return;
 
             _repath -= dt;
             if (_repath > 0f && a.Mover.IsMoving) return;

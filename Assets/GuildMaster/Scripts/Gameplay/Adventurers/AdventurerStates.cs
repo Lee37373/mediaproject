@@ -25,6 +25,10 @@ namespace GuildMaster.Adventurers
 
         public static Vector2 GuildDoor => Town.Get(BuildingType.GuildHall).DoorPosition;
 
+        /// <summary>Where members around town pick things up: inside the walls and at the gates (P4-40).</summary>
+        public static bool TownLootZone(Vector2 p)
+            => Services.TryGet<GateService>(out var gates) ? gates.InTownOrApron(p) : Town.IsInTown(p);
+
         /// <summary>Checks the current quest; returns false (and switches state) when the adventurer should go back.</summary>
         public static bool QuestStillValid(Adventurer a)
         {
@@ -85,7 +89,7 @@ namespace GuildMaster.Adventurers
             }
 
             if (TownGuardState.TryStart(a, this, ref _guardTimer, dt)) return;
-            if (a.Looting.Tick(dt, AdvCtx.Town.IsInTown)) return;
+            if (a.Looting.Tick(dt, AdvCtx.TownLootZone)) return;
             AdvCtx.Wander(a, ref _wanderTimer, dt);
             _decisionTimer -= dt;
             if (_decisionTimer > 0f) return;

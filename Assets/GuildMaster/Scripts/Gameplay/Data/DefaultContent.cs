@@ -97,20 +97,25 @@ namespace GuildMaster.Data
             // free hunting the guild clears the near rings even on an empty board, and at the old
             // rates the species nearest town were farmed down to the recolonisation floor. The far
             // ones (goblin warrior, slime king) go up least, so the walk out stays graded.
+            //
+            // P4-38/40 (user report 2026-09-21: "levelling is slow, they hardly fight early"): the
+            // weak rings (slime, stone slime, skull) got bigger nests, more to start with and faster
+            // breeding. A measured day and a half found 20 kills in 35 game hours — the countryside
+            // near town was simply empty most of the time.
             var slime = Mon("slime", "슬라임", MonsterShape.Slime, new Color(0.4f, 0.85f, 0.45f), new Color(0.8f, 1f, 0.8f), 0.75f,
-                18, 3, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 8, 0.095f, 5, 6, Biome.Plains, Biome.Shore, Biome.Forest);
+                18, 3, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 14, 0.14f, 9, 6, Biome.Plains, Biome.Shore, Biome.Forest);
             slime.artKey = "slime";
             Loot(slime, jelly, 0.85f, 1, 2);
 
             var stoneSlime = Mon("stone_slime", "돌 슬라임", MonsterShape.Slime, new Color(0.55f, 0.58f, 0.55f), new Color(0.8f, 0.82f, 0.8f), 0.9f,
-                35, 6, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 6, 0.07f, 4, 12, Biome.Plains, Biome.Forest);
+                35, 6, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 10, 0.10f, 7, 12, Biome.Plains, Biome.Forest);
             stoneSlime.artKey = "stone_slime";
             stoneSlime.fleesFromPredators = true;
             Loot(stoneSlime, stoneShard, 0.7f);
             Loot(stoneSlime, denseJelly, 0.6f, 1, 2);
 
             var skull = Mon("skull", "해골", MonsterShape.Humanoid, new Color(0.9f, 0.88f, 0.8f), new Color(0.3f, 0.3f, 0.35f), 0.8f,
-                30, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 6, 0.06f, 3, 16, Biome.Forest, Biome.Plains);
+                30, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 8, 0.07f, 5, 16, Biome.Forest, Biome.Plains);
             skull.artKey = "skull";
             skull.rangedArtKey = "skull_archer";
             Loot(skull, boneShard, 0.7f);

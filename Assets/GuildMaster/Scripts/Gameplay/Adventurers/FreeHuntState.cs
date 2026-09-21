@@ -71,8 +71,13 @@ namespace GuildMaster.Adventurers
 
         /// <summary>Worth attacking: one we can handle, of a species the guild is not running short of.</summary>
         bool Huntable(Unit u)
-            => u is Monster m && m.IsAlive && m.Def != null && !_spared.Contains(m.Def)
+            => u is Monster m && m.IsAlive && m.Def != null && !_spared.Contains(m.Def) && !LastOfItsDen(m)
                && FreeHunt.CanTake(_bandStats, _bandHp, m.Stats, FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby));
+
+        /// <summary>One of the last few of a den the guild knows (P4-40): left to breed.</summary>
+        static bool LastOfItsDen(Monster m)
+            => m.Home != null && m.Home.Discovered && Services.TryGet<GuildIntel>(out var intel)
+               && FreeHunt.SpareAtDen(intel.Get(m.Home).LastCount);
 
         /// <summary>What may be fought at all: our own prey, plus anything that has just hit us.</summary>
         bool Allowed(Unit u) => Huntable(u) || Owner.WasRecentlyAttackedBy(u);
@@ -233,33 +238,38 @@ namespace GuildMaster.Adventurers
             var rng = GameRandom.Shared;
             var chosen = town;
 
+            // The best known den this band can take — most EXP for the walk (P4-40) — unless it is
+            // the one we are standing at (whatever is left there is out of sight) or we go scouting.
             bool found = false;
-            if (rng.Chance(0.6f) && Services.TryGet<GuildIntel>(out var intel))
+            if (!rng.Chance(FreeHunt.ScoutChance) && Services.TryGet<GuildIntel>(out var intel))
             {
-                var dens = intel.KnownNests
-                    .Where(n => Vector2.Distance(n.WorldPosition, town) <= _reach
-                                && intel.SpeciesOf(n) != null
-                                && !_spared.Contains(intel.SpeciesOf(n))
-                                && intel.Get(n).LastCount > 0
-                                && FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(intel.SpeciesOf(n)),
-                                       FreeHunt.ExpectedEnemies(1, intel.SpeciesOf(n), intel.Get(n).LastCount))
-                                && (avoid == null || Vector2.Distance(n.WorldPosition, avoid.Value) > _reach * 0.3f))
-                    .ToList();
-                if (dens.Count > 0)
+                float bestScore = 0f;
+                foreach (var n in intel.KnownNests)
                 {
-                    chosen = dens[rng.Range(0, dens.Count)].WorldPosition;
+                    var s = intel.SpeciesOf(n);
+                    int count = intel.Get(n).LastCount;
+                    if (s == null || count <= 0 || _spared.Contains(s)) continue;
+                    if (Vector2.Distance(n.WorldPosition, town) > _reach) continue;
+                    if (Vector2.Distance(n.WorldPosition, a.Position) < SpotReached * 2f) continue;
+                    if (avoid != null && Vector2.Distance(n.WorldPosition, avoid.Value) <= _reach * 0.3f) continue;
+                    if (!FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(s), FreeHunt.ExpectedEnemies(1, s, count))) continue;
+                    float score = FreeHunt.DenScore(s, count, Vector2.Distance(n.WorldPosition, a.Position));
+                    if (score <= bestScore) continue;
+                    bestScore = score;
+                    chosen = n.WorldPosition;
                     found = true;
                 }
             }
 
             if (!found)
             {
-                var centre = GridMap.WorldToCell(town);
+                // Scouting: uniform in distance from town, so the near rings get walked too.
                 for (int attempt = 0; attempt < 12; attempt++)
                 {
-                    if (!world.Grid.TryRandomWalkableNear(centre, Mathf.RoundToInt(_reach), rng, out var cell)) continue;
-                    if (world.Grid.IsInTown(cell)) continue;
-                    var p = GridMap.CellToWorld(cell);
+                    float angle = rng.Range(0f, Mathf.PI * 2f);
+                    var p = town + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * FreeHunt.ScoutDistance(rng.Value, _reach);
+                    if (!world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(p), 3, out var cell) || world.Grid.IsInTown(cell)) continue;
+                    p = GridMap.CellToWorld(cell);
                     if (avoid != null && Vector2.Distance(p, avoid.Value) < _reach * 0.3f) continue;
                     chosen = p;
                     break;

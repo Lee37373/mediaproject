@@ -106,6 +106,36 @@ namespace GuildMaster.Adventurers
         public static bool CanTake(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, CombatStats foe, int foes)
             => ExpectedLoss(band, hp, foe, foes) <= AcceptableLoss;
 
+        /// <summary>A den's last count above this adds nothing to its appeal: a trip only takes so many.</summary>
+        public const int DenCountCap = 6;
+
+        /// <summary>
+        /// Members of a known den a self-chosen hunt leaves alive, so it can breed back (P4-40).
+        /// With bigger slime nests and hunts aimed at the best den, the first measured run still
+        /// wiped slimes out on day 3: the species-wide warning only trips at three left in all.
+        /// Judged on what the guild last counted there, like everything else.
+        /// </summary>
+        public const int LeaveAtDen = 3;
+
+        public static bool SpareAtDen(int lastCount) => lastCount <= LeaveAtDen;
+        /// <summary>Chance to go scouting even with a good den known, so new dens keep being found.</summary>
+        public const float ScoutChance = 0.15f;
+
+        /// <summary>
+        /// How worth walking to a known den is (P4-40, user report 2026-09-21: "they hardly fight
+        /// early"): EXP on offer over the walk. A measured run spent 55% of its time hunting and 3%
+        /// fighting — random spots across a 65-cell circle mostly land on empty ground far out.
+        /// </summary>
+        public static float DenScore(MonsterDefinition species, int lastCount, float distance)
+            => species == null || SpareAtDen(lastCount) ? 0f
+             : species.expValue * Mathf.Min(lastCount - LeaveAtDen, DenCountCap) / (8f + Mathf.Max(0f, distance));
+
+        /// <summary>
+        /// How far from town to scout: uniform in distance, not in area. Area-uniform points pile up
+        /// at the rim, so the near rings — where the weak prey lives — were hardly ever visited.
+        /// </summary>
+        public static float ScoutDistance(float t01, float reach) => Mathf.Lerp(12f, Mathf.Max(12f, reach), Mathf.Clamp01(t01));
+
         /// <summary>A species' stats before any gear it picked up, for a den judged from afar.</summary>
         public static CombatStats StatsOf(MonsterDefinition def) => new CombatStats
         {

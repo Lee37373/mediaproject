@@ -21,9 +21,14 @@ namespace GuildMaster.Monsters
         /// <summary>Extra reach against a gate: it is a wall three cells wide, not a body.</summary>
         const float Reach = 0.9f;
 
+        /// <summary>Seconds between checks for a way in through a gate someone else already broke.</summary>
+        const float RerouteSeconds = 3f;
+        static readonly System.Collections.Generic.List<Vector2Int> s_path = new();
+
         TownGate _gate;
         bool _patient;
         float _repath;
+        float _rerouteTimer;
 
         public override string Label => "성문 공격";
 
@@ -34,7 +39,11 @@ namespace GuildMaster.Monsters
             _patient = untilBroken;
         }
 
-        public override void Enter() => _repath = 0f;
+        public override void Enter()
+        {
+            _repath = 0f;
+            _rerouteTimer = RerouteSeconds;
+        }
 
         public override void Tick(float dt)
         {
@@ -72,8 +81,39 @@ namespace GuildMaster.Monsters
             if (_repath > 0f && m.Mover.IsMoving) return;
             _repath = RepathSeconds;
             var world = Services.Get<World.WorldService>();
-            var spot = world.Grid.IsInTown(m.Position) ? _gate.InsidePoint : _gate.OutsidePoint;
+
+            // Another gate already gave way: a raider takes that road in instead (P4-40).
+            _rerouteTimer -= RepathSeconds;
+            if (_patient && !world.Grid.TownSealed && _rerouteTimer <= 0f)
+            {
+                _rerouteTimer = RerouteSeconds;
+                if (world.FindPath(m.Position, world.TownCenterWorld, s_path, passesGates: false))
+                {
+                    m.GoToDefaultState();
+                    return;
+                }
+            }
+
+            var spot = ApproachSpot(m, world);
             if (!m.Mover.SetDestination(spot, 0.4f)) m.GoToDefaultState(); // cannot even reach the gate
+        }
+
+        /// <summary>
+        /// Where this attacker stands: one of the gate's three lanes, a step off it for melee and
+        /// further back for archers (P4-40 — they all used to queue for the one cell in front, and
+        /// whoever could not reach it milled about doing nothing).
+        /// </summary>
+        Vector2 ApproachSpot(Monster m, World.WorldService world)
+        {
+            bool inside = world.Grid.IsInTown(m.Position) && !_gate.Contains(m.Position);
+            var outward = (Vector2)_gate.Outward * (inside ? -1f : 1f);
+            var side = new Vector2(_gate.Outward.y, _gate.Outward.x);
+            int lane = Mathf.Abs(m.GetInstanceID()) % 3 - 1;
+            float back = m.Stats.IsRanged ? Mathf.Clamp(m.Stats.AttackRange * 0.7f, 1f, 3.5f) : 1f;
+            var spot = _gate.Center + side * lane + outward * back;
+            return world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(spot), 2, out var cell) && !world.Grid.IsClosedGate(cell)
+                ? World.GridMap.CellToWorld(cell)
+                : (inside ? _gate.InsidePoint : _gate.OutsidePoint);
         }
 
         public override void Exit() => Owner.Mover.Stop();

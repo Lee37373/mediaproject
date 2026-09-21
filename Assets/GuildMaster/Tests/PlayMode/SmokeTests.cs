@@ -293,6 +293,14 @@ namespace GuildMaster.Tests
             var grid = Services.Get<World.WorldService>().Grid;
             var member = Roster.Members.First(a => a.IsAlive);
             int before = member.Data.LootCount;
+            // The others rest, or whoever stands nearest takes a share (four founders since P4-38).
+            foreach (var other in Roster.Members) if (other != member) other.ChangeState(other.RestState);
+            // Idle in town, where pickups happen — not halfway through a decision or a muster — on
+            // the plaza road west of the centre, so no drop lands behind a building wall (where it
+            // falls depended on the random start position, i.e. on which tests ran before).
+            member.ChangeState(member.IdleState);
+            member.Mover.Stop();
+            member.transform.position = Services.Get<World.WorldService>().TownCenterWorld + new Vector2(-7f, 0f);
 
             // Three drops around the member, all on ground it can stand on.
             var spots = new[] { new Vector2(1.5f, 0f), new Vector2(3f, 1f), new Vector2(4.5f, 0f) };
@@ -503,6 +511,58 @@ namespace GuildMaster.Tests
             EventBus.Unsubscribe(onTaken);
             Assert.That(taker, Is.InstanceOf<Adventurer>(), "a guild member picked it up");
             Assert.That(Services.Get<GroundItemService>().Items.Count, Is.EqualTo(0));
+        }
+
+        [UnityTest]
+        public IEnumerator LootDroppedAtAGate_IsPickedUpFromTown()
+        {
+            // P4-40, user report 2026-09-21: raiders die at the gate and their loot was never picked
+            // up — town pickups stopped at the wall.
+            yield return Boot();
+            Unit taker = null;
+            Action<GroundItemTakenEvent> onTaken = e => taker = e.Taker;
+            EventBus.Subscribe(onTaken);
+            var gate = Services.Get<Town.GateService>().Gates[0];
+            var member = Roster.Members.First(a => a.IsAlive);
+            member.Mover.Stop();
+            member.transform.position = gate.InsidePoint;
+            var at = gate.OutsidePoint + (Vector2)gate.Outward * 2f;
+            var grid = Services.Get<World.WorldService>().Grid;
+            Assert.That(grid.IsInTown(at), Is.False, "outside the walls");
+            DebugCommands.DropItem("slime_jelly", 1, at.x, at.y);
+            yield return WaitFor(() => taker != null, 15f);
+            EventBus.Unsubscribe(onTaken);
+            Assert.That(taker, Is.InstanceOf<Adventurer>(), "a guild member stepped out and picked it up");
+        }
+
+        [UnityTest]
+        public IEnumerator AKill_GivesEveryoneFightingAlongsideTheExp()
+        {
+            // P4-40, user report 2026-09-21: "levelling is too slow" — only the last hit earned EXP,
+            // so a party split it and the priest got none.
+            yield return Boot();
+            var master = MasterOnOpenGround();
+            Assert.That(master, Is.Not.Null);
+            var p = master.Position + new Vector2(0f, 5f);
+            var killer = Roster.Members.First(a => a.Data.cls == AdventurerClass.Warrior);
+            var healer = Roster.Members.First(a => a.Data.cls == AdventurerClass.Priest);
+            var faraway = Roster.Members.First(a => a != killer && a != healer);
+            foreach (var (a, at) in new[] { (killer, p), (healer, p + new Vector2(3f, 0f)), (faraway, p + new Vector2(0f, 30f)) })
+            {
+                a.ChangeState(a.IdleState);
+                a.Mover.Stop();
+                a.transform.position = at;
+            }
+            int killerExp = killer.Data.exp, healerExp = healer.Data.exp, farExp = faraway.Data.exp;
+            int killerLv = killer.Data.level, healerLv = healer.Data.level;
+            ClearHomelessOf("slime");
+            var slime = SpawnMonster("slime", p + new Vector2(0.8f, 0f));
+            for (int i = 0; i < 20 && slime.IsAlive; i++) Combat.ApplyHit(killer, slime);
+            Assert.That(slime.IsAlive, Is.False);
+            yield return null;
+            Assert.That(killer.Data.exp != killerExp || killer.Data.level > killerLv, Is.True, "the killer gets it");
+            Assert.That(healer.Data.exp != healerExp || healer.Data.level > healerLv, Is.True, "so does the healer beside it");
+            Assert.That(faraway.Data.exp, Is.EqualTo(farExp), "but not someone thirty cells away");
         }
 
         [UnityTest]
@@ -990,8 +1050,16 @@ namespace GuildMaster.Tests
             member.Engage.Clear();
             var king = SpawnMonster("slime_king", member.Position + Vector2.left * 4f);
             Assert.That(king, Is.Not.Null);
-            yield return WaitFor(() => member.CurrentTarget == king, 4f);
-            Assert.That(member.CurrentTarget, Is.Not.EqualTo(king), "a Lv1 member does not pick a fight with a slime king");
+            // The king comes at people, so a blow from it is fair reason to fight back; what must
+            // not happen is the member starting it.
+            bool pickedIt = false;
+            float until = Time.time + 4f;
+            while (Time.time < until)
+            {
+                if (member.CurrentTarget == king && !member.WasRecentlyAttackedBy(king)) pickedIt = true;
+                yield return null;
+            }
+            Assert.That(pickedIt, Is.False, "a Lv1 member does not pick a fight with a slime king");
             king.Perish();
         }
 
