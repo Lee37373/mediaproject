@@ -9,23 +9,55 @@ namespace GuildMaster.Recruitment
     public struct VisitorArrivedEvent { public Adventurer Visitor; }
 
     /// <summary>
-    /// Spawns recruitable visitors at a town gate every 12–20 game hours. They stay on the plaza
-    /// for 12 hours (longer while talking) and then leave (see VisitorStates).
+    /// Spawns recruitable visitors at a town gate every 8–12 game hours. They stay on the plaza
+    /// for 12 hours (longer while talking) and then leave (see VisitorStates). The player can also
+    /// pay for a recruitment notice to bring the next one sooner.
     /// </summary>
     public class VisitorService : MonoBehaviour
     {
         public const float StayHours = 12f;
-        const float MinIntervalHours = 12f;
-        const float MaxIntervalHours = 20f;
+        // P4-38 (was 12–20): hunting in parties needs a bigger roster, and deaths have to be
+        // replaceable; this brings roughly two candidates a day.
+        const float MinIntervalHours = 8f;
+        const float MaxIntervalHours = 12f;
         const int MaxConcurrent = 2;
+
+        /// <summary>Gold a recruitment notice costs (P4-38, user decision 2026-09-21).</summary>
+        public const int NoticeCost = 80;
+        /// <summary>Game hours after posting a notice within which an applicant turns up.</summary>
+        public const float NoticeMinHours = 1f;
+        public const float NoticeMaxHours = 3f;
 
         readonly List<Adventurer> _visitors = new();
         GameClock _clock;
         GuildRoster _roster;
         WorldService _world;
         float _nextVisitHour;
+        /// <summary>Game hour the applicant of a posted notice arrives; negative when none is posted.</summary>
+        float _noticeHour = -1f;
 
         public IReadOnlyList<Adventurer> Visitors => _visitors;
+        public bool NoticePosted => _noticeHour >= 0f;
+
+        /// <summary>Why a notice cannot be posted right now, or null when it can (shown on the button).</summary>
+        public string CannotPostNoticeReason()
+        {
+            if (NoticePosted) return "지원자가 오는 중입니다";
+            if (_roster.IsFull) return "정원이 가득 찼습니다";
+            if (Services.TryGet<Economy.GuildTreasury>(out var t) && !t.CanAfford(NoticeCost)) return "골드가 부족합니다";
+            return null;
+        }
+
+        /// <summary>Pays for a notice; an applicant arrives within a few game hours.</summary>
+        public bool PostNotice()
+        {
+            if (CannotPostNoticeReason() != null) return false;
+            if (!Services.TryGet<Economy.GuildTreasury>(out var t) || !t.TrySpendGold(NoticeCost)) return false;
+            _noticeHour = _clock.TotalHours + GameRandom.Shared.Range(NoticeMinHours, NoticeMaxHours);
+            if (Services.TryGet<Session.GameLog>(out var log))
+                log.Add($"모집 공고를 붙였습니다(-{NoticeCost}G). 곧 지원자가 찾아옵니다.", Session.LogCategory.Economy);
+            return true;
+        }
 
         public void Init(GameClock clock, GuildRoster roster, WorldService world)
         {
@@ -49,7 +81,16 @@ namespace GuildMaster.Recruitment
 
         void Update()
         {
-            if (_clock == null || _clock.TotalHours < _nextVisitHour) return;
+            if (_clock == null) return;
+            // A paid notice always brings its applicant, whoever else is already in town; only a
+            // full roster turns it away, and then the gold is not wasted.
+            if (NoticePosted && _clock.TotalHours >= _noticeHour)
+            {
+                _noticeHour = -1f;
+                if (!_roster.IsFull) SpawnVisitor();
+                else if (Services.TryGet<Economy.GuildTreasury>(out var t)) t.AddGold(NoticeCost);
+            }
+            if (_clock.TotalHours < _nextVisitHour) return;
             _nextVisitHour = _clock.TotalHours + GameRandom.Shared.Range(MinIntervalHours, MaxIntervalHours);
             _visitors.RemoveAll(v => v == null);
             if (_roster.IsFull || _visitors.Count >= MaxConcurrent) return;

@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using UnityEngine;
 using GuildMaster.Data;
 using GuildMaster.Ecosystem;
+using GuildMaster.Units;
 
 namespace GuildMaster.Adventurers
 {
@@ -11,8 +13,28 @@ namespace GuildMaster.Adventurers
     /// </summary>
     public static class FreeHunt
     {
-        /// <summary>How far from the town centre a free hunt roams (user decision: 40 cells, wide).</summary>
+        /// <summary>How far from the town centre a free hunt roams at the least (user decision: 40 cells, wide).</summary>
         public const float Radius = 40f;
+        /// <summary>How far the strongest band roams: the far edge where the slime king lives.</summary>
+        public const float MaxRadius = 90f;
+
+        /// <summary>
+        /// How far this band dares to roam (P4-38, user decision 2026-09-21: "wider as they grow").
+        /// At a flat 40 cells the hunt never left the slime rings — P5-1 puts goblins and skulls at
+        /// 40–70 — so nothing else was ever met. Everyone knows the dangerous kinds live further out
+        /// (<see cref="MonsterDefinition.distanceBand"/>, 0 = by the walls, 1 = the edge); where their
+        /// dens are still has to be found. The band goes as far out as the furthest species it could
+        /// take on as a pack.
+        /// </summary>
+        public static float RoamRadius(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, IEnumerable<MonsterDefinition> species)
+        {
+            float frontier = 0f;
+            if (species != null)
+                foreach (var s in species)
+                    if (s != null && s.distanceBand > frontier && CanTake(band, hp, StatsOf(s), ExpectedEnemies(1, s, 0)))
+                        frontier = s.distanceBand;
+            return Mathf.Lerp(Radius, MaxRadius, frontier);
+        }
         /// <summary>Game hours one trip lasts before heading back to sell what it found.</summary>
         public const float MaxHours = 8f;
         /// <summary>
@@ -39,13 +61,58 @@ namespace GuildMaster.Adventurers
             => bandSize >= 2 || cls != AdventurerClass.Priest;
 
         /// <summary>
-        /// Whether a fight is worth picking (user decision: avoid what we cannot handle). Same
-        /// margin the quest board shows the player, so "무모" is refused here too, but the strength
-        /// is divided by how many of them are in sight: a lone goblin and four goblins are not the
-        /// same fight, and the first measured run lost a Lv1 priest to the difference.
+        /// Share of the band's HP a fight may be expected to cost and still be picked (user
+        /// decision: avoid what we cannot handle). Below <see cref="GoHomeHpRatio"/>'s margin, so a
+        /// fight the band takes on does not by itself send it home.
         /// </summary>
-        public static bool CanTake(float power, int partySize, DangerLevel danger, int enemies = 1)
-            => QuestRisk.Label(QuestRisk.Margin(power, partySize, danger) / Mathf.Max(1, enemies)) != QuestRisk.Reckless;
+        public const float AcceptableLoss = 0.5f;
+
+        /// <summary>Average hit multiplier from critical strikes.</summary>
+        static float CritFactor => 1f + Combat.CritChance * (Combat.CritMultiplier - 1f);
+
+        /// <summary>
+        /// Share of the band's current HP that beating <paramref name="foes"/> of these is expected
+        /// to cost (P4-38). Worked out from the real combat numbers with the real damage formula, so
+        /// the judgement moves with the balance: the old one divided a quest-scale "power" by the
+        /// head count and refused every pack a levelled member could in fact beat alone (user report
+        /// 2026-09-21: "a free hunt never takes on anything above a slime").
+        ///
+        /// The band focuses one foe at a time (P4-27) while every foe still standing hits back, so
+        /// the damage taken grows with the triangle number of the pack: 1 + 2 + … + n kill-times.
+        /// Healing, skills and the pack's call for help are left out — it is a rough estimate that
+        /// errs on neither side by much.
+        /// </summary>
+        public static float ExpectedLoss(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, CombatStats foe, int foes)
+        {
+            if (band == null || band.Count == 0) return float.PositiveInfinity;
+            foes = Mathf.Max(1, foes);
+            float ourDps = 0f, ourHp = 0f, ourDef = 0f;
+            for (int i = 0; i < band.Count; i++)
+            {
+                var s = band[i];
+                ourDps += Combat.Mitigate(s.Attack, foe.Defense) * CritFactor / Mathf.Max(0.1f, s.AttackCooldown);
+                ourHp += hp != null && i < hp.Count ? hp[i] : s.MaxHp;
+                ourDef += s.Defense;
+            }
+            if (ourHp <= 0f) return float.PositiveInfinity;
+            ourDef /= band.Count;
+            float foeDps = Combat.Mitigate(foe.Attack, ourDef) * CritFactor / Mathf.Max(0.1f, foe.AttackCooldown);
+            float killTime = foe.MaxHp / Mathf.Max(0.01f, ourDps);
+            float taken = foeDps * killTime * foes * (foes + 1) * 0.5f;
+            return taken / ourHp;
+        }
+
+        /// <summary>Whether a fight is worth picking: its expected cost is within <see cref="AcceptableLoss"/>.</summary>
+        public static bool CanTake(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, CombatStats foe, int foes)
+            => ExpectedLoss(band, hp, foe, foes) <= AcceptableLoss;
+
+        /// <summary>A species' stats before any gear it picked up, for a den judged from afar.</summary>
+        public static CombatStats StatsOf(MonsterDefinition def) => new CombatStats
+        {
+            MaxHp = def.maxHp, Attack = def.attack, Defense = def.defense,
+            AttackRange = def.attackRange, AttackCooldown = def.attackCooldown,
+            MoveSpeed = def.moveSpeed, SightRadius = def.sightRadius,
+        };
 
         /// <summary>A pack hunter never travels alone: assume at least this many (user request).</summary>
         public const int AssumedPackSize = 3;

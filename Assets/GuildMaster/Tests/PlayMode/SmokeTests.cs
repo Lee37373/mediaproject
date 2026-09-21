@@ -127,6 +127,30 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator RecruitNotice_CostsGold_AndBringsAnApplicantWithinHours()
+        {
+            // P4-38: the guild starts with one full party, and a paid notice brings the next recruit.
+            yield return Boot();
+            Assert.That(Roster.Members.Select(m => m.Data.cls).Distinct().Count(), Is.EqualTo(AdventurerGenerator.StartingLineup.Length),
+                        "the founders are one of each class");
+
+            var visitors = Services.Get<Recruitment.VisitorService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            int gold = treasury.Gold, before = visitors.Visitors.Count;
+            Assert.That(visitors.CannotPostNoticeReason(), Is.Null);
+            Assert.That(visitors.PostNotice(), Is.True);
+            Assert.That(treasury.Gold, Is.EqualTo(gold - Recruitment.VisitorService.NoticeCost));
+            Assert.That(visitors.PostNotice(), Is.False, "one notice at a time");
+
+            float start = Clock.TotalHours;
+            Clock.SetSpeed(3);
+            yield return WaitFor(() => !visitors.NoticePosted, 30f);
+            Assert.That(visitors.NoticePosted, Is.False, "the applicant turned up");
+            Assert.That(Clock.TotalHours - start, Is.LessThanOrEqualTo(Recruitment.VisitorService.NoticeMaxHours + 0.5f));
+            Assert.That(visitors.Visitors.Count, Is.GreaterThan(before));
+        }
+
+        [UnityTest]
         public IEnumerator Title_HoldsTheClock_UntilNewGame()
         {
             yield return Boot(showTitle: true);
@@ -838,6 +862,50 @@ namespace GuildMaster.Tests
             solo.MusterUntilHour = 0f; // its wait is over and nobody came
             yield return WaitFor(() => priest.Fsm.Current != priest.FreeHuntState, 5f);
             Assert.That(priest.Fsm.Current, Is.EqualTo(priest.ReturnState), "the healer turns back instead of hunting alone");
+        }
+
+        [UnityTest]
+        public IEnumerator HuntingBand_FollowersStayOnTheLeash_AndGoHomeTogether()
+        {
+            // P4-38, user report 2026-09-21: "after a fight they go off on their own".
+            yield return Boot();
+            var master = MasterOnOpenGround();
+            Assert.That(master, Is.Not.Null, "open ground for the test");
+            var p = master.Position + new Vector2(0f, 6f);
+            master.transform.position = p + new Vector2(-12f, 0f);
+            var bands = Services.Get<HuntBandService>();
+            var leader = Roster.Members.First(a => a.Data.cls == AdventurerClass.Warrior);
+            var follower = Roster.Members.First(a => a.Data.cls == AdventurerClass.Ranger);
+            leader.ChangeState(leader.FreeHuntState);
+            follower.ChangeState(follower.FreeHuntState);
+            yield return null;
+            var band = bands.BandOf(leader);
+            Assert.That(bands.BandOf(follower), Is.SameAs(band));
+            band.MusterUntilHour = 0f;
+            yield return null;
+            Assert.That(band.Mustering, Is.False);
+
+            foreach (var (a, at) in new[] { (leader, p), (follower, p + new Vector2(4.5f, 0f)) })
+            {
+                a.Mover.Stop();
+                a.transform.position = at;
+            }
+            // In the ranger's sight, but well past the leash from the leader.
+            var slime = SpawnMonster("slime", p + new Vector2(13f, 0f));
+            bool strayed = false;
+            float until = Time.time + 3f;
+            while (Time.time < until)
+            {
+                if (follower.Engage.Target == slime && !follower.WasRecentlyAttackedBy(slime)
+                    && Vector2.Distance(slime.Position, leader.Position) > PartyTactics.Leash + 0.5f) strayed = true;
+                yield return null;
+            }
+            Assert.That(strayed, Is.False, "a follower does not go after prey far from its leader");
+
+            // One goes home, so does the band.
+            follower.ChangeState(follower.ReturnState);
+            yield return WaitFor(() => leader.Fsm.Current == leader.ReturnState, 5f);
+            Assert.That(leader.Fsm.Current, Is.EqualTo(leader.ReturnState), "the rest follow instead of hunting on alone");
         }
 
         [UnityTest]

@@ -29,6 +29,13 @@ namespace GuildMaster.Adventurers
         public const float SlotSpacing = 1.2f;
         const float FollowRange = 25f;
         const float StragglerDistance = 5f;
+        /// <summary>
+        /// Farthest from the leader a follower picks a fight or a pickup (P4-38, user report
+        /// 2026-09-21: "after a fight they wander off alone"). Whatever attacks it is still fought.
+        /// </summary>
+        public const float Leash = 10f;
+        /// <summary>The leader stops and waits while a member is farther than this.</summary>
+        public const float RegroupDistance = 7f;
         const float CallInterval = 0.3f;
         const float RepathSeconds = 0.4f;
 
@@ -144,9 +151,9 @@ namespace GuildMaster.Adventurers
             leader = null;
             if (Party(a, _members).Count == 0 || _members[0] == a) return false;
             leader = _members[0];
-            if (Vector2.Distance(a.Position, leader.Position) > FollowRange) return false;
-
-            var slot = SlotFor(a, leader, _members);
+            // Fallen far behind (a long chase, a detour): head straight for the leader instead of
+            // walking on alone (P4-38 — this used to hand the follower back to its own roaming).
+            var slot = Vector2.Distance(a.Position, leader.Position) > FollowRange ? leader.Position : SlotFor(a, leader, _members);
             float dist = Vector2.Distance(a.Position, slot);
             a.Mover.SpeedMultiplier = dist > StragglerDistance ? 1.3f : 1f;
             repathTimer -= dt;
@@ -156,21 +163,58 @@ namespace GuildMaster.Adventurers
             return true;
         }
 
-        /// <summary>Slows the leader down while followers lag behind (or are slower). Resets for non-leaders.</summary>
-        public void PaceLeader(Adventurer a)
+        /// <summary>
+        /// Slows the leader down while followers lag behind (or are slower), and stops it outright
+        /// while one is farther than <see cref="RegroupDistance"/> — still fighting, picking up loot,
+        /// catching up — so the party moves on together (P4-38). Returns true while the leader
+        /// waits: the caller then skips its own movement. Always false for non-leaders.
+        /// </summary>
+        public bool PaceLeader(Adventurer a)
         {
-            if (Party(a, _members).Count == 0 || _members[0] != a) return;
+            if (Party(a, _members).Count == 0 || _members[0] != a) return false;
             float slowest = float.MaxValue;
             bool straggler = false;
+            Adventurer farthest = null;
+            float farthestDist = RegroupDistance;
             for (int i = 1; i < _members.Count; i++)
             {
                 var m = _members[i];
                 slowest = Mathf.Min(slowest, m.Stats.MoveSpeed);
                 if (Vector2.Distance(m.Position, SlotFor(m, a, _members)) > StragglerDistance) straggler = true;
+                float d = Vector2.Distance(m.Position, a.Position);
+                if (d > farthestDist) { farthestDist = d; farthest = m; }
+            }
+            if (farthest != null)
+            {
+                // A member still fighting out there gets help, not an audience: the leader walks
+                // over and the formation brings the rest along. Otherwise it simply waits.
+                if (farthest.Engage.Target != null)
+                {
+                    a.Mover.SpeedMultiplier = 1f;
+                    if (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, farthest.Position) > 2f)
+                        a.Mover.SetDestination(farthest.Position, 2f);
+                }
+                else if (a.Mover.IsMoving) a.Mover.Stop();
+                return true;
             }
             float pace = Mathf.Clamp(slowest / Mathf.Max(0.1f, a.Stats.MoveSpeed), 0.6f, 1f);
             a.Mover.SpeedMultiplier = straggler ? 0.5f : pace;
+            return false;
         }
+
+        /// <summary>
+        /// Where a follower's leash is tied: its leader's position, or null for a leader or someone
+        /// out on its own (no leash). See <see cref="Leash"/>.
+        /// </summary>
+        public Vector2? LeashCentre(Adventurer a)
+        {
+            if (Party(a, _members).Count == 0 || _members[0] == a) return null;
+            return _members[0].Position;
+        }
+
+        /// <summary>Whether a point is within the leash of <paramref name="centre"/> (always, with no leash).</summary>
+        public static bool InLeash(Vector2? centre, Vector2 point)
+            => centre == null || Vector2.Distance(centre.Value, point) <= Leash;
 
         Vector2 SlotFor(Adventurer a, Adventurer leader, List<Adventurer> members)
         {

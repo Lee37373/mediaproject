@@ -24,6 +24,12 @@ namespace GuildMaster.Adventurers
         public float MusterUntilHour;
 
         public bool Mustering { get; internal set; } = true;
+
+        /// <summary>
+        /// Someone has left the hunt — hurt, bag full, called away, fallen — so the rest head home
+        /// too instead of carrying on short-handed (P4-38, user report: members ending up alone).
+        /// </summary>
+        public bool GoingHome { get; internal set; }
         public bool Has(Adventurer a) => Members.Contains(a);
     }
 

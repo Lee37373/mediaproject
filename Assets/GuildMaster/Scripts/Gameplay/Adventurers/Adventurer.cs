@@ -314,14 +314,20 @@ namespace GuildMaster.Adventurers
 
             // What may be (re)targeted this frame: threats (aggressive monsters we see or that hit us)
             // and the caller's optional extra targets, limited to the optional zone.
+            // Party members only take fights near their leader (P4-38); what hits them is fought anyway.
+            var leash = PartyLeashCentre();
             System.Func<Unit, bool> threat = u => u is Monster m && (allowed == null || allowed(m))
-                                                   && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m)));
-            System.Func<Unit, bool> extra = extraTargets == null ? null : u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u);
+                                                   && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m) && PartyTactics.InLeash(leash, m.Position)));
+            System.Func<Unit, bool> extra = extraTargets == null ? null
+                : u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u) && PartyTactics.InLeash(leash, u.Position);
             Engage.CandidateFilter = extra == null ? threat : u => threat(u) || extra(u);
             Engage.SearchRadius = Stats.SightRadius;
 
             // Optional zone (town defense): drop targets outside it instead of chasing them.
             if (Engage.Target != null && allowed != null && !allowed(Engage.Target)) Engage.Clear();
+            // A chase that pulls a member away from its party is called off (P4-38).
+            if (Engage.Target != null && !WasRecentlyAttackedBy(Engage.Target) && !PartyTactics.InLeash(leash, Engage.Target.Position))
+                Engage.Clear();
             if (Engage.Target != null)
             {
                 if (Engage.Tick(dt) != EngageStatus.Lost) return Fighting();
@@ -342,6 +348,13 @@ namespace GuildMaster.Adventurers
             Engage.SetTarget(target);
             return Engage.Tick(dt) != EngageStatus.Lost && Fighting();
         }
+
+        /// <summary>Where this member's party leash is tied (its leader), or null when it has none.</summary>
+        internal Vector2? PartyLeashCentre()
+            => Services.TryGet<PartyTactics>(out var party) ? party.LeashCentre(this) : null;
+
+        /// <summary>A point this member may walk to on its own business (a pickup, a target).</summary>
+        internal bool WithinPartyLeash(Vector2 point) => PartyTactics.InLeash(PartyLeashCentre(), point);
 
         /// <summary>The party leader's called target when it is in sight and allowed here, or null.</summary>
         Unit CalledCandidate(System.Func<Unit, bool> threat, System.Func<Unit, bool> extra)

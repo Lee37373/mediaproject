@@ -40,6 +40,13 @@ namespace GuildMaster.Adventurers
             return free.Count > 0 ? rng.Pick(free) : rng.Pick(Names);
         }
 
+        /// <summary>
+        /// Classes of the founding members, in order (P4-38): the guild starts with one party that
+        /// has a front line, a back line and a healer instead of whatever three the dice gave.
+        /// </summary>
+        public static readonly AdventurerClass[] StartingLineup =
+            { AdventurerClass.Warrior, AdventurerClass.Ranger, AdventurerClass.Priest, AdventurerClass.Mage };
+
         /// <param name="traitPool">Traits to roll from; defaults to the registered GameDatabase.</param>
         public static AdventurerData Generate(GameRandom rng, int level = 1, IReadOnlyList<TraitDefinition> traitPool = null)
         {

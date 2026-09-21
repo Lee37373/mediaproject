@@ -4,24 +4,73 @@ using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Ecosystem;
 using GuildMaster.Data;
 using GuildMaster.Traits;
+using GuildMaster.Units;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace GuildMaster.Tests
 {
     /// <summary>Hunting with an empty quest board (P4-37, user request 2026-09-20).</summary>
     public class FreeHuntTests
     {
+        static CombatStats Member(AdventurerClass cls, int level, int gear = 0)
+            => AdventurerStats.Compute(new AdventurerData { cls = cls, level = level, gearTier = gear }, null);
+
+        static bool CanTake(CombatStats foe, int foes, params CombatStats[] band)
+            => FreeHunt.CanTake(band, null, foe, foes);
+
         [Test]
         public void ItPicksFightsItCanWin_AndLeavesTheRestAlone()
         {
-            // Lv1, no gear: power 1. Low needs 1, Medium 3, High 6 (DangerRequirement).
-            Assert.That(FreeHunt.CanTake(1f, 1, DangerLevel.Low), Is.True, "slimes and goblins are fair game");
-            Assert.That(FreeHunt.CanTake(1f, 1, DangerLevel.Medium), Is.False, "a goblin warrior alone is 무모");
-            Assert.That(FreeHunt.CanTake(1f, 1, DangerLevel.High), Is.False);
-            // Friends nearby count, the same way a quest party does.
-            Assert.That(FreeHunt.CanTake(1f, 4, DangerLevel.Medium), Is.True, "four of them can take one");
-            // And so does growing stronger.
-            Assert.That(FreeHunt.CanTake(6f, 1, DangerLevel.Medium), Is.True);
+            // P4-38: judged on the real stats and damage formula, so the judgement matches what
+            // actually happens in the fight (user report 2026-09-21: nothing above slimes was hunted).
+            var db = DefaultContent.Build();
+            CombatStats M(string id) => FreeHunt.StatsOf(db.monsters.Find(m => m.id == id));
+            var goblin = M("goblin");
+            var warrior3 = Member(AdventurerClass.Warrior, 3);
+
+            Assert.That(CanTake(M("slime"), 1, Member(AdventurerClass.Warrior, 1)), Is.True, "a slime is anyone's");
+            Assert.That(CanTake(goblin, 1, warrior3), Is.True, "a lone goblin is fair game");
+            // The target the user agreed on: a Lv3 alone does not take on a pack of three, a party of three does.
+            Assert.That(CanTake(goblin, 3, warrior3), Is.False, "a Lv3 alone does not walk into a pack");
+            Assert.That(CanTake(goblin, 3, warrior3, Member(AdventurerClass.Ranger, 3), Member(AdventurerClass.Mage, 3)), Is.True);
+
+            // The founding party can hunt goblins, but not goblin warriors by the pack, nor walk into a full den.
+            var founders = new[] { Member(AdventurerClass.Warrior, 1), Member(AdventurerClass.Ranger, 1),
+                                   Member(AdventurerClass.Priest, 1), Member(AdventurerClass.Mage, 1) };
+            Assert.That(FreeHunt.CanTake(founders, null, goblin, 3), Is.True);
+            Assert.That(FreeHunt.CanTake(founders, null, M("goblin_warrior"), 1), Is.True);
+            Assert.That(FreeHunt.CanTake(founders, null, M("goblin_warrior"), 3), Is.False);
+            Assert.That(FreeHunt.CanTake(founders, null, goblin, 10), Is.False);
+
+            // Growing stronger shows: a geared Lv5 takes what a Lv3 would not.
+            Assert.That(CanTake(goblin, 3, Member(AdventurerClass.Warrior, 5, 1)), Is.True);
+            // And a hurt band thinks twice.
+            var hurt = new[] { warrior3.MaxHp * 0.2f };
+            Assert.That(FreeHunt.CanTake(new[] { warrior3 }, hurt, goblin, 1), Is.False);
+        }
+
+        [Test]
+        public void TheHuntRoamsFurtherAsTheBandGrowsStronger()
+        {
+            // P4-38, user decision 2026-09-21: at a flat 40 cells only the slime rings were in reach.
+            var db = DefaultContent.Build();
+            float Reach(params CombatStats[] band) => FreeHunt.RoamRadius(band, null, db.monsters);
+            var skull = db.monsters.Find(m => m.id == "skull");
+
+            float priestAlone = Reach(Member(AdventurerClass.Priest, 1));
+            float warriorAlone = Reach(Member(AdventurerClass.Warrior, 1));
+            float founders = Reach(Member(AdventurerClass.Warrior, 1), Member(AdventurerClass.Ranger, 1),
+                                   Member(AdventurerClass.Priest, 1), Member(AdventurerClass.Mage, 1));
+            float veterans = Reach(Member(AdventurerClass.Warrior, 10, 2), Member(AdventurerClass.Ranger, 10, 2),
+                                   Member(AdventurerClass.Priest, 10, 2), Member(AdventurerClass.Mage, 10, 2));
+
+            Assert.That(priestAlone, Is.GreaterThanOrEqualTo(FreeHunt.Radius), "never less than the old reach");
+            Assert.That(founders, Is.GreaterThan(warriorAlone), "a party goes further than one member");
+            Assert.That(founders, Is.GreaterThanOrEqualTo(Mathf.Lerp(FreeHunt.Radius, FreeHunt.MaxRadius, skull.distanceBand)),
+                        "the founding party reaches the skull ring");
+            Assert.That(veterans, Is.GreaterThan(founders));
+            Assert.That(veterans, Is.LessThanOrEqualTo(FreeHunt.MaxRadius));
         }
 
         [Test]
@@ -43,8 +92,9 @@ namespace GuildMaster.Tests
                         "slimes neither hunt in packs nor come at people: a den of them is still one at a time");
 
             // And that is what keeps a Lv1 out of a pack it cannot beat.
-            Assert.That(FreeHunt.CanTake(1f, 1, DangerLevel.Low, FreeHunt.ExpectedEnemies(1, slime, 0)), Is.True);
-            Assert.That(FreeHunt.CanTake(1f, 1, DangerLevel.Low, FreeHunt.ExpectedEnemies(1, goblin, 0)), Is.False,
+            var priest = Member(AdventurerClass.Priest, 1);
+            Assert.That(CanTake(FreeHunt.StatsOf(slime), FreeHunt.ExpectedEnemies(1, slime, 0), priest), Is.True);
+            Assert.That(CanTake(FreeHunt.StatsOf(goblin), FreeHunt.ExpectedEnemies(1, goblin, 0), priest), Is.False,
                         "a Lv1 priest died to exactly this before the pack was counted");
         }
 

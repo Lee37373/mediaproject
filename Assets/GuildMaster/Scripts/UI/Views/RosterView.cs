@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using GuildMaster.Adventurers;
 using GuildMaster.CameraControl;
 using GuildMaster.Core;
+using GuildMaster.Recruitment;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -15,11 +16,21 @@ namespace GuildMaster.UI
         RectTransform _content;
         readonly List<MemberRow> _rows = new();
         Text _summary;
+        Button _notice;
+        Text _noticeState;
 
         protected override void Build(RectTransform body)
         {
             UIBuilder.VLayout(body, 6, 0);
             _summary = UIBuilder.Label(body, "", 15, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 24);
+
+            // Recruitment notice (P4-38): pay to bring the next applicant within a few hours.
+            var notice = UIBuilder.Rect(body, "Notice");
+            UIBuilder.HLayout(notice, 8, 0);
+            notice.Size(-1, 32, -1, 0);
+            _notice = UIBuilder.Button(notice, $"모집 공고 ({VisitorService.NoticeCost}G)", PostNotice, 160, 32, UITheme.Header, 15);
+            _noticeState = UIBuilder.Label(notice, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 32, flexWidth: 1);
+
             _content = UIBuilder.ScrollList(body, out var scroll);
             scroll.GetComponent<RectTransform>().Size(-1, -1, -1, 1);
         }
@@ -30,6 +41,18 @@ namespace GuildMaster.UI
             _summary.text = $"길드원 {roster.Members.Count}/{roster.Capacity}명 · 행을 클릭하면 해당 모험가를 추적합니다.";
             EnsureRows(_content, _rows, roster.Members.Count, MemberRow.Create);
             for (int i = 0; i < roster.Members.Count; i++) _rows[i].Bind(roster.Members[i], i);
+
+            if (Services.TryGet<VisitorService>(out var visitors))
+            {
+                var reason = visitors.CannotPostNoticeReason();
+                _notice.interactable = reason == null;
+                _noticeState.text = reason ?? $"{VisitorService.NoticeMinHours:0}~{VisitorService.NoticeMaxHours:0}시간 안에 지원자가 마을 광장에 옵니다.";
+            }
+        }
+
+        void PostNotice()
+        {
+            if (Services.TryGet<VisitorService>(out var visitors)) visitors.PostNotice();
         }
 
         class MemberRow : MonoBehaviour

@@ -12,6 +12,17 @@ namespace GuildMaster.Units
         public const float CritChance = 0.1f;
         public const float CritMultiplier = 1.6f;
 
+        /// <summary>
+        /// Defence that halves a hit. Armour divides damage instead of subtracting from it (P4-38,
+        /// user report 2026-09-21: "one member clears a whole pack alone"): with subtraction a few
+        /// points of gear turned a goblin's 6 into 1.5 and levelled members stopped needing a party.
+        /// </summary>
+        public const float ArmorScale = 10f;
+
+        /// <summary>What is left of a raw hit after the target's defence.</summary>
+        public static float Mitigate(float raw, float defense)
+            => Mathf.Max(1f, raw * ArmorScale / (ArmorScale + Mathf.Max(0f, defense)));
+
         public static float Distance(Unit a, Unit b) => Vector2.Distance(a.Position, b.Position);
 
         public static bool InRange(Unit attacker, Unit target)
@@ -45,7 +56,7 @@ namespace GuildMaster.Units
             float raw = atk * rng.Range(0.9f, 1.1f);
             bool crit = rng.Chance(CritChance);
             if (crit) raw *= CritMultiplier;
-            float dmg = Mathf.Max(1f, raw - target.Stats.Defense * 0.5f);
+            float dmg = Mitigate(raw, target.Stats.Defense);
             target.ReceiveDamage(Mathf.Round(dmg), attacker, crit);
         }
     }

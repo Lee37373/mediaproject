@@ -185,7 +185,11 @@ namespace GuildMaster.Session
             Services.Register(banter);
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)
-                roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), guildDoor + GameRandom.Shared.InsideUnitCircle());
+            {
+                var founder = AdventurerGenerator.Generate(GameRandom.Shared);
+                founder.cls = AdventurerGenerator.StartingLineup[i % AdventurerGenerator.StartingLineup.Length];
+                roster.Recruit(founder, guildDoor + GameRandom.Shared.InsideUnitCircle());
+            }
             // --- Recruitment: visitors who can be talked into joining ---
             var visitors = AddSystem<Recruitment.VisitorService>();
             visitors.Init(clock, roster, world);

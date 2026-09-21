@@ -57,7 +57,8 @@ namespace GuildMaster.Session
         [Range(1f, 2f)] public float goodsSellRate = 1.2f;
 
         [Header("Guild")]
-        public int startingAdventurers = 3;
+        /// <summary>P4-38 (was 3): one full party from the start, one of each class (see StartingLineup).</summary>
+        public int startingAdventurers = 4;
         public int rosterCapacity = 6;
 
         [Header("Raids (P3-6): swollen nests raid the town")]

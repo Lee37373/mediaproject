@@ -31,12 +31,17 @@ namespace GuildMaster.Adventurers
         float _startHour;
         float _nextBackOffLine;
         float _formationRepath;
-        int _allies;
         int _enemies;
         int _nestNearby;
         HuntBand _band;
         /// <summary>Species the guild's own count says to leave alone; refreshed on the search tick.</summary>
         readonly System.Collections.Generic.HashSet<MonsterDefinition> _spared = new();
+        /// <summary>Us and the members close enough to fight beside us, as the fight estimate sees them.</summary>
+        readonly System.Collections.Generic.List<CombatStats> _bandStats = new();
+        readonly System.Collections.Generic.List<float> _bandHp = new();
+        static readonly System.Collections.Generic.List<Unit> AllyBuffer = new();
+        /// <summary>How far out this band roams (P4-38): grows with what it could take on.</summary>
+        float _reach = FreeHunt.Radius;
 
         public override string Label => _band != null && _band.Mustering ? "동료 기다리는 중" : "자율 사냥";
 
@@ -47,9 +52,9 @@ namespace GuildMaster.Adventurers
             _roamTimer = 0f;
             _formationRepath = 0f;
             _nextBackOffLine = 0f;
-            _allies = 0;
             _enemies = 1;
             _nestNearby = 0;
+            CountBand(Owner);
             _band = Services.TryGet<HuntBandService>(out var bands) ? bands.Join(Owner) : null;
             if (_band != null && _band.Leader == Owner && _band.Members.Count == 1) Owner.Say("사냥 나갈 사람?");
         }
@@ -57,6 +62,7 @@ namespace GuildMaster.Adventurers
         public override void Exit()
         {
             Owner.Mover.SpeedMultiplier = 1f;
+            if (_band != null && !_band.Mustering) _band.GoingHome = true;
             if (Services.TryGet<HuntBandService>(out var bands)) bands.Leave(Owner);
             _band = null;
         }
@@ -66,8 +72,7 @@ namespace GuildMaster.Adventurers
         /// <summary>Worth attacking: one we can handle, of a species the guild is not running short of.</summary>
         bool Huntable(Unit u)
             => u is Monster m && m.IsAlive && m.Def != null && !_spared.Contains(m.Def)
-               && FreeHunt.CanTake(AdventurerStats.Power(Owner.Data), _allies + 1, m.Def.danger,
-                      FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby));
+               && FreeHunt.CanTake(_bandStats, _bandHp, m.Stats, FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby));
 
         /// <summary>What may be fought at all: our own prey, plus anything that has just hit us.</summary>
         bool Allowed(Unit u) => Huntable(u) || Owner.WasRecentlyAttackedBy(u);
@@ -95,7 +100,7 @@ namespace GuildMaster.Adventurers
             }
 
             if (a.HandleCombat(dt, Huntable, Allowed)) return;
-            if (a.Looting.Tick(dt)) return;
+            if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
 
             _searchTimer -= dt;
             if (_searchTimer <= 0f)
@@ -105,8 +110,9 @@ namespace GuildMaster.Adventurers
                 if (ShouldGoHome(a)) { a.ChangeState(a.ReturnState); return; }
                 Survey(a);
 
+                var leash = a.PartyLeashCentre();
                 var prey = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
-                    u => Huntable(u) && !a.Engage.IsIgnoring(u) && a.CanSee(u));
+                    u => Huntable(u) && !a.Engage.IsIgnoring(u) && a.CanSee(u) && PartyTactics.InLeash(leash, u.Position));
                 if (prey != null)
                 {
                     a.Engage.SetTarget(prey);
@@ -119,7 +125,7 @@ namespace GuildMaster.Adventurers
             if (Services.TryGet<PartyTactics>(out var party))
             {
                 if (party.Follow(a, ref _formationRepath, dt, out _)) return;
-                party.PaceLeader(a);
+                if (party.PaceLeader(a)) return;
             }
 
             var spot = Spot(a);
@@ -132,11 +138,12 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>
-        /// The band walks home together: whatever sends the leader back sends everyone back, so a
-        /// hurt member does not trail behind alone.
+        /// The band walks home together: whatever sends one member back sends everyone back, so
+        /// nobody trails home alone and nobody is left hunting on its own (P4-38).
         /// </summary>
         bool ShouldGoHome(Adventurer a)
         {
+            if (_band != null && _band.GoingHome) return true;
             bool quest = AdvCtx.Board.AvailableFor(a).Any();
             if (FreeHunt.ShouldGoHome(AdvCtx.Clock.TotalHours - _startHour, a.Data.LootCount, quest, a.HpRatio)) return true;
             var leader = _band?.Leader;
@@ -151,7 +158,7 @@ namespace GuildMaster.Adventurers
         /// </summary>
         void Survey(Adventurer a)
         {
-            _allies = UnitRegistry.CountInRadius(a.Position, FreeHunt.AllyRadius, u => u != a && u is Adventurer && u.IsAlive);
+            CountBand(a);
             _enemies = UnitRegistry.CountInRadius(a.Position, a.Stats.SightRadius, u => u is Monster m && m.IsAlive);
             _nestNearby = 0;
             _spared.Clear();
@@ -162,6 +169,26 @@ namespace GuildMaster.Adventurers
             foreach (var n in intel.KnownNests)
                 if (Vector2.Distance(n.WorldPosition, a.Position) <= NestNearRadius)
                     _nestNearby = Mathf.Max(_nestNearby, intel.Get(n).LastCount);
+        }
+
+        /// <summary>Ourselves first, then every living member within <see cref="FreeHunt.AllyRadius"/>.</summary>
+        void CountBand(Adventurer a)
+        {
+            _bandStats.Clear();
+            _bandHp.Clear();
+            _bandStats.Add(a.Stats);
+            _bandHp.Add(a.Hp);
+            UnitRegistry.Collect(a.Position, FreeHunt.AllyRadius, u => u != a && u is Adventurer m && m.IsGuildMember, AllyBuffer);
+            foreach (var u in AllyBuffer)
+            {
+                _bandStats.Add(u.Stats);
+                _bandHp.Add(u.Hp);
+            }
+            // Judged at full health: how far out the band goes is its strength, not today's scratches
+            // (being hurt already sends it home, see FreeHunt.ShouldGoHome).
+            _reach = Services.TryGet<EcosystemManager>(out var eco)
+                ? FreeHunt.RoamRadius(_bandStats, null, eco.Species)
+                : FreeHunt.Radius;
         }
 
         /// <summary>
@@ -210,13 +237,13 @@ namespace GuildMaster.Adventurers
             if (rng.Chance(0.6f) && Services.TryGet<GuildIntel>(out var intel))
             {
                 var dens = intel.KnownNests
-                    .Where(n => Vector2.Distance(n.WorldPosition, town) <= FreeHunt.Radius
+                    .Where(n => Vector2.Distance(n.WorldPosition, town) <= _reach
                                 && intel.SpeciesOf(n) != null
                                 && !_spared.Contains(intel.SpeciesOf(n))
                                 && intel.Get(n).LastCount > 0
-                                && FreeHunt.CanTake(AdventurerStats.Power(a.Data), _allies + 1, intel.SpeciesOf(n).danger,
+                                && FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(intel.SpeciesOf(n)),
                                        FreeHunt.ExpectedEnemies(1, intel.SpeciesOf(n), intel.Get(n).LastCount))
-                                && (avoid == null || Vector2.Distance(n.WorldPosition, avoid.Value) > FreeHunt.Radius * 0.3f))
+                                && (avoid == null || Vector2.Distance(n.WorldPosition, avoid.Value) > _reach * 0.3f))
                     .ToList();
                 if (dens.Count > 0)
                 {
@@ -230,10 +257,10 @@ namespace GuildMaster.Adventurers
                 var centre = GridMap.WorldToCell(town);
                 for (int attempt = 0; attempt < 12; attempt++)
                 {
-                    if (!world.Grid.TryRandomWalkableNear(centre, Mathf.RoundToInt(FreeHunt.Radius), rng, out var cell)) continue;
+                    if (!world.Grid.TryRandomWalkableNear(centre, Mathf.RoundToInt(_reach), rng, out var cell)) continue;
                     if (world.Grid.IsInTown(cell)) continue;
                     var p = GridMap.CellToWorld(cell);
-                    if (avoid != null && Vector2.Distance(p, avoid.Value) < FreeHunt.Radius * 0.3f) continue;
+                    if (avoid != null && Vector2.Distance(p, avoid.Value) < _reach * 0.3f) continue;
                     chosen = p;
                     break;
                 }

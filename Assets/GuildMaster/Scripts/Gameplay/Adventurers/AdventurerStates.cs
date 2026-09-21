@@ -220,7 +220,7 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
             if (a.HandleCombat(dt)) return;
-            if (a.Looting.Tick(dt)) return;
+            if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
 
             if (Vector2.Distance(a.Position, _destination) < 3f)
             {
@@ -235,7 +235,7 @@ namespace GuildMaster.Adventurers
                     if (leader.Fsm.Current == leader.HuntState) a.ChangeState(a.HuntState);
                     return;
                 }
-                party.PaceLeader(a);
+                if (party.PaceLeader(a)) return;
             }
             if (!a.Mover.IsMoving) a.Mover.SetDestination(_destination, 1.5f);
         }
@@ -316,7 +316,7 @@ namespace GuildMaster.Adventurers
             if (TryDrive(a)) return;
             if (a.HandleCombat(dt, IsAreaTarget)) return;
             // Loot left by the kills (P4-21) before searching on.
-            if (a.Looting.Tick(dt)) return;
+            if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
 
             _searchTimer -= dt;
             bool searched = _searchTimer <= 0f;
@@ -324,7 +324,10 @@ namespace GuildMaster.Adventurers
             {
                 _searchTimer = 0.6f;
                 // Only what this adventurer can actually see.
-                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius, u => IsAreaTarget(u) && !a.Engage.IsIgnoring(u) && a.CanSee(u));
+                // Party members hunt near their leader (P4-38).
+                var leash = a.PartyLeashCentre();
+                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
+                    u => IsAreaTarget(u) && !a.Engage.IsIgnoring(u) && a.CanSee(u) && PartyTactics.InLeash(leash, u.Position));
                 if (target != null)
                 {
                     a.Engage.SetTarget(target);
@@ -336,7 +339,7 @@ namespace GuildMaster.Adventurers
             if (Services.TryGet<PartyTactics>(out var party))
             {
                 if (party.Follow(a, ref _formationRepath, dt, out _)) return;
-                party.PaceLeader(a);
+                if (party.PaceLeader(a)) return;
             }
 
             // Drifted out (a chase, a lure): walk back into the area.
