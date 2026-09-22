@@ -54,7 +54,9 @@ namespace GuildMaster.Adventurers
             _nestNearby = 0;
             CountBand(Owner);
             _band = Services.TryGet<HuntBandService>(out var bands) ? bands.Join(Owner) : null;
-            if (_band != null && _band.Leader == Owner && _band.Members.Count == 1) Owner.Say("사냥 나갈 사람?");
+            // With invitations out the leader has already asked (P4-51).
+            bool inviting = _band != null && Services.TryGet<PartyService>(out var invites) && invites.IsGathering(_band);
+            if (_band != null && _band.Leader == Owner && _band.Members.Count == 1 && !inviting) Owner.Say("사냥 나갈 사람?");
         }
 
         public override void Exit()

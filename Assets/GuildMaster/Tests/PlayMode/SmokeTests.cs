@@ -614,6 +614,38 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator GoingHunting_InvitesOthersInTown_AndThoseWhoAcceptJoinTheBand()
+        {
+            yield return Boot();
+            var free = Roster.Members.Where(m => m.IsAlive && m.Fsm.Current == m.IdleState).ToList();
+            Assume.That(free.Count, Is.GreaterThanOrEqualTo(3), "a leader and two to invite");
+            var leader = free[0];
+            // Close friends: the rule answer is then almost always yes.
+            foreach (var m in free.Skip(1))
+            {
+                Relationships.Add(m, leader, 80 - Relationships.Get(m, leader), "test");
+                Relationships.Add(leader, m, 80 - Relationships.Get(leader, m), "test");
+            }
+            int answers = 0, accepted = 0;
+            System.Action<PartyInviteAnsweredEvent> onAnswer = e =>
+            {
+                if (e.Leader != leader || e.Quest != null) return;
+                answers++;
+                if (e.Accepted) accepted++;
+            };
+            EventBus.Subscribe(onAnswer);
+            leader.ChangeState(leader.FreeHuntState);
+            yield return WaitFor(() => answers >= free.Count - 1, 5f);
+            EventBus.Unsubscribe(onAnswer);
+
+            var band = Services.Get<HuntBandService>().BandOf(leader);
+            Assert.That(answers, Is.EqualTo(free.Count - 1), "everyone free in town was asked");
+            Assert.That(accepted, Is.GreaterThan(0));
+            Assert.That(band.Members.Count, Is.EqualTo(1 + accepted), "those who said yes are in the band");
+            Assert.That(band.Leader, Is.EqualTo(leader));
+        }
+
+        [UnityTest]
         public IEnumerator Forest_HidesItsInsideFromOutside_AndShortensSightWithin()
         {
             yield return Boot();
@@ -1286,7 +1318,7 @@ namespace GuildMaster.Tests
             Assert.That(band, Is.Not.Null);
             Assert.That(bands.BandOf(second), Is.SameAs(band), "the second to decide joins the first, it does not set off alone");
             Assert.That(band.Leader, Is.EqualTo(first), "the first to decide leads");
-            Assert.That(band.Mustering, Is.True, "they wait at the gate for company");
+            Assert.That(band.Mustering, Is.True, "they wait at the guild for company");
             Assert.That(Services.Get<PartyTactics>().LeaderOf(second), Is.EqualTo(first),
                         "so the band gets a quest party's formation and focus fire");
 
@@ -1300,6 +1332,8 @@ namespace GuildMaster.Tests
                 priest = first;
                 priest.Data.cls = AdventurerClass.Priest;
             }
+            // Nobody else is free to be invited (P4-51: company comes by invitation now).
+            foreach (var other in Roster.Members.Where(a => a.IsAlive && a != priest)) other.ChangeState(other.RestState);
             priest.ChangeState(priest.FreeHuntState);
             var solo = bands.BandOf(priest);
             Assert.That(solo.Members.Count, Is.EqualTo(1));

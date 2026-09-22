@@ -15,8 +15,8 @@ namespace GuildMaster.Adventurers.Prompts
         public const int SayMaxChars = 120;
 
         public const string SystemPrompt =
-            "너는 판타지 모험가 길드에 소속된 모험가 NPC다. 동료(leader)가 방금 의뢰를 맡고 너에게 함께 가자고 제안했다. " +
-            "주어진 JSON의 네 성격(mbti, values), 특성(traits), 상태(status), 리더와의 기억(memories_with_leader), 의뢰 정보(quest)를 보고 " +
+            "너는 판타지 모험가 길드에 소속된 모험가 NPC다. 동료(leader)가 방금 의뢰를 맡았거나 자율 사냥을 나가며 너에게 함께 가자고 제안했다. " +
+            "주어진 JSON의 네 성격(mbti, values), 특성(traits), 상태(status), 리더와의 기억(memories_with_leader), 할 일(quest: 의뢰 또는 자율 사냥)을 보고 " +
             "제안을 받아들일지(accept: yes/no) 스스로 정한다.\n" +
             "- 가치관이 '동료'이거나 사교적이면 대체로 함께 간다. 혼자 일하기를 좋아하면 대체로 거절한다.\n" +
             "- 체력이 낮거나(hp_percent 50 미만) 피로가 높으면(fatigue 70 이상) 거절한다.\n" +
@@ -76,8 +76,30 @@ namespace GuildMaster.Adventurers.Prompts
 
         public static ContextDto BuildContext(Adventurer c, Adventurer leader, Quest q, string invite)
         {
-            var d = c.Data;
             int partySize = q.Assignees.Count + 1;
+            return BuildContext(c, leader, invite, new QuestDto
+            {
+                target = q.Title,
+                my_share_gold = q.RewardGold / partySize,
+                my_share_exp = q.RewardExp / partySize,
+                danger = Quest.DangerLabel(q.Danger),
+                risk_for_me = DecisionPrompt.RiskLabel(c, q),
+                party_size = q.MaxParty,
+            });
+        }
+
+        public const string HuntTarget = "자율 사냥(의뢰 없이 길드가 아는 둥지 중 파티가 감당할 만한 곳, 번 골드는 파티가 나눔)";
+        public const string HuntRisk = "보통";
+
+        public static string HuntInviteLine() => "사냥 나가는데, 같이 갈래?";
+
+        /// <summary>A free hunt (P4-51): no reward is promised, the pay is what the party brings back.</summary>
+        public static ContextDto BuildHuntContext(Adventurer c, Adventurer leader, string invite, int partySize)
+            => BuildContext(c, leader, invite, new QuestDto { target = HuntTarget, danger = "알 수 없음", risk_for_me = HuntRisk, party_size = partySize });
+
+        static ContextDto BuildContext(Adventurer c, Adventurer leader, string invite, QuestDto quest)
+        {
+            var d = c.Data;
             var basic = DecisionPrompt.BuildContext(c, Array.Empty<Quest>());
             var withLeader = d.memories.Where(m => m.Text.Contains(leader.Data.name))
                 .OrderByDescending(m => m.hour).Take(3).Select(m => m.Format()).ToArray();
@@ -98,15 +120,7 @@ namespace GuildMaster.Adventurers.Prompts
                     mbti = leader.Data.mbti,
                     invite = invite,
                 },
-                quest = new QuestDto
-                {
-                    target = q.Title,
-                    my_share_gold = q.RewardGold / partySize,
-                    my_share_exp = q.RewardExp / partySize,
-                    danger = Quest.DangerLabel(q.Danger),
-                    risk_for_me = DecisionPrompt.RiskLabel(c, q),
-                    party_size = q.MaxParty,
-                },
+                quest = quest,
                 memories_with_leader = withLeader,
                 my_feeling_to_leader = Relationships.Describe(Relationships.Get(c, leader)),
                 memories = basic.memories,
@@ -123,6 +137,19 @@ namespace GuildMaster.Adventurers.Prompts
         {
             System = SystemPrompt,
             User = LlmJson.ToJson(BuildContext(c, leader, q, invite)),
+            Grammar = Grammar,
+            MaxTokens = 300,
+            Temperature = 0.7f,
+            Priority = LlmPriority.Party,
+            DedupeKey = "party:" + c.Data.id,
+            TimeoutSeconds = 40f,
+            Tag = "party:" + c.Data.id,
+        };
+
+        public static LlmRequest BuildHuntRequest(Adventurer c, Adventurer leader, string invite, int partySize) => new()
+        {
+            System = SystemPrompt,
+            User = LlmJson.ToJson(BuildHuntContext(c, leader, invite, partySize)),
             Grammar = Grammar,
             MaxTokens = 300,
             Temperature = 0.7f,

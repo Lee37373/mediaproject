@@ -35,16 +35,17 @@ namespace GuildMaster.Adventurers
 
     /// <summary>
     /// Keeps the hunting bands (P4-37, user request 2026-09-20: "they should move as a party").
-    /// A member that decides to hunt joins a band that is still mustering at the gate; when none
-    /// is, it starts one and waits a while for company itself.
+    /// A member that decides to hunt joins a band still mustering at the guild; when none is, it
+    /// starts one and invites others in town (P4-51, <see cref="PartyService.InviteToHunt"/>).
     /// </summary>
     public class HuntBandService : MonoBehaviour
     {
         /// <summary>
-        /// Game hours the first member waits at the gate before setting off. P4-40: was 1.5 — a
-        /// measured day spent 14% of everyone's time waiting at the gate.
+        /// Game hours the band waits at the guild before setting off, beyond the time its invitations
+        /// take to answer (P4-51: company now comes by invitation, so this is only for walking up).
+        /// P4-40 cut it from 1.5 to 0.75 — a measured day spent 14% of everyone's time waiting.
         /// </summary>
-        public const float MusterHours = 0.75f;
+        public const float MusterHours = 0.25f;
 
         readonly List<HuntBand> _bands = new();
         GameClock _clock;
@@ -99,6 +100,9 @@ namespace GuildMaster.Adventurers
                     m.ChangeState(m.FreeHuntState);
                 }
             }
+            // The free slots are filled by invitation (P4-51): each invitee decides for itself.
+            if (band.Members.Count < _capacity && Services.TryGet<PartyService>(out var invites))
+                invites.InviteToHunt(a, band, _capacity - band.Members.Count);
             return band;
         }
 
@@ -120,7 +124,9 @@ namespace GuildMaster.Adventurers
                 var b = _bands[i];
                 b.Members.RemoveAll(m => m == null || !m.IsAlive || !m.IsGuildMember);
                 if (b.Members.Count == 0) { _bands.RemoveAt(i); continue; }
-                if (b.Mustering && (hour >= b.MusterUntilHour || b.Members.Count >= _capacity))
+                // Waits while hunt invitations are being answered (P4-51), then leaves together.
+                bool answering = Services.TryGet<PartyService>(out var invites) && invites.IsGathering(b);
+                if (b.Mustering && !answering && (hour >= b.MusterUntilHour || b.Members.Count >= _capacity))
                 {
                     b.Mustering = false;
                     // Setting out together: a standing party forms or goes on an outing (P4-50).
