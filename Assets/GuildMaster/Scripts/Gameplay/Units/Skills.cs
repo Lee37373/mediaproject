@@ -90,10 +90,11 @@ namespace GuildMaster.Units
             return best;
         }
 
+        /// <summary>Heals by a listed amount (scaled here by <see cref="Combat.ScaledHp"/>).</summary>
         protected static void HealUnit(Unit healer, Unit patient, float amount)
         {
             float before = patient.Hp;
-            patient.Heal(Mathf.Round(amount));
+            patient.Heal(Mathf.Round(Combat.ScaledHp(amount)));
             float gained = patient.Hp - before;
             if (gained <= 0f) return;
             Fx?.Spark(patient.Position + new Vector2(0f, 0.3f), new Color(0.55f, 1f, 0.6f), 0.9f, 0.35f);
@@ -268,7 +269,7 @@ namespace GuildMaster.Units
             var patient = MostEndangeredAlly(self, Range, Below);
             if (patient == null) return false;
             if (patient != self) Fx?.Beam(self.Position, patient.Position, Color, 0.08f, 0.3f);
-            HealUnit(self, patient, self.Stats.Attack * 3f * Combat.HpScale);
+            HealUnit(self, patient, self.Stats.Attack * 3f);
             Announce(self);
             return true;
         }
@@ -296,7 +297,7 @@ namespace GuildMaster.Units
                     && (u.Position - self.Position).sqrMagnitude <= Radius * Radius)
                     s_patients.Add(u);
             if (s_patients.Count < MinPatients) return false;
-            foreach (var u in s_patients.ToArray()) HealUnit(self, u, self.Stats.Attack * 1.5f * Combat.HpScale);
+            foreach (var u in s_patients.ToArray()) HealUnit(self, u, self.Stats.Attack * 1.5f);
             Fx?.Ring(self.Position, Radius, Color, 0.5f);
             Announce(self);
             return true;

@@ -131,7 +131,7 @@ namespace GuildMaster.Adventurers
             s.MaxHp *= 1f + 0.12f * lv;
             s.Attack *= 1f + 0.10f * lv;
             s.Defense += 0.6f * lv;
-            s.MaxHp *= Units.Combat.HpScale;
+            s.MaxHp = Units.Combat.ScaledHp(s.MaxHp);
             s.Attack += 3f * d.gearTier;
             s.Defense += 2f * d.gearTier;
             if (modifiers != null) foreach (var m in modifiers) m.Modify(ref s);

@@ -40,14 +40,7 @@ namespace GuildMaster.Adventurers
             // defenders tidied up loot (user report 2026-09-22).
             bool InZone(Unit u) => u != null && (world.Grid.IsInTown(u.Position) || Vector2.Distance(u.Position, rally) <= HoldRadius
                                                  || a.WasRecentlyAttackedBy(u) || ShootsIntoTown(u));
-            bool ShootsIntoTown(Unit u)
-            {
-                if (!u.Stats.IsRanged) return false;
-                var toTown = world.TownCenterWorld - u.Position;
-                float reach = u.Stats.AttackRange + 1.5f;
-                return toTown.sqrMagnitude <= reach * reach
-                       || world.Grid.IsInTown(GridMap.WorldToCell(u.Position + toTown.normalized * reach));
-            }
+            bool ShootsIntoTown(Unit u) => u.Stats.IsRanged && AdvCtx.Town.WithinReachOfTown(u.Position, u.Stats.AttackRange + 1.5f);
 
             if (a.CheckRetreat()) return;
             if (a.HandleCombat(dt, u => u is Monster m && m.DefaultStateOverride != null && m.IsAlive, InZone)) return;

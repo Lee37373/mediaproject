@@ -73,7 +73,7 @@ namespace GuildMaster.Monsters
             => i == null ? 0f : i.monsterAttackBonus + i.monsterDefenseBonus * 1.2f + i.monsterHpBonus * 0.15f + (i.IsUnique ? 100f : 0f);
 
         /// <summary>HP a slime gains from swallowing the item (half its value, at least 1).</summary>
-        public static float AbsorbHp(ItemDefinition i) => i == null ? 0f : Mathf.Max(1f, i.baseValue * 0.5f) * Units.Combat.HpScale;
+        public static float AbsorbHp(ItemDefinition i) => i == null ? 0f : Units.Combat.ScaledHp(Mathf.Max(1f, i.baseValue * 0.5f));
 
         /// <summary>
         /// Would a monster with this pickup mode want the item, given what it wears in that slot and

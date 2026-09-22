@@ -21,6 +21,13 @@ namespace GuildMaster.Units
         public const float HpScale = 3f;
 
         /// <summary>
+        /// A listed HP or heal number (data, class base, potion, skill formula) as it is in play.
+        /// Every max HP and every flat heal goes through here, so nothing is left at the old scale.
+        /// Heals that are a share of max HP (regen, rest) are already scaled and do not.
+        /// </summary>
+        public static float ScaledHp(float listed) => listed * HpScale;
+
+        /// <summary>
         /// Defence that halves a hit. Armour divides damage instead of subtracting from it (P4-38,
         /// user report 2026-09-21: "one member clears a whole pack alone"): with subtraction a few
         /// points of gear turned a goblin's 6 into 1.5 and levelled members stopped needing a party.

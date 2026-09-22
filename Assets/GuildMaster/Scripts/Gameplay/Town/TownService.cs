@@ -76,6 +76,17 @@ namespace GuildMaster.Town
 
         public bool IsInTown(Vector2 pos) => _world.Grid.IsInTown(pos);
 
+        /// <summary>
+        /// Inside the walls, or outside but within <paramref name="reach"/> cells of them (measured
+        /// towards the town centre). Used for who the defenders may go for: raiders shooting into
+        /// town (DefendState) and monsters fighting the guild just outside the wall (TownGuardState).
+        /// </summary>
+        public bool WithinReachOfTown(Vector2 pos, float reach)
+        {
+            var toTown = _world.TownCenterWorld - pos;
+            return toTown.sqrMagnitude <= reach * reach || IsInTown(pos + toTown.normalized * reach);
+        }
+
         /// <summary>Random walkable spot around the plaza for idling NPCs.</summary>
         public Vector2 RandomPlazaSpot(Core.GameRandom rng, int radius = 5)
         {

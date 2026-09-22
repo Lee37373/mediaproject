@@ -382,7 +382,7 @@ namespace GuildMaster.Adventurers
             if (HpRatio < RetreatThreshold && Data.potions > 0 && Services.TryGet<GameDatabase>(out var db))
             {
                 Data.potions--;
-                Heal((db.Item(DefaultContent.Potion)?.healAmount ?? 40f) * Combat.HpScale);
+                Heal(Combat.ScaledHp(db.Item(DefaultContent.Potion)?.healAmount ?? 40f));
                 Say("물약을 마셨다!");
             }
             if (HpRatio < RetreatThreshold || Data.fatigue >= 95f)

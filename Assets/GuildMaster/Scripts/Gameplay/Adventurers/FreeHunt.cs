@@ -155,7 +155,7 @@ namespace GuildMaster.Adventurers
         /// <summary>A species' stats before any gear it picked up, for a den judged from afar.</summary>
         public static CombatStats StatsOf(MonsterDefinition def) => new CombatStats
         {
-            MaxHp = def.maxHp * Combat.HpScale, Attack = def.attack, Defense = def.defense,
+            MaxHp = Combat.ScaledHp(def.maxHp), Attack = def.attack, Defense = def.defense,
             AttackRange = def.attackRange, AttackCooldown = def.attackCooldown,
             MoveSpeed = def.moveSpeed, SightRadius = def.sightRadius,
         };

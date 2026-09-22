@@ -66,11 +66,7 @@ namespace GuildMaster.Adventurers
         static bool IsIntruder(TownService town, Monster m)
         {
             if (town.IsInTown(m.Position) || m.IsBreakingGate) return true;
-            if (!(m.CombatEngagement?.Target is Unit t) || t.Faction != Faction.Guild) return false;
-            var world = Services.Get<World.WorldService>();
-            var toTown = world.TownCenterWorld - m.Position;
-            return toTown.sqrMagnitude <= WallReach * WallReach
-                   || world.Grid.IsInTown(m.Position + toTown.normalized * WallReach);
+            return m.CombatEngagement?.Target is Unit t && t.Faction == Faction.Guild && town.WithinReachOfTown(m.Position, WallReach);
         }
 
         public override void Enter()
