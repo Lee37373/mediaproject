@@ -46,7 +46,7 @@ namespace GuildMaster.Units
             var guild = u.Faction == Faction.Guild;
 
             Handles.color = SightColor;
-            Handles.DrawWireDisc(p, Vector3.forward, u.Stats.SightRadius);
+            Handles.DrawWireDisc(p, Vector3.forward, u.EffectiveSightRadius); // a third inside a forest (P4-48)
             Handles.color = RangeColor;
             Handles.DrawWireDisc(p, Vector3.forward, u.Stats.AttackRange + Combat.ContactPadding + u.Radius);
 

@@ -27,8 +27,10 @@ namespace GuildMaster.World
         /// Grid ray cast (Amanatides–Woo DDA) from a to b. Stops at the first hard-cover cell
         /// (mountain, wall, building). Trees are counted but not blocking. The start and end
         /// cells are ignored so units standing next to cover can still shoot past it.
+        /// With <paramref name="forestBlocks"/> forest cells stop it too (sight from outside a forest,
+        /// see <see cref="ForestSight"/>).
         /// </summary>
-        public bool Raycast(Vector2 a, Vector2 b, out Vector2 hitPoint, out int treesCrossed)
+        public bool Raycast(Vector2 a, Vector2 b, out Vector2 hitPoint, out int treesCrossed, bool forestBlocks = false)
         {
             treesCrossed = 0;
             hitPoint = b;
@@ -53,7 +55,7 @@ namespace GuildMaster.World
                 if (tMaxX < tMaxY) { t = tMaxX; tMaxX += tDeltaX; x += stepX; }
                 else { t = tMaxY; tMaxY += tDeltaY; y += stepY; }
                 if (t > len || (x == end.x && y == end.y)) return false;
-                if (Grid.IsHardCover(x, y))
+                if (Grid.IsHardCover(x, y) || (forestBlocks && Grid.IsForest(x, y)))
                 {
                     hitPoint = a + d * t;
                     return true;
@@ -64,8 +66,19 @@ namespace GuildMaster.World
         }
 
         /// <summary>Clear line of sight (no hard cover; trees allowed up to maxTrees).</summary>
-        public bool HasLineOfSight(Vector2 a, Vector2 b, int maxTrees = 2)
-            => !Raycast(a, b, out _, out int trees) && trees <= maxTrees;
+        public bool HasLineOfSight(Vector2 a, Vector2 b, int maxTrees = 2, bool forestBlocks = false)
+            => !Raycast(a, b, out _, out int trees, forestBlocks) && trees <= maxTrees;
+
+        /// <summary>
+        /// What an eye at <paramref name="eye"/> with this sight radius can see at
+        /// <paramref name="target"/>: distance (shortened inside a forest), hard cover, and forests
+        /// seen from outside (<see cref="ForestSight"/>); up to <paramref name="maxTrees"/> trees.
+        /// </summary>
+        public bool CanSee(Vector2 eye, Vector2 target, float sightRadius, int maxTrees = 2)
+            => (target - eye).sqrMagnitude <= Sq(ForestSight.Radius(this, eye, sightRadius))
+               && HasLineOfSight(eye, target, maxTrees, ForestSight.ForestBlocks(this, eye));
+
+        static float Sq(float x) => x * x;
 
         /// <summary>True if a straight segment crosses only walkable cells (used for path smoothing).</summary>
         public bool HasClearLine(Vector2 a, Vector2 b)

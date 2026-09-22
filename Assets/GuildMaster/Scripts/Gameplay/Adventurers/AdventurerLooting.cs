@@ -122,7 +122,8 @@ namespace GuildMaster.Adventurers
                 if (Vector2.Distance(a.Position, g.Position) > radius) continue;
                 if (allowed != null && !allowed(g.Position)) continue;
                 if (fog != null && !fog.IsVisibleRaw(g.Position)) continue;
-                if (world != null && !world.HasLineOfSight(a.Position, g.Position, 2)) continue;
+                // Its own eyes too: hard cover, and forests seen from outside (P4-48).
+                if (world != null && !world.HasLineOfSight(a.Position, g.Position, 2, ForestSight.ForestBlocks(world, a.Position))) continue;
                 s_candidates.Add(g);
                 s_points.Add(g.Position);
             }

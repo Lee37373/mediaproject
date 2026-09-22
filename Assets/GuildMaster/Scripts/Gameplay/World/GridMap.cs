@@ -70,6 +70,10 @@ namespace GuildMaster.World
 
         public bool HasTree(int x, int y) => Data.HasTree(x, y);
 
+        /// <summary>Forest floor (P4-48: blocks the view from outside, shortens it inside).</summary>
+        public bool IsForest(int x, int y) => Data.InBounds(x, y) && Data.Tiles[y * Width + x] == TileType.Forest;
+        public bool IsForest(Vector2Int c) => IsForest(c.x, c.y);
+
         public float Cost(Vector2Int c) => Cost(c.x, c.y);
 
         public void SetBlocked(RectInt area, bool blocked)

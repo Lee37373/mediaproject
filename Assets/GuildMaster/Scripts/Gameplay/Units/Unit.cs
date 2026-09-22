@@ -208,11 +208,20 @@ namespace GuildMaster.Units
         public abstract bool IsHostileTo(Unit other);
 
         /// <summary>
-        /// Line of sight to another unit: mountains, walls and buildings block it; up to two trees
-        /// are fine (same rule as ranged attacks). Use when picking new targets by sight.
+        /// Sight of another unit: within the sight radius (a third of it inside a forest), and no
+        /// mountain, wall, building or — seen from outside — forest in between; up to two trees are
+        /// fine (P4-48, <see cref="ForestSight"/>). Use when picking new targets by sight.
         /// </summary>
         public bool CanSee(Unit other)
-            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.HasLineOfSight(Position, other.Position, 2));
+            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, other.Position, Stats.SightRadius));
+
+        /// <summary>Same sight rule for a point (e.g. an item on the ground).</summary>
+        public bool CanSee(Vector2 point)
+            => !Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, point, Stats.SightRadius);
+
+        /// <summary>How far this unit sees where it stands now (a third of its sight inside a forest).</summary>
+        public float EffectiveSightRadius
+            => Core.Services.TryGet<WorldService>(out var world) ? ForestSight.Radius(world, Position, Stats.SightRadius) : Stats.SightRadius;
 
         /// <summary>True if the other unit hit us within the given seconds (retaliation).</summary>
         public bool WasRecentlyAttackedBy(Unit other, float seconds = 8f)

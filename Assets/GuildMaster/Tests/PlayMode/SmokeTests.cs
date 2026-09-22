@@ -564,6 +564,53 @@ namespace GuildMaster.Tests
         /// the real monster, and seeing the spot again settles the question and removes it.
         /// </summary>
         [UnityTest]
+        public IEnumerator Forest_HidesItsInsideFromOutside_AndShortensSightWithin()
+        {
+            yield return Boot();
+            var avatar = Services.Get<PlayerAvatar>();
+            var world = Services.Get<World.WorldService>();
+            var fog = Services.Get<Fog.FogOfWar>();
+            // A forest block (5x5) far from town with open walkable grass 5 cells to its west.
+            Vector2Int deep = default, outside = default;
+            bool found = false;
+            var grid = world.Grid;
+            var town = World.GridMap.WorldToCell(world.TownCenterWorld);
+            for (int y = 3; y < grid.Height - 3 && !found; y++)
+            for (int x = 8; x < grid.Width - 3 && !found; x++)
+            {
+                var c = new Vector2Int(x, y);
+                if ((c - town).magnitude < 30f) continue;
+                bool block = true;
+                for (int dy = -2; dy <= 2 && block; dy++)
+                for (int dx = -2; dx <= 2 && block; dx++)
+                    if (!grid.IsForest(c + new Vector2Int(dx, dy))) block = false;
+                if (!block) continue;
+                var o = c + new Vector2Int(-5, 0);
+                bool clear = true;
+                for (int dx = 0; dx <= 2 && clear; dx++)
+                    if (grid.IsForest(o + new Vector2Int(dx, 0)) || !grid.IsWalkable(o + new Vector2Int(dx, 0))) clear = false;
+                if (!clear || !world.HasLineOfSight(World.GridMap.CellToWorld(o), World.GridMap.CellToWorld(c), 99)) continue;
+                deep = c; outside = o; found = true;
+            }
+            Assume.That(found, Is.True, "a forest block with open ground beside it on this map");
+            var deepPos = World.GridMap.CellToWorld(deep);
+
+            avatar.Mover.Stop();
+            avatar.transform.position = World.GridMap.CellToWorld(outside);
+            yield return WaitFor(() => fog.IsVisibleRaw(avatar.Position), 5f);
+            yield return new WaitForSeconds(0.5f); // a few fog ticks
+            Assert.That(avatar.CanSee(deepPos), Is.False, "5 cells away, 2 cells into the forest: hidden from outside");
+            Assert.That(fog.IsVisibleRaw(deepPos), Is.False, "the fog keeps the inside of the forest dark");
+
+            // Inside the forest: close by is seen, the usual distance is not.
+            avatar.transform.position = World.GridMap.CellToWorld(deep + new Vector2Int(-1, 0));
+            yield return new WaitForSeconds(0.5f);
+            Assert.That(fog.IsVisibleRaw(deepPos), Is.True, "one cell away inside the forest");
+            float third = avatar.Stats.SightRadius / 3f;
+            Assert.That(avatar.EffectiveSightRadius, Is.EqualTo(third).Within(0.01f), "sight is a third in the forest");
+        }
+
+        [UnityTest]
         public IEnumerator FogGhost_RemembersWhereAMonsterWasLastSeen()
         {
             yield return Boot();

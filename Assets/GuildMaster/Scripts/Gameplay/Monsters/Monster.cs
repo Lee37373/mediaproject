@@ -410,7 +410,7 @@ namespace GuildMaster.Monsters
             float range = Def.wanderRadius + 3f;
             var leader = PackLeader;
             var item = ground.FindNearest(Position, Stats.SightRadius, g =>
-                g.IsFreeFor(this) && (g.Position - home).sqrMagnitude <= range * range && WantsItem(g.Item)
+                g.IsFreeFor(this) && (g.Position - home).sqrMagnitude <= range * range && WantsItem(g.Item) && CanSee(g.Position)
                 && (leader == null || leader == this || g.Age >= LeaderFirstSeconds || !leader.WantsItem(g.Item)));
             if (item == null || !item.Reserve(this)) return;
             PickupState.Begin(item);

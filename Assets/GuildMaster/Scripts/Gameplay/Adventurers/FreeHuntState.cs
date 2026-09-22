@@ -165,7 +165,7 @@ namespace GuildMaster.Adventurers
         void Survey(Adventurer a)
         {
             CountBand(a);
-            _enemies = UnitRegistry.CountInRadius(a.Position, a.Stats.SightRadius, u => u is Monster m && m.IsAlive);
+            _enemies = UnitRegistry.CountInRadius(a.Position, a.Stats.SightRadius, u => u is Monster m && m.IsAlive && a.CanSee(m)); // only what it sees (P4-48)
             _nestNearby = 0;
             if (!Services.TryGet<GuildIntel>(out var intel)) return;
             foreach (var n in intel.KnownNests)
