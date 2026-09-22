@@ -13,10 +13,9 @@ namespace GuildMaster.Proposals
             _ => "모험",
         };
 
-        public static string KindLabel(QuestType type) => type == QuestType.Hunt ? "토벌" : "둥지 소탕";
+        public static string KindLabel(QuestType type) => "토벌";
 
-        public static string FallbackTitle(ProposalPlan p)
-            => p.Target.Type == QuestType.Hunt ? $"{p.Target.Label} 토벌 x{p.Count}" : $"{p.Target.Label} 소탕";
+        public static string FallbackTitle(ProposalPlan p) => $"{p.Target.Label} 토벌 x{p.Count}";
 
         static readonly string[] SafePitch =
         {
@@ -39,12 +38,6 @@ namespace GuildMaster.Proposals
             "실력을 시험해 볼 만한 의뢰입니다. 다칠 각오는 해야 합니다.",
         };
 
-        static readonly string[] NestPitch =
-        {
-            "둥지를 정리하면 근처가 한동안 조용해집니다.",
-            "뿌리를 뽑아 두면 마을로 오는 위협도 줄어듭니다.",
-        };
-
         public static string FallbackPitch(ProposalPlan p, GameRandom rng = null)
         {
             var lines = p.Style switch
@@ -53,9 +46,7 @@ namespace GuildMaster.Proposals
                 ProposalStyle.Balanced => BalancedPitch,
                 _ => BoldPitch,
             };
-            string text = rng != null ? rng.Pick(lines) : lines[0];
-            if (p.Target.Type == QuestType.ClearNest) text += " " + (rng != null ? rng.Pick(NestPitch) : NestPitch[0]);
-            return text;
+            return rng != null ? rng.Pick(lines) : lines[0];
         }
 
         /// <summary>Gives the plan its rule-based title and pitch (used when the LLM did not word it).</summary>

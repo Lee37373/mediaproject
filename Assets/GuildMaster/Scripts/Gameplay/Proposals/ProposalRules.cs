@@ -15,23 +15,23 @@ namespace GuildMaster.Proposals
     /// <summary>Something the guild could go after: a hunting ground or a nest it knows about.</summary>
     public struct ProposalTarget
     {
-        /// <summary>Unique per target ("hunt:slime", "nest:북쪽 둥지"): two plans never share a key unless they are the same target.</summary>
+        /// <summary>Unique per target ("hunt:slime"): two plans never share a key unless they are the same target.</summary>
         public string Key;
-        /// <summary>Hunt or ClearNest (escorts need the guild master to walk along, so they are not proposed).</summary>
+        /// <summary>Always Hunt (escorts need the guild master to walk along, so they are not proposed).</summary>
         public QuestType Type;
-        /// <summary>Hunt: the species' danger. Nest: the nest's danger.</summary>
+        /// <summary>The species' danger.</summary>
         public DangerLevel Danger;
-        /// <summary>Species or nest name, for texts.</summary>
+        /// <summary>Species name, for texts.</summary>
         public string Label;
         /// <summary>"마을 북동쪽 23칸".</summary>
         public string Area;
         /// <summary>World units from the town centre.</summary>
         public float Distance;
-        /// <summary>Hunt: how many the guild has seen (0 = unknown).</summary>
+        /// <summary>How many the guild has seen (0 = unknown).</summary>
         public int Observed;
-        /// <summary>Hunt: where to hunt.</summary>
+        /// <summary>Where to hunt.</summary>
         public Vector2 Point;
-        /// <summary>The <see cref="MonsterDefinition"/> or <see cref="Nest"/> behind the target (handed back untouched).</summary>
+        /// <summary>The <see cref="MonsterDefinition"/> behind the target (handed back untouched).</summary>
         public object Source;
     }
 
@@ -234,25 +234,17 @@ namespace GuildMaster.Proposals
         // ---------------- Posting ----------------
 
         /// <summary>The quest the plan stands for, ready for <c>QuestBoard.TryPost</c>.</summary>
-        public static QuestDraft ToDraft(ProposalPlan p)
+        public static QuestDraft ToDraft(ProposalPlan p) => new()
         {
-            var d = new QuestDraft
-            {
-                Type = p.Target.Type,
-                RewardGold = p.RewardGold,
-                RewardExp = p.RewardExp,
-                MaxParty = p.Party,
-                Count = p.Count,
-                Radius = QuestBoard.HuntRadius,
-            };
-            if (p.Target.Type == QuestType.Hunt)
-            {
-                d.Species = p.Target.Source as MonsterDefinition;
-                d.HasPoint = true;
-                d.Point = p.Target.Point;
-            }
-            else d.Nest = p.Target.Source as Nest;
-            return d;
-        }
+            Type = QuestType.Hunt,
+            Species = p.Target.Source as MonsterDefinition,
+            HasPoint = true,
+            Point = p.Target.Point,
+            RewardGold = p.RewardGold,
+            RewardExp = p.RewardExp,
+            MaxParty = p.Party,
+            Count = p.Count,
+            Radius = QuestBoard.HuntRadius,
+        };
     }
 }

@@ -93,7 +93,7 @@ namespace GuildMaster.Proposals
             return true;
         }
 
-        /// <summary>What the guild could go after: hunting grounds of species it has seen, and nests it knows.</summary>
+        /// <summary>What the guild could go after: hunting grounds of species it has seen.</summary>
         List<ProposalTarget> BuildTargets()
         {
             var list = new List<ProposalTarget>();
@@ -118,24 +118,6 @@ namespace GuildMaster.Proposals
                     Observed = _intel.ObservedPopulation(species),
                     Point = point,
                     Source = species,
-                });
-            }
-
-            foreach (var nest in _intel.KnownNests)
-            {
-                if (nest == null || !nest.Discovered) continue;
-                if (_intel.Get(nest) is { Observed: true, LastCount: 0 }) continue;
-                if (_board.Quests.Any(q => q.IsActive && q.Type == QuestType.ClearNest && q.Nest == nest)) continue;
-                list.Add(new ProposalTarget
-                {
-                    Key = "nest:" + _intel.NameOf(nest),
-                    Type = QuestType.ClearNest,
-                    Danger = QuestBoard.NestDanger(nest),
-                    Label = _intel.NameOf(nest),
-                    Area = QuestBoard.DescribeArea(nest.WorldPosition),
-                    Distance = Vector2.Distance(center, nest.WorldPosition),
-                    Point = nest.WorldPosition,
-                    Source = nest,
                 });
             }
             return list;

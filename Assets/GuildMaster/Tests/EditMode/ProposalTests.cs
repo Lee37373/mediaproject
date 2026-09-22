@@ -21,12 +21,6 @@ namespace GuildMaster.Tests
             Distance = distance, Observed = observed, Point = new Vector2(distance, 0f),
         };
 
-        static ProposalTarget NestTarget(string key, DangerLevel danger, float distance = 30f) => new()
-        {
-            Key = "nest:" + key, Type = QuestType.ClearNest, Danger = danger, Label = key, Area = $"마을 동쪽 {(int)distance}칸",
-            Distance = distance, Point = new Vector2(distance, 5f),
-        };
-
         static ProposalPlan Plan(string key, ProposalStyle style, float distance) => new()
         {
             Target = Hunt(key, DangerLevel.Low, distance), Style = style, Danger = DangerLevel.Low, Count = 3, Party = 1,
@@ -45,7 +39,6 @@ namespace GuildMaster.Tests
             Assert.That(ProposalRules.EffectiveDanger(QuestType.Hunt, DangerLevel.Low, 8), Is.EqualTo(DangerLevel.Medium));
             Assert.That(ProposalRules.EffectiveDanger(QuestType.Hunt, DangerLevel.Low, 7), Is.EqualTo(DangerLevel.Low));
             Assert.That(ProposalRules.EffectiveDanger(QuestType.Hunt, DangerLevel.High, 12), Is.EqualTo(DangerLevel.High));
-            Assert.That(ProposalRules.EffectiveDanger(QuestType.ClearNest, DangerLevel.Low, 8), Is.EqualTo(DangerLevel.Low));
         }
 
         [Test]
@@ -70,13 +63,11 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void Rewards_AreBiggerForFarTargets_AndForNests()
+        public void Rewards_AreBiggerForFarTargets()
         {
             int near = ProposalRules.RewardGold(QuestType.Hunt, DangerLevel.Medium, 5, 5f, ProposalStyle.Balanced);
             int far = ProposalRules.RewardGold(QuestType.Hunt, DangerLevel.Medium, 5, 50f, ProposalStyle.Balanced);
-            int nest = ProposalRules.RewardGold(QuestType.ClearNest, DangerLevel.Medium, 1, 5f, ProposalStyle.Balanced);
             Assert.That(far, Is.GreaterThan(near));
-            Assert.That(nest, Is.GreaterThan(near));
         }
 
         [Test]
@@ -168,14 +159,6 @@ namespace GuildMaster.Tests
             Assert.That(pool.First(p => p.Style == ProposalStyle.Balanced).Danger, Is.EqualTo(DangerLevel.Low));
         }
 
-        [Test]
-        public void BuildPool_NestsAreASingleTarget()
-        {
-            var pool = ProposalRules.BuildPool(new[] { NestTarget("동굴", DangerLevel.Medium) }, 4f, 4, 5000, 5000);
-            Assert.That(pool, Is.Not.Empty);
-            Assert.That(pool.All(p => p.Count == 1 && p.Target.Type == QuestType.ClearNest));
-        }
-
         // ---------------- Picking a varied few ----------------
 
         [Test]
@@ -231,7 +214,7 @@ namespace GuildMaster.Tests
         [Test]
         public void Recommend_IsDeterministic()
         {
-            var pool = Pool(Hunt("a", DangerLevel.Low, 10f), Hunt("b", DangerLevel.Medium, 20f), NestTarget("c", DangerLevel.Low, 30f));
+            var pool = Pool(Hunt("a", DangerLevel.Low, 10f), Hunt("b", DangerLevel.Medium, 20f), Hunt("c", DangerLevel.Low, 30f));
             var first = ProposalRules.Recommend(pool).Select(p => p.Id).ToList();
             var second = ProposalRules.Recommend(pool).Select(p => p.Id).ToList();
             Assert.That(first, Is.EqualTo(second));
@@ -272,12 +255,6 @@ namespace GuildMaster.Tests
             Assert.That(d.Point, Is.EqualTo(hunt.Target.Point));
             Assert.That((d.Count, d.MaxParty, d.RewardGold, d.RewardExp), Is.EqualTo((5, 2, 55, 30)));
             Assert.That(d.Radius, Is.EqualTo(QuestBoard.HuntRadius));
-
-            var nest = new ProposalPlan { Target = NestTarget("동굴", DangerLevel.Low), Style = ProposalStyle.Safe, Count = 1, Party = 3, RewardGold = 80, RewardExp = 45 };
-            var nd = ProposalRules.ToDraft(nest);
-            Assert.That(nd.Type, Is.EqualTo(QuestType.ClearNest));
-            Assert.That(nd.HasPoint, Is.False);
-            Assert.That(nd.MaxParty, Is.EqualTo(3));
         }
 
         // ---------------- The LLM's part ----------------
@@ -300,7 +277,7 @@ namespace GuildMaster.Tests
         }
 
         static List<ProposalPlan> BigPool() => Pool(
-            Hunt("a", DangerLevel.Low, 10f), Hunt("b", DangerLevel.Medium, 20f), Hunt("c", DangerLevel.Low, 30f), NestTarget("d", DangerLevel.Medium, 40f));
+            Hunt("a", DangerLevel.Low, 10f), Hunt("b", DangerLevel.Medium, 20f), Hunt("c", DangerLevel.Low, 30f), Hunt("d", DangerLevel.Medium, 40f));
 
         [Test]
         public void Interpret_TakesTheModelsPicksAndWording_InOrder()
@@ -401,11 +378,11 @@ namespace GuildMaster.Tests
             foreach (ProposalStyle style in System.Enum.GetValues(typeof(ProposalStyle)))
             {
                 Assert.That(ProposalTexts.StyleLabel(style), Is.Not.Empty);
-                foreach (var target in new[] { Hunt("슬라임", DangerLevel.Low), NestTarget("동굴", DangerLevel.Low) })
+                foreach (var target in new[] { Hunt("슬라임", DangerLevel.Low), Hunt("동굴쥐", DangerLevel.Low) })
                 {
                     var plan = new ProposalPlan { Target = target, Style = style, Count = 5 };
                     ProposalTexts.ApplyFallback(plan);
-                    Assert.That(plan.Title, Does.Contain("슬라임").Or.Contain("동굴"));
+                    Assert.That(plan.Title, Does.Contain("슬라임").Or.Contain("동굴쥐"));
                     Assert.That(plan.Pitch, Is.Not.Empty);
                     Assert.That(plan.FromLlm, Is.False);
                     ProposalTexts.ApplyFallback(plan, new GameRandom(3));

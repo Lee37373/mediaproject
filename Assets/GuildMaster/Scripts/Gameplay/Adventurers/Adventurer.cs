@@ -479,7 +479,7 @@ namespace GuildMaster.Adventurers
                 Engage.Clear();
                 Looting.Cancel();
                 ApplySpeedBuff(1.4f, Legacy.LegacyRules.GraceSeconds + 2f);
-                ReturnState.Retreating = true;
+                ReturnState.RequestRetreat();
                 ChangeState(ReturnState);
             }
         }
