@@ -116,7 +116,7 @@ namespace GuildMaster.Adventurers
         /// someone happened by. An emptied den is known to be settled again after
         /// <see cref="EcosystemManager.RefillHours"/> (P4-43).
         /// </summary>
-        public static int ExpectedDenCount(MonsterDefinition species, int lastCount, float hoursSince)
+        public static int ExpectedDenCount(MonsterDefinition species, int lastCount, float hoursSince, float growthFactor = 1f)
         {
             if (species == null || hoursSince <= 0f) return Mathf.Max(0, lastCount);
             if (lastCount <= 0)
@@ -128,7 +128,7 @@ namespace GuildMaster.Adventurers
             float pop = lastCount, cap = Mathf.Max(1, species.nestCapacity);
             for (float h = 0f; h < hoursSince && pop < cap; h += 1f)
             {
-                float rate = species.growthPerHour * pop * (1f - pop / cap);
+                float rate = species.growthPerHour * growthFactor * pop * (1f - pop / cap);
                 if (pop < 2f) rate *= 0.35f;
                 pop += Mathf.Max(0f, rate) * Mathf.Min(1f, hoursSince - h);
             }

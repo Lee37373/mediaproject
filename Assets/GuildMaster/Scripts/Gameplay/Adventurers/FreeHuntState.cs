@@ -79,7 +79,9 @@ namespace GuildMaster.Adventurers
         {
             var rec = intel.Get(n);
             float since = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours - rec.LastSeenHour : 0f;
-            return FreeHunt.ExpectedDenCount(intel.SpeciesOf(n), rec.LastCount, since);
+            // Far sites breed slower (a public rule of the world, not hidden state).
+            float growth = Services.TryGet<EcosystemManager>(out var eco) ? eco.GrowthFactorAt(n.WorldPosition) : 1f;
+            return FreeHunt.ExpectedDenCount(intel.SpeciesOf(n), rec.LastCount, since, growth);
         }
 
         /// <summary>What may be fought at all: our own prey, plus anything that has just hit us.</summary>

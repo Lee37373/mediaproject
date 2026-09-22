@@ -23,6 +23,8 @@ namespace GuildMaster.Ecosystem
         public Biome Biome { get; private set; }
         public int Capacity { get; private set; }
         public float GrowthAccumulator { get; set; }
+        /// <summary>Breeding factor of this site by its distance from the town (<see cref="EcosystemManager.GrowthFactor"/>).</summary>
+        public float GrowthFactor { get; internal set; } = 1f;
         /// <summary>Game hours the nest has been empty (it is settled again at <see cref="EcosystemManager.RefillHours"/>).</summary>
         public int EmptyHours { get; set; }
         public bool Discovered { get; private set; }

@@ -208,6 +208,18 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void FarSitesBreedSlower_AndTheGuildsEstimateKnowsIt()
+        {
+            // User decision 2026-09-22: the strong kinds out at the edge fill up slowly and creep in.
+            float F(float d) => Ecosystem.EcosystemManager.GrowthFactor(d, 20f, 180f);
+            Assert.That(F(20f), Is.EqualTo(1f).Within(1e-4f), "the ring by the town breeds at full rate");
+            Assert.That(F(180f), Is.EqualTo(Ecosystem.EcosystemManager.EdgeGrowthFactor).Within(1e-4f), "the edge at the lowest");
+            Assert.That(F(100f), Is.LessThan(F(50f)).And.GreaterThan(F(150f)));
+            var slime = DefaultContent.Build().monsters.Find(m => m.id == "slime");
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 2, 12f, 0.4f), Is.LessThan(FreeHunt.ExpectedDenCount(slime, 2, 12f)));
+        }
+
+        [Test]
         public void WeakDensRefillFasterRatherThanHoldingMore()
         {
             // P4-41 (user decision): more spawns means a shorter wait, not bigger nests.

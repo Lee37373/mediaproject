@@ -40,6 +40,25 @@ namespace GuildMaster.Ecosystem
         // 2026-09-20 (user decision): an orange minimap dot on ground nobody had walked broke the
         // information rule. Every nest is found by looking at it now.
 
+        /// <summary>Breeding rate at the farthest nest site, relative to the ring by the town.</summary>
+        public const float EdgeGrowthFactor = 0.4f;
+
+        /// <summary>
+        /// Breeding slows the farther a site lies from the town (user decision 2026-09-22): the near
+        /// ring is what a growing guild hunts, the strong kinds out at the edge fill up slowly and
+        /// creep in over the days (P4-56). A strong band that settles close in breeds fast there —
+        /// by then the guild has grown into it. 1 at the innermost site, <see cref="EdgeGrowthFactor"/>
+        /// at the outermost (pure, tested).
+        /// </summary>
+        public static float GrowthFactor(float distance, float innermost, float outermost)
+            => Mathf.Lerp(1f, EdgeGrowthFactor, Mathf.InverseLerp(innermost, outermost, distance));
+
+        float _innermost, _outermost;
+        Vector2 _town;
+
+        /// <summary>Breeding factor of a site at this position (the rule is public; the guild may use it).</summary>
+        public float GrowthFactorAt(Vector2 p) => GrowthFactor(Vector2.Distance(p, _town), _innermost, _outermost);
+
         public IReadOnlyList<Nest> Nests => _nests;
         public IEnumerable<MonsterDefinition> Species => _db.monsters;
         public int TotalMonsters => _population.Values.Sum();
@@ -52,6 +71,9 @@ namespace GuildMaster.Ecosystem
             Services.Get<PoolService>().Register(Monster.PoolKey, Monster.CreatePooledInstance, prewarm: 32, maxSize: 400);
             foreach (var s in db.monsters) _population[s] = 0;
 
+            _town = GridMap.CellToWorld(map.TownCenter);
+            _innermost = map.Nests.Count == 0 ? 0f : map.Nests.Min(s => Vector2.Distance(GridMap.CellToWorld(s.Cell), _town));
+            _outermost = map.Nests.Count == 0 ? 1f : map.Nests.Max(s => Vector2.Distance(GridMap.CellToWorld(s.Cell), _town));
             var assignment = AssignSpecies(db.monsters, map.Nests, rng);
             for (int i = 0; i < map.Nests.Count; i++)
             {
@@ -59,6 +81,7 @@ namespace GuildMaster.Ecosystem
                 go.transform.SetParent(transform, false);
                 var nest = go.AddComponent<Nest>();
                 nest.Init(this, $"N_{i + 1:00}", assignment[i], map.Nests[i]);
+                nest.GrowthFactor = GrowthFactorAt(nest.WorldPosition);
                 _nests.Add(nest);
                 for (int k = 0; k < assignment[i].initialPopulation; k++) Spawn(nest);
             }
@@ -211,7 +234,7 @@ namespace GuildMaster.Ecosystem
                 float food = FoodFactor(s);
 
                 // Logistic growth; lone survivors breed slowly.
-                float rate = s.growthPerHour * pop * (1f - pop / (float)nest.Capacity);
+                float rate = s.growthPerHour * nest.GrowthFactor * pop * (1f - pop / (float)nest.Capacity);
                 if (pop < 2) rate *= 0.35f;
                 if (s.prey.Count > 0) rate *= 0.25f + 0.75f * food;
                 nest.GrowthAccumulator += Mathf.Max(0f, rate);
