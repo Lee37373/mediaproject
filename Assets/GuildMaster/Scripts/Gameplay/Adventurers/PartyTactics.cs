@@ -155,12 +155,37 @@ namespace GuildMaster.Adventurers
             // walking on alone (P4-38 — this used to hand the follower back to its own roaming).
             var slot = Vector2.Distance(a.Position, leader.Position) > FollowRange ? leader.Position : SlotFor(a, leader, _members);
             float dist = Vector2.Distance(a.Position, slot);
-            a.Mover.SpeedMultiplier = dist > StragglerDistance ? 1.3f : 1f;
+            var leaderVelocity = leader.Mover.IsMoving ? leader.Mover.Velocity : Vector2.zero;
+            // Compare walking speeds before terrain: both cross the same ground, and the leader's
+            // velocity on a road would read faster than the follower's plain speed.
+            float leaderSpeed = leaderVelocity.sqrMagnitude < 0.01f ? 0f
+                : leader.Mover.Speed * leader.Mover.SpeedMultiplier * leader.Mover.BuffMultiplier;
+            float behind = leaderVelocity.sqrMagnitude < 0.01f ? dist : Vector2.Dot(slot - a.Position, leaderVelocity.normalized);
+            a.Mover.SpeedMultiplier = FollowerPace(dist, behind, leaderSpeed, a.Mover.Speed * a.Mover.BuffMultiplier);
+            // A walking leader's slot keeps moving: aim where it will be by the next repath, or a
+            // quicker follower gets there first, stops, and waits — stop-and-go (user report 2026-09-22).
+            if (dist <= StragglerDistance) slot += leaderVelocity * (RepathSeconds * 2f);
             repathTimer -= dt;
-            if (dist <= 0.6f || repathTimer > 0f) return true;
+            if (dist <= 0.6f && leaderVelocity.sqrMagnitude < 0.01f) return true;
+            // Stopped short of a moving slot: repath almost at once (but not every frame, in case
+            // the path keeps failing).
+            if (repathTimer > (a.Mover.IsMoving ? 0f : RepathSeconds * 0.75f)) return true;
             repathTimer = RepathSeconds;
             if (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, slot) > 0.5f) a.Mover.SetDestination(slot, 0.3f);
             return true;
+        }
+
+        /// <summary>
+        /// Speed multiplier for a follower: sprint when straggling; otherwise match the leader's
+        /// walking speed, a little faster while behind the slot and slower while ahead of it
+        /// (<paramref name="behindSlot"/> is measured along the leader's heading, negative when
+        /// ahead), so a quick member keeps step instead of rushing ahead and stopping.
+        /// </summary>
+        public static float FollowerPace(float distToSlot, float behindSlot, float leaderSpeed, float ownSpeed)
+        {
+            if (distToSlot > StragglerDistance) return 1.3f;
+            if (leaderSpeed < 0.1f || ownSpeed < 0.1f) return 1f;
+            return Mathf.Clamp((leaderSpeed + 0.6f * behindSlot) / ownSpeed, 0.3f, 1.3f);
         }
 
         /// <summary>

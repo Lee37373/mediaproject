@@ -22,14 +22,19 @@ namespace GuildMaster.Session
         /// <summary>
         /// P5-1: was 24, which left no nest inside the first day's walk. Species are placed by
         /// distance now, so the closest ring is the weakest one and it should be findable early.
+        /// P4-41: 20 so the nearest nest stays outside the town's sight (18) and still has to be found.
         /// </summary>
-        public int minNestDistanceFromTown = 16;
+        public int minNestDistanceFromTown = 20;
 
         [Header("Fog of War")]
         public float fogTickInterval = 0.1f;
         public float playerSightRadius = 7f;
-        /// <summary>Just inside the walls (P4-13); seeing further out needs a watchtower.</summary>
-        public float townSightRadius = 8f;
+        /// <summary>
+        /// P4-13 kept this just inside the walls. P4-41 (user decision 2026-09-22): raiders have to
+        /// be seen coming, so the town now watches about 7 cells past the wall (half size 11);
+        /// a watchtower still sees further.
+        /// </summary>
+        public float townSightRadius = 18f;
         [Range(0f, 1f)] public float exploredFogAlpha = 0.55f;
 
         [Header("Camera")]

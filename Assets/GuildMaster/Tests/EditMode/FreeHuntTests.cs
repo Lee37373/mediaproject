@@ -227,5 +227,38 @@ namespace GuildMaster.Tests
                 Assert.That(peakPerDay, Is.GreaterThan(2f), $"{id} regrows too slowly to be hunted every day");
             }
         }
+
+        [Test]
+        public void WeakDensRefillFasterRatherThanHoldingMore()
+        {
+            // P4-41 (user decision): more spawns means a shorter wait, not bigger nests.
+            var db = DefaultContent.Build();
+            MonsterDefinition M(string id) => db.monsters.Find(m => m.id == id);
+            foreach (var id in new[] { "slime", "stone_slime", "skull" })
+            {
+                var s = M(id);
+                Assert.That(s.nestCapacity, Is.LessThanOrEqualTo(8), $"{id} nest grew in size again");
+                // Hours from three left (or two in a nest of six) until the den is full again.
+                int pop = s.nestCapacity >= 8 ? 3 : 2, hours = 0;
+                float acc = 0f;
+                while (pop < s.nestCapacity && hours < 100)
+                {
+                    hours++;
+                    acc += s.growthPerHour * pop * (1f - pop / (float)s.nestCapacity);
+                    while (acc >= 1f && pop < s.nestCapacity) { acc -= 1f; pop++; }
+                }
+                Assert.That(hours, Is.LessThanOrEqualTo(20), $"{id} takes {hours} h to refill");
+            }
+        }
+
+        [Test]
+        public void TheTownSeesRaidersBeforeTheyReachTheWall()
+        {
+            // P4-41: town vision reaches past the wall (half size) so raids are seen coming.
+            var balance = UnityEngine.ScriptableObject.CreateInstance<GuildMaster.Session.GameBalance>();
+            Assert.That(balance.townSightRadius, Is.GreaterThanOrEqualTo(balance.townHalfSize + 5));
+            // Nests still have to be found by walking out: none may sit inside that sight.
+            Assert.That(balance.minNestDistanceFromTown, Is.GreaterThan(balance.townSightRadius));
+        }
     }
 }

@@ -675,8 +675,27 @@ namespace GuildMaster.Tests
                 var leader = (Adventurer)quest.Assignees[0];
 
                 Clock.SetSpeed(2);
-                yield return WaitFor(() => leader.StateLabel == "사냥 중", 25f);
+                // Followers keep step with a walking leader: no stop-and-go on the way out
+                // (user report 2026-09-22: the quicker members kept halting and starting again).
+                var followers = members.Where(m => m != leader).ToList();
+                var wasMoving = followers.ToDictionary(m => m, m => m.Mover.IsMoving);
+                int halts = 0, walkFrames = 0;
+                float until = Time.time + 25f;
+                while (leader.StateLabel != "사냥 중" && Time.time < until)
+                {
+                    bool leaderWalking = leader.Mover.IsMoving && leader.Mover.Velocity.sqrMagnitude > 0.25f;
+                    if (leaderWalking) walkFrames++;
+                    foreach (var f in followers)
+                    {
+                        bool near = Vector2.Distance(f.Position, leader.Position) < 4f && f.Engage.Target == null;
+                        if (leaderWalking && near && wasMoving[f] && !f.Mover.IsMoving) halts++; // was ~55 before the fix
+                        wasMoving[f] = f.Mover.IsMoving;
+                    }
+                    yield return null;
+                }
                 Assert.That(leader.StateLabel, Is.EqualTo("사냥 중"), "the party reached the hunting area");
+                Debug.Log($"[Test] follower halts while the leader walked: {halts} over {walkFrames} frames");
+                Assert.That(halts, Is.LessThanOrEqualTo(4), "followers halt and restart behind a walking leader");
                 // Someone may have stopped for loot or a scuffle on the way: the formation gathers them in.
                 yield return WaitFor(() => members.All(m => Vector2.Distance(m.Position, leader.Position) < 4f), 6f);
                 foreach (var m in members)
@@ -702,6 +721,14 @@ namespace GuildMaster.Tests
 
         /// <summary>Moves the guild master to open ground outside town (8 walkable cells every way).</summary>
         static PlayerAvatar MasterOnOpenGround()
+            => MasterOnOpenGround(clearResidents: false) ?? MasterOnOpenGround(clearResidents: true);
+
+        /// <summary>
+        /// With clearResidents the first open spot is taken and the nests whose territory reaches it
+        /// are emptied (P4-41 pushed nests out past the town's sight, and on the test seed no open
+        /// ground is clear of every territory any more).
+        /// </summary>
+        static PlayerAvatar MasterOnOpenGround(bool clearResidents)
         {
             var world = Services.Get<World.WorldService>();
             var grid = world.Grid;
@@ -719,7 +746,9 @@ namespace GuildMaster.Tests
                 if (!open) continue;
                 // Clear of any nest's territory too: residents would join the fight and these tests
                 // are about the spawned units alone (P5-1 moved nests closer to town).
-                if (!ClearOfTerritories(World.GridMap.CellToWorld(c), 24f)) continue;
+                var spot = World.GridMap.CellToWorld(c);
+                if (clearResidents) EmptyNestsNear(spot, 24f);
+                else if (!ClearOfTerritories(spot, 24f)) continue;
                 var master = Services.Get<PlayerAvatar>();
                 master.Mover.Stop();
                 master.transform.position = World.GridMap.CellToWorld(c);
@@ -740,6 +769,13 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>No nest close enough for its residents to wander into the test.</summary>
+        static void EmptyNestsNear(Vector2 at, float margin)
+        {
+            foreach (var n in Services.Get<EcosystemManager>().Nests)
+                if (!n.IsEmpty && Vector2.Distance(n.WorldPosition, at) < n.TerritoryRadius + margin)
+                    foreach (var m in n.Members.ToList()) m.Perish();
+        }
+
         static bool ClearOfTerritories(Vector2 at, float margin)
         {
             foreach (var n in Services.Get<EcosystemManager>().Nests)
