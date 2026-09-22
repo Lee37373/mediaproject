@@ -148,13 +148,24 @@ namespace GuildMaster.Town
             foreach (var raid in _raids.ToList())
                 if (_clock.TotalHours - raid.StartedAtHour >= _cfg.MaxHours) GiveUp(raid);
 
+            Services.TryGet<MigrationService>(out var migration);
             foreach (var nest in _eco.Nests)
             {
                 if (!nest.Species.canRaid || nest.IsEmpty || IsRaiding(nest)) continue;
+                if (migration != null && migration.IsMigrating(nest)) continue;
                 int level = LevelOf(nest);
-                if (level > 0 && GameRandom.Shared.Value < level * _cfg.ChancePerLevelPerHour) Launch(nest);
+                if (level <= 0 || GameRandom.Shared.Value >= level * _cfg.ChancePerLevelPerHour) continue;
+                // Only a nest by the town sends its band against the walls; the others move their
+                // home a step closer instead (P4-56, user decision 2026-09-22).
+                if (migration == null || IsByTheTown(nest)) Launch(nest);
+                else migration.TryLaunch(nest, PartySize(HomeMembers(nest).Count(), _cfg.SendFraction, _cfg.MinParty));
             }
         }
+
+        /// <summary>Nests this close to the town (cells) raid it; further out they migrate inwards.</summary>
+        public const float RaidRadius = 45f;
+
+        public bool IsByTheTown(Nest n) => Vector2.Distance(n.WorldPosition, _world.TownCenterWorld) <= RaidRadius;
 
         /// <summary>Sends part of the nest against the town now (also used by debug tools). Returns raiders sent.</summary>
         public int Launch(Nest nest)

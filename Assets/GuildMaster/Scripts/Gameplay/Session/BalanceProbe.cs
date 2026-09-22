@@ -52,7 +52,8 @@ namespace GuildMaster.Session
 
         // Cumulative counters, all collected from events so nothing is polled per frame.
         int _deaths, _joins, _levelUps, _questsPosted, _questsCompleted, _questsFailed, _questsCancelled;
-        int _raidsSighted, _raidersKilled, _gearBought, _nestsCleared, _recolonized;
+        int _raidsSighted, _raidersKilled, _gearBought, _nestsCleared, _recolonized, _bandsSettled;
+        string _firstRaid;
         /// <summary>Monsters the guild killed, by species (P4-42: which prey the early hunts actually take).</summary>
         readonly Dictionary<string, int> _guildKills = new();
         int _startDay;
@@ -73,7 +74,8 @@ namespace GuildMaster.Session
             _rows.Clear();
             _deaths = _joins = _levelUps = 0;
             _questsPosted = _questsCompleted = _questsFailed = _questsCancelled = 0;
-            _raidsSighted = _raidersKilled = _gearBought = _nestsCleared = _recolonized = 0;
+            _raidsSighted = _raidersKilled = _gearBought = _nestsCleared = _recolonized = _bandsSettled = 0;
+            _firstRaid = null;
             _guildKills.Clear();
             StopAfterDays = days;
             CsvPath = csvPath;
@@ -90,6 +92,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<QuestClosedEvent>(OnClosed);
             EventBus.Subscribe<RaidSightedEvent>(OnRaidSighted);
             EventBus.Subscribe<RaidEndedEvent>(OnRaidEnded);
+            EventBus.Subscribe<Ecosystem.BandSettledEvent>(OnBandSettled);
             EventBus.Subscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Subscribe<NestRecolonizedEvent>(OnRecolonized);
             EventBus.Subscribe<GuildMaster.Units.UnitDiedEvent>(OnUnitDied);
@@ -110,6 +113,7 @@ namespace GuildMaster.Session
             EventBus.Unsubscribe<QuestClosedEvent>(OnClosed);
             EventBus.Unsubscribe<RaidSightedEvent>(OnRaidSighted);
             EventBus.Unsubscribe<RaidEndedEvent>(OnRaidEnded);
+            EventBus.Unsubscribe<Ecosystem.BandSettledEvent>(OnBandSettled);
             EventBus.Unsubscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Unsubscribe<NestRecolonizedEvent>(OnRecolonized);
             EventBus.Unsubscribe<GuildMaster.Units.UnitDiedEvent>(OnUnitDied);
@@ -127,7 +131,8 @@ namespace GuildMaster.Session
         void OnLevelUp(AdventurerLevelUpEvent e) => _levelUps++;
         void OnGear(AdventurerGearUpgradedEvent e) => _gearBought++;
         void OnPosted(QuestPostedEvent e) => _questsPosted++;
-        void OnRaidSighted(RaidSightedEvent e) => _raidsSighted++;
+        void OnRaidSighted(RaidSightedEvent e) { _raidsSighted++; _firstRaid ??= $"day {_clock.Day} {_clock.Hour}h"; }
+        void OnBandSettled(Ecosystem.BandSettledEvent e) => _bandsSettled++;
         void OnRaidEnded(RaidEndedEvent e) => _raidersKilled += e.Killed;
         void OnNestCleared(NestClearedEvent e) => _nestsCleared++;
         void OnRecolonized(NestRecolonizedEvent e) => _recolonized++;
@@ -234,7 +239,7 @@ namespace GuildMaster.Session
             sb.AppendLine($"  gold={_treasury.Gold} guildExp={_treasury.Exp} potions={_treasury.GetStock(DefaultContent.Potion)}");
             sb.AppendLine($"  members={_roster.Members.Count} joins={_joins} deaths={_deaths} levelUps={_levelUps} gearBought={_gearBought}");
             sb.AppendLine($"  quests posted={_questsPosted} completed={_questsCompleted} failed={_questsFailed} cancelled={_questsCancelled}");
-            sb.AppendLine($"  raids sighted={_raidsSighted} raidersKilled={_raidersKilled} nestsCleared={_nestsCleared} recolonized={_recolonized}");
+            sb.AppendLine($"  raids sighted={_raidsSighted} (first {_firstRaid ?? "none"}) raidersKilled={_raidersKilled} nestsCleared={_nestsCleared} recolonized={_recolonized} bandsSettled={_bandsSettled}");
             foreach (var a in _roster.Members)
                 sb.AppendLine($"    {a.Data.name} {AdventurerData.ClassLabel(a.Data.cls)} Lv{a.Data.level} ({a.Data.exp}/{a.Data.ExpToNextLevel}) gear={a.Data.gearTier} kills={a.Data.kills} quests={a.Data.questsCompleted}");
             foreach (var s in _species)

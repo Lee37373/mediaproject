@@ -141,6 +141,10 @@ namespace GuildMaster.Session
             var territory = AddSystem<TerritoryService>();
             territory.Init(eco);
             Services.Register(territory);
+            // Crowded nests move a band a step towards the town (P4-56); WaveManager rolls when.
+            var migration = AddSystem<MigrationService>();
+            migration.Init(eco, world, clock);
+            Services.Register(migration);
             // What the guild has actually seen; UI and adventurers read this, not the simulation.
             var intel = AddSystem<GuildIntel>();
             intel.Init(eco, fog, clock, world);

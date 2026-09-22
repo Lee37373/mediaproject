@@ -1627,6 +1627,47 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator AFarNest_MovesABandToANearerSite_AndTakesIt()
+        {
+            // P4-56 (user decisions 2026-09-22): a crowded nest far out moves part of itself a step
+            // towards the town and takes the site by force (only nests by the town raid it).
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var eco = Services.Get<EcosystemManager>();
+                var svc = Services.Get<MigrationService>();
+                var waves = Services.Get<Town.WaveManager>();
+                var from = eco.Nests.Where(n => n.Species.canRaid && !n.IsEmpty && !waves.IsByTheTown(n) && svc.PickTarget(n, n.Species) != null)
+                                    .OrderBy(n => Vector2.Distance(n.WorldPosition, svc.PickTarget(n, n.Species).WorldPosition)).FirstOrDefault();
+                Assume.That(from, Is.Not.Null, "a raid nest out of town with somewhere nearer to go");
+                while (from.Population < from.Capacity) eco.Spawn(from);
+                var target = svc.PickTarget(from, from.Species);
+                Assert.That(Vector2.Distance(target.WorldPosition, Services.Get<World.WorldService>().TownCenterWorld),
+                            Is.LessThan(Vector2.Distance(from.WorldPosition, Services.Get<World.WorldService>().TownCenterWorld)), "a step towards the town");
+                // Whoever lives there is weak enough to lose it (a fight the test can wait for).
+                foreach (var r in target.Members.Skip(1).ToList()) r.Perish();
+
+                Nest settledAt = null;
+                void OnSettled(BandSettledEvent e) { if (e.From == from) settledAt = e.To; }
+                EventBus.Subscribe<BandSettledEvent>(OnSettled);
+                try
+                {
+                    Assert.That(svc.TryLaunch(from, 6), Is.True);
+                    Assert.That(from.Members.Count(m => m.StateLabel == "이주"), Is.GreaterThan(0), "the band sets off");
+                    Clock.SetSpeed(3);
+                    yield return WaitFor(() => settledAt != null, 60f);
+                }
+                finally { EventBus.Unsubscribe<BandSettledEvent>(OnSettled); }
+                Assert.That(settledAt, Is.EqualTo(target), "the band moved in at its target");
+                Assert.That(target.Species, Is.EqualTo(from.Species), "the site is theirs now");
+                Assert.That(target.Members.Count(m => m.IsAlive), Is.GreaterThan(0));
+                Assert.That(svc.Bands.Count(b => b.From == from), Is.Zero);
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
         public IEnumerator AtTheStart_TheGuildKnowsNoNest()
         {
             // P5-1 handed over the two nearest nests; removed on 2026-09-20 (user decision) because

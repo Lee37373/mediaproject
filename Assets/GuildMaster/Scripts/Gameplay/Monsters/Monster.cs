@@ -43,6 +43,7 @@ namespace GuildMaster.Monsters
         internal float NextLureTime;
         internal MonsterReturnState ReturnState;
         internal RaidState RaidState;
+        internal MigrateState MigrateState;
         internal MonsterPickupState PickupState;
         internal MonsterRegroupState RegroupState;
         internal MonsterGateBreakState GateBreakState;
@@ -69,6 +70,7 @@ namespace GuildMaster.Monsters
             LureState = new MonsterLureState();
             ReturnState = new MonsterReturnState();
             RaidState = new RaidState();
+            MigrateState = new MigrateState();
             PickupState = new MonsterPickupState();
             RegroupState = new MonsterRegroupState();
             GateBreakState = new MonsterGateBreakState();
@@ -257,8 +259,9 @@ namespace GuildMaster.Monsters
             if (IsDefendingTerritory && Home.IsIntruder(other)) return true;
             // Every other species is an enemy (P4-45, user decision 2026-09-22: goblins and skulls
             // walked past each other). Same-species packs only clash over territory (above).
-            // Raiders on the march do not start fights on the way; hit, they still hit back.
-            if (other is Monster m) return m.Def != Def && DefaultStateOverride == null;
+            // Raiders on the march do not start fights on the way; hit, they still hit back. A band
+            // on the move to a new home fights whatever it meets (P4-56, user decision 2026-09-22).
+            if (other is Monster m) return m.Def != Def && (DefaultStateOverride == null || DefaultStateOverride == MigrateState);
             return other.Faction == Faction.Guild && Def.aggressiveToHumans;
         }
 
