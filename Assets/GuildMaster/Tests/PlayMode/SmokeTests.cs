@@ -1079,6 +1079,53 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator ALuredMonster_FightsItOut_InsteadOfWalkingHome()
+        {
+            // User report 2026-09-22: "after the player lures one in, they stop fighting and go
+            // home". A lured monster is far from its own den, and the leash sent it back whenever
+            // it had not been hit for three seconds — mid-fight.
+            yield return Boot();
+            var eco = Services.Get<EcosystemManager>();
+            Nest there = null, home = null;
+            // Near enough that the chase stays inside the lured one's pursuit leash (2 x 14 cells).
+            foreach (var a in eco.Nests.Where(n => n.Population >= 2))
+            foreach (var b in eco.Nests.Where(n => n.Population >= 1 && n.Species != a.Species))
+            {
+                float d = Vector2.Distance(a.WorldPosition, b.WorldPosition);
+                if (d >= 12f && d <= 22f && there == null) { there = a; home = b; }
+            }
+            Assume.That(there, Is.Not.Null, "two dens of different kinds a lure apart");
+            var lured = home.Members.First(m => m.IsAlive);
+            var master = Services.Get<PlayerAvatar>();
+            DebugCommands.Invulnerable(true, untargetable: false); // the bait takes no harm but stays bait
+            try
+            {
+                // The master walks through the other den's territory with the monster on its heels,
+                // and on out the far side, as a player luring it would.
+                var through = (there.WorldPosition - home.WorldPosition).normalized;
+                master.Mover.Stop();
+                master.transform.position = there.WorldPosition - through * (there.TerritoryRadius + 3f);
+                lured.Mover.Stop();
+                lured.transform.position = master.Position - through * 2.5f;
+                lured.ForceTarget(master);
+                master.MoveTo(there.WorldPosition + through * (there.TerritoryRadius + 12f));
+
+                bool fought = false, walkedHome = false;
+                float until = Time.time + 25f;
+                while (Time.time < until && lured.IsAlive && there.Members.Any(m => m.IsAlive))
+                {
+                    if (lured.LastAttacker is Monster) fought = true;
+                    if (fought && lured.DebugState == "귀소") walkedHome = true;
+                    yield return null;
+                }
+                // The den goes for the lured monster, not the bait walking past (the master cannot fight).
+                Assert.That(fought, Is.True, "the residents took it on");
+                Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight");
+            }
+            finally { DebugCommands.Invulnerable(false); }
+        }
+
+        [UnityTest]
         public IEnumerator AHuntingBandLeavesTogether_AndAHealerNeverGoesAlone()
         {
             // P4-37 (user request): free hunts move as a party, and a priest alone makes no sense.

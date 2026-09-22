@@ -73,6 +73,8 @@ namespace GuildMaster.Monsters
     {
         /// <summary>Leash multiplier while chasing a live target.</summary>
         public const float PursuitLeashFactor = 2f;
+        /// <summary>A monster-vs-monster fight counts as live while either side landed a blow this recently.</summary>
+        public const float MonsterFightGrace = 6f;
 
         public override string Label => "전투";
 
@@ -88,9 +90,18 @@ namespace GuildMaster.Monsters
             // still handled by the engagement's chase stall.
             var target = m.Engage.Target;
             float leash = m.Def.leashRadius * (target != null && target.IsAlive ? PursuitLeashFactor : 1f);
+            float fromHome = Vector2.Distance(m.Position, m.HomePosition);
+            // A fight with another monster that is still trading blows either way is seen through,
+            // however far from home (user report 2026-09-22: "after the player lures one in, they
+            // stop fighting and go home" — a lured monster is far from its den by definition, and a
+            // measured 2 days ended 33 of 84 such fights at the leash). A plain chase still ends by
+            // the engagement's chase give-up. Fights with the guild keep the old rule: a
+            // retreating member is not hunted down any further.
+            bool monsterFightLive = target is Monster foe && foe.IsAlive
+                                    && (foe.WasRecentlyAttackedBy(m, MonsterFightGrace) || m.WasRecentlyAttackedBy(foe, MonsterFightGrace));
             bool leashed = m.DefaultStateOverride == null
-                           && Vector2.Distance(m.Position, m.HomePosition) > leash
-                           && !underAttack;
+                           && fromHome > leash
+                           && !underAttack && !monsterFightLive;
             if (leashed)
             {
                 m.Engage.Clear();
