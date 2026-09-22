@@ -35,12 +35,118 @@ namespace GuildMaster.UI
             scroll.GetComponent<RectTransform>().Size(-1, -1, -1, 1);
         }
 
+        // ---------------- Grouping by party (P4-49) ----------------
+
+        class Group
+        {
+            public string Title;
+            public bool IsParty;
+            public readonly List<Adventurer> Members = new();
+        }
+
+        readonly List<GroupHeader> _headers = new();
+        readonly List<Group> _groups = new();
+        readonly List<Group> _freeGroups = new();
+        readonly List<Adventurer> _party = new();
+        readonly HashSet<Adventurer> _placed = new();
+
+        Group NewGroup(string title, bool isParty)
+        {
+            Group g;
+            if (_freeGroups.Count > 0) { g = _freeGroups[^1]; _freeGroups.RemoveAt(_freeGroups.Count - 1); }
+            else g = new Group();
+            g.Title = title;
+            g.IsParty = isParty;
+            g.Members.Clear();
+            _groups.Add(g);
+            return g;
+        }
+
+        /// <summary>
+        /// Parties: members sharing a quest, or a hunting band (P4-37) — from gathering at the gate
+        /// to coming home — leader first, in roster order of their leaders; everyone else in one
+        /// last group.
+        /// </summary>
+        void BuildGroups(IReadOnlyList<Adventurer> members)
+        {
+            _freeGroups.AddRange(_groups);
+            _groups.Clear();
+            _placed.Clear();
+            // Standing parties first (P4-50), leader first, with what they are up to.
+            if (Services.TryGet<GuildParties>(out var parties))
+            {
+                foreach (var p in parties.Parties)
+                {
+                    var leader = p.Leader;
+                    if (leader == null) continue;
+                    string doing = p.Settling ? "정산 중"
+                        : p.OnOuting ? (leader.CurrentQuest != null ? $"의뢰 {leader.CurrentQuest.Title}" : "자율 사냥") + (p.Arrived.Count > 0 ? " · 귀환 중" : "")
+                        : "마을";
+                    var g = NewGroup($"{p.Name} · {doing} · {p.Members.Count}명", true);
+                    foreach (var m in p.Members)
+                        if (Contains(members, m) && _placed.Add(m)) g.Members.Add(m);
+                }
+            }
+            Services.TryGet<HuntBandService>(out var bands);
+            foreach (var a in members)
+            {
+                if (_placed.Contains(a) || !a.IsAlive) continue;
+                string what = null;
+                _party.Clear();
+                var quest = a.CurrentQuest;
+                if (quest != null && quest.IsActive)
+                {
+                    // Assignees are in the order they took it: the one who took it first leads.
+                    foreach (var t in quest.Assignees)
+                        if (t is Adventurer m && m.IsAlive && m.CurrentQuest == quest && Contains(members, m)) _party.Add(m);
+                    what = $"의뢰 {quest.Title}";
+                }
+                else if (bands != null && bands.BandOf(a) is { } band)
+                {
+                    foreach (var m in band.Members) if (m.IsAlive && Contains(members, m)) _party.Add(m);
+                    what = band.Mustering ? "자율 사냥 · 길드에서 모이는 중" : "자율 사냥";
+                }
+                _party.RemoveAll(m => _placed.Contains(m)); // already shown with their standing party
+                if (_party.Count < 2) continue;
+                var g = NewGroup($"{_party[0].Data.name}의 파티 · {what} · {_party.Count}명", true);
+                foreach (var m in _party) { g.Members.Add(m); _placed.Add(m); }
+            }
+            Group solo = null;
+            foreach (var a in members)
+            {
+                if (_placed.Contains(a)) continue;
+                solo ??= NewGroup("", false);
+                solo.Members.Add(a);
+            }
+            if (solo != null) solo.Title = $"파티 없음 · {solo.Members.Count}명";
+        }
+
+        static bool Contains(IReadOnlyList<Adventurer> list, Adventurer a)
+        {
+            for (int i = 0; i < list.Count; i++) if (list[i] == a) return true;
+            return false;
+        }
+
         protected override void Refresh()
         {
             var roster = Services.Get<GuildRoster>();
-            _summary.text = $"길드원 {roster.Members.Count}/{roster.Capacity}명 · 행을 클릭하면 해당 모험가를 추적합니다.";
+            _summary.text = $"길드원 {roster.Members.Count}/{roster.Capacity}명 · 파티별로 묶어 보여 줍니다(★ 리더). 행을 클릭하면 해당 모험가를 추적합니다.";
+            BuildGroups(roster.Members);
+            EnsureRows(_content, _headers, _groups.Count, GroupHeader.Create);
             EnsureRows(_content, _rows, roster.Members.Count, MemberRow.Create);
-            for (int i = 0; i < roster.Members.Count; i++) _rows[i].Bind(roster.Members[i], i);
+            int sibling = 0, row = 0;
+            for (int gi = 0; gi < _groups.Count; gi++)
+            {
+                var g = _groups[gi];
+                _headers[gi].Bind(g.Title, g.IsParty);
+                _headers[gi].transform.SetSiblingIndex(sibling++);
+                for (int i = 0; i < g.Members.Count; i++)
+                {
+                    _rows[row].Bind(g.Members[i], i, g.IsParty && i == 0);
+                    _rows[row].transform.SetSiblingIndex(sibling++);
+                    row++;
+                }
+            }
 
             if (Services.TryGet<VisitorService>(out var visitors))
             {
@@ -53,6 +159,30 @@ namespace GuildMaster.UI
         void PostNotice()
         {
             if (Services.TryGet<VisitorService>(out var visitors)) visitors.PostNotice();
+        }
+
+        class GroupHeader : MonoBehaviour
+        {
+            Image _bg;
+            Text _label;
+
+            public static GroupHeader Create(Transform parent)
+            {
+                var bg = UIBuilder.Panel(parent, "GroupHeader", UITheme.Header, raycast: false);
+                bg.Size(-1, 30);
+                var h = bg.gameObject.AddComponent<GroupHeader>();
+                h._bg = bg;
+                UIBuilder.HLayout(bg, 0, 0).padding = new RectOffset(10, 10, 0, 0);
+                h._label = UIBuilder.Label(bg.transform, "", 15, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold).Size(-1, 30, flexWidth: 1);
+                return h;
+            }
+
+            public void Bind(string title, bool isParty)
+            {
+                _label.text = title;
+                _label.color = isParty ? UITheme.Accent : UITheme.TextMuted;
+                _bg.color = isParty ? UITheme.Header : UITheme.PanelBgLight;
+            }
         }
 
         class MemberRow : MonoBehaviour
@@ -84,13 +214,14 @@ namespace GuildMaster.UI
                 return row;
             }
 
-            public void Bind(Adventurer a, int index)
+            public void Bind(Adventurer a, int index, bool leader = false)
             {
                 _adv = a;
                 _bg.color = index % 2 == 0 ? UITheme.RowBg : UITheme.RowBgAlt;
                 var d = a.Data;
                 string hpColor = UITheme.Hex(a.HpRatio > 0.6f ? UITheme.Good : a.HpRatio > 0.3f ? UITheme.Warn : UITheme.Bad);
-                _main.text = $"{d.name} {InspectorView.GradeTag(d.grade)}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
+                string star = leader ? UIBuilder.Colored("★ ", UITheme.Accent) : "";
+                _main.text = $"{star}{d.name} {InspectorView.GradeTag(d.grade)}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
                              $"<color=#{hpColor}>HP {a.Hp:0}/{a.Stats.MaxHp:0}</color>  {UIBuilder.Colored(a.StateLabel, UITheme.Accent)}";
                 string quest = a.CurrentQuest != null ? $" · 의뢰 {a.CurrentQuest.Title}" : "";
                 _traits.text = "특성: " + Traits.TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad);
