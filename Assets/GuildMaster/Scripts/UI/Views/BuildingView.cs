@@ -18,7 +18,7 @@ namespace GuildMaster.UI
 
         Building _building;
         Text _header, _current, _next, _cost, _message;
-        Button _upgrade;
+        Button _upgrade, _demolish;
 
         protected override void Build(RectTransform body)
         {
@@ -29,6 +29,7 @@ namespace GuildMaster.UI
             _cost = UIBuilder.Label(body, "", 15).Size(-1, 84);
             _cost.verticalOverflow = VerticalWrapMode.Overflow;
             _upgrade = UIBuilder.Button(body, "업그레이드", OnUpgrade, -1, 42, new Color(0.25f, 0.45f, 0.3f), 17);
+            _demolish = UIBuilder.Button(body, "철거", OnDemolish, -1, 36, new Color(0.45f, 0.26f, 0.26f), 15);
             _message = UIBuilder.Label(body, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 30);
         }
 
@@ -46,9 +47,27 @@ namespace GuildMaster.UI
             var upgrades = Services.Get<UpgradeService>();
             var def = upgrades.Definition(_building);
             _header.text = $"{_building.DisplayName}  Lv.{_building.Level}";
+            // Player-placed buildings can be taken down again for half the price (P4-13).
+            var construction = Services.TryGet<ConstructionService>(out var cs) ? cs : null;
+            bool canDemolish = construction != null && construction.CanDemolish(_building);
+            _demolish.gameObject.SetActive(canDemolish);
+            if (canDemolish)
+                _demolish.SetLabel(_building.IsDestroyed
+                    ? "잔해 치우기"
+                    : $"철거 (돌려받기: {construction.RefundText(_building.Type)})");
             if (def == null)
             {
                 _current.text = _next.text = _cost.text = "";
+                _upgrade.gameObject.SetActive(false);
+                return;
+            }
+            if (canDemolish)
+            {
+                _current.text = def.Level(1).effectText;
+                _next.text = _building.IsDestroyed
+                    ? UIBuilder.Colored("무너졌습니다. 더 이상 감시하지 않습니다.", UITheme.Bad)
+                    : $"내구도 {_building.Hp:0}/{_building.MaxHp:0}";
+                _cost.text = "";
                 _upgrade.gameObject.SetActive(false);
                 return;
             }
@@ -76,6 +95,19 @@ namespace GuildMaster.UI
 
         static string Have(int have, int need, string name, string unit)
             => UIBuilder.Colored($"{name} {have}/{need}{unit}", have >= need ? UITheme.Good : UITheme.Bad);
+
+        void OnDemolish()
+        {
+            if (_building == null || !Services.TryGet<ConstructionService>(out var construction)) return;
+            string name = _building.DisplayName;
+            if (construction.TryDemolish(_building, out var error))
+            {
+                _building = null;
+                _message.text = UIBuilder.Colored($"{name}을(를) 철거했습니다.", UITheme.Good);
+                Close();
+            }
+            else _message.text = UIBuilder.Colored(error, UITheme.Bad);
+        }
 
         void OnUpgrade()
         {

@@ -100,8 +100,17 @@ namespace GuildMaster.Session
 
             // --- Town ---
             var town = AddSystem<TownService>();
-            town.Init(world, mapRenderer);
+            town.Init(world, mapRenderer, db); // P5-1: level-1 durability comes from the building data
             Services.Register(town);
+            // Gates (P4-39): open for the guild, shut to monsters until broken.
+            var gates = AddSystem<GateService>();
+            gates.Init(world, treasury, Balance.gateMaxHp, Balance.gateRepairGoldPerHp);
+            Services.Register(gates);
+
+            // Player-placed buildings (P4-13): the watchtower and what comes after it.
+            var construction = AddSystem<ConstructionService>();
+            construction.Init(town, world, mapRenderer, treasury, db);
+            Services.Register(construction);
 
             // --- Units, ecosystem, quests ---
             var pool = Services.Get<PoolService>();
@@ -132,10 +141,18 @@ namespace GuildMaster.Session
             var territory = AddSystem<TerritoryService>();
             territory.Init(eco);
             Services.Register(territory);
+            // Crowded nests move a band a step towards the town (P4-56); WaveManager rolls when.
+            var migration = AddSystem<MigrationService>();
+            migration.Init(eco, world, clock);
+            Services.Register(migration);
             // What the guild has actually seen; UI and adventurers read this, not the simulation.
             var intel = AddSystem<GuildIntel>();
             intel.Init(eco, fog, clock, world);
             Services.Register(intel);
+            // Fog memory (P4-23): grey last-seen copies of what the fog swallowed.
+            var ghosts = AddSystem<Fog.FogGhostService>();
+            ghosts.Init(pool, fog, clock, eco);
+            Services.Register(ghosts);
 
             var board = AddSystem<QuestBoard>();
             board.Init(treasury, eco, clock);
@@ -162,6 +179,22 @@ namespace GuildMaster.Session
             var notifications = new Notifications.NotificationCenter(() => clock.TotalHours, () => $"{clock.Day}일 {clock.Hour:00}:{clock.Minute:00}");
             Services.Register(notifications);
             Services.Register(new Notifications.NotificationSources(notifications, clock, board));
+            // Bands that go out hunting without a quest (P4-37); PartyTactics formats them like a party.
+            var bands = AddSystem<HuntBandService>();
+            bands.Init(clock, Balance.rosterCapacity);
+            Services.Register(bands);
+            // Standing parties (P4-50): formed in town, pooled pay split by the leader back home.
+            var parties = AddSystem<GuildParties>();
+            parties.Init(clock, new PartySettlement(llm));
+            Services.Register(parties);
+            // Party roles, formation and focus fire on the leader's call (P4-27).
+            var partyTactics = AddSystem<PartyTactics>();
+            partyTactics.Init(pool);
+            Services.Register(partyTactics);
+            // Learning on level-up (P4-34): the model picks from what the class can still learn.
+            var skillChoice = AddSystem<SkillChoiceService>();
+            skillChoice.Init(llm);
+            Services.Register(skillChoice);
             // Idle small talk in town (LLM only when the gateway is idle).
             var banter = AddSystem<BanterService>();
             banter.Init(llm, roster, world);
@@ -169,7 +202,12 @@ namespace GuildMaster.Session
             Services.Register(banter);
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)
-                roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), guildDoor + GameRandom.Shared.InsideUnitCircle());
+            {
+                // Starting lineup covers a fixed set of roles instead of whatever the RNG happens to roll.
+                var founder = AdventurerGenerator.Generate(GameRandom.Shared);
+                founder.cls = AdventurerGenerator.StartingLineup[i % AdventurerGenerator.StartingLineup.Length];
+                roster.Recruit(founder, guildDoor + GameRandom.Shared.InsideUnitCircle());
+            }
             // Daily accounts (F-3): income, spending and events per game day. Created after the starting members
             // joined, so they do not count as the first day's recruits.
             Services.Register(new Reports.DailyLedger(treasury, clock.Day, clock.HourOfDay));
@@ -206,6 +244,7 @@ namespace GuildMaster.Session
             Services.Register(new GameOverService(clock));
 
             // --- Raids (P3-6) ---
+            Monsters.RaidState.BuildingDamageMul = Balance.monsterBuildingDamageMul; // P5-1
             var waves = AddSystem<WaveManager>();
             waves.Init(new RaidSettings
             {

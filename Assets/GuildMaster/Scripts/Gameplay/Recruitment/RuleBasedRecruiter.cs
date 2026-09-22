@@ -77,8 +77,33 @@ namespace GuildMaster.Recruitment
         }
 
         /// <summary>
-        /// Picks the reply. Small talk (greetings, questions about the visitor) gets a fitting answer
-        /// instead of a verdict on the message, and a short message is not punished for being short.
+        /// Lines that name the topic the player raised. Without these every fallback reply was a
+        /// generic "그렇군요. 다른 건요?" no matter what was said, which reads as the visitor not
+        /// listening (user report 2026-09-20). Keyed by the value word the visitor cares about.
+        /// </summary>
+        static readonly Dictionary<string, string[]> ValueReplies = new()
+        {
+            ["돈"] = new[] { "보수 이야기라면 귀가 트이네요. 얼마나 되죠?", "돈 이야기를 먼저 꺼내는 길드는 오랜만이네요." },
+            ["명예"] = new[] { "이름을 남길 수 있는 일이라면 관심이 가요.", "명예로운 길드라… 그 말은 무겁게 들리네요." },
+            ["동료"] = new[] { "같이 싸워 줄 사람이 있다는 건 크죠.", "동료 이야기는 언제 들어도 좋네요." },
+            ["모험"] = new[] { "아직 아무도 안 가 본 곳이 있나요?", "새로운 걸 보게 해 준다면 솔깃하죠." },
+            ["안전"] = new[] { "무리한 의뢰를 안 받는다니, 그건 중요하죠.", "돌아올 수 있는 일인지가 저한텐 제일 중요해요." },
+            ["지식"] = new[] { "배울 게 있는 곳이라면 머물 만하죠.", "그런 이야기는 더 듣고 싶네요." },
+        };
+
+        /// <summary>Which topic the message hit, or null.</summary>
+        public static string Topic(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return null;
+            foreach (var kv in ValueKeywords)
+                if (ContainsAny(message, kv.Value)) return kv.Key;
+            return null;
+        }
+
+        /// <summary>
+        /// Picks the reply. Small talk (greetings, questions about the visitor) gets a fitting answer,
+        /// a message naming a topic the visitor cares about gets an answer about that topic instead of
+        /// filler, and a short message is not punished for being short.
         /// </summary>
         public static Reply Respond(string message, string values, int affinity, bool proposal, GameRandom rng, string classLabel = null)
         {
@@ -91,6 +116,8 @@ namespace GuildMaster.Recruitment
             if (proposal) decision = after >= 55 ? RecruitDecision.Join : after < 35 ? RecruitDecision.Refuse : RecruitDecision.Undecided;
             else if (after < 25) decision = RecruitDecision.Refuse;
 
+            string topic = !empty && !rude && !proposal ? Topic(message) : null;
+
             string text;
             if (decision == RecruitDecision.Join)
                 text = rng.Pick(new[] { "좋아요, 당신 길드라면 믿어 볼게요.", "그 말을 기다렸어요. 함께하죠!", "결정했어요. 오늘부터 잘 부탁해요." });
@@ -98,6 +125,8 @@ namespace GuildMaster.Recruitment
                 text = rng.Pick(new[] { "미안하지만 저랑은 안 맞는 것 같네요.", "이 이야기는 여기까지 하죠.", "다른 길드를 알아볼게요." });
             else if (!empty && !rude && !proposal && delta < 6 && IsGreeting(message))
                 text = rng.Pick(new[] { "안녕하세요. 이 마을은 처음이라 둘러보던 참이에요.", "네, 반가워요. 길드에서 오신 분인가요?", "안녕하세요. 저한테 하실 말씀이 있나요?" });
+            else if (topic != null && ValueReplies.TryGetValue(topic, out var topical))
+                text = rng.Pick(topical);
             else if (!empty && !rude && !proposal && delta < 6 && IsSelfQuestion(message))
                 text = Intro(classLabel, values, rng);
             else if (delta >= 6)

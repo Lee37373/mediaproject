@@ -53,6 +53,8 @@ namespace GuildMaster.Adventurers
         internal DecidingState DecidingState;
         internal TravelToQuestState TravelState;
         internal HuntState HuntState;
+        /// <summary>Hunting without a quest (P4-37).</summary>
+        internal FreeHuntState FreeHuntState;
         internal EscortState EscortState;
         internal PartyGatherState GatherState;
         internal DefendState DefendState;
@@ -86,7 +88,12 @@ namespace GuildMaster.Adventurers
         public string TraderName => Data.name;
         public int Gold { get => Data.gold; set => Data.gold = value; }
         public List<ItemStack> CarriedLoot => Data.loot;
-        public Color ProjectileColor => Data.cls == AdventurerClass.Mage ? new Color(0.5f, 0.7f, 1f) : new Color(0.95f, 0.85f, 0.55f);
+        public Color ProjectileColor => Data.cls switch
+        {
+            AdventurerClass.Mage => new Color(0.5f, 0.7f, 1f),
+            AdventurerClass.Priest => new Color(1f, 0.97f, 0.7f),   // holy light
+            _ => new Color(0.95f, 0.85f, 0.55f),
+        };
 
         public string StateLabel => Fsm?.Current?.Label ?? "-";
         public override string DebugState => StateLabel;
@@ -116,6 +123,7 @@ namespace GuildMaster.Adventurers
             DecidingState = new DecidingState();
             TravelState = new TravelToQuestState();
             HuntState = new HuntState();
+            FreeHuntState = new FreeHuntState();
             EscortState = new EscortState();
             GatherState = new PartyGatherState();
             DefendState = new DefendState();
@@ -129,7 +137,17 @@ namespace GuildMaster.Adventurers
             TownGuardState = new TownGuardState();
             RetrievalState = new Legacy.RelicRetrievalState();
             Looting = new AdventurerLooting(this);
+            // Party back line (P4-27): ranged members fall back behind a front-liner while reloading.
+            Engage.HoldSpot = target => Services.TryGet<PartyTactics>(out var party) ? party.BackLineSpot(this, target) : null;
         }
+
+        // ---------------- Party roles (P4-27) ----------------
+
+        public PartyRole Role => Data != null ? PartyTactics.RoleOf(Data.cls) : PartyRole.Back;
+        public override bool IsBackLine => Role == PartyRole.Back;
+        /// <summary>Skilled+ warriors protect the back line.</summary>
+        public override bool GuardsBackLine => Role == PartyRole.Front && Tier >= CombatTier.Skilled;
+        public override Unit CalledTarget => Services.TryGet<PartyTactics>(out var party) ? party.CalledTargetFor(this) : null;
 
         /// <summary>Turns a freshly created adventurer into a town visitor (not attacked, no quests).</summary>
         public void BecomeVisitor(float leaveAtHour)
@@ -156,7 +174,11 @@ namespace GuildMaster.Adventurers
             UnitId = data.id;
             DisplayName = data.name;
             Radius = 0.3f;
-            SkillFactory.Assign(this, ClassSkills(data.cls));
+            if (data.skillIds == null || data.skillIds.Count == 0)
+            {
+                data.skillIds = new System.Collections.Generic.List<string>(ClassSkills(data.cls));
+            }
+            SkillFactory.Assign(this, data.skillIds);
             Traits = TraitSet.FromIds(data.traitIds, Services.TryGet<GameDatabase>(out var db) ? db : null);
             RecalculateStats(fullHeal: true);
             // Imported Cute Adventurers skin when available, generated pixel art otherwise.
@@ -174,8 +196,27 @@ namespace GuildMaster.Adventurers
         {
             AdventurerClass.Warrior => new[] { "taunt", "whirlwind" },
             AdventurerClass.Ranger => new[] { "pierce" },
+            // Mass heal first: when several are hurt it beats a single heal (P4-29).
+            AdventurerClass.Priest => new[] { "massheal", "heal" },
             _ => new[] { "blink", "fireball" },
         };
+
+        /// <summary>
+        /// Learns a skill (P4-34), giving up <paramref name="forgetId"/> when the cap is reached.
+        /// Returns false when there is nothing to learn or no room and nothing named to drop.
+        /// </summary>
+        public bool LearnSkill(string learnId, string forgetId)
+        {
+            if (string.IsNullOrEmpty(learnId) || SkillFactory.Create(learnId) == null) return false;
+            if (Data.skillIds.Contains(learnId)) return false;
+            if (Data.skillIds.Count >= SkillCatalog.MaxSkills)
+            {
+                if (string.IsNullOrEmpty(forgetId) || !Data.skillIds.Remove(forgetId)) return false;
+            }
+            Data.skillIds.Add(learnId);
+            SkillFactory.Assign(this, Data.skillIds);
+            return true;
+        }
 
         public override void ForceTarget(Unit target)
         {
@@ -186,11 +227,15 @@ namespace GuildMaster.Adventurers
         /// <summary>Level band plus birth grade (see CombatTiers.FromLevel).</summary>
         public override CombatTier Tier => Data == null ? CombatTier.Novice : CombatTiers.FromLevel(Data.level, (int)Data.grade);
 
-        /// <summary>Cute Adventurers skins per class; the penguin king is reserved for the guild master.</summary>
+        /// <summary>
+        /// Cute Adventurers skins per class; the penguin king is reserved for the guild master and the
+        /// robed frog for priests (user decision, P4-29).
+        /// </summary>
         public static string[] SkinsFor(AdventurerClass cls) => cls switch
         {
             AdventurerClass.Warrior => new[] { "knight", "raccoon" },
-            AdventurerClass.Ranger => new[] { "fox", "frog" },
+            AdventurerClass.Ranger => new[] { "fox" },
+            AdventurerClass.Priest => new[] { "frog" },
             _ => new[] { "robot", "skeleton" },
         };
 
@@ -209,6 +254,7 @@ namespace GuildMaster.Adventurers
             {
                 AdventurerClass.Warrior => (new Color(0.62f, 0.64f, 0.70f), new Color(0.75f, 0.2f, 0.2f), new Color(0.35f, 0.3f, 0.3f)),
                 AdventurerClass.Ranger => (new Color(0.30f, 0.52f, 0.28f), new Color(0.55f, 0.38f, 0.2f), new Color(0.3f, 0.25f, 0.18f)),
+                AdventurerClass.Priest => (new Color(0.92f, 0.9f, 0.84f), new Color(0.95f, 0.8f, 0.35f), new Color(0.55f, 0.5f, 0.45f)),
                 _ => (new Color(0.25f, 0.35f, 0.75f), new Color(0.9f, 0.85f, 0.4f), new Color(0.2f, 0.22f, 0.45f)),
             };
             return PixelArt.Humanoid(d.id, d.hairColor, d.skinColor, body, accent, legs);
@@ -218,9 +264,11 @@ namespace GuildMaster.Adventurers
         {
             float ratio = Stats.MaxHp > 0 ? HpRatio : 1f;
             Stats = AdventurerStats.Compute(Data, Traits?.Modifiers);
-            if (fullHeal || !IsAlive) ResetVitals();
+            if (fullHeal) ResetVitals();
             else
             {
+                // Never revives: a projectile still in flight can land the killing blow (and a
+                // level-up) after its shooter died, and ResetVitals would bring them back.
                 Mover.Speed = Stats.MoveSpeed;
                 SetHp(Mathf.Max(1f, Stats.MaxHp * ratio));
             }
@@ -249,6 +297,20 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>
+        /// A comrade fighting this close is heard, not seen (P4-54, user request: fights at forests):
+        /// one ambushed inside a forest calls the rest in, though they cannot see in from outside.
+        /// Same range as a monster pack's alarm (P4-52).
+        /// </summary>
+        public const float ComradeCryRadius = Monster.PackAlarmRadius;
+
+        /// <summary>Debug A/B switch (P4-54 forest checks): off = only what is seen.</summary>
+        public static bool HearComrades = true;
+
+        internal bool HearsFightingAComrade(Monster m)
+            => HearComrades && m.IsAlive && m.CombatEngagement?.Target is Adventurer { IsGuildMember: true } comrade && comrade != this
+               && (comrade.Position - Position).sqrMagnitude <= ComradeCryRadius * ComradeCryRadius;
+
+        /// <summary>
         /// Shared combat logic for out-of-town states. Returns true while fighting
         /// (the calling state should skip its own movement that frame).
         /// </summary>
@@ -274,48 +336,90 @@ namespace GuildMaster.Adventurers
 
             // What may be (re)targeted this frame: threats (aggressive monsters we see or that hit us)
             // and the caller's optional extra targets, limited to the optional zone.
+            // Party members only take fights near their leader (P4-38); what hits them is fought anyway.
+            var leash = PartyLeashCentre();
+            // Also one that is fighting a comrade: a slime never starts a fight, but once it hits
+            // back at one of us the rest pitch in instead of looting around it (user report 2026-09-22).
             System.Func<Unit, bool> threat = u => u is Monster m && (allowed == null || allowed(m))
-                                                   && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m)));
-            System.Func<Unit, bool> extra = extraTargets == null ? null : u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u);
+                                                   && (WasRecentlyAttackedBy(m)
+                                                       || ((m.IsHostileTo(this) || m.CombatEngagement?.Target is Adventurer { IsGuildMember: true })
+                                                           && CanSee(m) && PartyTactics.InLeash(leash, m.Position))
+                                                       || HearsFightingAComrade(m) && PartyTactics.InLeash(leash, m.Position));
+            System.Func<Unit, bool> extra = extraTargets == null ? null
+                : u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u) && PartyTactics.InLeash(leash, u.Position);
             Engage.CandidateFilter = extra == null ? threat : u => threat(u) || extra(u);
-            Engage.SearchRadius = Stats.SightRadius;
+            Engage.SearchRadius = Mathf.Max(Stats.SightRadius, ComradeCryRadius);
 
             // Optional zone (town defense): drop targets outside it instead of chasing them.
             if (Engage.Target != null && allowed != null && !allowed(Engage.Target)) Engage.Clear();
+            // A chase that pulls a member away from its party is called off (P4-38).
+            if (Engage.Target != null && !WasRecentlyAttackedBy(Engage.Target) && !PartyTactics.InLeash(leash, Engage.Target.Position))
+                Engage.Clear();
             if (Engage.Target != null)
             {
-                if (Engage.Tick(dt) != EngageStatus.Lost) return true;
+                if (Engage.Tick(dt) != EngageStatus.Lost) return Fighting();
             }
 
             _senseTimer -= dt;
             if (_senseTimer > 0f) return false;
             _senseTimer = SenseInterval;
+            // Between fights: patch up the party (priests, P4-29). In fights the engagement uses skills.
+            TryUseSupportSkills();
 
-            // Threats first (aggressive monsters or anything that hit us), then optional quest targets.
-            var target = TargetSelector.Pick(this, Stats.SightRadius * 0.8f, threat, Engage)
+            // The leader's call first (anywhere in sight, P4-27), then threats (aggressive monsters or
+            // anything that hit us), then optional quest targets.
+            var target = CalledCandidate(threat, extra)
+                         ?? TargetSelector.Pick(this, Mathf.Max(Stats.SightRadius * 0.8f, ComradeCryRadius), threat, Engage)
                          ?? (extra != null ? TargetSelector.Pick(this, Stats.SightRadius, extra, Engage) : null);
             if (target == null) return false;
             Engage.SetTarget(target);
-            return Engage.Tick(dt) != EngageStatus.Lost;
+            return Engage.Tick(dt) != EngageStatus.Lost && Fighting();
+        }
+
+        /// <summary>Where this member's party leash is tied (its leader), or null when it has none.</summary>
+        internal Vector2? PartyLeashCentre()
+            => Services.TryGet<PartyTactics>(out var party) ? party.LeashCentre(this) : null;
+
+        /// <summary>A point this member may walk to on its own business (a pickup, a target).</summary>
+        internal bool WithinPartyLeash(Vector2 point) => PartyTactics.InLeash(PartyLeashCentre(), point);
+
+        /// <summary>The party leader's called target when it is in sight and allowed here, or null.</summary>
+        Unit CalledCandidate(System.Func<Unit, bool> threat, System.Func<Unit, bool> extra)
+        {
+            var called = CalledTarget;
+            if (called == null || !called.IsAlive || Engage.IsIgnoring(called)) return null;
+            if (Vector2.Distance(Position, called.Position) > Stats.SightRadius) return null;
+            return threat(called) || (extra != null && extra(called)) ? called : null;
+        }
+
+        /// <summary>A fight breaks formation pacing (catch-up / waiting speeds): fight at normal speed.</summary>
+        bool Fighting()
+        {
+            Mover.SpeedMultiplier = 1f;
+            return true;
         }
 
         /// <summary>Drinks a potion or signals retreat when badly hurt/exhausted. Returns true if retreating.</summary>
-        internal bool CheckRetreat()
+        /// <param name="wearinessCounts">
+        /// False while defending the town: going home to rest makes no sense at home (user report
+        /// 2026-09-22: exhausted defenders "retreated" the moment a raid came, one member fought alone).
+        /// </param>
+        internal bool CheckRetreat(bool wearinessCounts = true)
         {
             if (HpRatio < RetreatThreshold && Data.potions > 0 && Services.TryGet<GameDatabase>(out var db))
             {
                 Data.potions--;
-                Heal(db.Item(DefaultContent.Potion)?.healAmount ?? 40f);
+                Heal(Combat.ScaledHp(db.Item(DefaultContent.Potion)?.healAmount ?? 40f));
                 Say("물약을 마셨다!");
             }
-            if (HpRatio < RetreatThreshold || Data.fatigue >= 95f)
+            if (HpRatio < RetreatThreshold || wearinessCounts && Data.fatigue >= 95f)
             {
                 if (HpRatio < RetreatThreshold)
                     EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });
                 Engage.Clear();
                 Looting.Cancel();
                 Data.stress = Mathf.Min(100f, Data.stress + 15f);
-                ReturnState.Retreating = true;
+                ReturnState.RequestRetreat();
                 Fsm.ChangeState(ReturnState);
                 return true;
             }
@@ -392,16 +496,26 @@ namespace GuildMaster.Adventurers
             if (Services.TryGet<GuildRoster>(out var roster)) roster.NotifyDeath(this, killer);
         }
 
+        /// <summary>Guild members this close to a kill share its EXP (P4-40).</summary>
+        public const float ExpShareRadius = 10f;
+        static readonly List<Unit> s_expShare = new();
+
         public void ReceiveKillRewards(MonsterDefinition victim, List<ItemStack> loot)
         {
             Data.kills++;
             foreach (var s in loot) Data.AddLoot(s.itemId, s.count);
             GainExp(victim.expValue);
+            // Everyone fighting alongside gets the full EXP too (P4-40, user report 2026-09-21:
+            // "levelling is too slow"). Parties focus one target, so the last hit is luck, and a
+            // priest that heals the whole fight never landed one at all — Lv1 after three days.
+            UnitRegistry.Collect(Position, ExpShareRadius, u => u != this && u is Adventurer m && m.IsGuildMember, s_expShare);
+            foreach (var u in s_expShare) ((Adventurer)u).GainExp(victim.expValue);
         }
 
         public void GainExp(int amount)
         {
-            if (amount <= 0) return;
+            // The fallen gain nothing (a posthumous kill would otherwise level up a corpse).
+            if (amount <= 0 || !IsAlive) return;
             Data.exp += Mathf.RoundToInt(amount * (Traits?.ExpMultiplier ?? 1f));
             bool leveled = false;
             while (Data.exp >= Data.ExpToNextLevel)

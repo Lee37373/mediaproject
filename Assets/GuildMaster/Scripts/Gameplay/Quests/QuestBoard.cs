@@ -45,7 +45,6 @@ namespace GuildMaster.Quests
             _clock = clock;
             EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Subscribe<NestClearedEvent>(OnNestCleared);
-            EventBus.Subscribe<SpeciesExtinctEvent>(OnSpeciesExtinct);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
         }
 
@@ -53,7 +52,6 @@ namespace GuildMaster.Quests
         {
             EventBus.Unsubscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Unsubscribe<NestClearedEvent>(OnNestCleared);
-            EventBus.Unsubscribe<SpeciesExtinctEvent>(OnSpeciesExtinct);
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
         }
 
@@ -72,13 +70,6 @@ namespace GuildMaster.Quests
                     if (d.Count < 1) return "토벌 수는 1 이상이어야 합니다.";
                     if (!d.HasPoint) return "사냥할 위치를 지도에서 지정하세요.";
                     if (HuntPointError(d.Point) is { } pointError) return pointError;
-                    break;
-                case QuestType.ClearNest:
-                    if (d.Nest == null) return "소탕할 둥지를 선택하세요.";
-                    if (!d.Nest.Discovered) return "발견하지 못한 둥지입니다.";
-                    if (Services.TryGet<GuildIntel>(out var intel) && intel.Get(d.Nest) is { Observed: true, LastCount: 0 })
-                        return "마지막 관측에서 비어 있던 둥지입니다.";
-                    if (_quests.Any(q => q.IsActive && q.Type == QuestType.ClearNest && q.Nest == d.Nest)) return "이미 등록된 둥지 의뢰가 있습니다.";
                     break;
                 case QuestType.Escort:
                     if (d.Hours < 1 || d.Hours > 24) return "호위 시간은 1~24시간이어야 합니다.";
@@ -133,11 +124,7 @@ namespace GuildMaster.Quests
             switch (q.Type)
             {
                 case QuestType.Hunt:
-                    d = q.Species.danger;
-                    if (q.RequiredCount >= 8 && d < DangerLevel.High) d++;
-                    break;
-                case QuestType.ClearNest:
-                    d = NestDanger(q.Nest);
+                    d = HuntDanger(q.Species, q.RequiredCount, q.Point, q.Radius);
                     break;
                 case QuestType.Escort:
                     d = DangerLevel.Low; // depends on where the guild master walks
@@ -161,25 +148,54 @@ namespace GuildMaster.Quests
             return true;
         }
 
+        /// <summary>
+        /// Takes a quest off the board. Nobody on it yet: the escrow comes back. Someone already
+        /// took it: they are paid as if they had finished it, so the player cannot let adventurers
+        /// do the work and pull the reward back at the last moment (2026-09-20 user report).
+        /// Escorts pay for the hours actually escorted, which is what they were posted to pay.
+        /// </summary>
         public bool Cancel(Quest q)
         {
             if (!q.IsActive) return false;
-            Close(q, QuestStatus.Cancelled, refund: true);
+            if (q.Assignees.Count == 0)
+            {
+                Close(q, QuestStatus.Cancelled, refund: true);
+                return true;
+            }
+            if (q.Type == QuestType.Escort)
+            {
+                _escortShares.TryGetValue(q, out var shares);
+                CompleteEscort(q, shares ?? new Dictionary<IQuestTaker, float>());
+                return true;
+            }
+            Complete(q);
             return true;
         }
 
         // ---------------- Adventurer API ----------------
 
+        /// <summary>
+        /// Quests a taker may pick up on their own: only ones nobody has claimed yet. A quest is
+        /// done by one group (2026-09-20 user decision) — a lone adventurer counts as a group of
+        /// one — so the rest of a party joins by invitation, not by walking up to the board.
+        /// </summary>
         public IEnumerable<Quest> AvailableFor(IQuestTaker t)
-            => _quests.Where(q => q.HasFreeSlot && !q.IsAssigned(t));
+            => _quests.Where(q => q.Status == QuestStatus.Open && q.Assignees.Count == 0);
 
         public Quest FindById(string id) => _quests.FirstOrDefault(q => q.Id == id);
 
         public Quest ActiveQuestOf(IQuestTaker t) => _quests.FirstOrDefault(q => q.IsAssigned(t) && q.Status != QuestStatus.TurnedIn);
 
-        public bool TryAccept(Quest q, IQuestTaker t)
+        /// <summary>
+        /// Takes the quest. Only the first taker claims it; everyone after that must have been
+        /// invited by the one who claimed it (<paramref name="invited"/>), so a quest is never
+        /// worked by two separate groups and two adventurers cannot claim the same one at once
+        /// — their LLM decisions arrive seconds apart (2026-09-20 user report).
+        /// </summary>
+        public bool TryAccept(Quest q, IQuestTaker t, bool invited = false)
         {
             if (q == null || !q.HasFreeSlot || q.IsAssigned(t) || !t.IsAvailableForQuest) return false;
+            if (q.Assignees.Count > 0 && !invited) return false;
             q.AddAssignee(t);
             if (q.Status == QuestStatus.Open) q.Status = QuestStatus.InProgress;
             EventBus.Publish(new QuestAcceptedEvent { Quest = q, Taker = t });
@@ -220,30 +236,33 @@ namespace GuildMaster.Quests
                     EventBus.Publish(new QuestProgressEvent { Quest = q });
                     if (q.Progress >= q.RequiredCount) Complete(q);
                 }
-                else if (q.Type == QuestType.ClearNest && q.Nest == m.Home)
-                {
-                    q.AddContribution(taker, 1);
-                    EventBus.Publish(new QuestProgressEvent { Quest = q });
-                }
             }
         }
 
+        /// <summary>
+        /// A hunt is also done when the area's nest is wiped out, even with kills to spare
+        /// (2026-09-20 user decision): the point of the quest was that nest.
+        /// </summary>
         void OnNestCleared(NestClearedEvent e)
         {
             foreach (var q in _quests.ToList())
-                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.ClearNest && q.Nest == e.Nest)
-                    Complete(q);
+                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && IsInArea(q, e.Nest)) Complete(q);
         }
 
-        void OnSpeciesExtinct(SpeciesExtinctEvent e)
+        /// <summary>The nest of the quest's species inside its hunting area, or null.</summary>
+        public static Nest NestInArea(Quest q)
         {
-            foreach (var q in _quests.ToList())
-                if (q.IsActive && q.Type == QuestType.Hunt && q.Species == e.Species)
-                {
-                    // Partial success counts: pay out if anything was hunted, otherwise fail and refund.
-                    if (q.Progress > 0 && q.Assignees.Count > 0) Complete(q);
-                    else Close(q, QuestStatus.Failed, refund: true);
-                }
+            if (q == null || q.Type != QuestType.Hunt || !Services.TryGet<GuildIntel>(out var intel)) return null;
+            foreach (var n in intel.KnownNests)
+                if (IsInArea(q, n)) return n;
+            return null;
+        }
+
+        static bool IsInArea(Quest q, Nest n)
+        {
+            if (n == null || q.Species == null) return false;
+            var species = Services.TryGet<GuildIntel>(out var intel) ? intel.SpeciesOf(n) : n.Species;
+            return species == q.Species && Vector2.Distance(n.WorldPosition, q.Point) <= q.Radius;
         }
 
         // ---------------- Escort (P3-4a) ----------------
@@ -304,27 +323,56 @@ namespace GuildMaster.Quests
 
         void OnHour(HourPassedEvent e)
         {
-            Services.TryGet<GuildIntel>(out var intel);
             foreach (var q in _quests.ToList())
             {
                 // Rewards not collected in time (e.g. the adventurer died) return to the guild.
                 if (q.Status == QuestStatus.Completed && _clock.TotalHours - q.CompletedAtHour > TurnInDeadlineHours && q.Assignees.Count == 0)
                     Close(q, QuestStatus.TurnedIn, refund: true);
-                // A nest that emptied out of sight: once someone actually sees it empty, refund.
-                else if (q.IsActive && q.Type == QuestType.ClearNest && q.Nest.IsEmpty && intel != null && intel.Get(q.Nest).VisibleNow)
-                    Close(q, QuestStatus.Failed, refund: true);
             }
         }
 
         // ---------------- Danger from observations only ----------------
 
-        /// <summary>Clear-nest danger: species danger, +1 when at least 5 were last observed there.</summary>
+        /// <summary>Raises the danger by that many steps, never past 높음.</summary>
+        public static DangerLevel Raise(DangerLevel d, int steps)
+            => (DangerLevel)Mathf.Clamp((int)d + Mathf.Max(0, steps), (int)DangerLevel.Low, (int)DangerLevel.High);
+
+        /// <summary>Hunt danger: species danger, +1 for large hunts (8+). Shared with the posting form's preview.</summary>
+        public static DangerLevel HuntDanger(MonsterDefinition species, int count)
+            => Raise(species.danger, count >= 8 ? 1 : 0);
+
+        /// <summary>
+        /// Hunt danger at a marked spot: also +1 when the guild has seen armed monsters of that
+        /// species at a known nest inside the hunting area (P4-22).
+        /// </summary>
+        public static DangerLevel HuntDanger(MonsterDefinition species, int count, Vector2 point, float radius)
+            => Raise(HuntDanger(species, count), GearedNearby(species, point, radius) ? 1 : 0);
+
+        /// <summary>Did the guild observe danger-raising gear on this species inside the hunting area?</summary>
+        static bool GearedNearby(MonsterDefinition species, Vector2 point, float radius)
+        {
+            if (!Services.TryGet<GuildIntel>(out var intel)) return false;
+            if (GuildIntel.RaisesDanger(intel.GearOfHomeless(species))) return true;
+            foreach (var n in intel.KnownNests)
+            {
+                if (intel.SpeciesOf(n) != species) continue;
+                if (Vector2.Distance(n.WorldPosition, point) > radius) continue;
+                if (GuildIntel.RaisesDanger(intel.GearAt(n))) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Clear-nest danger: species danger, +1 when at least 5 were last observed there, and
+        /// +1 when the guild saw armed monsters (2+) or a crown wearer there (P4-22).
+        /// </summary>
         public static DangerLevel NestDanger(Nest nest)
         {
             bool hasIntel = Services.TryGet<GuildIntel>(out var intel);
             var d = (hasIntel ? intel.SpeciesOf(nest) : nest.Species).danger;
             int seen = hasIntel ? intel.Get(nest).LastCount : 0;
-            return seen >= 5 && d < DangerLevel.High ? d + 1 : d;
+            bool geared = hasIntel && GuildIntel.RaisesDanger(intel.GearAt(nest));
+            return Raise(d, (seen >= 5 ? 1 : 0) + (geared ? 1 : 0));
         }
 
 

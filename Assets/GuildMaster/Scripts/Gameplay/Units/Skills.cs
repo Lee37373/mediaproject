@@ -9,6 +9,8 @@ using UnityEngine;
 namespace GuildMaster.Units
 {
     public struct SkillUsedEvent { public Unit User; public string Name; public Color Color; }
+    /// <summary>A support skill restored HP (P4-29): floating "+N" and effects.</summary>
+    public struct UnitHealedEvent { public Unit Target; public Unit Healer; public float Amount; }
 
     /// <summary>
     /// Active ability with its own trigger condition. Units try their ready skills before basic
@@ -32,10 +34,19 @@ namespace GuildMaster.Units
         protected void StartCooldown() => _readyAt = Time.time + Cooldown;
 
         public abstract bool TryUse(Unit self, Unit target);
+
+        /// <summary>
+        /// Asked for on purpose by tactics (P4-19), rather than fired by its own trigger. The
+        /// cooldown still applies; skills whose automatic condition is about survival override
+        /// this so a deliberate escape is not blocked by "you are not hurt enough yet".
+        /// </summary>
+        public virtual bool TryUseDeliberately(Unit self, Unit target) => TryUse(self, target);
         /// <summary>Blast radius for area skills (0 = single target); used by heroic skill timing.</summary>
         public virtual float AreaRadius => 0f;
         /// <summary>True if the area is centred on the user rather than the target.</summary>
         public virtual bool AreaOnSelf => false;
+        /// <summary>Helps allies instead of hurting enemies; usable outside fights too (target may be null).</summary>
+        public virtual bool IsSupport => false;
         public virtual void Tick(Unit self, float dt) { }
 
         protected void Announce(Unit self)
@@ -56,8 +67,38 @@ namespace GuildMaster.Units
         protected static void Damage(Unit self, Unit target, float multiplier)
         {
             if (target == null || !target.IsAlive) return;
-            float dmg = Mathf.Max(1f, self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f) - target.Stats.Defense * 0.5f);
+            float dmg = Combat.Mitigate(self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f), target.Stats.Defense);
             target.ReceiveDamage(Mathf.Round(dmg), self, false);
+        }
+
+        /// <summary>
+        /// The ally (or self) below <paramref name="below"/> HP ratio in reach and in sight that is worst
+        /// off — lowest HP, a little worse when under attack right now — or null.
+        /// </summary>
+        protected static Unit MostEndangeredAlly(Unit self, float radius, float below)
+        {
+            Unit best = null;
+            float bestScore = float.MaxValue;
+            foreach (var u in UnitRegistry.All)
+            {
+                if (!u.IsAlive || u.HpRatio >= below || (u != self && !TargetSelector.IsAlly(self, u))) continue;
+                if ((u.Position - self.Position).sqrMagnitude > radius * radius) continue;
+                if (u != self && !World.HasLineOfSight(self.Position, u.Position, 2)) continue;
+                float score = u.HpRatio - (Time.time - u.LastAttackedTime < 3f ? 0.1f : 0f);
+                if (score < bestScore) { bestScore = score; best = u; }
+            }
+            return best;
+        }
+
+        /// <summary>Heals by a listed amount (scaled here by <see cref="Combat.ScaledHp"/>).</summary>
+        protected static void HealUnit(Unit healer, Unit patient, float amount)
+        {
+            float before = patient.Hp;
+            patient.Heal(Mathf.Round(Combat.ScaledHp(amount)));
+            float gained = patient.Hp - before;
+            if (gained <= 0f) return;
+            Fx?.Spark(patient.Position + new Vector2(0f, 0.3f), new Color(0.55f, 1f, 0.6f), 0.9f, 0.35f);
+            EventBus.Publish(new UnitHealedEvent { Target = patient, Healer = healer, Amount = gained });
         }
 
         protected static FxService Fx => Services.TryGet<FxService>(out var fx) ? fx : null;
@@ -211,6 +252,58 @@ namespace GuildMaster.Units
         }
     }
 
+    /// <summary>Priest (P4-29): heals the ally in the most danger.</summary>
+    public class HealSkill : Skill
+    {
+        const float Range = 6f;
+        const float Below = 0.6f;
+
+        public HealSkill() { Cooldown = 6f; }
+        public override string Name => "치유";
+        public override string Description => "체력 60% 미만인 동료 중 가장 위험한 한 명(자신 포함, 반경 6)을 공격력의 300%만큼 회복합니다.";
+        public override Color Color => new(0.55f, 1f, 0.6f);
+        public override bool IsSupport => true;
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            var patient = MostEndangeredAlly(self, Range, Below);
+            if (patient == null) return false;
+            if (patient != self) Fx?.Beam(self.Position, patient.Position, Color, 0.08f, 0.3f);
+            HealUnit(self, patient, self.Stats.Attack * 3f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>Priest (P4-29): heals every hurt ally around when several need it.</summary>
+    public class MassHealSkill : Skill
+    {
+        const float Radius = 4f;
+        const float Below = 0.7f;
+        const int MinPatients = 2;
+        static readonly List<Unit> s_patients = new();
+
+        public MassHealSkill() { Cooldown = 15f; }
+        public override string Name => "광역 치유";
+        public override string Description => "주변(반경 4)에 체력 70% 미만인 동료가 2명 이상이면 모두를 공격력의 150%만큼 회복합니다.";
+        public override Color Color => new(0.7f, 1f, 0.75f);
+        public override bool IsSupport => true;
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            s_patients.Clear();
+            foreach (var u in UnitRegistry.All)
+                if (u.IsAlive && u.HpRatio < Below && (u == self || TargetSelector.IsAlly(self, u))
+                    && (u.Position - self.Position).sqrMagnitude <= Radius * Radius)
+                    s_patients.Add(u);
+            if (s_patients.Count < MinPatients) return false;
+            foreach (var u in s_patients.ToArray()) HealUnit(self, u, self.Stats.Attack * 1.5f);
+            Fx?.Ring(self.Position, Radius, Color, 0.5f);
+            Announce(self);
+            return true;
+        }
+    }
+
     // ============================================================ Monster skills
 
     /// <summary>Straight-line dash that damages, knocks back and stuns on contact.</summary>
@@ -250,7 +343,7 @@ namespace GuildMaster.Units
             if (!_active) return;
             _time += dt;
             var next = self.Position + _dir * self.Stats.MoveSpeed * SpeedMultiplier * dt;
-            bool blocked = !World.Grid.IsWalkable(GridMap.WorldToCell(next));
+            bool blocked = !World.Grid.IsWalkable(GridMap.WorldToCell(next), self.PassesGates);
             if (!blocked) self.transform.position = new Vector3(next.x, next.y, self.transform.position.z);
 
             if (_target != null && _target.IsAlive && Combat.Distance(self, _target) <= self.Radius + _target.Radius + 0.35f)
@@ -314,18 +407,108 @@ namespace GuildMaster.Units
         {
             if (target == null || self is not Monsters.Monster me) return false;
             UnitRegistry.Collect(self.Position, 7f, u => u != self && u is Monsters.Monster m && m.Def == me.Def && m.Home == me.Home, Buffer); // own pack only
-            int called = 0;
+            // A lone wolf has nobody to call: no howl, and no free haste either (it used to buff
+            // itself on every failed try, i.e. permanently while fighting alone).
+            if (Buffer.Count == 0) return false;
             foreach (var u in Buffer.ToArray())
             {
                 u.ApplySpeedBuff(1.3f, 4f);
-                if (u.CurrentTarget == null) { u.ForceTarget(target); called++; }
+                if (u.CurrentTarget == null) u.ForceTarget(target);
             }
             self.ApplySpeedBuff(1.3f, 4f);
-            if (called == 0 && Buffer.Count == 0) return false;
             Fx?.Ring(self.Position, 3f, Color, 0.6f);
             Announce(self);
             return true;
         }
+    }
+
+    /// <summary>
+    /// Ranger (P4-19): slips out of sight. Whoever was chasing loses its target and cannot pick
+    /// this unit again while it lasts, which leaves the pursuer standing wherever it stopped —
+    /// inside someone else's territory, if it was lured there. Attacking gives the position away.
+    /// </summary>
+    public class StealthSkill : Skill
+    {
+        public const float Duration = 5f;
+        const float ThreatRange = 6f;
+
+        public StealthSkill() { Cooldown = 18f; }
+        public override string Name => "은신";
+        public override string Description => "5초간 모습을 감춥니다. 쫓던 적은 목표를 잃고 새로 노리지 못합니다(공격하면 바로 풀림).";
+        public override Color Color => new(0.55f, 0.55f, 0.75f);
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            // On its own: only worth it while actually being chased and already hurt.
+            if (self.HpRatio > 0.6f) return false;
+            var chaser = Tactics.NearestMeleeThreat(self, ThreatRange);
+            if (chaser == null) return false;
+            return Hide(self);
+        }
+
+        /// <summary>A lure asks for this while unhurt, so the survival condition does not apply.</summary>
+        public override bool TryUseDeliberately(Unit self, Unit target) => Hide(self);
+
+        bool Hide(Unit self)
+        {
+            self.EnterStealth(Duration);
+            // Everyone chasing loses the thread right now.
+            UnitRegistry.Collect(self.Position, 14f, u => u.IsAlive && u.CurrentTarget == self, Buffer);
+            foreach (var u in Buffer)
+            {
+                u.CombatEngagement?.Clear();
+                u.Mover.Stop();
+            }
+            Fx?.Ring(self.Position, 1.2f, Color, 0.5f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Mage (P4-19): a long hop that carries the caster clear over ground the pursuer has to walk.
+    /// Used to put a hostile territory between the two — the chaser must cross what we skipped.
+    /// </summary>
+    public class WarpSkill : Skill
+    {
+        public const float Range = 7f;
+
+        public WarpSkill() { Cooldown = 16f; }
+        public override string Name => "차원 도약";
+        public override string Description => "최대 7칸 앞으로 뛰어넘습니다. 쫓아오는 적은 그 사이를 걸어서 지나야 합니다.";
+        public override Color Color => new(0.75f, 0.6f, 1f);
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (self.HpRatio > 0.5f) return false;
+            var threat = Tactics.NearestMeleeThreat(self, 2f);
+            if (threat == null) return false;
+            return WarpTowards(self, self.Position + (self.Position - threat.Position).normalized * Range);
+        }
+
+        /// <summary>Hops as far towards a point as the ground allows (tactics ask for this).</summary>
+        public bool WarpTowards(Unit self, Vector2 towards)
+        {
+            if (!Services.TryGet<WorldService>(out var world)) return false;
+            var dir = (towards - self.Position);
+            if (dir.sqrMagnitude < 0.01f) return false;
+            float distance = Mathf.Min(Range, dir.magnitude);
+            var wanted = self.Position + dir.normalized * distance;
+            if (!world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(wanted), 3, out var cell)) return false;
+            var landing = GridMap.CellToWorld(cell);
+            Fx?.Spark(self.Position, Color, 1f);
+            self.Mover.Stop();
+            self.transform.position = new Vector3(landing.x, landing.y, self.transform.position.z);
+            Fx?.Spark(landing, Color, 1f);
+            Announce(self);
+            return true;
+        }
+
+        /// <summary>A lure asks for a hop towards a point, not away from a threat.</summary>
+        public bool WarpToPoint(Unit self, Vector2 point) => WarpTowards(self, point);
+
+        public override bool TryUseDeliberately(Unit self, Unit target)
+            => target != null && WarpTowards(self, target.Position);
     }
 
     public static class SkillFactory
@@ -337,6 +520,10 @@ namespace GuildMaster.Units
             "pierce" => new PiercingShotSkill(),
             "fireball" => new FireballSkill(),
             "blink" => new BlinkSkill(),
+            "stealth" => new StealthSkill(),
+            "warp" => new WarpSkill(),
+            "heal" => new HealSkill(),
+            "massheal" => new MassHealSkill(),
             "charge" => new ChargeSkill(),
             "slam" => new GroundSlamSkill(),
             "howl" => new PackHowlSkill(),

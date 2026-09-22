@@ -96,6 +96,15 @@ namespace GuildMaster.Units
         /// <summary>Unit currently targeted by this unit (for UI, taunts, focus fire).</summary>
         public Unit CurrentTarget { get; internal set; }
 
+        // ---------------- Group roles (P4-27) ----------------
+
+        /// <summary>Target a leader called for focus fire (party leader, pack leader); scored higher by TargetSelector.</summary>
+        public virtual Unit CalledTarget => null;
+        /// <summary>Fights from the back line (ranged roles); allied front-liners protect it.</summary>
+        public virtual bool IsBackLine => Stats.IsRanged;
+        /// <summary>Front-liner that goes for enemies attacking its back line.</summary>
+        public virtual bool GuardsBackLine => false;
+
         public void Stun(float seconds)
         {
             StunnedUntil = Mathf.Max(StunnedUntil, Time.time + seconds);
@@ -117,6 +126,9 @@ namespace GuildMaster.Units
             _knockUntil = Time.time + duration;
         }
 
+        /// <summary>Whether intact town gates open for this unit (P4-39): monsters must break them.</summary>
+        public bool PassesGates => Mover == null || Mover.PassesGates;
+
         /// <summary>Forces this unit to attack a specific target (taunts, pack calls). Override per AI.</summary>
         public virtual void ForceTarget(Unit target) { }
 
@@ -126,10 +138,12 @@ namespace GuildMaster.Units
             if (Time.time < _knockUntil)
             {
                 var next = Position + _knockVelocity * dt;
-                if (Core.Services.TryGet<WorldService>(out var world) && world.Grid.IsWalkable(GridMap.WorldToCell(next)))
+                if (Core.Services.TryGet<WorldService>(out var world) && world.Grid.IsWalkable(GridMap.WorldToCell(next), PassesGates))
                     transform.position = new Vector3(next.x, next.y, transform.position.z);
             }
             foreach (var s in Skills) s.Tick(this, dt);
+            // Stealth runs out on its own; put the sprite back when it does (P4-19).
+            if (!IsHidden && Visual != null && Visual.Fade < 1f) BreakStealth();
         }
 
         /// <summary>Tries each ready skill in order; returns true if one was used.</summary>
@@ -138,6 +152,15 @@ namespace GuildMaster.Units
             if (IsStunned) return false;
             foreach (var s in Skills)
                 if (s.IsReady && !HoldAreaSkill(s, target) && s.TryUse(this, target)) return true;
+            return false;
+        }
+
+        /// <summary>Support skills (heals) outside fights: returns true if one was used.</summary>
+        public bool TryUseSupportSkills()
+        {
+            if (IsStunned) return false;
+            foreach (var s in Skills)
+                if (s.IsSupport && s.IsReady && s.TryUse(this, null)) return true;
             return false;
         }
 
@@ -185,11 +208,20 @@ namespace GuildMaster.Units
         public abstract bool IsHostileTo(Unit other);
 
         /// <summary>
-        /// Line of sight to another unit: mountains, walls and buildings block it; up to two trees
-        /// are fine (same rule as ranged attacks). Use when picking new targets by sight.
+        /// Sight of another unit: within the sight radius (a third of it inside a forest), and no
+        /// mountain, wall, building or — seen from outside — forest in between; up to two trees are
+        /// fine (P4-48, <see cref="ForestSight"/>). Use when picking new targets by sight.
         /// </summary>
         public bool CanSee(Unit other)
-            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.HasLineOfSight(Position, other.Position, 2));
+            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, other.Position, Stats.SightRadius));
+
+        /// <summary>Same sight rule for a point (e.g. an item on the ground).</summary>
+        public bool CanSee(Vector2 point)
+            => !Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, point, Stats.SightRadius);
+
+        /// <summary>How far this unit sees where it stands now (a third of its sight inside a forest).</summary>
+        public float EffectiveSightRadius
+            => Core.Services.TryGet<WorldService>(out var world) ? ForestSight.Radius(world, Position, Stats.SightRadius) : Stats.SightRadius;
 
         /// <summary>True if the other unit hit us within the given seconds (retaliation).</summary>
         public bool WasRecentlyAttackedBy(Unit other, float seconds = 8f)
@@ -222,10 +254,51 @@ namespace GuildMaster.Units
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetDebugStatics() => GuildInvulnerable = GuildUntargetable = false;
 
-        /// <summary>False when <paramref name="attacker"/> may not pick this unit as a target (debug untargetable).</summary>
+        // ---------------- Stealth (P4-19) ----------------
+
+        float _hiddenUntil;
+
+        /// <summary>Hidden right now: enemies cannot pick it as a target and it is drawn faded.</summary>
+        public bool IsHidden => Time.time < _hiddenUntil;
+
+        /// <summary>Disappears for a few seconds; whoever was chasing it loses the thread.</summary>
+        public void EnterStealth(float seconds)
+        {
+            _hiddenUntil = Time.time + Mathf.Max(0f, seconds);
+            if (Visual != null) Visual.Fade = 0.35f;
+        }
+
+        /// <summary>Back in plain sight (it attacked, or the time ran out).</summary>
+        public void BreakStealth()
+        {
+            _hiddenUntil = 0f;
+            if (Visual != null) Visual.Fade = 1f;
+        }
+
+        /// <summary>False when the attacker may not pick this unit as a target (hidden, or debug untargetable).</summary>
         public bool IsTargetableBy(Unit attacker)
-            => !(GuildInvulnerable && GuildUntargetable && Faction == Faction.Guild
-                 && attacker != null && attacker.Faction != Faction.Guild);
+        {
+            // Hidden from anyone not on its own side; allies still see it.
+            if (IsHidden && attacker != null && attacker.Faction != Faction) return false;
+            return !(GuildInvulnerable && GuildUntargetable && Faction == Faction.Guild
+                     && attacker != null && attacker.Faction != Faction.Guild);
+        }
+
+        /// <summary>A known skill of this type that is off cooldown, or null (tactics ask for these).</summary>
+        public T FindReadySkill<T>() where T : Skill
+        {
+            if (IsStunned) return null;
+            foreach (var s in Skills)
+                if (s is T typed && s.IsReady) return typed;
+            return null;
+        }
+
+        /// <summary>Uses a known skill of this type on purpose (tactics ask for it); false when it cannot.</summary>
+        public bool TryUseSkill<T>(Unit target) where T : Skill
+        {
+            var skill = FindReadySkill<T>();
+            return skill != null && skill.TryUseDeliberately(this, target);
+        }
 
         internal void ReceiveDamage(float amount, Unit source, bool critical)
         {

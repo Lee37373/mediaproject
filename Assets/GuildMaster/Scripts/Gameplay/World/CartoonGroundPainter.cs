@@ -16,7 +16,7 @@ namespace GuildMaster.World
         readonly MapData _map;
         readonly int _w, _h;
         // Per-layer indicator per tile (0/1): smoothed at paint time.
-        readonly byte[] _forest, _sand, _water, _road, _mountain;
+        readonly byte[] _forest, _sand, _water, _road, _mountain, _nearBorder;
 
         // ---- Palette ----
         static readonly Color32 Grass = C(0x7C, 0xCF, 0x4F), GrassLight = C(0x8E, 0xDA, 0x5C);
@@ -30,6 +30,122 @@ namespace GuildMaster.World
         static readonly Color32 Wood = C(0xB5, 0x7C, 0x45), WoodDark = C(0x8A, 0x5A, 0x30), WoodLine = C(0x4A, 0x30, 0x1C);
 
         static Color32 C(int r, int g, int b) => new((byte)r, (byte)g, (byte)b, 255);
+
+        // ---- Regions (P4-55): the same shapes in each region's colours ----
+
+        public readonly struct Palette
+        {
+            public readonly Color32 Grass, GrassLight, ForestFloor, ForestEdge, Sand, SandEdge, Water, WaterShallow, WaterEdge, Foam;
+
+            public Palette(Color32 grass, Color32 grassLight, Color32 forestFloor, Color32 forestEdge, Color32 sand, Color32 sandEdge,
+                Color32 water, Color32 waterShallow, Color32 waterEdge, Color32 foam)
+            {
+                Grass = grass; GrassLight = grassLight; ForestFloor = forestFloor; ForestEdge = forestEdge; Sand = sand; SandEdge = sandEdge;
+                Water = water; WaterShallow = waterShallow; WaterEdge = waterEdge; Foam = foam;
+            }
+        }
+
+        /// <summary>Indexed by <see cref="Region"/>. "Sand" rings water: beach, dune, snow bank, mud, ash.</summary>
+        static readonly Palette[] Palettes =
+        {
+            // Grassland
+            new(Grass, GrassLight, ForestFloor, ForestEdge, Sand, SandEdge, Water, WaterShallow, WaterEdge, Foam),
+            // Desert: sandy ground, dry scrub, blue oases
+            new(C(0xE8, 0xC9, 0x86), C(0xF0, 0xD6, 0x98), C(0xC9, 0xA8, 0x62), C(0xA8, 0x88, 0x48), C(0xF5, 0xE0, 0xA8), C(0xD4, 0xB2, 0x70),
+                Water, WaterShallow, WaterEdge, Foam),
+            // Snow: white ground, frosted woods, ice lakes
+            new(C(0xEE, 0xF4, 0xFA), C(0xFF, 0xFF, 0xFF), C(0xC8, 0xD8, 0xE6), C(0xA4, 0xB8, 0xCC), C(0xDD, 0xE6, 0xEF), C(0xB8, 0xC6, 0xD4),
+                C(0xA8, 0xD8, 0xF0), C(0xC8, 0xEA, 0xFA), C(0x6A, 0x9A, 0xC0), C(0xFF, 0xFF, 0xFF)),
+            // Swamp: dark olive ground, murky pools, mud banks
+            new(C(0x5E, 0x6B, 0x3A), C(0x6B, 0x78, 0x42), C(0x45, 0x52, 0x2C), C(0x36, 0x42, 0x22), C(0x6E, 0x5A, 0x3A), C(0x55, 0x45, 0x2C),
+                C(0x4A, 0x5E, 0x3A), C(0x5C, 0x70, 0x48), C(0x2C, 0x38, 0x22), C(0x7A, 0x8C, 0x5A)),
+            // Wasteland: reddish ash, charred scrub, lava
+            new(C(0x8A, 0x6E, 0x62), C(0x9A, 0x7C, 0x6E), C(0x6A, 0x55, 0x4C), C(0x55, 0x42, 0x3A), C(0x9E, 0x96, 0x90), C(0x7E, 0x76, 0x70),
+                C(0xF0, 0x6A, 0x20), C(0xFF, 0xA0, 0x30), C(0x5A, 0x1E, 0x10), C(0xFF, 0xE0, 0x60)),
+        };
+
+        /// <summary>Colours used for a region (minimap, UI).</summary>
+        public static Palette PaletteOf(Region r) => Palettes[(int)r];
+
+        /// <summary>
+        /// Ground region under a pixel: the cell's own, except on open ground near a border — there
+        /// the frayed border (the regions bite into each other), as long as it names a region of a
+        /// neighbouring cell. Features (lakes, woods, rocks) keep their cells' region, so the border
+        /// runs round them (user decision 2026-09-22).
+        /// </summary>
+        Region RegionAt(float u, float v, int cx, int cy)
+        {
+            var own = _map.Regions[cy * _w + cx];
+            if (_nearBorder[cy * _w + cx] == 0) return own;
+            // Under a feature the ground only shows at its wobbly rim: that ground belongs to the
+            // open land around it (else the feature's own region showed in cell-shaped notches).
+            if (!IsOpen(cx, cy)) return OpenNeighbourRegion(cx, cy, own);
+            var frayed = TerrainRegions.AtFrayed(_map.RegionLayout, u, v);
+            if (frayed == own) return own;
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int x = Mathf.Clamp(cx + dx, 0, _w - 1), y = Mathf.Clamp(cy + dy, 0, _h - 1);
+                if (_map.Regions[y * _w + x] == frayed) return frayed;
+            }
+            return own;
+        }
+
+        bool IsOpen(int x, int y) => _forest[y * _w + x] == 0 && _sand[y * _w + x] == 0 && _mountain[y * _w + x] == 0;
+
+        Region OpenNeighbourRegion(int cx, int cy, Region fallback)
+        {
+            for (int ring = 0; ring < 2; ring++)
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                bool corner = dx != 0 && dy != 0, side = (dx == 0) != (dy == 0);
+                if (ring == 0 ? !side : !corner) continue;
+                int x = cx + dx, y = cy + dy;
+                if (x < 0 || y < 0 || x >= _w || y >= _h || !IsOpen(x, y)) continue;
+                return _map.Regions[y * _w + x];
+            }
+            return fallback;
+        }
+
+        /// <summary>Region of the nearest cell of a feature layer around (cx, cy): the whole feature is one region.</summary>
+        Region LayerRegion(byte[] layer, int cx, int cy, Region fallback)
+        {
+            if (layer[cy * _w + cx] != 0) return _map.Regions[cy * _w + cx];
+            // Sides first, then corners.
+            for (int ring = 0; ring < 2; ring++)
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                bool corner = dx != 0 && dy != 0, side = (dx == 0) != (dy == 0);
+                if (ring == 0 ? !side : !corner) continue;
+                int x = cx + dx, y = cy + dy;
+                if (x < 0 || y < 0 || x >= _w || y >= _h || layer[y * _w + x] == 0) continue;
+                return _map.Regions[y * _w + x];
+            }
+            return fallback;
+        }
+
+        /// <summary>1 where another region lies within the fraying distance (+1 cell).</summary>
+        byte[] NearBorder()
+        {
+            int reach = Mathf.CeilToInt(TerrainRegions.Fringe) + 1;
+            var near = new byte[_w * _h];
+            for (int y = 0; y < _h; y++)
+            for (int x = 0; x < _w; x++)
+            {
+                var r = _map.Regions[y * _w + x];
+                for (int dy = -reach; dy <= reach && near[y * _w + x] == 0; dy++)
+                for (int dx = -reach; dx <= reach; dx++)
+                {
+                    int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= _w || ny >= _h || _map.Regions[ny * _w + nx] == r) continue;
+                    near[y * _w + x] = 1;
+                    break;
+                }
+            }
+            return near;
+        }
 
         public CartoonGroundPainter(MapData map, int pixelsPerTile)
         {
@@ -49,6 +165,7 @@ namespace GuildMaster.World
                 _road[i] = (byte)(t == TileType.Road ? 1 : 0);
                 _mountain[i] = (byte)(t == TileType.Mountain ? 1 : 0);
             }
+            _nearBorder = NearBorder();
         }
 
         /// <summary>Fills a block of tiles [tx0, tx0+tilesW) × [ty0, ty0+tilesH) into pixels (row-major, bottom row first).</summary>
@@ -96,7 +213,9 @@ namespace GuildMaster.World
             }
 
             bool town = _map.TownRect.Contains(new Vector2Int(cx, cy));
-            Color32 c = town ? CobblePixel(u, v) : GrassPixel(u, v);
+            var region = town ? Region.Grassland : RegionAt(u, v, cx, cy);
+            var pal = Palettes[(int)region];
+            Color32 c = town ? CobblePixel(u, v) : GrassPixel(u, v, pal);
             if (town)
             {
                 // Inside the walls only the plaza roads are overlaid.
@@ -104,9 +223,12 @@ namespace GuildMaster.World
                 return c;
             }
 
-            Overlay(ref c, _forest, u, v, ForestFloor, ForestEdge, 0.05f, 0.5f);
-            Overlay(ref c, _sand, u, v, Sand, SandEdge, 0.05f, 0.45f);
-            WaterOverlay(ref c, u, v);
+            // Each feature in its own region's colours (a lake is all water or all lava).
+            var forestPal = Palettes[(int)LayerRegion(_forest, cx, cy, region)];
+            var wetPal = Palettes[(int)LayerRegion(_sand, cx, cy, region)];
+            Overlay(ref c, _forest, u, v, forestPal.ForestFloor, forestPal.ForestEdge, 0.05f, 0.5f);
+            Overlay(ref c, _sand, u, v, wetPal.Sand, wetPal.SandEdge, 0.05f, 0.45f);
+            WaterOverlay(ref c, u, v, wetPal);
             Overlay(ref c, _road, u, v, Road, RoadEdge, 0.07f, 0.3f);
             MountainOverlay(ref c, u, v);
             return c;
@@ -161,16 +283,16 @@ namespace GuildMaster.World
             return dx * dx + dy * dy < 1f;
         }
 
-        void WaterOverlay(ref Color32 c, float u, float v)
+        void WaterOverlay(ref Color32 c, float u, float v, in Palette pal)
         {
             float f = Wobbly(_water, u, v, 0.45f, out _);
             if (f < 0.5f) return;
-            if (f < 0.56f) { c = WaterEdge; return; }       // dark outline
-            if (f < 0.64f) { c = Foam; return; }            // foam line
-            if (f < 0.80f) { c = WaterShallow; return; }    // shallows
-            c = Water;
+            if (f < 0.56f) { c = pal.WaterEdge; return; }   // dark outline
+            if (f < 0.64f) { c = pal.Foam; return; }        // foam line
+            if (f < 0.80f) { c = pal.WaterShallow; return; } // shallows
+            c = pal.Water;
             // Sparkles on open water.
-            if (Speck(u * 1.5f, v * 3f, 0.05f, 0.42f, 0.14f)) c = Foam;   // short horizontal glints
+            if (Speck(u * 1.5f, v * 3f, 0.05f, 0.42f, 0.14f)) c = pal.Foam;   // short horizontal glints
         }
 
         void MountainOverlay(ref Color32 c, float u, float v)
@@ -182,13 +304,13 @@ namespace GuildMaster.World
             c = n > 0.62f ? RockLight : n < 0.35f ? RockDark : Rock;
         }
 
-        Color32 GrassPixel(float u, float v)
+        Color32 GrassPixel(float u, float v, in Palette pal)
         {
             // Large soft patches of lighter grass, with crisp cartoon edges.
             float n = ValueNoise(u * 0.18f, v * 0.18f);
-            var c = n > 0.62f ? GrassLight : Grass;
+            var c = n > 0.62f ? pal.GrassLight : pal.Grass;
             // Sparse little tufts: two tiny blades side by side.
-            if (Speck(u * 4f, v * 4f, 0.035f, 0.1f, 0.26f) || Speck(u * 4f + 0.22f, v * 4f + 0.05f, 0.035f, 0.1f, 0.2f)) c = ForestEdge;
+            if (Speck(u * 4f, v * 4f, 0.035f, 0.1f, 0.26f) || Speck(u * 4f + 0.22f, v * 4f + 0.05f, 0.035f, 0.1f, 0.2f)) c = pal.ForestEdge;
             return c;
         }
 

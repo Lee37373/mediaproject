@@ -98,6 +98,7 @@ namespace GuildMaster.Adventurers
                     action = AdventurerAction.Shop;
                     break;
                 case "idle": action = AdventurerAction.Idle; break;
+                case "hunt": action = AdventurerAction.Hunt; break;
                 default: rejectReason = "action"; return false;
             }
 
@@ -106,6 +107,8 @@ namespace GuildMaster.Adventurers
                 if (string.IsNullOrEmpty(dto.quest_id) || !questIds.Contains(dto.quest_id)) { rejectReason = "quest_id"; return false; }
                 if (hpRatio < MinHpToAccept) { rejectReason = "unsafe"; return false; }
             }
+            // Walking out to hunt is the same risk as taking a quest, so it needs the same health.
+            if (action == AdventurerAction.Hunt && hpRatio < MinHpToAccept) { rejectReason = "unsafe"; return false; }
 
             decision = new AdventurerDecision
             {

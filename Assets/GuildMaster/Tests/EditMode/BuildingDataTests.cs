@@ -16,6 +16,9 @@ namespace GuildMaster.Tests
             {
                 var def = db.Building(type);
                 Assert.That(def, Is.Not.Null, type.ToString());
+                // Player-placed buildings (P4-13) are bought outright, so their one level is the
+                // build cost; ConstructionTests checks those instead.
+                if (System.Array.IndexOf(ConstructionService.Placeable, type) >= 0) continue;
                 Assert.That(def.MaxLevel, Is.EqualTo(3), type.ToString());
                 Assert.That(def.Level(1).goldCost, Is.EqualTo(0), "Lv.1 is free: " + type);
                 for (int lv = 2; lv <= def.MaxLevel; lv++)
@@ -50,7 +53,8 @@ namespace GuildMaster.Tests
             var db = DefaultContent.Build();
             db.BuildIndex();
             var hall = db.Building(BuildingType.TownHall);
-            Assert.That(new[] { hall.Level(1).maxHp, hall.Level(2).maxHp, hall.Level(3).maxHp }, Is.EqualTo(new[] { 600f, 900f, 1300f }));
+            // P5-1 raised these from 600/900/1300: the hall fell to the first raid in seconds.
+            Assert.That(new[] { hall.Level(1).maxHp, hall.Level(2).maxHp, hall.Level(3).maxHp }, Is.EqualTo(new[] { 1000f, 1500f, 2100f }));
             Assert.That(new[] { hall.Level(1).dailyTax, hall.Level(2).dailyTax, hall.Level(3).dailyTax }, Is.EqualTo(new[] { 60, 90, 130 }));
             var guild = db.Building(BuildingType.GuildHall);
             Assert.That(new[] { guild.Level(1).rosterCapacity, guild.Level(2).rosterCapacity, guild.Level(3).rosterCapacity }, Is.EqualTo(new[] { 6, 9, 12 }));

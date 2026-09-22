@@ -20,6 +20,13 @@ namespace GuildMaster.Monsters
         const float TownHallWeight = 0.6f;
         const float RepathSeconds = 1f;
 
+        /// <summary>
+        /// Share of a raider's attack that a building takes (P5-1, <see cref="Session.GameBalance"/>).
+        /// Stone takes hits far better than flesh; without this a dozen raiders flattened the town
+        /// hall in seconds and nobody could walk back in time to defend it.
+        /// </summary>
+        public static float BuildingDamageMul { get; set; } = 0.4f;
+
         Building _target;
         Vector2 _spot;
         float _repath;
@@ -43,15 +50,19 @@ namespace GuildMaster.Monsters
                 _repath = 0f;
             }
 
-            // Close enough to the wall of the building: hit it.
+            // Close enough to the wall of the building, with a clear shot: hit it. The sight line
+            // matters for archers (P4-40): without it they stood outside the town wall and shot
+            // the buildings over it, and never came in through a gate.
+            var world = Services.Get<WorldService>();
             var edge = _target.ClosestPoint(m.Position);
-            if (Vector2.Distance(m.Position, edge) <= m.Stats.AttackRange + m.Radius + 0.9f)
+            if (Vector2.Distance(m.Position, edge) <= m.Stats.AttackRange + m.Radius + 0.9f
+                && world.HasLineOfSight(m.Position, edge, 2))
             {
                 m.Mover.Stop();
                 if (Time.time >= m.NextAttackTime)
                 {
                     m.NextAttackTime = Time.time + m.Stats.AttackCooldown;
-                    _target.Damage(m.Stats.Attack);
+                    _target.Damage(m.Stats.Attack * BuildingDamageMul);
                     m.Visual.Flash();
                 }
                 return;
@@ -60,11 +71,15 @@ namespace GuildMaster.Monsters
             _repath -= dt;
             if (_repath > 0f && m.Mover.IsMoving) return;
             _repath = RepathSeconds;
-            var world = Services.Get<WorldService>();
             if (world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(edge), 3, out var cell))
             {
                 _spot = GridMap.CellToWorld(cell);
-                if (!m.Mover.SetDestination(_spot, 0.4f)) _target = null; // unreachable: try another
+                if (!m.Mover.SetDestination(_spot, 0.4f))
+                {
+                    // Behind a standing gate (P4-39): break it first, then come back to the building.
+                    if (m.TryBreakGateToward(_spot, true)) return;
+                    _target = null; // unreachable: try another
+                }
             }
         }
 

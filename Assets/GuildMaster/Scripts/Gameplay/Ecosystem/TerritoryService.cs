@@ -28,6 +28,8 @@ namespace GuildMaster.Ecosystem
         const float NestCooldown = 8f;
         /// <summary>Resettle at least this far from the threat.</summary>
         const float MinResettleDistance = 10f;
+        /// <summary>How long after a hit a monster still counts as fighting (see <see cref="InCombat"/>).</summary>
+        const float CombatGrace = 3f;
 
         EcosystemManager _eco;
         float _timer;
@@ -49,6 +51,15 @@ namespace GuildMaster.Ecosystem
             return 0;
         }
 
+        /// <summary>
+        /// Same, but a fight that has already started is never called off. The rule decides whether
+        /// a pack *walks into* a territory; once blades are out it is settled by fighting. Without
+        /// this a lone monster the player lured in was sent home within half a second, so luring a
+        /// pursuer into another pack never produced a brawl (user report 2026-09-20).
+        /// </summary>
+        public static int Outcome(float residents, float intruders, bool alreadyFighting)
+            => alreadyFighting ? 0 : Outcome(residents, intruders);
+
         void Update()
         {
             if (_eco == null) return;
@@ -61,6 +72,20 @@ namespace GuildMaster.Ecosystem
                 if (_cooldown.TryGetValue(nest, out var until) && Time.time < until) continue;
                 CheckNest(nest);
             }
+        }
+
+        /// <summary>Already swinging: has a live target, or was hit in the last few seconds.</summary>
+        static bool InCombat(Unit u)
+            => u != null && u.IsAlive
+               && ((u.CurrentTarget != null && u.CurrentTarget.IsAlive)
+                   || (u.LastAttacker != null && u.WasRecentlyAttackedBy(u.LastAttacker, CombatGrace)));
+
+        /// <summary>True while either side is already in a fight (see the Outcome overload).</summary>
+        static bool AnyFighting(List<Monster> a, List<Monster> b)
+        {
+            foreach (var m in a) if (InCombat(m)) return true;
+            foreach (var m in b) if (InCombat(m)) return true;
+            return false;
         }
 
         void CheckNest(Nest nest)
@@ -85,7 +110,7 @@ namespace GuildMaster.Ecosystem
                 var intruders = kv.Value;
                 if (intruders.Count == 0) continue;
                 float intruderStrength = intruders.Sum(Strength);
-                switch (Outcome(residentStrength, intruderStrength))
+                switch (Outcome(residentStrength, intruderStrength, AnyFighting(residents, intruders)))
                 {
                     case -1:
                         Abandon(nest, residents, species, Centroid(intruders), intruders[0].Home);
@@ -157,6 +182,7 @@ namespace GuildMaster.Ecosystem
                 if (m.DefaultStateOverride != null && m.Home != null) raidHomes.Add(m.Home);
                 else m.FleeFrom(from);
             }
+            Debug.Log($"[Territory] {nest.DisplayName}: {intruders.Count} {intruders[0].Def.displayName} turned back by {residents.Count} residents");
             bool observed = Observed(nest.WorldPosition);
             foreach (var home in raidHomes)
                 EventBus.Publish(new IntrudersRoutedEvent { Territory = nest, IntruderHome = home, Count = intruders.Count, Observed = observed });

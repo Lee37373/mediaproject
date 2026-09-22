@@ -22,6 +22,8 @@ namespace GuildMaster.World
     {
         public Vector2Int Cell;
         public Biome Biome;
+        /// <summary>Walk distance from the town centre in cells; species are placed by it (P5-1).</summary>
+        public int DistanceFromTown;
     }
 
     /// <summary>Pure data result of map generation (no Unity objects).</summary>
@@ -39,12 +41,19 @@ namespace GuildMaster.World
         /// <summary>Forest cells that contain a tree (walkable, but give partial cover against projectiles).</summary>
         public readonly bool[] Trees;
 
+        /// <summary>Terrain region of each cell (P4-55); all grassland unless the generator lays them out.</summary>
+        public readonly Region[] Regions;
+        public RegionLayout RegionLayout;
+
+        public Region RegionOf(int x, int y) => InBounds(x, y) ? Regions[y * Width + x] : Region.Grassland;
+
         public MapData(int width, int height)
         {
             Width = width;
             Height = height;
             Tiles = new TileType[width * height];
             Trees = new bool[width * height];
+            Regions = new Region[width * height];
         }
 
         public bool HasTree(int x, int y) => InBounds(x, y) && Trees[y * Width + x];

@@ -7,6 +7,8 @@ using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Core;
 using GuildMaster.Economy;
 using GuildMaster.LLM;
+using GuildMaster.Session;
+using GuildMaster.Town;
 
 namespace GuildMaster.Recruitment
 {
@@ -70,6 +72,15 @@ namespace GuildMaster.Recruitment
                 parts.Add($"길드원 {n}명" + (n > 0 ? $"({string.Join(", ", roster.Members.Take(4).Select(m => m.Data.name))}{(n > 4 ? " 등" : "")})" : ""));
             }
             if (Services.TryGet<GuildTreasury>(out var t)) parts.Add($"길드 자금 {t.Gold}G");
+            // Facility levels and recent guild news give the model something concrete to answer with
+            // instead of vague generalities.
+            if (Services.TryGet<TownService>(out var town))
+                parts.Add("시설 " + string.Join(", ", town.Buildings.Select(b => $"{b.DisplayName} Lv.{b.Level}")));
+            if (Services.TryGet<GameLog>(out var log))
+            {
+                var recent = log.Recent(3).ToList();
+                if (recent.Count > 0) parts.Add("최근 소식: " + string.Join(" / ", recent));
+            }
             return "길드 정보: " + string.Join(", ", parts) + ".";
         }
 

@@ -47,13 +47,26 @@ namespace GuildMaster.Adventurers
             return true;
         }
 
-        /// <summary>Nearest living monster inside the walls that the guild currently sees.</summary>
+        /// <summary>
+        /// Nearest living monster the guild currently sees inside the walls, or breaking a gate from
+        /// outside (user report 2026-09-22: a stone slime that chased a member home bashed the gate
+        /// while everyone inside stood about).
+        /// </summary>
         static Unit FindIntruder(Adventurer a)
         {
             var town = AdvCtx.Town;
             Services.TryGet<FogOfWar>(out var fog);
             return UnitRegistry.FindNearest(a.Position, 60f,
-                u => u is Monster m && m.IsAlive && town.IsInTown(m.Position) && (fog == null || fog.IsVisibleRaw(m.Position)));
+                u => u is Monster m && m.IsAlive && IsIntruder(town, m) && (fog == null || fog.IsVisibleRaw(m.Position)));
+        }
+
+        /// <summary>Just outside the wall counts too once it fights us there: it stops bashing the gate then.</summary>
+        const float WallReach = 4f;
+
+        static bool IsIntruder(TownService town, Monster m)
+        {
+            if (town.IsInTown(m.Position) || m.IsBreakingGate) return true;
+            return m.CombatEngagement?.Target is Unit t && t.Faction == Faction.Guild && town.WithinReachOfTown(m.Position, WallReach);
         }
 
         public override void Enter()
@@ -66,11 +79,11 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
-            if (a.CheckRetreat()) return;
+            if (a.CheckRetreat(wearinessCounts: false)) return;
             var town = AdvCtx.Town;
-            bool Allowed(Unit u) => town.IsInTown(u.Position) || a.WasRecentlyAttackedBy(u);
+            bool Allowed(Unit u) => (u is Monster m && IsIntruder(town, m)) || a.WasRecentlyAttackedBy(u);
             // Monsters inside the walls are targets even if not aggressive (e.g. a fleeing wolf).
-            if (a.HandleCombat(dt, u => u is Monster m && m.IsAlive && town.IsInTown(m.Position), Allowed))
+            if (a.HandleCombat(dt, u => u is Monster m && m.IsAlive && IsIntruder(town, m), Allowed))
             {
                 _calm = CalmSeconds;
                 return;
@@ -88,7 +101,7 @@ namespace GuildMaster.Adventurers
             }
 
             // Clear what the intruders dropped inside the walls (P4-21).
-            if (a.Looting.Tick(dt, town.IsInTown)) { _calm = CalmSeconds; return; }
+            if (a.Looting.Tick(dt, AdvCtx.TownLootZone)) { _calm = CalmSeconds; return; }
 
             _calm -= dt;
             if (_calm > 0f) return;

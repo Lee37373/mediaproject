@@ -54,6 +54,9 @@ namespace GuildMaster.UI
             nameTags.Build(UIBuilder.Rect(WorldLayer, "NameTags").Stretch());
             var bubbles = WorldLayer.gameObject.AddComponent<SpeechBubbleLayer>();
             bubbles.Build(UIBuilder.Rect(WorldLayer, "Bubbles").Stretch());
+            // Skill icons with their cooldowns, above the health bar (P4-34).
+            var skillBars = WorldLayer.gameObject.AddComponent<SkillBarLayer>();
+            skillBars.Build(UIBuilder.Rect(WorldLayer, "SkillBars").Stretch());
             Services.Register(floating);
             Services.Register(bubbles);
 
@@ -85,8 +88,10 @@ namespace GuildMaster.UI
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             AddWindow<MerchantView>(menu, "행상인 (T)", Key.T, new Vector2(760, 600));
-            // Daily accounts: income, spending and events per game day (F-3).
-            AddWindow<DailyReportView>(menu, "정산 (B)", Key.B, new Vector2(960, 760));
+            AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(700, 300));
+            // Daily accounts: income, spending and events per game day (F-3). Moved off B, which
+            // construction (P4-13) already claimed.
+            AddWindow<DailyReportView>(menu, "정산 (L)", Key.L, new Vector2(960, 760));
             // The wall of the fallen: relics to fetch, memorials (F-6).
             AddWindow<MemorialView>(menu, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
             // Notification list (F-1); the side-menu button shows the unread count (kept up to date by ToastLayer).

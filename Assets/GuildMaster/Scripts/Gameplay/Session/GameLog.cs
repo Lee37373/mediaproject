@@ -52,6 +52,22 @@ namespace GuildMaster.Session
                 $"{e.Invitee.Data.name}이(가) {e.Leader.Data.name}의 파티 제안을 {(e.Accepted ? "수락" : "거절")}했습니다.", LogCategory.Quest));
             EventBus.Subscribe<PartyFormedEvent>(e => Add(
                 $"파티 출발: {e.Leader.Data.name}, {string.Join(", ", e.Members.Select(m => m.Data.name))} → '{e.Quest.Title}'", LogCategory.Quest));
+            // Standing parties (P4-50): who joins or leaves, and how the leader split the pay.
+            EventBus.Subscribe<PartyChangedEvent>(e =>
+            {
+                if (e.Member == null) return;
+                if (e.Joined)
+                {
+                    // The one a party forms around does not "join" its own party.
+                    if (e.Member != e.Party.Leader) Add($"{e.Member.Data.name}이(가) {e.Party.Name}에 합류했습니다.", LogCategory.Quest);
+                }
+                else if (e.Reason != "사망") Add($"{e.Member.Data.name}이(가) 파티를 떠났습니다 ({e.Reason ?? "해산"}).", LogCategory.Quest);
+            });
+            EventBus.Subscribe<PartySettledEvent>(e =>
+            {
+                if (e.Pool <= 0) return;
+                Add($"{e.Party.Name} 정산 {e.Pool}G{(e.FromLlm ? "" : " (규칙 분배)")}: {string.Join(", ", e.Shares.Select(s => $"{s.member.Data.name} {s.share}G"))}", LogCategory.Economy);
+            });
             // Only when the relationship grade changes (friendly → close, etc.), not every point.
             EventBus.Subscribe<RelationChangedEvent>(e =>
             {
@@ -72,6 +88,7 @@ namespace GuildMaster.Session
                 ? $"[침공] 남은 적 {e.Withdrawn}마리가 물러갔습니다. (처치 {e.Killed})"
                 : $"[침공] 침공을 막아냈습니다! (처치 {e.Killed})", LogCategory.Danger); });
             EventBus.Subscribe<Town.BuildingDestroyedEvent>(e => Add($"[침공] {e.Building.DisplayName}이(가) 무너졌습니다!", LogCategory.Danger));
+            EventBus.Subscribe<Town.GateBrokenEvent>(e => Add($"[침공] {e.Gate.DisplayName}이 부서졌습니다! 수리하기 전까지 몬스터가 드나듭니다.", LogCategory.Danger));
             EventBus.Subscribe<CraftCompletedEvent>(e => Add($"제작 완료: {_db.Item(e.Recipe.outputItemId)?.displayName ?? e.Recipe.outputItemId} x{e.Count}", LogCategory.Economy));
             EventBus.Subscribe<Town.BuildingLevelChangedEvent>(e => Add($"{e.Building.DisplayName} 업그레이드 완료 (Lv.{e.Level})", LogCategory.Info));
             EventBus.Subscribe<AdventurerLevelUpEvent>(e => Add($"{e.Adventurer.Data.name} 레벨 업! (Lv.{e.Level})", LogCategory.Info));
@@ -87,7 +104,6 @@ namespace GuildMaster.Session
                     : $"{e.TraderName}에게 {name} x{e.Count} 판매 (+{e.Gold}G)", LogCategory.Economy);
             });
             // Ecosystem news only when the guild could witness it (GuildIntel rule; also feeds LLM prompts).
-            // Extinction is never announced: the guild cannot know that a species is gone everywhere.
             EventBus.Subscribe<NestClearedEvent>(e =>
             {
                 if (Witnessed(e.Nest) || e.Killer is Adventurer)
@@ -101,6 +117,7 @@ namespace GuildMaster.Session
             // Territorial routs, only when the guild saw them (GuildIntel rule).
             EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 {e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<IntrudersRoutedEvent>(e => { if (e.Observed) Add($"{e.IntruderHome.Species.displayName} 무리가 {e.Territory.DisplayName}의 기세에 눌려 물러났습니다.", LogCategory.Ecosystem); });
+            EventBus.Subscribe<BandSettledEvent>(e => { if (e.Observed) Add($"{e.Species.displayName} 무리 {e.Count}마리가 옮겨 와 {e.To.DisplayName}에 자리 잡았습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {e.Nest.DisplayName}", LogCategory.Ecosystem));
             // Monsters using ground items (P4-21), only when the guild sees it happen.
             EventBus.Subscribe<Monsters.MonsterItemUsedEvent>(e =>

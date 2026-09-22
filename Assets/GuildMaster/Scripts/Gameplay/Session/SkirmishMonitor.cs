@@ -30,6 +30,8 @@ namespace GuildMaster.Session
         int _samples;
         float _maxOverlapSeconds;
         int _threatSamples, _kitingSamples, _kiteEpisodes;
+        readonly int[] _tierThreat = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierKite = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
         int _telegraphs, _advInsideAtStart, _advInsideAtResolve;
         int _errorCount;
         readonly Dictionary<Unit, int> _targetCounts = new();
@@ -51,6 +53,7 @@ namespace GuildMaster.Session
             Application.logMessageReceived += OnLog;
             EventBus.Subscribe<TelegraphStartedEvent>(OnTelegraphStarted);
             EventBus.Subscribe<TelegraphResolvedEvent>(OnTelegraphResolved);
+            EventBus.Subscribe<PartyTargetCalledEvent>(OnPartyCall);
             ResetStats();
         }
 
@@ -59,6 +62,7 @@ namespace GuildMaster.Session
             Application.logMessageReceived -= OnLog;
             EventBus.Unsubscribe<TelegraphStartedEvent>(OnTelegraphStarted);
             EventBus.Unsubscribe<TelegraphResolvedEvent>(OnTelegraphResolved);
+            EventBus.Unsubscribe<PartyTargetCalledEvent>(OnPartyCall);
             if (Instance == this) Instance = null;
         }
 
@@ -72,12 +76,20 @@ namespace GuildMaster.Session
             _samples = 0;
             _maxOverlapSeconds = 0f;
             _threatSamples = _kitingSamples = _kiteEpisodes = 0;
+            System.Array.Clear(_tierThreat, 0, _tierThreat.Length);
+            System.Array.Clear(_tierKite, 0, _tierKite.Length);
             _telegraphs = _advInsideAtStart = _advInsideAtResolve = 0;
             _errorCount = 0;
             _targetCounts.Clear();
             _lastTarget.Clear();
             _spreadSamples = _allOnOneSamples = _monsterSwitches = _advSwitches = _dropped = 0;
             _focusShareSum = 0f;
+            _partyCalls = _focusSamples = _focusHits = _noviceFocusSamples = _noviceFocusHits = _backSamples = _backBehind = 0;
+            System.Array.Clear(_tierWait, 0, _tierWait.Length);
+            System.Array.Clear(_tierWaitMoving, 0, _tierWaitMoving.Length);
+            System.Array.Clear(_tierCloseSamples, 0, _tierCloseSamples.Length);
+            System.Array.Clear(_tierSwings, 0, _tierSwings.Length);
+            _lastSwing.Clear();
         }
 
         void OnLog(string message, string stackTrace, LogType type)
@@ -113,6 +125,49 @@ namespace GuildMaster.Session
             SampleOverlap();
             SampleKiting();
             SampleTargets();
+            SampleParties();
+            SampleFootwork();
+        }
+
+        // ---------------- Parties (P4-27) ----------------
+
+        readonly List<Adventurer> _party = new();
+        int _partyCalls, _focusSamples, _focusHits, _noviceFocusSamples, _noviceFocusHits, _backSamples, _backBehind;
+
+        void OnPartyCall(PartyTargetCalledEvent e) => _partyCalls++;
+
+        /// <summary>
+        /// Focus fire (members whose target is the leader's call — skilled+ should, novices need not)
+        /// and the back line (back-liners fighting near a front-liner: are they farther from the enemy?).
+        /// </summary>
+        void SampleParties()
+        {
+            if (!Services.TryGet<PartyTactics>(out var tactics) || !Services.TryGet<Quests.QuestBoard>(out var board)) return;
+            foreach (var q in board.Quests)
+            {
+                Adventurer any = null;
+                foreach (var t in q.Assignees) if (t is Adventurer a) { any = a; break; }
+                if (any == null || tactics.Party(any, _party).Count < 2) continue;
+                var leader = _party[0];
+                foreach (var m in _party)
+                {
+                    var target = m.Engage.Target;
+                    if (target == null) continue;
+                    var called = leader.Tier >= CombatTier.Skilled ? leader.Engage.Target : null;
+                    if (m != leader && called != null)
+                    {
+                        if (m.Tier >= CombatTier.Skilled) { _focusSamples++; if (target == called) _focusHits++; }
+                        else { _noviceFocusSamples++; if (target == called) _noviceFocusHits++; }
+                    }
+                    if (m.Role != PartyRole.Back) continue;
+                    float front = float.MaxValue;
+                    foreach (var f in _party)
+                        if (f.Role == PartyRole.Front) front = Mathf.Min(front, Vector2.Distance(f.Position, target.Position));
+                    if (front > 6f) continue;
+                    _backSamples++;
+                    if (Vector2.Distance(m.Position, target.Position) >= front - 0.25f) _backBehind++;
+                }
+            }
         }
 
         /// <summary>
@@ -179,13 +234,49 @@ namespace GuildMaster.Session
             foreach (var k in stale) _overlapSince.Remove(k);
         }
 
+        // ---------------- Melee footwork (P4-47) ----------------
+
+        readonly int[] _tierWait = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierWaitMoving = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierCloseSamples = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierSwings = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly Dictionary<Unit, float> _lastSwing = new();
+
+        /// <summary>
+        /// Melee units with a target: while waiting on the next blow in reach (or stepping), how often
+        /// they move; and swings per minute while close to the target (footwork must not cost tempo).
+        /// </summary>
+        void SampleFootwork()
+        {
+            foreach (var u in UnitRegistry.All)
+            {
+                if (!u.IsAlive || u.Stats.IsRanged || u.CombatEngagement?.Target is not { IsAlive: true } target) continue;
+                int tier = (int)u.Tier;
+                bool inRange = Combat.InRange(u, target);
+                if (Time.time < u.NextAttackTime && (inRange || u.CombatEngagement.IsSteering))
+                {
+                    _tierWait[tier]++;
+                    if (u.Mover.IsMoving || u.Mover.IsSteering) _tierWaitMoving[tier]++;
+                }
+                if (Combat.Distance(u, target) > u.Stats.AttackRange + Combat.ContactPadding + target.Radius + 1f) continue;
+                _tierCloseSamples[tier]++;
+                if (_lastSwing.TryGetValue(u, out var last) && u.NextAttackTime > last + 0.01f) _tierSwings[tier]++;
+                _lastSwing[u] = u.NextAttackTime;
+            }
+        }
+
         void SampleKiting()
         {
             foreach (var u in UnitRegistry.All)
             {
-                if (!u.IsAlive || !u.Stats.IsRanged || u is not Adventurer a) continue;
-                bool threatened = Tactics.NearestMeleeThreat(a, KiteThreatRadius + a.Radius) != null;
-                bool kiting = a.Engage.IsKiting;
+                if (!u.IsAlive || !u.Stats.IsRanged || u.CombatEngagement == null) continue;
+                bool threatened = Tactics.NearestMeleeThreat(u, KiteThreatRadius + u.Radius) != null;
+                bool kiting = u.CombatEngagement.IsKiting;
+                // Every ranged unit by tier (P4-26: only skilled and up kite).
+                int tier = (int)u.Tier;
+                if (threatened) _tierThreat[tier]++;
+                if (threatened && kiting) _tierKite[tier]++;
+                if (u is not Adventurer a) continue;
                 if (threatened) _threatSamples++;
                 if (threatened && kiting) _kitingSamples++;
                 _wasKiting.TryGetValue(a, out var was);
@@ -202,10 +293,23 @@ namespace GuildMaster.Session
             sb.AppendLine($"  overlap: maxContinuous={_maxOverlapSeconds:0.0}s pairs>{PersistentOverlapSeconds:0}s={_persistentPairs.Count} activeNow={_overlapSince.Count}");
             float kitePct = _threatSamples > 0 ? 100f * _kitingSamples / _threatSamples : 0f;
             sb.AppendLine($"  kiting: threatSamples={_threatSamples} kitingWhileThreatened={kitePct:0}% episodes={_kiteEpisodes}");
+            sb.Append("  kitingByTier(all ranged, kite%/threatSamples):");
+            for (int t = 0; t < _tierThreat.Length; t++)
+                if (_tierThreat[t] > 0) sb.Append($" {CombatTiers.Label((CombatTier)t)}={100f * _tierKite[t] / _tierThreat[t]:0}%/{_tierThreat[t]}");
+            sb.AppendLine();
             sb.AppendLine($"  telegraph: count={_telegraphs} advInsideAtStart={_advInsideAtStart} advInsideAtResolve={_advInsideAtResolve}");
             float share = _spreadSamples > 0 ? 100f * _focusShareSum / _spreadSamples : 0f;
             float allOne = _spreadSamples > 0 ? 100f * _allOnOneSamples / _spreadSamples : 0f;
-            sb.AppendLine($"  targets: spreadSamples={_spreadSamples} avgTopShare={share:0}% allOnOne={allOne:0}% monsterSwitches={_monsterSwitches} advSwitches={_advSwitches} dropped={_dropped}");
+            static string Pct(int hit, int all) => all > 0 ? $"{100f * hit / all:0}%/{all}" : "-";
+            sb.AppendLine($"  party: calls={_partyCalls} focusSkilled+={Pct(_focusHits, _focusSamples)} focusNovice={Pct(_noviceFocusHits, _noviceFocusSamples)} backLineBehind={Pct(_backBehind, _backSamples)}");
+            sb.Append($"  footwork: steering={(LocalSteering.Enabled ? "on" : "off")} movingWhileWaiting:");
+            for (int t = 0; t < _tierWait.Length; t++)
+                if (_tierWait[t] > 0) sb.Append($" {CombatTiers.Label((CombatTier)t)}={Pct(_tierWaitMoving[t], _tierWait[t])}");
+            sb.Append(" swingsPerMinClose:");
+            for (int t = 0; t < _tierCloseSamples.Length; t++)
+                if (_tierCloseSamples[t] > 0) sb.Append($" {CombatTiers.Label((CombatTier)t)}={_tierSwings[t] * 60f / (_tierCloseSamples[t] * SampleInterval):0}");
+            sb.AppendLine();
+            sb.AppendLine($"  targets:spreadSamples={_spreadSamples} avgTopShare={share:0}% allOnOne={allOne:0}% monsterSwitches={_monsterSwitches} advSwitches={_advSwitches} dropped={_dropped}");
             return sb.ToString();
         }
     }

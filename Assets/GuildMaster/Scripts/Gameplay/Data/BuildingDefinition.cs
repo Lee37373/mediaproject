@@ -33,6 +33,12 @@ namespace GuildMaster.Data
         [Header("Training ground")]
         public float idleExpPerHour;
 
+        [Header("Watchtower (P4-13): what a built tower costs and sees")]
+        /// <summary>Vision radius of the finished tower; it sees over walls.</summary>
+        public float sightRadius;
+        /// <summary>Footprint side in cells (square).</summary>
+        public int footprint = 2;
+
         [Header("Blacksmith / apothecary (read by crafting, P4-2)")]
         public int craftTier;
         public float craftSpeed = 1f;

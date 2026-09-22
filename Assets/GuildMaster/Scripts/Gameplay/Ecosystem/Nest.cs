@@ -23,6 +23,8 @@ namespace GuildMaster.Ecosystem
         public Biome Biome { get; private set; }
         public int Capacity { get; private set; }
         public float GrowthAccumulator { get; set; }
+        /// <summary>Game hours the nest has been empty (it is settled again at <see cref="EcosystemManager.RefillHours"/>).</summary>
+        public int EmptyHours { get; set; }
         public bool Discovered { get; private set; }
 
         public IReadOnlyList<Monster> Members => _members;
@@ -38,6 +40,15 @@ namespace GuildMaster.Ecosystem
         public void ShowAs(MonsterDefinition species)
         {
             if (species != null && _renderer != null) _renderer.sprite = CartoonArt.Nest(species);
+        }
+
+        /// <summary>Cold, dim tint for a nest drawn from memory rather than sight (P4-23).</summary>
+        static readonly Color RememberedTint = new(0.66f, 0.70f, 0.80f, 0.9f);
+
+        /// <summary>Out of sight the nest is only what the guild last saw, so it is shown dimmed.</summary>
+        public void SetRemembered(bool remembered)
+        {
+            if (_renderer != null) _renderer.color = remembered ? RememberedTint : Color.white;
         }
 
         /// <summary>
@@ -82,6 +93,7 @@ namespace GuildMaster.Ecosystem
             Species = species;
             Capacity = species.nestCapacity;
             GrowthAccumulator = 0f;
+            EmptyHours = 0;
             name = $"Nest {NestId} ({species.id})";
             // The map keeps the old den art until the guild sees the new owners (GuildIntel).
         }

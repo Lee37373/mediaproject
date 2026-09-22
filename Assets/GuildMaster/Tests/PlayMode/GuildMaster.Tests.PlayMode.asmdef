@@ -1,0 +1,17 @@
+{
+    "name": "GuildMaster.Tests.PlayMode",
+    "references": [
+        "GuildMaster.Core",
+        "GuildMaster.Gameplay",
+        "GuildMaster.LLM",
+        "GuildMaster.UI",
+        "Unity.InputSystem",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "overrideReferences": true,
+    "precompiledReferences": [ "nunit.framework.dll" ],
+    "autoReferenced": false,
+    "defineConstraints": [ "UNITY_INCLUDE_TESTS" ]
+}

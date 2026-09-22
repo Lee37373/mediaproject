@@ -40,11 +40,22 @@ namespace GuildMaster.World
             _open = new MinHeap(1024);
         }
 
+        /// <summary>Whether the search in progress may pass intact town gates (P4-39).</summary>
+        bool _passesGates = true;
+
+        bool Walkable(int x, int y) => _grid.IsWalkable(x, y, _passesGates);
+
         /// <summary>Finds a path of cells from start to goal (inclusive). Returns false if unreachable.</summary>
-        public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result)
+        public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result) => FindPath(start, goal, result, true);
+
+        /// <summary>As above; <paramref name="passesGates"/> false keeps the path out of intact gates (monsters).</summary>
+        public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result, bool passesGates)
         {
+            _passesGates = passesGates;
             result.Clear();
             if (!_grid.InBounds(start) || !_grid.InBounds(goal)) return false;
+            // Every gate shut: no way through the walls for a monster, so skip the whole-map search.
+            if (!passesGates && _grid.TownSealed && _grid.IsInTown(start) != _grid.IsInTown(goal)) return false;
             if (!_grid.IsWalkable(goal) && !_grid.TryFindNearestWalkable(goal, 6, out goal)) return false;
             if (!_grid.IsWalkable(start)) _grid.TryFindNearestWalkable(start, 3, out start);
             if (start == goal) { result.Add(goal); return true; }
@@ -72,9 +83,9 @@ namespace GuildMaster.World
                 {
                     var dir = s_dirs[d];
                     int nx = cx + dir.x, ny = cy + dir.y;
-                    if (!_grid.IsWalkable(nx, ny)) continue;
+                    if (!Walkable(nx, ny)) continue;
                     bool diagonal = d >= 4;
-                    if (diagonal && (!_grid.IsWalkable(cx + dir.x, cy) || !_grid.IsWalkable(cx, cy + dir.y))) continue;
+                    if (diagonal && (!Walkable(cx + dir.x, cy) || !Walkable(cx, cy + dir.y))) continue;
 
                     int ni = ny * w + nx;
                     Touch(ni);
@@ -114,8 +125,8 @@ namespace GuildMaster.World
             result.Reverse();
         }
 
-        public bool FindPathWorld(Vector2 from, Vector2 to, List<Vector2Int> result)
-            => FindPath(GridMap.WorldToCell(from), GridMap.WorldToCell(to), result);
+        public bool FindPathWorld(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true)
+            => FindPath(GridMap.WorldToCell(from), GridMap.WorldToCell(to), result, passesGates);
 
         /// <summary>Binary min-heap of (index, priority).</summary>
         class MinHeap

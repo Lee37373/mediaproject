@@ -74,6 +74,34 @@ namespace GuildMaster.Ecosystem
         public static bool IsGoodLure(Vector2 self, Vector2 pursuer, Vector2 waypoint, float detour)
             => detour <= MaxDetour && Vector2.Distance(self, waypoint) < Vector2.Distance(pursuer, waypoint);
 
+        // ---------------- Finishing the lure with a skill (P4-19) ----------------
+
+        /// <summary>How close behind the pursuer has to be for a break-away to be worth the skill.</summary>
+        public const float CloseBehind = 3f;
+        /// <summary>How near the lure point we must be before breaking away.</summary>
+        public const float ArrivedDistance = 2f;
+
+        /// <summary>
+        /// We have led the pursuer to the spot and it is right behind us (pure, tested). Judged by
+        /// the lure point rather than the territory, so nothing the guild has not seen is read.
+        /// </summary>
+        public static bool ShouldBreakAway(Vector2 self, Vector2 lurePoint, Vector2 pursuer)
+            => Vector2.Distance(self, lurePoint) <= ArrivedDistance && Vector2.Distance(self, pursuer) <= CloseBehind;
+
+        /// <summary>
+        /// Walking away is not enough on its own — the pursuer is on our heels and follows us right
+        /// back out (P4-18's known limit). A skill breaks the thread: slip out of sight so it is
+        /// left standing among the residents, or hop clear so it has to cross the ground on foot.
+        /// </summary>
+        public static bool TryBreakAway(Unit self, Unit pursuer, Vector2 lurePoint, Vector2 onward)
+        {
+            if (self == null || pursuer == null || !pursuer.IsAlive) return false;
+            if (!ShouldBreakAway(self.Position, lurePoint, pursuer.Position)) return false;
+            if (self.TryUseSkill<StealthSkill>(pursuer)) return true;
+            var warp = self.FindReadySkill<WarpSkill>();
+            return warp != null && warp.WarpToPoint(self, onward);
+        }
+
         /// <summary>Closest live unit chasing <paramref name="self"/>: its last attacker, or anything targeting it.</summary>
         public static Unit FindPursuer(Unit self, float radius = 10f)
         {

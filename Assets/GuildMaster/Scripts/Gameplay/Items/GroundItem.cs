@@ -11,7 +11,7 @@ namespace GuildMaster.Items
     /// An item stack lying on the map (P4-21): dropped by the dead, picked up by monsters (worn or
     /// swallowed) and adventurers (carried back as loot). Pooled; hidden under the fog like units.
     /// </summary>
-    public class GroundItem : MonoBehaviour, IPoolable
+    public class GroundItem : MonoBehaviour, IPoolable, IFogGhostSubject
     {
         public ItemDefinition Item { get; private set; }
         public int Count { get; private set; }
@@ -54,6 +54,13 @@ namespace GuildMaster.Items
             _body.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f) - 3;
             _fog.Refresh();
         }
+
+        // ---------------- Fog memory (P4-23) ----------------
+
+        bool IFogGhostSubject.WantsGhost => Item != null;
+        string IFogGhostSubject.GhostLabel => Item == null ? "" : Count > 1 ? $"{Item.displayName} x{Count}" : Item.displayName;
+        SpriteRenderer IFogGhostSubject.GhostBody => _body;
+        float IFogGhostSubject.GhostHpRatio => -1f;
 
         /// <summary>Claims the item for a unit walking to it; false if someone else (alive) has it.</summary>
         public bool Reserve(Unit who)

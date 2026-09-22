@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using GuildMaster.Traits;
+using GuildMaster.Units;
 using GuildMaster.World;
 using UnityEngine;
 
@@ -91,27 +92,42 @@ namespace GuildMaster.Data
 
             // Species follow the imported Casual Monsters art; roles in the ecosystem are unchanged
             // from the previous roster (prey / skittish prey / pack predator / raiders / boss).
+            //
+            // growthPerHour was raised about 1.5x over the P5-1 values on 2026-09-20 (P4-37): with
+            // free hunting the guild clears the near rings even on an empty board, and at the old
+            // rates the species nearest town were farmed down to the recolonisation floor. The far
+            // ones (goblin warrior, slime king) go up least, so the walk out stays graded.
+            //
+            // P4-38/40 (user report 2026-09-21: "levelling is slow, they hardly fight early"): the
+            // weak rings (slime, stone slime, skull) got bigger nests, more to start with and faster
+            // breeding. A measured day and a half found 20 kills in 35 game hours — the countryside
+            // near town was simply empty most of the time.
+            //
+            // P4-41 (user decision 2026-09-22: "raise spawns by shortening the time, not the count"):
+            // nest sizes and starting numbers are back to the pre-P4-40 values and only breeding got
+            // faster. From three left, a slime den refills in ~11 h (P4-40: 34 h), stone slime ~14 h
+            // from two, skull ~17 h from two.
             var slime = Mon("slime", "슬라임", MonsterShape.Slime, new Color(0.4f, 0.85f, 0.45f), new Color(0.8f, 1f, 0.8f), 0.75f,
-                18, 3, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 8, 0.10f, 5, 3, Biome.Plains, Biome.Shore, Biome.Forest);
+                18, 3, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 8, 0.30f, 5, 6, Biome.Plains, Biome.Shore, Biome.Forest);
             slime.artKey = "slime";
             Loot(slime, jelly, 0.85f, 1, 2);
 
             var stoneSlime = Mon("stone_slime", "돌 슬라임", MonsterShape.Slime, new Color(0.55f, 0.58f, 0.55f), new Color(0.8f, 0.82f, 0.8f), 0.9f,
-                35, 6, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 6, 0.06f, 4, 6, Biome.Plains, Biome.Forest);
+                35, 6, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 6, 0.25f, 4, 12, Biome.Plains, Biome.Forest);
             stoneSlime.artKey = "stone_slime";
             stoneSlime.fleesFromPredators = true;
             Loot(stoneSlime, stoneShard, 0.7f);
             Loot(stoneSlime, denseJelly, 0.6f, 1, 2);
 
             var skull = Mon("skull", "해골", MonsterShape.Humanoid, new Color(0.9f, 0.88f, 0.8f), new Color(0.3f, 0.3f, 0.35f), 0.8f,
-                30, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 6, 0.045f, 3, 8, Biome.Forest, Biome.Plains);
+                30, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 6, 0.20f, 3, 16, Biome.Forest, Biome.Plains);
             skull.artKey = "skull";
             skull.rangedArtKey = "skull_archer";
             Loot(skull, boneShard, 0.7f);
             Loot(skull, oldArrowhead, 0.4f);
 
             var goblin = Mon("goblin", "고블린", MonsterShape.Humanoid, new Color(0.35f, 0.65f, 0.25f), new Color(0.55f, 0.35f, 0.2f), 0.85f,
-                28, 6, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.Low, true, 20, 0.05f, 4, 7, Biome.Forest, Biome.Plains);
+                28, 6, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.Low, true, 20, 0.048f, 4, 14, Biome.Forest, Biome.Plains);
             goblin.artKey = "goblin";
             goblin.rangedArtKey = "goblin_archer";
             goblin.canRaid = true;
@@ -121,16 +137,17 @@ namespace GuildMaster.Data
             goblin.pickupMode = MonsterPickupMode.Equip;
 
             var goblinWarrior = Mon("goblin_warrior", "고블린 전사", MonsterShape.Humanoid, new Color(0.3f, 0.45f, 0.3f), new Color(0.4f, 0.3f, 0.25f), 0.95f,
-                70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.03f, 3, 20, Biome.Mountain, Biome.Forest);
+                70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.025f, 2, 40, Biome.Mountain, Biome.Forest);
             goblinWarrior.artKey = "goblin_warrior";
             goblinWarrior.canRaid = true;
-            goblinWarrior.raidThreshold = 6; goblinWarrior.raidStep = 3; // 6 / 9 / 12
+            // P5-1: warriors live far out (band 0.75), so their raids are a late-game threat.
+            goblinWarrior.raidThreshold = 9; goblinWarrior.raidStep = 3; // 9 / 12 / 15
             goblinWarrior.startingGear.Add(new LootEntry { item = goblinHelm, chance = 0.7f, min = 1, max = 1 });
             goblinWarrior.pickupMode = MonsterPickupMode.Equip;
             Loot(goblinWarrior, ironOre, 0.35f);
 
             var slimeKing = Mon("slime_king", "슬라임 킹", MonsterShape.Brute, new Color(0.35f, 0.8f, 0.4f), new Color(0.95f, 0.8f, 0.3f), 1.5f,
-                220, 22, 8, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 4, 0.008f, 1, 80, Biome.Mountain);
+                220, 22, 8, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 4, 0.011f, 1, 160, Biome.Mountain);
             slimeKing.artKey = "slime_king";
             slimeKing.canRaid = true;
             slimeKing.raidThreshold = 2; slimeKing.raidStep = 1; // 2 / 3 / 4
@@ -143,6 +160,19 @@ namespace GuildMaster.Data
             stoneSlime.pickupMode = MonsterPickupMode.Absorb;
             slimeKing.pickupMode = MonsterPickupMode.Absorb;
 
+            // How far from town each species settles (P5-1, user decision 2026-09-20): the walk out
+            // gets more dangerous, so a new guild always has something it can handle nearby.
+            slime.distanceBand = 0.05f;
+            stoneSlime.distanceBand = 0.2f;
+            // The near ring must be thick enough to live off: potions are slime jelly, and a new
+            // guild has nothing else it can safely hunt (P5-1).
+            slime.minNests = 3;
+            stoneSlime.minNests = 2;
+            goblin.distanceBand = 0.35f;
+            skull.distanceBand = 0.5f;
+            goblinWarrior.distanceBand = 0.75f;
+            slimeKing.distanceBand = 1f;
+
             // Territories (base radius; the nest's fill scales it 0.6x..1.4x).
             slime.territoryRadius = 3.5f;
             stoneSlime.territoryRadius = 4f;
@@ -150,6 +180,15 @@ namespace GuildMaster.Data
             goblin.territoryRadius = 5.5f;
             goblinWarrior.territoryRadius = 6f;
             slimeKing.territoryRadius = 6.5f;
+
+            // Fighting smarts (P4-26): slimes act on instinct, goblins and skeletons fight like novices,
+            // goblin warriors are skilled, the slime king is a veteran.
+            slime.combatTier = CombatTier.Instinct;
+            stoneSlime.combatTier = CombatTier.Instinct;
+            skull.combatTier = CombatTier.Novice;
+            goblin.combatTier = CombatTier.Novice;
+            goblinWarrior.combatTier = CombatTier.Skilled;
+            slimeKing.combatTier = CombatTier.Veteran;
 
             // Tactics & skills.
             stoneSlime.skillIds.Add("charge");
@@ -212,10 +251,25 @@ namespace GuildMaster.Data
                 new BuildingLevel { goldCost = 200, itemCosts = { I("stone_shard", 6), I("old_arrowhead", 4) }, idleExpPerHour = 3, effectText = "대기 중인 모험가 EXP 시간당 3" },
                 new BuildingLevel { goldCost = 550, itemCosts = { I("bone_shard", 12), I("stone_shard", 10) }, idleExpPerHour = 6, effectText = "대기 중인 모험가 EXP 시간당 6" });
 
+            // P5-1: the hall fell in seconds to the first raid, so it is much sturdier now and
+            // raiders only land a fraction of their attack on it (GameBalance.monsterBuildingDamageMul).
             B(Town.BuildingType.TownHall,
-                new BuildingLevel { maxHp = 600, dailyTax = 60, effectText = "내구도 600 · 세금 하루 60G" },
-                new BuildingLevel { goldCost = 400, itemCosts = { I("stone_shard", 10), I("iron_ore", 6) }, maxHp = 900, dailyTax = 90, effectText = "내구도 900 · 세금 하루 90G" },
-                new BuildingLevel { goldCost = 1000, itemCosts = { I("crown_shard", 1), I("iron_ore", 15) }, maxHp = 1300, dailyTax = 130, effectText = "내구도 1300 · 세금 하루 130G" });
+                new BuildingLevel { maxHp = 1000, dailyTax = 60, effectText = "내구도 1000 · 세금 하루 60G" },
+                new BuildingLevel { goldCost = 400, itemCosts = { I("stone_shard", 10), I("iron_ore", 6) }, maxHp = 1500, dailyTax = 90, effectText = "내구도 1500 · 세금 하루 90G" },
+                new BuildingLevel { goldCost = 1000, itemCosts = { I("crown_shard", 1), I("iron_ore", 15) }, maxHp = 2100, dailyTax = 130, effectText = "내구도 2100 · 세금 하루 130G" });
+
+            // The watchtower is placed by the player (P4-13), so its one level is the build cost.
+            // Fixed price however many are already standing (user decision, 2026-09-20).
+            B(Town.BuildingType.Watchtower,
+                new BuildingLevel
+                {
+                    goldCost = 150,
+                    itemCosts = { I("stone_shard", 8), I("iron_ore", 4) },
+                    maxHp = 220,
+                    sightRadius = 14f,
+                    footprint = 2,
+                    effectText = "주변 14칸을 성벽 너머까지 감시",
+                });
         }
 
         /// <summary>Crafting recipes (P4-2). Agreed with the user 2026-09-19; tune in P5-1.</summary>
@@ -236,7 +290,9 @@ namespace GuildMaster.Data
             }
 
             R("potion", Potion, Town.BuildingType.Apothecary, 1, 2f, 5, I("slime_jelly", 2));
-            R("gear_t1", "gear_t1", Town.BuildingType.Blacksmith, 1, 4f, 0, I("stone_shard", 3), I("rusty_dagger", 1));
+            // P5-1: tier 1 used to need a rusty dagger, which only 20% of goblins carry — a new guild
+            // could not make its first gear for days. It now comes from the near ring's own drops.
+            R("gear_t1", "gear_t1", Town.BuildingType.Blacksmith, 1, 4f, 0, I("stone_shard", 3), I("dense_jelly", 2));
             R("gear_t2", "gear_t2", Town.BuildingType.Blacksmith, 2, 6f, 0, I("bone_shard", 4), I("iron_ore", 2));
             R("gear_t3", "gear_t3", Town.BuildingType.Blacksmith, 3, 8f, 0, I("goblin_helm", 3), I("crown_shard", 1));
         }

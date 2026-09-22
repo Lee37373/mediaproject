@@ -56,7 +56,7 @@ namespace GuildMaster.Player
             Radius = 0.3f;
             Stats = new CombatStats
             {
-                MaxHp = 100f, Attack = 0f, Defense = 3f, AttackRange = 1f, AttackCooldown = 1f,
+                MaxHp = Combat.ScaledHp(100f), Attack = 0f, Defense = 3f, AttackRange = 1f, AttackCooldown = 1f,
                 MoveSpeed = speed, SightRadius = sight,
             };
             ResetVitals();

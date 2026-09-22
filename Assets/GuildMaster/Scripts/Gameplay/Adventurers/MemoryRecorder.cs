@@ -63,7 +63,7 @@ namespace GuildMaster.Adventurers
             string leader = e.Leader.Data.name, invitee = e.Invitee.Data.name;
             if (e.Accepted)
             {
-                Remember(e.Invitee, 2, $"{leader}의 제안으로 함께 '{e.Quest.Title}' 의뢰에 나섰다");
+                Remember(e.Invitee, 2, e.Quest != null ? $"{leader}의 제안으로 함께 '{e.Quest.Title}' 의뢰에 나섰다" : $"{leader}의 제안으로 함께 사냥에 나섰다");
                 Remember(e.Leader, 2, $"{invitee}이(가) 내 파티 제안을 받아들였다");
             }
             else

@@ -152,12 +152,16 @@ namespace GuildMaster.Fog
             {
                 var eye = src.VisionPosition;
                 bool occlude = world != null && !src.SeesOverWalls;
-                ForEachCellInCircle(eye, src.SightRadius, i =>
+                // Forests (P4-48): a third of the sight inside one, and seen from outside one they
+                // block like a wall. Elevated eyes (town watch, watchtowers) ignore both.
+                float radius = occlude ? ForestSight.Radius(world, eye, src.SightRadius) : src.SightRadius;
+                bool forestBlocks = occlude && ForestSight.ForestBlocks(world, eye);
+                ForEachCellInCircle(eye, radius, i =>
                 {
                     if (_visibleStamp[i] == _stamp) return; // already seen this tick
                     // Hard cover (mountain, wall, building) hides what lies behind it; the
                     // blocking cell itself stays visible. Trees do not block the fog.
-                    if (occlude && world.Raycast(eye, new Vector2(i % _w + 0.5f, i / _w + 0.5f), out _, out _)) return;
+                    if (occlude && world.Raycast(eye, new Vector2(i % _w + 0.5f, i / _w + 0.5f), out _, out _, forestBlocks)) return;
                     _visibleStamp[i] = _stamp;
                     if (!_explored[i]) { _explored[i] = true; newly++; }
                 });

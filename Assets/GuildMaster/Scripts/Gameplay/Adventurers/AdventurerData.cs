@@ -6,7 +6,8 @@ using UnityEngine;
 
 namespace GuildMaster.Adventurers
 {
-    public enum AdventurerClass { Warrior, Ranger, Mage }
+    /// <summary>Priest added in P4-29 (appended so existing values keep their meaning).</summary>
+    public enum AdventurerClass { Warrior, Ranger, Mage, Priest }
 
     /// <summary>Birth grade (fixed): adds to the level band when deciding combat smarts (CombatTier).</summary>
     public enum AdventurerGrade { Common, Rare, Heroic }
@@ -27,6 +28,8 @@ namespace GuildMaster.Adventurers
         public string mbti;
         public string values;
         public List<string> traitIds = new();
+        /// <summary>Skills known right now (P4-34); starts as the class skills, at most SkillCatalog.MaxSkills.</summary>
+        public List<string> skillIds = new();
         public List<MemoryEntry> memories = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>
         public List<RelationEntry> relations = new();
@@ -47,7 +50,11 @@ namespace GuildMaster.Adventurers
         public Color hairColor;
         public Color skinColor;
 
-        public int ExpToNextLevel => 60 + level * 40;
+        /// <summary>
+        /// P5-1: the first level-up should land inside day 1. The old curve (60 + level*40) needed
+        /// 100 EXP for Lv2, which at the old kill values took roughly three days of quests.
+        /// </summary>
+        public int ExpToNextLevel => 30 + level * 25;
 
         public int LootCount
         {
@@ -77,8 +84,20 @@ namespace GuildMaster.Adventurers
             AdventurerClass.Warrior => "전사",
             AdventurerClass.Ranger => "궁수",
             AdventurerClass.Mage => "마법사",
+            AdventurerClass.Priest => "사제",
             _ => c.ToString(),
         };
+
+        /// <summary>Share of new adventurers and visitors who are priests (user decision: rare).</summary>
+        public const float PriestChance = 0.15f;
+
+        /// <summary>Priest 15%, the other three classes share the rest equally.</summary>
+        public static AdventurerClass RollClass(float roll01)
+        {
+            if (roll01 < PriestChance) return AdventurerClass.Priest;
+            float rest = (roll01 - PriestChance) / (1f - PriestChance);
+            return (AdventurerClass)Mathf.Min(2, Mathf.FloorToInt(rest * 3f));
+        }
 
         public static string GradeLabel(AdventurerGrade g) => g switch
         {
@@ -104,6 +123,8 @@ namespace GuildMaster.Adventurers
         {
             AdventurerClass.Warrior => new CombatStats { MaxHp = 60, Attack = 9, Defense = 4, AttackRange = 1.2f, AttackCooldown = 1.0f, MoveSpeed = 3.2f, SightRadius = 7f },
             AdventurerClass.Ranger => new CombatStats { MaxHp = 42, Attack = 8, Defense = 2, AttackRange = 5f, AttackCooldown = 1.2f, MoveSpeed = 3.4f, SightRadius = 9f },
+            // Weak ranged light; its worth is in the heals (attack also scales them, P4-29).
+            AdventurerClass.Priest => new CombatStats { MaxHp = 38, Attack = 6, Defense = 2, AttackRange = 4.5f, AttackCooldown = 1.3f, MoveSpeed = 3.1f, SightRadius = 8f },
             _ => new CombatStats { MaxHp = 36, Attack = 13, Defense = 1, AttackRange = 4.5f, AttackCooldown = 1.6f, MoveSpeed = 3.0f, SightRadius = 8f },
         };
 
@@ -114,6 +135,7 @@ namespace GuildMaster.Adventurers
             s.MaxHp *= 1f + 0.12f * lv;
             s.Attack *= 1f + 0.10f * lv;
             s.Defense += 0.6f * lv;
+            s.MaxHp = Units.Combat.ScaledHp(s.MaxHp);
             s.Attack += 3f * d.gearTier;
             s.Defense += 2f * d.gearTier;
             if (modifiers != null) foreach (var m in modifiers) m.Modify(ref s);

@@ -9,10 +9,10 @@ using UnityEngine;
 namespace GuildMaster.Adventurers
 {
     /// <summary>
-    /// Town defense during a raid (P3-6). Defenders do not go out to meet the enemy: they hold
-    /// just inside the gate facing the raid (<see cref="WaveManager.RallyPoint"/>) and fight
-    /// raiders that are inside the town or right at that gate. A raider that got in elsewhere
-    /// is hunted down inside the walls. The current quest is kept; <see cref="DefenseCoordinator"/>
+    /// Town defense during a raid (P3-6). Defenders do not go out to meet the enemy: each holds
+    /// just inside the gate its raid is heading for (<see cref="Front"/>, one per raid, following
+    /// it: <see cref="WaveManager.Fronts"/>) and fights raiders inside the town, at any front,
+    /// or fighting a comrade nearby. A raider that got in elsewhere is hunted down inside the walls. The current quest is kept; <see cref="DefenseCoordinator"/>
     /// sends the adventurer back to it when the raid ends.
     /// </summary>
     public class DefendState : State<Adventurer>
@@ -24,21 +24,46 @@ namespace GuildMaster.Adventurers
 
         float _repath;
 
+        /// <summary>The raid front this defender holds (<see cref="DefenseCoordinator"/> shares them out).</summary>
+        public Vector2? Front { get; set; }
+
         public override string Label => "마을 방어";
 
-        public override void Enter() => _repath = 0f;
+        public override void Enter()
+        {
+            _repath = 0f;
+            Front = null;
+        }
 
         public override void Tick(float dt)
         {
             var a = Owner;
             if (!Services.TryGet<WaveManager>(out var waves) || !waves.RaidSighted) return; // coordinator releases us
             var world = Services.Get<WorldService>();
-            var rally = waves.RallyPoint;
+            var rally = Front ?? (waves.Fronts.Count > 0 ? waves.Fronts[0].Point : world.TownCenterWorld);
 
-            bool InZone(Unit u) => u != null && (world.Grid.IsInTown(u.Position) || Vector2.Distance(u.Position, rally) <= HoldRadius);
+            // Also whoever is shooting into the town from outside, and whoever just hit us: raid
+            // archers stand back from the gate (P4-40) and were left to shoot at will while the
+            // defenders tidied up loot (user report 2026-09-22). Any front counts, and so does a
+            // raider fighting a comrade nearby (user report 2026-09-22: one member fought at the
+            // gate while the others watched from the rally point).
+            bool InZone(Unit u) => u != null && (world.Grid.IsInTown(u.Position) || AtAFront(u.Position)
+                                                 || a.WasRecentlyAttackedBy(u) || ShootsIntoTown(u)
+                                                 || u is Monster m && a.HearsFightingAComrade(m));
+            bool AtAFront(Vector2 p)
+            {
+                if (Vector2.Distance(p, rally) <= HoldRadius) return true;
+                foreach (var f in waves.Fronts)
+                    if (Vector2.Distance(p, f.Point) <= HoldRadius) return true;
+                return false;
+            }
+            bool ShootsIntoTown(Unit u) => u.Stats.IsRanged && AdvCtx.Town.WithinReachOfTown(u.Position, u.Stats.AttackRange + 1.5f);
 
-            if (a.CheckRetreat()) return;
+            if (a.CheckRetreat(wearinessCounts: false)) return;
             if (a.HandleCombat(dt, u => u is Monster m && m.DefaultStateOverride != null && m.IsAlive, InZone)) return;
+            // A lull: pick up what the fallen raiders dropped at the gate (P4-40, user report
+            // 2026-09-21: after a raid the loot was left lying). Looting stops when an enemy shows.
+            if (a.Looting.Tick(dt, p => world.Grid.IsInTown(p) || Vector2.Distance(p, rally) <= HoldRadius + 2f)) return;
 
             _repath -= dt;
             if (_repath > 0f && a.Mover.IsMoving) return;

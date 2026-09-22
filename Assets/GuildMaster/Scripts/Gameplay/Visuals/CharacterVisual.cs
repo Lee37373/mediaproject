@@ -92,11 +92,16 @@ namespace GuildMaster.Visuals
             SetTint(Color.white);
         }
 
+        /// <summary>Extra transparency on top of the tint (1 = solid). Used by stealth, P4-19.</summary>
+        public float Fade { get; set; } = 1f;
+
         public void SetTint(Color c)
         {
             _tint = c;
-            if (_body) _body.color = c;
+            if (_body) _body.color = Shown(c);
         }
+
+        Color Shown(Color c) => new(c.r, c.g, c.b, c.a * Mathf.Clamp01(Fade));
 
         public void Flash(float duration = 0.1f) => _flashTimer = duration;
 
@@ -110,7 +115,7 @@ namespace GuildMaster.Visuals
         void LateUpdate()
         {
             if (_body == null) return;
-            bool moving = _mover != null && _mover.IsMoving;
+            bool moving = _mover != null && (_mover.IsMoving || _mover.IsSteering);
             bool left = _faceOverrideTimer > 0f ? _facingLeftOverride : _mover != null && _mover.FacingLeft;
             _faceOverrideTimer -= Time.deltaTime;
             _body.flipX = ArtFacesLeft ? !left : left;
@@ -129,8 +134,9 @@ namespace GuildMaster.Visuals
             if (_flashTimer > 0f)
             {
                 _flashTimer -= Time.deltaTime;
-                _body.color = _flashTimer > 0f ? new Color(1f, 0.35f, 0.35f, _tint.a) : _tint;
+                _body.color = Shown(_flashTimer > 0f ? new Color(1f, 0.35f, 0.35f, _tint.a) : _tint);
             }
+            else if (!Mathf.Approximately(_body.color.a, _tint.a * Mathf.Clamp01(Fade))) _body.color = Shown(_tint);
         }
     }
 }

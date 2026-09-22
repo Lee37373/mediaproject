@@ -47,6 +47,23 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void RuleBased_UndecidedReply_AnswersTheTopicTheMasterRaised()
+        {
+            // Without this every fallback line was filler ("그렇군요. 다른 건요?") whatever was
+            // said, which reads as the visitor not listening (user report 2026-09-20).
+            Assert.AreEqual("안전", RuleBasedRecruiter.Topic("무리한 의뢰는 받지 않으니 안전해요."));
+            Assert.AreEqual("돈", RuleBasedRecruiter.Topic("보상은 넉넉하게 드리죠."));
+            Assert.IsNull(RuleBasedRecruiter.Topic("우리 길드는 마을 광장 옆에 있어요."));
+
+            var rng = new GameRandom(7);
+            var topical = RuleBasedRecruiter.Respond("우리는 무리한 의뢰를 받지 않아서 안전합니다.", "명예", 40, false, rng);
+            var filler = RuleBasedRecruiter.Respond("우리 길드는 마을 광장 옆에 있어요.", "명예", 40, false, rng);
+            Assert.AreEqual(RecruitDecision.Undecided, topical.Decision);
+            Assert.AreNotEqual(topical.Text, filler.Text);
+            Assert.That(topical.Text, Does.Contain("무리한 의뢰").Or.Contain("돌아올 수 있는"));
+        }
+
+        [Test]
         public void RuleBased_Proposal_JoinsWhenLiked_RefusesWhenDisliked()
         {
             var rng = new GameRandom(1);

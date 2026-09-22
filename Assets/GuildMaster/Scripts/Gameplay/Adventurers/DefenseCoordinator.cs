@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using GuildMaster.Core;
 using GuildMaster.Quests;
 using GuildMaster.Town;
@@ -59,13 +61,54 @@ namespace GuildMaster.Adventurers
                 if (!CanDefend(a) || Vector2.Distance(a.Position, center) > _radius) continue;
                 a.ChangeState(a.DefendState);
             }
+            AssignFronts();
+        }
+
+        /// <summary>
+        /// Shares the defenders out over the raids' fronts by raid size, nearest first, at least one
+        /// each while there are enough (user report 2026-09-22: with two raids at once only the
+        /// latest one was met).
+        /// </summary>
+        void AssignFronts()
+        {
+            var fronts = _waves.Fronts;
+            if (fronts.Count == 0) return;
+            var defenders = new List<Adventurer>();
+            foreach (var a in _roster.Members)
+                if (a != null && a.IsAlive && a.Fsm.Current == a.DefendState) defenders.Add(a);
+            if (defenders.Count == 0) return;
+
+            int total = fronts.Sum(f => Mathf.Max(1, f.Strength));
+            var quota = new int[fronts.Count];
+            for (int i = 0; i < fronts.Count; i++)
+                quota[i] = Mathf.Max(1, Mathf.RoundToInt(defenders.Count * Mathf.Max(1, fronts[i].Strength) / (float)total));
+
+            var pairs = new List<(Adventurer a, int f, float d)>();
+            foreach (var a in defenders)
+                for (int i = 0; i < fronts.Count; i++)
+                    pairs.Add((a, i, Vector2.Distance(a.Position, fronts[i].Point)));
+            var assigned = new HashSet<Adventurer>();
+            foreach (var (a, f, _) in pairs.OrderBy(p => p.d))
+            {
+                if (assigned.Contains(a) || quota[f] <= 0) continue;
+                quota[f]--;
+                assigned.Add(a);
+                a.DefendState.Front = fronts[f].Point;
+            }
+            // Rounding left someone over: the nearest front.
+            foreach (var a in defenders)
+                if (!assigned.Contains(a))
+                    a.DefendState.Front = fronts.OrderBy(f => Vector2.Distance(a.Position, f.Point)).First().Point;
         }
 
         bool CanDefend(Adventurer a)
         {
             if (a == null || !a.IsAlive || a.IsVisitor) return false;
             var s = a.Fsm.Current;
-            if (s == a.DefendState || s == a.DeadState || s == a.RestState) return false;
+            if (s == a.DefendState || s == a.DeadState) return false;
+            // Resting out of weariness in town is no reason to sit out a raid on the town (user
+            // report 2026-09-22: only one member fought while the others slept it off).
+            if (s == a.RestState && !_world.Grid.IsInTown(a.Position)) return false;
             if (s == a.ReturnState && a.ReturnState.Retreating) return false; // badly hurt, heading home
             return a.HpRatio >= MinHpToDefend;
         }

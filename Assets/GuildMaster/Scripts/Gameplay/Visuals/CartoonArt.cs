@@ -127,15 +127,27 @@ namespace GuildMaster.Visuals
 
         static readonly Color[] LeafColors = { Hex(0x4FAE3C), Hex(0x5DBB44), Hex(0x44A046), Hex(0x6BC04A) };
 
-        public static Sprite Tree(int variant)
+        public static Sprite Tree(int variant) => Tree(variant, World.Region.Grassland);
+
+        /// <summary>
+        /// A tree as it grows in a region (P4-55): green here, dry olive scrub in the desert, frosted
+        /// white in the snow, dark in the swamp, charred in the wasteland.
+        /// </summary>
+        public static Sprite Tree(int variant, World.Region region)
         {
-            string key = "c_tree:" + variant;
+            string key = "c_tree:" + variant + ":" + region;
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             var rng = new System.Random(variant * 7919 + 13);
             float J() => (float)rng.NextDouble() * 4f - 2f;
             var c = new Canvas(52, 64);
-            var leaf = LeafColors[variant % LeafColors.Length];
-            var outline = Hex(0x23402A);
+            var (leaf, outline) = region switch
+            {
+                World.Region.Desert => (Hex(0xA9A24C), Hex(0x4A4420)),
+                World.Region.Snow => (Hex(0xE6F0F7), Hex(0x587186)),
+                World.Region.Swamp => (Hex(0x3F5B2D), Hex(0x18261A)),
+                World.Region.Wasteland => (Hex(0x5E4B42), Hex(0x271B18)),
+                _ => (LeafColors[variant % LeafColors.Length], Hex(0x23402A)),
+            };
             // Ground shadow, trunk, then a cloud-like canopy.
             c.Shape(Ellipse(26, 7, 15, 4.5f), new Color(0f, 0f, 0f, 0.22f), new Color(0f, 0f, 0f, 0.22f), 0f);
             c.Shape(RoundRect(21, 5, 31, 26, 3f), Hex(0x8A5A30), Hex(0x3E2716), 2.5f);
@@ -146,13 +158,23 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.12f));
         }
 
-        public static Sprite Rock(int variant)
+        public static Sprite Rock(int variant) => Rock(variant, World.Region.Grassland);
+
+        /// <summary>A rock in a region's stone (P4-55): sandstone, snow-dusted, mossy, scorched.</summary>
+        public static Sprite Rock(int variant, World.Region region)
         {
-            string key = "c_rock:" + variant;
+            string key = "c_rock:" + variant + ":" + region;
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             var c = new Canvas(40, 30);
             float g = 0.62f + variant * 0.04f;
-            var stone = new Color(g, g * 0.98f, g * 1.04f);
+            var stone = region switch
+            {
+                World.Region.Desert => new Color(g * 1.3f, g * 1.1f, g * 0.78f),
+                World.Region.Snow => new Color(g * 1.42f, g * 1.47f, g * 1.53f),
+                World.Region.Swamp => new Color(g * 0.72f, g * 0.78f, g * 0.64f),
+                World.Region.Wasteland => new Color(g * 0.72f, g * 0.5f, g * 0.45f),
+                _ => new Color(g, g * 0.98f, g * 1.04f),
+            };
             var body = Union(Ellipse(18, 12, 14, 9), Ellipse(26 + variant % 2 * 2, 10, 11, 7));
             c.Shape(Ellipse(20, 5, 16, 3.5f), new Color(0f, 0f, 0f, 0.2f), new Color(0f, 0f, 0f, 0.2f), 0f);
             c.Shape(body, stone, Hex(0x3C3B45), 2.5f);
@@ -209,6 +231,61 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.1f));
         }
 
+        /// <summary>
+        /// A town gate spanning <paramref name="cells"/> cells (P4-39): a wooden double door seen
+        /// from the front when it runs along x (north/south gates), a plank strip seen from above
+        /// when it runs along y (east/west). Broken, it is a few splintered stumps.
+        /// </summary>
+        public static Sprite GateDoor(bool alongX, int cells, bool broken)
+        {
+            string key = $"c_gate_{(alongX ? "x" : "y")}{cells}{(broken ? "_broken" : "")}";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var wood = Hex(0x9A6436);
+            var woodDark = Hex(0x6B4224);
+            var woodInk = Hex(0x3E2512);
+            var iron = Hex(0x5A6068);
+            int len = cells * PixelsPerUnit;
+            int w = alongX ? len : 30, h = alongX ? 40 : len;
+            var c = new Canvas(w, h);
+            if (broken)
+            {
+                // Splintered stumps along the sill.
+                int stumps = cells * 2;
+                for (int i = 0; i < stumps; i++)
+                {
+                    float t = (i + 0.5f) / stumps * len;
+                    float tall = 6f + (i * 7 % 5) * 2f;
+                    if (alongX) c.Shape(RoundRect(t - 5f, 1f, t + 5f, 1f + tall, 1.5f), woodDark, woodInk, 2f);
+                    else c.Shape(RoundRect(4f, t - 5f, 26f, t + 5f, 1.5f), woodDark, woodInk, 2f);
+                }
+                return c.ToSprite(key, new Vector2(0.5f, alongX ? 0f : 0.5f));
+            }
+            if (alongX)
+            {
+                // Two leaves, vertical planks, iron bands and a ring on each.
+                float mid = len * 0.5f;
+                foreach (var (x0, x1) in new[] { (2f, mid - 1f), (mid + 1f, len - 2f) })
+                {
+                    var leaf = RoundRect(x0, 1f, x1, h - 2f, 3f);
+                    c.Shape(leaf, wood, woodInk, 2.5f);
+                    for (float px = x0 + 8f; px < x1 - 3f; px += 8f)
+                        c.ShapeClipped(RoundRect(px, 0f, px + 1.5f, h, 0f), (x, y) => leaf(x, y) + 2.5f, woodDark);
+                    foreach (float by in new[] { 9f, h - 11f })
+                        c.ShapeClipped(RoundRect(x0, by, x1, by + 4f, 0f), (x, y) => leaf(x, y) + 2.5f, iron);
+                }
+                c.Shape(Circle(mid - 5f, h * 0.5f, 2.2f), Hex(0xC9A24A), woodInk, 1f);
+                c.Shape(Circle(mid + 5f, h * 0.5f, 2.2f), Hex(0xC9A24A), woodInk, 1f);
+                return c.ToSprite(key, new Vector2(0.5f, 0f));
+            }
+            var strip = RoundRect(3f, 2f, w - 3f, h - 2f, 3f);
+            c.Shape(strip, wood, woodInk, 2.5f);
+            for (float py = 10f; py < h - 4f; py += 9f)
+                c.ShapeClipped(RoundRect(0f, py, w, py + 1.5f, 0f), (x, y) => strip(x, y) + 2.5f, woodDark);
+            foreach (float bx in new[] { 8f, w - 12f })
+                c.ShapeClipped(RoundRect(bx, 0f, bx + 4f, h, 0f), (x, y) => strip(x, y) + 2.5f, iron);
+            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+        }
+
         // ---------------- Buildings ----------------
 
         public static Sprite Building(Town.BuildingType type, int tilesW, int tilesH)
@@ -218,6 +295,7 @@ namespace GuildMaster.Visuals
             int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
             var c = new Canvas(w, h);
             if (type == Town.BuildingType.TrainingGround) return TrainingYard(c, key);
+            if (type == Town.BuildingType.Watchtower) return Watchtower(c, key);
 
             var roof = type switch
             {
@@ -270,7 +348,7 @@ namespace GuildMaster.Visuals
         /// </summary>
         public static Sprite BuildingInterior(Town.BuildingType type, int tilesW, int tilesH)
         {
-            if (type == Town.BuildingType.TrainingGround) return null;
+            if (type is Town.BuildingType.TrainingGround or Town.BuildingType.Watchtower) return null;
             string key = $"c_interior:{type}:{tilesW}x{tilesH}";
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
@@ -318,6 +396,40 @@ namespace GuildMaster.Visuals
                     c.Shape(RoundRect(cx - 18, 26, cx + 18, 36, 2f), Hex(0xA56B3A), Ink, 2f);                              // counter
                     break;
             }
+            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+        }
+
+        /// <summary>A stone shaft with battlements, a lookout window and a pennant (P4-13).</summary>
+        static Sprite Watchtower(Canvas c, string key)
+        {
+            int w = c.W, h = c.H;
+            var stone = Hex(0xB9BCC6);
+            float shaftW = w * 0.34f;
+            float cx = w * 0.5f;
+            // Shaft, slightly tapered by drawing a wider base block underneath.
+            c.Shape(RoundRect(cx - shaftW * 0.72f, 2, cx + shaftW * 0.72f, h * 0.22f, 4f), Darker(stone, 0.85f), Ink, 3.5f);
+            var shaft = RoundRect(cx - shaftW, h * 0.16f, cx + shaftW, h * 0.74f, 4f);
+            c.Shape(shaft, stone, Ink, 3.5f);
+            // Stone courses.
+            for (float y = h * 0.24f; y < h * 0.70f; y += 13)
+            {
+                float yy = y;
+                c.ShapeClipped(RoundRect(cx - shaftW, yy, cx + shaftW, yy + 2f, 1f), (x, y2) => shaft(x, y2) + 3.5f, Darker(stone, 0.82f));
+            }
+            // Lookout window.
+            c.Shape(RoundRect(cx - 9, h * 0.46f, cx + 9, h * 0.62f, 7f), Hex(0x2B3242), Ink, 2.5f);
+            // Battlemented top: a wider band with three merlons.
+            var top = RoundRect(cx - shaftW * 1.25f, h * 0.70f, cx + shaftW * 1.25f, h * 0.82f, 3f);
+            c.Shape(top, Lighter(stone, 0.12f), Ink, 3.5f);
+            float merlonW = shaftW * 0.5f;
+            for (int i = -1; i <= 1; i++)
+            {
+                float mx = cx + i * shaftW * 0.8f;
+                c.Shape(RoundRect(mx - merlonW * 0.5f, h * 0.81f, mx + merlonW * 0.5f, h * 0.92f, 2f), Lighter(stone, 0.12f), Ink, 3f);
+            }
+            // Pennant on the middle merlon.
+            c.Shape(RoundRect(cx - 1.5f, h * 0.88f, cx + 1.5f, h - 3, 1f), Hex(0x8A5A30), Ink, 2f);
+            c.Shape(RoundRect(cx + 1.5f, h - 14, cx + 18, h - 4, 2f), Hex(0xD9534F), Ink, 2.5f);
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
         }
 

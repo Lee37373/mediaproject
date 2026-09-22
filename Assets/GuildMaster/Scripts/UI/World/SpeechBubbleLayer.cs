@@ -47,9 +47,12 @@ namespace GuildMaster.UI
         void OnAdventurerSpeech(AdventurerSpeechEvent e) => Show(e.Adventurer.transform, e.Text, DefaultDuration);
         void OnSpeech(SpeechRequestEvent e) => Show(e.Speaker, e.Text, e.Duration > 0 ? e.Duration : DefaultDuration);
 
+        /// <summary>Nothing is said while the world stands still (pause button, dialogue hold).</summary>
+        static bool Paused => Time.timeScale <= 0f;
+
         public void Show(Transform speaker, string text, float duration)
         {
-            if (speaker == null || string.IsNullOrWhiteSpace(text)) return;
+            if (speaker == null || string.IsNullOrWhiteSpace(text) || Paused) return;
             if (!_active.TryGetValue(speaker, out var b))
             {
                 b = _free.Count > 0 ? _free.Pop() : Create();
@@ -84,7 +87,9 @@ namespace GuildMaster.UI
             foreach (var kv in _active)
             {
                 var b = kv.Value;
-                b.TimeLeft -= Time.unscaledDeltaTime;
+                // Scaled time: a bubble that is up when the game pauses waits instead of expiring
+                // behind the pause screen.
+                b.TimeLeft -= Time.deltaTime;
                 if (b.Target == null || !b.Target.gameObject.activeInHierarchy || b.TimeLeft <= 0f)
                 {
                     _remove.Add(kv.Key);

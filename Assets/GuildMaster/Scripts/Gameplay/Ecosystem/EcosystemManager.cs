@@ -10,7 +10,6 @@ using UnityEngine;
 namespace GuildMaster.Ecosystem
 {
     public struct SpeciesPopulationChangedEvent { public MonsterDefinition Species; public int Population; }
-    public struct SpeciesExtinctEvent { public MonsterDefinition Species; }
     public struct NestClearedEvent { public Nest Nest; public Unit Killer; }
     public struct NestDiscoveredEvent { public Nest Nest; }
     public struct NestRecolonizedEvent { public Nest Nest; }
@@ -19,25 +18,33 @@ namespace GuildMaster.Ecosystem
     /// Monster ecosystem simulation:
     /// - logistic growth per nest each game hour,
     /// - predators' growth scales with prey availability; starving predators die off,
-    /// - empty nests can be recolonized by surviving members of the species,
-    /// - a species whose global population hits zero is extinct and never respawns.
+    /// - an emptied nest is settled again by its species after <see cref="RefillHours"/>.
+    /// There is no extinction (P4-43, user decision 2026-09-22): a species always has its nests.
+    /// Extinction may come back later as a slow shift over time (stronger kinds appear at the edge,
+    /// the old ones move inwards) — not as something the guild's hunting causes.
     /// </summary>
     public class EcosystemManager : MonoBehaviour
     {
         readonly List<Nest> _nests = new();
         readonly Dictionary<MonsterDefinition, int> _population = new();
-        readonly HashSet<MonsterDefinition> _extinct = new();
         GameDatabase _db;
 
         [SerializeField] float starvationChancePerHour = 0.03f;
-        [SerializeField] float recolonizeChancePerDay = 0.35f;
+
+        /// <summary>Game hours an emptied nest stays empty before two of its kind move back in (user decision).</summary>
+        public const int RefillHours = 6;
+        /// <summary>How many settle an emptied nest again.</summary>
+        public const int RefillCount = 2;
+
+        // P5-1 handed the guild its two nearest nests so day one was not pure fog. Removed on
+        // 2026-09-20 (user decision): an orange minimap dot on ground nobody had walked broke the
+        // information rule. Every nest is found by looking at it now.
 
         public IReadOnlyList<Nest> Nests => _nests;
         public IEnumerable<MonsterDefinition> Species => _db.monsters;
         public int TotalMonsters => _population.Values.Sum();
 
         public int GetPopulation(MonsterDefinition species) => species != null && _population.TryGetValue(species, out var n) ? n : 0;
-        public bool IsExtinct(MonsterDefinition species) => _extinct.Contains(species);
 
         public void Init(GameDatabase db, MapData map, GameRandom rng)
         {
@@ -57,53 +64,102 @@ namespace GuildMaster.Ecosystem
             }
 
             EventBus.Subscribe<HourPassedEvent>(OnHourPassed);
-            EventBus.Subscribe<DayPassedEvent>(OnDayPassed);
         }
 
         void OnDestroy()
         {
             EventBus.Unsubscribe<HourPassedEvent>(OnHourPassed);
-            EventBus.Unsubscribe<DayPassedEvent>(OnDayPassed);
         }
 
-        /// <summary>Every species gets at least one biome-appropriate nest; the rest are weighted random.</summary>
-        static List<MonsterDefinition> AssignSpecies(List<MonsterDefinition> species, List<NestSite> sites, GameRandom rng)
+        /// <summary>
+        /// How far outside its band a species may still settle (0..1 of the map's span). Keep this
+        /// tight: at 0.45 the bands overlapped so much that goblins and goblin warriors shared the
+        /// same ring and the walk out stopped getting harder.
+        /// </summary>
+        public const float BandWidth = 0.22f;
+        /// <summary>Multiplier applied when the site's biome does not suit the species.</summary>
+        public const float BiomeMismatch = 0.35f;
+        /// <summary>Floor on the band term, so a species is unlikely — not impossible — off its ring.</summary>
+        public const float OffBandFloor = 0.005f;
+
+        /// <summary>
+        /// How well a species suits a nest site: mostly its distance from town (P5-1, user decision
+        /// 2026-09-20 — weak species ring the walls, dangerous ones live out at the edges), then the
+        /// biome, then rarity. Pure, so the placement rule can be tested.
+        /// </summary>
+        public static float Fit(MonsterDefinition species, float distance01, Biome biome)
+        {
+            float band = Mathf.Max(OffBandFloor, 1f - Mathf.Abs(distance01 - species.distanceBand) / BandWidth);
+            float biomeFit = species.biomes.Contains(biome) ? 1f : BiomeMismatch;
+            return band * biomeFit * Rarity(species);
+        }
+
+        static float Rarity(MonsterDefinition s) => s.danger switch
+        {
+            DangerLevel.High => 0.15f,
+            DangerLevel.Medium => 0.6f,
+            _ => 1f,
+        };
+
+        /// <summary>
+        /// Hands every nest site to a species. Each species gets its best free site first so none is
+        /// missing from the world, then the rest go to whoever fits that distance best.
+        /// </summary>
+        public static List<MonsterDefinition> AssignSpecies(List<MonsterDefinition> species, List<NestSite> sites, GameRandom rng)
         {
             var result = new MonsterDefinition[sites.Count];
-            var order = Enumerable.Range(0, sites.Count).ToList();
-            rng.Shuffle(order);
+            if (sites.Count == 0 || species.Count == 0) return result.ToList();
 
-            // Guarantee coverage, rarest (fewest biomes / smallest capacity) first.
-            foreach (var s in species.OrderBy(s => s.biomes.Count).ThenBy(s => s.nestCapacity))
+            // Normalise the walk distances so the bands mean the same thing on any map.
+            int minD = int.MaxValue, maxD = int.MinValue;
+            foreach (var s in sites)
             {
-                int idx = order.FindIndex(i => result[i] == null && s.biomes.Contains(sites[i].Biome));
-                if (idx < 0) idx = order.FindIndex(i => result[i] == null);
-                if (idx >= 0) idx = order[idx];
-                if (idx >= 0) result[idx] = s;
+                if (s.DistanceFromTown < minD) minD = s.DistanceFromTown;
+                if (s.DistanceFromTown > maxD) maxD = s.DistanceFromTown;
             }
-            // Fill the rest; strong species are rarer.
+            float span = Mathf.Max(1, maxD - minD);
+            var t = new float[sites.Count];
+            for (int i = 0; i < sites.Count; i++) t[i] = (sites[i].DistanceFromTown - minD) / span;
+
+            var order = Enumerable.Range(0, sites.Count).ToList();
+            rng.Shuffle(order); // ties fall differently per seed
+
+            // 1. Coverage: nearest-to-town species pick first, so the ring around the walls is filled
+            //    by the weak ones even when there are fewer sites than species. Each takes its
+            //    guaranteed share (minNests) — the early economy lives off the closest, weakest nests.
+            foreach (var m in species.OrderBy(x => x.distanceBand))
+            {
+                for (int taken = 0; taken < Mathf.Max(1, m.minNests); taken++)
+                {
+                    int best = -1;
+                    float bestFit = float.MinValue;
+                    foreach (int i in order)
+                    {
+                        if (result[i] != null) continue;
+                        // Rarity must not decide who *exists*, only how often; band and biome alone.
+                        float fit = Fit(m, t[i], sites[i].Biome) / Mathf.Max(0.001f, Rarity(m));
+                        if (fit > bestFit) { bestFit = fit; best = i; }
+                    }
+                    if (best < 0) break; // nothing free left
+                    result[best] = m;
+                }
+            }
+
+            // 2. The remaining sites go to a weighted draw among the species that suit that distance.
             foreach (int i in order)
             {
                 if (result[i] != null) continue;
-                var candidates = species.Where(s => s.biomes.Contains(sites[i].Biome)).ToList();
-                if (candidates.Count == 0) candidates = species;
-                float total = candidates.Sum(Weight);
+                float total = 0f;
+                foreach (var m in species) total += Fit(m, t[i], sites[i].Biome);
                 float roll = rng.Range(0f, total);
-                foreach (var c in candidates)
+                foreach (var m in species)
                 {
-                    roll -= Weight(c);
-                    if (roll <= 0f) { result[i] = c; break; }
+                    roll -= Fit(m, t[i], sites[i].Biome);
+                    if (roll <= 0f) { result[i] = m; break; }
                 }
-                result[i] ??= candidates[^1];
+                result[i] ??= species[^1];
             }
             return result.ToList();
-
-            static float Weight(MonsterDefinition s) => s.danger switch
-            {
-                DangerLevel.High => 0.15f,
-                DangerLevel.Medium => 0.6f,
-                _ => 1f,
-            };
         }
 
         /// <summary>Adds one member to the nest and updates the population count (also used by debug tools).</summary>
@@ -125,11 +181,6 @@ namespace GuildMaster.Ecosystem
             int pop = Mathf.Max(0, GetPopulation(species) + delta);
             _population[species] = pop;
             EventBus.Publish(new SpeciesPopulationChangedEvent { Species = species, Population = pop });
-            if (pop == 0 && delta < 0 && _extinct.Add(species))
-            {
-                Debug.Log($"[Ecosystem] {species.displayName} extinct");
-                EventBus.Publish(new SpeciesExtinctEvent { Species = species });
-            }
         }
 
         /// <summary>0..1+ food availability for a predator species (1 = plenty of prey).</summary>
@@ -146,7 +197,15 @@ namespace GuildMaster.Ecosystem
             var rng = GameRandom.Shared;
             foreach (var nest in _nests)
             {
-                if (nest.IsEmpty || IsExtinct(nest.Species)) continue;
+                if (nest.IsEmpty)
+                {
+                    if (++nest.EmptyHours < RefillHours) continue;
+                    nest.EmptyHours = 0;
+                    for (int i = 0; i < RefillCount; i++) Spawn(nest);
+                    EventBus.Publish(new NestRecolonizedEvent { Nest = nest });
+                    continue;
+                }
+                nest.EmptyHours = 0;
                 var s = nest.Species;
                 int pop = nest.Population;
                 float food = FoodFactor(s);
@@ -169,19 +228,6 @@ namespace GuildMaster.Ecosystem
                     var victim = nest.Members[rng.Range(0, nest.Population)];
                     victim.Perish();
                 }
-            }
-        }
-
-        void OnDayPassed(DayPassedEvent e)
-        {
-            var rng = GameRandom.Shared;
-            foreach (var nest in _nests)
-            {
-                if (!nest.IsEmpty || IsExtinct(nest.Species)) continue;
-                if (GetPopulation(nest.Species) < 2 || !rng.Chance(recolonizeChancePerDay)) continue;
-                Spawn(nest);
-                Spawn(nest);
-                EventBus.Publish(new NestRecolonizedEvent { Nest = nest });
             }
         }
 

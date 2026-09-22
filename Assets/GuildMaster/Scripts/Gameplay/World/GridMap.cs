@@ -10,6 +10,7 @@ namespace GuildMaster.World
     {
         public readonly MapData Data;
         readonly bool[] _blocked;
+        readonly bool[] _gateClosed;
 
         public int Width => Data.Width;
         public int Height => Data.Height;
@@ -21,6 +22,7 @@ namespace GuildMaster.World
         {
             Data = data;
             _blocked = new bool[data.Width * data.Height];
+            _gateClosed = new bool[data.Width * data.Height];
         }
 
         public bool InBounds(Vector2Int c) => Data.InBounds(c);
@@ -34,7 +36,36 @@ namespace GuildMaster.World
             return !_blocked[i] && MapData.IsWalkable(Data.Tiles[i]);
         }
 
-        public float Cost(int x, int y) => MapData.MoveCost(Data.Tiles[y * Width + x]);
+        /// <summary>
+        /// Walkability for a unit that may or may not pass the town gates (P4-39): an intact gate
+        /// opens for the guild and its guests, and stays shut for monsters until they break it.
+        /// </summary>
+        public bool IsWalkable(int x, int y, bool passesGates)
+            => IsWalkable(x, y) && (passesGates || !_gateClosed[y * Width + x]);
+
+        public bool IsWalkable(Vector2Int c, bool passesGates) => IsWalkable(c.x, c.y, passesGates);
+
+        /// <summary>A cell of a gate that is still standing (shut to monsters).</summary>
+        public bool IsClosedGate(Vector2Int c) => Data.InBounds(c) && _gateClosed[c.y * Width + c.x];
+
+        /// <summary>Every town gate is standing: nothing that cannot pass gates gets in or out.</summary>
+        public bool TownSealed { get; set; }
+
+        public void SetGateClosed(System.Collections.Generic.IEnumerable<Vector2Int> cells, bool closed)
+        {
+            foreach (var c in cells)
+                if (Data.InBounds(c)) _gateClosed[c.y * Width + c.x] = closed;
+            Version++;
+        }
+
+        /// <summary>Walking cost: the terrain, slowed further in harsh regions off the roads (P4-55).</summary>
+        public float Cost(int x, int y)
+        {
+            int i = y * Width + x;
+            var t = Data.Tiles[i];
+            float cost = MapData.MoveCost(t);
+            return t is TileType.Road or TileType.TownFloor or TileType.Gate ? cost : cost * TerrainRegions.MoveMultiplier(Data.Regions[i]);
+        }
 
         /// <summary>Mountains, walls and buildings fully block projectiles / sight lines.</summary>
         public bool IsHardCover(int x, int y)
@@ -45,6 +76,10 @@ namespace GuildMaster.World
         }
 
         public bool HasTree(int x, int y) => Data.HasTree(x, y);
+
+        /// <summary>Forest floor (P4-48: blocks the view from outside, shortens it inside).</summary>
+        public bool IsForest(int x, int y) => Data.InBounds(x, y) && Data.Tiles[y * Width + x] == TileType.Forest;
+        public bool IsForest(Vector2Int c) => IsForest(c.x, c.y);
 
         public float Cost(Vector2Int c) => Cost(c.x, c.y);
 

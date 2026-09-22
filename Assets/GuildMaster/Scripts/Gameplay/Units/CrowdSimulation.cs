@@ -105,13 +105,13 @@ namespace GuildMaster.Units
                 var u = _units[i];
                 var step = Vector2.ClampMagnitude(push * Strength * dt, MaxStep);
                 var next = u.Position + step;
-                if (!_world.Grid.IsWalkable(GridMap.WorldToCell(next)))
+                if (!_world.Grid.IsWalkable(GridMap.WorldToCell(next), u.PassesGates))
                 {
                     // Slide along one axis if the diagonal is blocked.
                     var nx = u.Position + new Vector2(step.x, 0f);
                     var ny = u.Position + new Vector2(0f, step.y);
-                    if (_world.Grid.IsWalkable(GridMap.WorldToCell(nx))) next = nx;
-                    else if (_world.Grid.IsWalkable(GridMap.WorldToCell(ny))) next = ny;
+                    if (_world.Grid.IsWalkable(GridMap.WorldToCell(nx), u.PassesGates)) next = nx;
+                    else if (_world.Grid.IsWalkable(GridMap.WorldToCell(ny), u.PassesGates)) next = ny;
                     else continue;
                 }
                 u.transform.position = new Vector3(next.x, next.y, u.transform.position.z);

@@ -5,7 +5,22 @@ using UnityEngine;
 
 namespace GuildMaster.Town
 {
-    public enum BuildingType { TownHall, GuildHall, Blacksmith, Apothecary, TrainingGround }
+    public enum BuildingType { TownHall, GuildHall, Blacksmith, Apothecary, TrainingGround, Watchtower }
+
+    /// <summary>Korean names, also needed before a building exists (the build window).</summary>
+    public static class BuildingNames
+    {
+        public static string Of(BuildingType type) => type switch
+        {
+            BuildingType.TownHall => "마을회관",
+            BuildingType.GuildHall => "길드 홀",
+            BuildingType.Blacksmith => "대장간",
+            BuildingType.Apothecary => "약방",
+            BuildingType.TrainingGround => "훈련소",
+            BuildingType.Watchtower => "감시탑",
+            _ => type.ToString(),
+        };
+    }
 
     public struct BuildingDamagedEvent { public Building Building; public float Amount; }
     public struct BuildingDestroyedEvent { public Building Building; }
@@ -36,15 +51,7 @@ namespace GuildMaster.Town
         public Vector2 DoorPosition => GridMap.CellToWorld(DoorCell);
         public Vector2 Center => Footprint.center;
 
-        public string DisplayName => Type switch
-        {
-            BuildingType.TownHall => "마을회관",
-            BuildingType.GuildHall => "길드 홀",
-            BuildingType.Blacksmith => "대장간",
-            BuildingType.Apothecary => "약방",
-            BuildingType.TrainingGround => "훈련소",
-            _ => Type.ToString(),
-        };
+        public string DisplayName => BuildingNames.Of(Type);
 
         public void Init(BuildingType type, RectInt footprint, Vector2Int door, bool blocks, float maxHp)
         {

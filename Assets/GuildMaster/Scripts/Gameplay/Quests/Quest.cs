@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace GuildMaster.Quests
 {
-    public enum QuestType { Hunt, ClearNest, Escort, Defend }
+    public enum QuestType { Hunt, Escort, Defend }
     public enum QuestStatus { Open, InProgress, Completed, TurnedIn, Cancelled, Failed }
 
     /// <summary>Anyone who can take quests (adventurers).</summary>
@@ -21,7 +21,6 @@ namespace GuildMaster.Quests
     {
         public QuestType Type;
         public MonsterDefinition Species;
-        public Nest Nest;
         /// <summary>Hunt: centre of the hunting area the player marked on the map. Escort: the guild master.</summary>
         public Vector2 Point;
         /// <summary>True once the player picked <see cref="Point"/> (hunts require it).</summary>
@@ -44,8 +43,6 @@ namespace GuildMaster.Quests
         public string Id { get; }
         public QuestType Type { get; }
         public MonsterDefinition Species { get; }
-        public Nest Nest { get; }
-        readonly string _nestName;
         public Vector2 Point { get; }
         public float Radius { get; }
         public int RequiredCount { get; }
@@ -95,14 +92,8 @@ namespace GuildMaster.Quests
         {
             Id = id;
             Type = d.Type;
-            // A clear-nest quest names the owners as the guild knew them when posting (GuildIntel).
-            bool hasIntel = Core.Services.TryGet<GuildIntel>(out var intel);
-            Species = d.Type == QuestType.ClearNest && d.Nest != null
-                ? (hasIntel ? intel.SpeciesOf(d.Nest) : d.Nest.Species)
-                : d.Species;
-            Nest = d.Nest;
-            _nestName = d.Nest == null ? null : hasIntel ? intel.NameOf(d.Nest) : d.Nest.DisplayName;
-            Point = d.Type == QuestType.ClearNest && d.Nest != null ? d.Nest.WorldPosition : d.Point;
+            Species = d.Species;
+            Point = d.Point;
             Radius = d.Radius <= 0f ? 8f : d.Radius;
             RequiredCount = Mathf.Max(1, d.Count);
             RewardGold = Mathf.Max(0, d.RewardGold);
@@ -118,7 +109,6 @@ namespace GuildMaster.Quests
         public string Title => Type switch
         {
             QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
-            QuestType.ClearNest => $"{_nestName} 소탕",
             QuestType.Escort => $"길드 마스터 호위 (최대 {MaxHours}시간)",
             QuestType.Defend => "마을 방어",
             _ => Id,
@@ -126,11 +116,26 @@ namespace GuildMaster.Quests
 
         public string ProgressText => Type switch
         {
-            QuestType.Hunt => $"{Progress}/{RequiredCount}",
-            QuestType.ClearNest => Nest != null && Core.Services.TryGet<GuildIntel>(out var intel) ? intel.DescribeNest(Nest) : "-",
+            QuestType.Hunt => HuntProgressText,
             QuestType.Escort => $"{EscortHours:0.0}/{MaxHours}시간",
             _ => "",
         };
+
+        /// <summary>
+        /// "2/5" plus the nest in the hunting area when the guild knows one (P4-32): clearing that
+        /// nest finishes the quest even with kills to spare, so the player can see it.
+        /// </summary>
+        string HuntProgressText
+        {
+            get
+            {
+                string text = $"{Progress}/{RequiredCount}";
+                var nest = QuestBoard.NestInArea(this);
+                if (nest != null && Core.Services.TryGet<GuildIntel>(out var intel))
+                    text += $" · {intel.NameOf(nest)} {intel.DescribeNest(nest)}";
+                return text;
+            }
+        }
 
         public static string DangerLabel(DangerLevel d) => d switch
         {

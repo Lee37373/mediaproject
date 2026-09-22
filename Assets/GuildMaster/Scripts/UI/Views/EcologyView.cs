@@ -50,6 +50,9 @@ namespace GuildMaster.UI
                 int seen = intel.ObservedPopulation(s);
                 string nestText = nests > 0 ? $"발견한 둥지 {nests}곳 · 관측 {seen}마리" : "둥지 위치 모름";
                 string status = nests > 0 && seen == 0 ? UIBuilder.Colored(" · 관측된 개체 없음", UITheme.Warn) : "";
+                // Compact here (the row is one line); the nest inspector shows the full item list.
+                var gear = intel.GearOf(s);
+                if (gear.Any) status += UIBuilder.Colored(GearTag(gear), gear.HasCrown ? UITheme.Accent : UITheme.Warn);
                 _speciesRows[i].text = $"{s.displayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(s.danger), UITheme.Danger(s.danger))}\n" +
                                        $"<color=#{UITheme.Hex(UITheme.TextMuted)}>{nestText}</color>{status}";
             }
@@ -65,10 +68,22 @@ namespace GuildMaster.UI
             {
                 var n = nestsList[i];
                 var btn = _nestRows[i];
-                btn.SetLabel($"{intel.NameOf(n)} — {intel.DescribeNest(n)}");
+                var nestGear = intel.GearAt(n);
+                string gearTag = nestGear.Any
+                    ? UIBuilder.Colored(GearTag(nestGear), nestGear.HasCrown ? UITheme.Accent : UITheme.Warn)
+                    : "";
+                btn.SetLabel($"{intel.NameOf(n)} — {intel.DescribeNest(n)}{gearTag}");
                 btn.onClick.RemoveAllListeners();
                 btn.onClick.AddListener(() => Services.Get<CameraController>().JumpTo(n.WorldPosition));
             }
+        }
+
+        /// <summary>One-line tag for observed gear (P4-22); the full list lives in the inspector.</summary>
+        static string GearTag(GuildIntel.GearIntel gear)
+        {
+            if (gear.HasCrown) return " · 우두머리 관측";
+            if (gear.GearedCount > 0) return $" · 장비 착용 {gear.GearedCount}마리 관측";
+            return $" · 삼킨 아이템 관측 (HP +{gear.AbsorbedHp:0})";
         }
     }
 }

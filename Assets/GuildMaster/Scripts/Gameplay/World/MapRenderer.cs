@@ -30,10 +30,15 @@ namespace GuildMaster.World
             BuildGround(map);
             _decor = CreateTilemap("Decor", DecorOrder);
 
-            for (int v = 0; v < Variants; v++)
+            // One set per region (P4-55: dry scrub, frosted trees, dark swamp trees, charred stumps; rocks likewise).
+            int regions = System.Enum.GetValues(typeof(Region)).Length;
+            for (int r = 0; r < regions; r++)
             {
-                _trees.Add(MakeTile(CartoonArt.Tree(v)));
-                _rocks.Add(MakeTile(CartoonArt.Rock(v)));
+                for (int v = 0; v < Variants; v++)
+                {
+                    _trees.Add(MakeTile(CartoonArt.Tree(v, (Region)r)));
+                    _rocks.Add(MakeTile(CartoonArt.Rock(v, (Region)r)));
+                }
             }
 
             var decorPositions = new List<Vector3Int>();
@@ -46,12 +51,12 @@ namespace GuildMaster.World
                 if (map.Trees[i])
                 {
                     decorPositions.Add(new Vector3Int(x, y, 0));
-                    decorTiles.Add(_trees[(hash / 7) % Variants]);
+                    decorTiles.Add(_trees[(int)map.Regions[i] * Variants + (hash / 7) % Variants]);
                 }
                 else if (map.Tiles[i] == TileType.Mountain && hash % 100 < 30)
                 {
                     decorPositions.Add(new Vector3Int(x, y, 0));
-                    decorTiles.Add(_rocks[(hash / 7) % Variants]);
+                    decorTiles.Add(_rocks[(int)map.Regions[i] * Variants + (hash / 7) % Variants]);
                 }
             }
             _decor.SetTiles(decorPositions.ToArray(), decorTiles.ToArray());

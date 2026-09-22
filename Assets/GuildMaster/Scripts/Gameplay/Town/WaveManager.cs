@@ -18,6 +18,16 @@ namespace GuildMaster.Town
     /// <summary>Raid over. Sighted=false means the guild never saw it (UI/log stay silent).</summary>
     public struct RaidEndedEvent { public int RaidId; public int Killed; public int Withdrawn; public bool Sighted; }
 
+    /// <summary>Where one sighted raid is pressing now: the gate it heads for (or the breach inside).</summary>
+    public struct RaidFront
+    {
+        public int RaidId;
+        /// <summary>Hold point just inside the gate the raid is heading for.</summary>
+        public Vector2 Point;
+        /// <summary>Living raiders in it (defenders are shared out by this).</summary>
+        public int Strength;
+    }
+
     public struct RaidSettings
     {
         public float ChancePerLevelPerHour;
@@ -46,6 +56,8 @@ namespace GuildMaster.Town
             public float StartedAtHour;
             public bool Sighted;
             public int Killed;
+            public Vector2Int FrontGate;
+            public Vector2 Front;
         }
 
         RaidSettings _cfg;
@@ -65,8 +77,15 @@ namespace GuildMaster.Town
         public bool RaidSighted => _raids.Any(r => r.Sighted);
         /// <summary>Living raiders of the raids the guild has seen.</summary>
         public IReadOnlyList<Monster> Raiders => _seenRaiders;
-        /// <summary>Where defenders gather: just inside the gate facing the latest sighting.</summary>
-        public Vector2 RallyPoint { get; private set; }
+        /// <summary>
+        /// One front per sighted raid, following it (user report 2026-09-22: a single rally point
+        /// at the latest sighting left earlier raids undefended, and stayed at the first gate
+        /// seen while the raid went round to a breach).
+        /// </summary>
+        public IReadOnlyList<RaidFront> Fronts => _fronts;
+        readonly List<RaidFront> _fronts = new();
+        /// <summary>A new gate must be this much closer to the vanguard before a front moves (no flicker).</summary>
+        const float FrontSwitchRatio = 0.8f;
 
         public void Init(RaidSettings cfg, GameClock clock, EcosystemManager eco, WorldService world)
         {
@@ -76,12 +95,26 @@ namespace GuildMaster.Town
             _world = world;
             EventBus.Subscribe<HourPassedEvent>(OnHour);
             EventBus.Subscribe<IntrudersRoutedEvent>(OnRouted);
+            EventBus.Subscribe<GateDamagedEvent>(OnGateDamaged);
         }
 
         void OnDestroy()
         {
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
             EventBus.Unsubscribe<IntrudersRoutedEvent>(OnRouted);
+            EventBus.Unsubscribe<GateDamagedEvent>(OnGateDamaged);
+        }
+
+        /// <summary>
+        /// Raiders battering a gate (P4-39) are heard even where nobody can see them: the gate is
+        /// outside every sight line from the plaza, and the first measured raid broke it and was
+        /// half through the town hall before anyone came.
+        /// </summary>
+        void OnGateDamaged(GateDamagedEvent e)
+        {
+            if (e.Attacker is not Monster m) return;
+            foreach (var raid in _raids)
+                if (!raid.Sighted && raid.Members.Contains(m)) Sight(raid, m);
         }
 
         /// <summary>A raid ran into a much stronger nest on the way (P4-18): it turns back home.</summary>
@@ -115,13 +148,24 @@ namespace GuildMaster.Town
             foreach (var raid in _raids.ToList())
                 if (_clock.TotalHours - raid.StartedAtHour >= _cfg.MaxHours) GiveUp(raid);
 
+            Services.TryGet<MigrationService>(out var migration);
             foreach (var nest in _eco.Nests)
             {
                 if (!nest.Species.canRaid || nest.IsEmpty || IsRaiding(nest)) continue;
+                if (migration != null && migration.IsMigrating(nest)) continue;
                 int level = LevelOf(nest);
-                if (level > 0 && GameRandom.Shared.Value < level * _cfg.ChancePerLevelPerHour) Launch(nest);
+                if (level <= 0 || GameRandom.Shared.Value >= level * _cfg.ChancePerLevelPerHour) continue;
+                // Only a nest by the town sends its band against the walls; the others move their
+                // home a step closer instead (P4-56, user decision 2026-09-22).
+                if (migration == null || IsByTheTown(nest)) Launch(nest);
+                else migration.TryLaunch(nest, PartySize(HomeMembers(nest).Count(), _cfg.SendFraction, _cfg.MinParty));
             }
         }
+
+        /// <summary>Nests this close to the town (cells) raid it; further out they migrate inwards.</summary>
+        public const float RaidRadius = 45f;
+
+        public bool IsByTheTown(Nest n) => Vector2.Distance(n.WorldPosition, _world.TownCenterWorld) <= RaidRadius;
 
         /// <summary>Sends part of the nest against the town now (also used by debug tools). Returns raiders sent.</summary>
         public int Launch(Nest nest)
@@ -174,6 +218,7 @@ namespace GuildMaster.Town
         void End(Raid raid, int withdrawn)
         {
             _raids.Remove(raid);
+            _fronts.RemoveAll(f => f.RaidId == raid.Id);
             EventBus.Publish(new RaidEndedEvent { RaidId = raid.Id, Killed = raid.Killed, Withdrawn = withdrawn, Sighted = raid.Sighted });
         }
 
@@ -186,6 +231,47 @@ namespace GuildMaster.Town
             if (_sightTimer > 0f) return;
             _sightTimer = SightCheckInterval;
             CheckSighting();
+            UpdateFronts();
+        }
+
+        /// <summary>
+        /// Each sighted raid's front follows its vanguard: the raider inside the walls or battering a
+        /// gate if any, else the one closest to the town; the front is the gate nearest to it.
+        /// </summary>
+        void UpdateFronts()
+        {
+            _fronts.Clear();
+            var center = _world.TownCenterWorld;
+            foreach (var raid in _raids)
+            {
+                if (!raid.Sighted) continue;
+                Monster lead = null;
+                float best = float.MaxValue;
+                int living = 0;
+                foreach (var m in raid.Members)
+                {
+                    if (m == null || !m.IsAlive) continue;
+                    living++;
+                    // Inside the walls or at a gate counts as right at the town.
+                    float d = _world.Grid.IsInTown(m.Position) || m.IsBreakingGate ? 0f : Vector2.Distance(m.Position, center);
+                    if (d < best) { best = d; lead = m; }
+                }
+                if (lead == null) continue;
+                var gate = NearestGate(lead.Position);
+                if (gate != raid.FrontGate)
+                {
+                    float now = Vector2.Distance(GridMap.CellToWorld(raid.FrontGate), lead.Position);
+                    float next = Vector2.Distance(GridMap.CellToWorld(gate), lead.Position);
+                    if (next < now * FrontSwitchRatio || lead.IsBreakingGate) SetFront(raid, gate);
+                }
+                _fronts.Add(new RaidFront { RaidId = raid.Id, Point = raid.Front, Strength = living });
+            }
+        }
+
+        void SetFront(Raid raid, Vector2Int gate)
+        {
+            raid.FrontGate = gate;
+            raid.Front = RallyInside(gate);
         }
 
         /// <summary>The first raider of a raid inside the guild's current vision raises the alarm.</summary>
@@ -196,13 +282,19 @@ namespace GuildMaster.Town
             {
                 if (raid.Sighted) continue;
                 var seen = raid.Members.FirstOrDefault(m => m != null && m.IsAlive && fog.IsVisibleRaw(m.Position));
-                if (seen == null) continue;
-                raid.Sighted = true;
-                _seenRaiders.AddRange(raid.Members.Where(m => m != null && m.IsAlive));
-                RallyPoint = RallyInside(seen.Position);
-                EventBus.Publish(new RaidSightedEvent { RaidId = raid.Id, Direction = DirectionFromTown(seen.Position), Position = seen.Position });
-                if (Services.TryGet<CameraController>(out var cam)) cam.Shake(0.7f);
+                if (seen != null) Sight(raid, seen);
             }
+        }
+
+        /// <summary>Raises the alarm for a raid: the defenders rally at the gate nearest to <paramref name="seen"/>.</summary>
+        void Sight(Raid raid, Monster seen)
+        {
+            raid.Sighted = true;
+            _seenRaiders.AddRange(raid.Members.Where(m => m != null && m.IsAlive));
+            SetFront(raid, NearestGate(seen.Position));
+            UpdateFronts();
+            EventBus.Publish(new RaidSightedEvent { RaidId = raid.Id, Direction = DirectionFromTown(seen.Position), Position = seen.Position });
+            if (Services.TryGet<CameraController>(out var cam)) cam.Shake(0.7f);
         }
 
         /// <summary>동/서/남/북 of the town centre (dominant axis).</summary>
@@ -212,13 +304,19 @@ namespace GuildMaster.Town
             return Mathf.Abs(d.x) >= Mathf.Abs(d.y) ? (d.x >= 0 ? "동" : "서") : (d.y >= 0 ? "북" : "남");
         }
 
-        /// <summary>A walkable spot a few cells inside the gate closest to where the raid comes from.</summary>
-        Vector2 RallyInside(Vector2 origin)
+        Vector2Int NearestGate(Vector2 origin)
+        {
+            var gates = _world.Map.Gates;
+            return gates.Count == 0 ? GridMap.WorldToCell(_world.TownCenterWorld)
+                : gates.OrderBy(g => (GridMap.CellToWorld(g) - origin).sqrMagnitude).First();
+        }
+
+        /// <summary>A walkable spot a few cells inside a gate.</summary>
+        Vector2 RallyInside(Vector2Int gateCell)
         {
             var center = _world.TownCenterWorld;
-            var gates = _world.Map.Gates;
-            if (gates.Count == 0) return center;
-            var gate = GridMap.CellToWorld(gates.OrderBy(g => (GridMap.CellToWorld(g) - origin).sqrMagnitude).First());
+            var gate = GridMap.CellToWorld(gateCell);
+            if ((gate - center).sqrMagnitude < 1f) return center;
             var inside = gate + (center - gate).normalized * 3f;
             return _world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(inside), 3, out var c) ? GridMap.CellToWorld(c) : center;
         }

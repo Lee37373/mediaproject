@@ -12,6 +12,32 @@ namespace GuildMaster.Units
         public const float CritChance = 0.1f;
         public const float CritMultiplier = 1.6f;
 
+        /// <summary>
+        /// Every unit's HP (and every heal) is this many times the listed numbers (P4-42, user
+        /// decision 2026-09-22: an idle game is about watching the fights, and they were over in a
+        /// couple of seconds). Both sides scale alike, so who wins is unchanged; fights just last
+        /// longer. Buildings and gates keep their durability, so a raid breaks in as fast as before.
+        /// </summary>
+        public const float HpScale = 3f;
+
+        /// <summary>
+        /// A listed HP or heal number (data, class base, potion, skill formula) as it is in play.
+        /// Every max HP and every flat heal goes through here, so nothing is left at the old scale.
+        /// Heals that are a share of max HP (regen, rest) are already scaled and do not.
+        /// </summary>
+        public static float ScaledHp(float listed) => listed * HpScale;
+
+        /// <summary>
+        /// Defence that halves a hit. Armour divides damage instead of subtracting from it (P4-38,
+        /// user report 2026-09-21: "one member clears a whole pack alone"): with subtraction a few
+        /// points of gear turned a goblin's 6 into 1.5 and levelled members stopped needing a party.
+        /// </summary>
+        public const float ArmorScale = 10f;
+
+        /// <summary>What is left of a raw hit after the target's defence.</summary>
+        public static float Mitigate(float raw, float defense)
+            => Mathf.Max(1f, raw * ArmorScale / (ArmorScale + Mathf.Max(0f, defense)));
+
         public static float Distance(Unit a, Unit b) => Vector2.Distance(a.Position, b.Position);
 
         public static bool InRange(Unit attacker, Unit target)
@@ -38,13 +64,14 @@ namespace GuildMaster.Units
 
         public static void ApplyHit(Unit attacker, Unit target)
         {
+            attacker?.BreakStealth(); // hitting someone gives the hiding place away (P4-19)
             if (target == null || !target.IsAlive) return;
             var rng = GameRandom.Shared;
             float atk = attacker != null ? attacker.Stats.Attack : 5f;
             float raw = atk * rng.Range(0.9f, 1.1f);
             bool crit = rng.Chance(CritChance);
             if (crit) raw *= CritMultiplier;
-            float dmg = Mathf.Max(1f, raw - target.Stats.Defense * 0.5f);
+            float dmg = Mitigate(raw, target.Stats.Defense);
             target.ReceiveDamage(Mathf.Round(dmg), attacker, crit);
         }
     }
@@ -55,8 +82,9 @@ namespace GuildMaster.Units
     /// Reusable fight behaviour for any unit:
     /// - uses ready skills first,
     /// - melee: chase and strike (crowd separation spreads attackers around the target),
-    /// - ranged: keep firing distance, kite away from melee threats between shots,
-    ///   and reposition to regain line of sight or find cover from enemy shooters.
+    /// - ranged: keep firing distance, kite away from melee threats between shots (Skilled+),
+    ///   and reposition to regain line of sight or find cover from enemy shooters (Veteran+);
+    ///   lower tiers simply walk at the target until they have a shot (see <see cref="CombatTiers"/>).
     /// </summary>
     public class Engagement
     {
@@ -98,6 +126,18 @@ namespace GuildMaster.Units
         /// <summary>Search radius for retargeting (usually the sight radius).</summary>
         public float SearchRadius { get; set; } = 8f;
 
+        /// <summary>
+        /// Formation hint for ranged units (P4-27, party back line): a spot to fall back to while
+        /// reloading, or null when the current position is fine.
+        /// </summary>
+        public System.Func<Unit, Vector2?> HoldSpot { get; set; }
+
+        /// <summary>
+        /// Where a melee unit should close in on its target instead of the target itself (P4-28, pack
+        /// encircling), or null for a straight chase.
+        /// </summary>
+        public System.Func<Unit, Vector2?> ApproachSpot { get; set; }
+
         public Engagement(Unit self) { _self = self; }
 
         public void SetTarget(Unit target)
@@ -125,6 +165,7 @@ namespace GuildMaster.Units
             Target = null;
             _self.CurrentTarget = null;
             _kiting = false;
+            _steering = false;
             _lockedUntil = 0f;
             ResetChase();
         }
@@ -176,26 +217,45 @@ namespace GuildMaster.Units
 
             if (_self.IsStunned || IsChanneling()) return EngageStatus.Attacking;
 
-            // Periodic re-evaluation (tier sets how often and what counts, see TargetSelector).
+            // Periodic re-evaluation (tier sets how often and what counts, see TargetSelector);
+            // instinct-driven units only turn on whoever just hit them.
+            var tier = _self.Tier;
             _retargetTimer -= dt;
-            if (_retargetTimer <= 0f)
+            Unit better = null;
+            if (CombatTiers.RetaliatesOnly(tier))
             {
-                _retargetTimer = CombatTiers.RetargetInterval(_self.Tier);
+                better = FreshAttacker();
+                // Stays on the new attacker a moment, or two attackers taking turns flip it every hit.
+                if (better != null && better != Target) _lockedUntil = Time.time + InstinctFocusSeconds;
+            }
+            else if (_retargetTimer <= 0f)
+            {
+                _retargetTimer = CombatTiers.RetargetInterval(tier);
                 if (CandidateFilter != null && Time.time >= _lockedUntil)
-                {
-                    var better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
-                    if (better != null && better != Target)
-                    {
-                        SetTarget(better);
-                        dist = Combat.Distance(_self, Target);
-                    }
-                }
+                    better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
+            }
+            if (better != null && better != Target)
+            {
+                SetTarget(better);
+                dist = Combat.Distance(_self, Target);
             }
 
             if (HoldOffTick(dt, dist)) return EngageStatus.Chasing;
             if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
 
             return _self.Stats.IsRanged ? RangedTick(dt, dist) : MeleeTick(dt, dist);
+        }
+
+        /// <summary>After turning on an attacker, instinct-driven units ignore other hits this long.</summary>
+        const float InstinctFocusSeconds = 1.5f;
+
+        /// <summary>Someone other than the target hit us just now (instinct: turn on them), or null.</summary>
+        Unit FreshAttacker()
+        {
+            var hitter = _self.LastAttacker;
+            if (hitter == null || hitter == Target || !_self.WasRecentlyAttackedBy(hitter, 0.5f)) return null;
+            if (Time.time < _lockedUntil || !hitter.IsAlive || !hitter.IsTargetableBy(_self) || IsIgnoring(hitter)) return null;
+            return CandidateFilter == null || CandidateFilter(hitter) ? hitter : null;
         }
 
         // ---------------- Third-party wait ("어부지리", Skilled+) ----------------
@@ -252,11 +312,21 @@ namespace GuildMaster.Units
 
         EngageStatus MeleeTick(float dt, float dist)
         {
-            if (Combat.InRange(_self, Target))
+            bool inRange = Combat.InRange(_self, Target);
+            // Footwork between blows (P4-47, Skilled+); a hit-and-run step may leave reach for a moment.
+            if (Time.time < _self.NextAttackTime && (inRange || _steering && dist <= MeleeReach() + SteerSlack) && SteerInReach(dt))
             {
+                ResetChase();
+                return EngageStatus.Attacking;
+            }
+            _steering = false;
+            if (inRange)
+            {
+                ResetChase();
+                // Encircling (P4-28): between blows, keep working round to the own slot.
+                if (Time.time < _self.NextAttackTime && CircleToSlot(dt)) return EngageStatus.Attacking;
                 if (_self.Mover.IsMoving) _self.Mover.Stop();
                 Combat.TryAttack(_self, Target);
-                ResetChase();
                 return EngageStatus.Attacking;
             }
             if (GaveUpChase(dist, dt)) return EngageStatus.Lost;
@@ -266,22 +336,99 @@ namespace GuildMaster.Units
             {
                 _repathTimer = 0.5f;
                 _lastTargetPos = Target.Position;
-                if (!_self.Mover.SetDestination(Target.Position, Mathf.Max(0.1f, _self.Stats.AttackRange * 0.8f)))
-                {
-                    Clear();
-                    return EngageStatus.Lost;
-                }
+                bool ok = ApproachSpot?.Invoke(Target) is Vector2 spot
+                    ? _self.Mover.SetDestination(spot, 0.2f) || _self.Mover.SetDestination(Target.Position, Mathf.Max(0.1f, _self.Stats.AttackRange * 0.8f))
+                    : _self.Mover.SetDestination(Target.Position, Mathf.Max(0.1f, _self.Stats.AttackRange * 0.8f));
+                if (!ok) return DropUnreachable();
             }
             return EngageStatus.Chasing;
+        }
+
+        // ---------------- Close-quarters footwork (P4-47) ----------------
+
+        /// <summary>How far outside reach a stepping unit keeps stepping instead of chasing.</summary>
+        const float SteerSlack = 1f;
+        const float SteerChooseSeconds = 0.1f;
+        const float SteerSlotSeconds = 0.4f;
+        bool _steering;
+        int _side;
+        float _sideTimer, _steerTimer, _slotTimer;
+        Vector2 _steerDir;
+        Vector2? _steerSlot;
+
+        /// <summary>Moving under close-quarters footwork this frame (debug).</summary>
+        public bool IsSteering => _steering;
+
+        float MeleeReach() => _self.Stats.AttackRange + Combat.ContactPadding + Target.Radius;
+
+        /// <summary>
+        /// Skilled+ melee units waiting on the next blow side-step round the target (or walk to the
+        /// pack's encircling slot) and keep clear of crowds and telegraphs; Veteran+ also step back
+        /// right after a blow. False when this unit does not steer.
+        /// </summary>
+        bool SteerInReach(float dt)
+        {
+            var tier = _self.Tier;
+            if (!LocalSteering.Enabled || !CombatTiers.SteersInMelee(tier)) return false;
+            var rng = GameRandom.Shared;
+            if (_side == 0) _side = rng.Chance(0.5f) ? 1 : -1;
+            _sideTimer -= dt;
+            if (_sideTimer <= 0f)
+            {
+                _sideTimer = rng.Range(2.5f, 5f);
+                if (rng.Chance(0.4f)) _side = -_side;
+            }
+            _slotTimer -= dt;
+            if (_slotTimer <= 0f || !_steering)
+            {
+                _slotTimer = SteerSlotSeconds;
+                _steerSlot = ApproachSpot?.Invoke(Target);
+            }
+            _steerTimer -= dt;
+            if (_steerTimer <= 0f || !_steering)
+            {
+                _steerTimer = SteerChooseSeconds;
+                float backstep = 0f;
+                if (CombatTiers.HitAndRun(tier))
+                {
+                    float left = (_self.NextAttackTime - Time.time) / Mathf.Max(0.1f, _self.Stats.AttackCooldown);
+                    if (left > 0.45f) backstep = LocalSteering.HitAndRunStep;
+                }
+                _steerDir = LocalSteering.Choose(_self, Target, _steerSlot, _side, backstep, out bool blocked);
+                if (blocked) { _side = -_side; _sideTimer = rng.Range(2.5f, 5f); }
+            }
+            _self.Mover.Steer(_steerDir, LocalSteering.SpeedFactor, dt);
+            _self.Visual?.FaceTowards(Target.Position);
+            _steering = true;
+            return true;
+        }
+
+        float _circleTimer;
+        bool _circling;
+
+        /// <summary>
+        /// While reloading within reach, walks on to the encircling slot (<see cref="ApproachSpot"/>)
+        /// instead of standing where the chase ended. True while on the way there.
+        /// </summary>
+        bool CircleToSlot(float dt)
+        {
+            if (ApproachSpot == null) return false;
+            _circleTimer -= dt;
+            if (_circleTimer > 0f) return _circling && _self.Mover.IsMoving;
+            _circleTimer = 0.4f;
+            _circling = ApproachSpot(Target) is Vector2 slot && (slot - _self.Position).sqrMagnitude > 0.8f * 0.8f
+                        && _self.Mover.SetDestination(slot, 0.2f);
+            return _circling;
         }
 
         EngageStatus RangedTick(float dt, float dist)
         {
             _tacticTimer -= dt;
+            var tier = _self.Tier;
             bool cooldownReady = Time.time >= _self.NextAttackTime;
 
-            // Kite: step away from melee threats while reloading.
-            var threat = Tactics.NearestMeleeThreat(_self, 2.2f + _self.Radius);
+            // Kite (Skilled+): step away from melee threats while reloading.
+            var threat = CombatTiers.CanKite(tier) ? Tactics.NearestMeleeThreat(_self, 2.2f + _self.Radius) : null;
             if (threat != null && !cooldownReady)
             {
                 if (_tacticTimer <= 0f || !_self.Mover.IsMoving)
@@ -297,6 +444,17 @@ namespace GuildMaster.Units
             }
             _kiting = false;
 
+            // Formation (party back line): fall back behind the front line while reloading.
+            if (!cooldownReady && HoldSpot?.Invoke(Target) is Vector2 hold && (hold - _self.Position).sqrMagnitude > 0.6f * 0.6f)
+            {
+                if (_tacticTimer <= 0f || !_self.Mover.IsMoving)
+                {
+                    _tacticTimer = 0.45f;
+                    _self.Mover.SetDestination(hold, 0.2f);
+                }
+                return EngageStatus.Chasing;
+            }
+
             bool inRange = Combat.InRange(_self, Target);
             bool hasShot = inRange && Combat.HasShot(_self, Target);
             if (hasShot)
@@ -308,16 +466,29 @@ namespace GuildMaster.Units
             }
             if (GaveUpChase(dist, dt)) return EngageStatus.Lost;
 
-            // No shot: find a firing position (line of sight, away from melee, in cover), else close in.
+            // No shot. Veteran+ look for a firing position (line of sight, away from melee, in cover);
+            // the others just walk at the target — to firing range, or right up to it when something
+            // blocks the line — and shoot as soon as the line is clear.
             if (_tacticTimer <= 0f || !_self.Mover.IsMoving)
             {
                 _tacticTimer = 0.8f;
-                bool ok = Tactics.FindFiringPosition(_self, Target, out var spot)
+                bool ok = CombatTiers.SeeksFiringPosition(tier) && Tactics.FindFiringPosition(_self, Target, out var spot)
                     ? _self.Mover.SetDestination(spot, 0.1f)
-                    : _self.Mover.SetDestination(Target.Position, _self.Stats.AttackRange * 0.6f);
-                if (!ok) { Clear(); return EngageStatus.Lost; }
+                    : _self.Mover.SetDestination(Target.Position, inRange ? 1f : _self.Stats.AttackRange * 0.8f);
+                if (!ok) return DropUnreachable();
             }
             return EngageStatus.Chasing;
+        }
+
+        /// <summary>
+        /// No path to the target (e.g. across water): drop it and skip it for a while, or the next
+        /// sense tick picks it again and repeats a failed whole-map A* search every few frames.
+        /// </summary>
+        EngageStatus DropUnreachable()
+        {
+            Ignore(Target, IgnoreSeconds);
+            Clear();
+            return EngageStatus.Lost;
         }
     }
 }

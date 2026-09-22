@@ -25,6 +25,10 @@ namespace GuildMaster.Adventurers
 
         public static Vector2 GuildDoor => Town.Get(BuildingType.GuildHall).DoorPosition;
 
+        /// <summary>Where members around town pick things up: inside the walls and at the gates (P4-40).</summary>
+        public static bool TownLootZone(Vector2 p)
+            => Services.TryGet<GateService>(out var gates) ? gates.InTownOrApron(p) : Town.IsInTown(p);
+
         /// <summary>Checks the current quest; returns false (and switches state) when the adventurer should go back.</summary>
         public static bool QuestStillValid(Adventurer a)
         {
@@ -85,12 +89,15 @@ namespace GuildMaster.Adventurers
             }
 
             if (TownGuardState.TryStart(a, this, ref _guardTimer, dt)) return;
-            if (a.Looting.Tick(dt, AdvCtx.Town.IsInTown)) return;
+            if (a.Looting.Tick(dt, AdvCtx.TownLootZone)) return;
             AdvCtx.Wander(a, ref _wanderTimer, dt);
             _decisionTimer -= dt;
             if (_decisionTimer > 0f) return;
             // A pending party invitation is this member's decision for now.
             if (Services.TryGet<PartyService>(out var party) && party.IsInvited(a)) { _decisionTimer = 2f; return; }
+            // A standing party's members go where their leader takes them (P4-50).
+            // The leader too while the last outing is not settled yet (the others are still coming back).
+            if (Services.TryGet<GuildParties>(out var parties) && (parties.FollowsALeader(a) || parties.OutingUnfinished(a))) { _decisionTimer = 2f; return; }
             a.ChangeState(a.DecidingState);
         }
     }
@@ -172,6 +179,10 @@ namespace GuildMaster.Adventurers
                     a.Say(d.Say);
                     a.ChangeState(a.VisitState);
                     return;
+                case AdventurerAction.Hunt:
+                    a.Say(d.Say);
+                    a.ChangeState(a.FreeHuntState);
+                    return;
             }
             if (!string.IsNullOrEmpty(d.Say)) a.Say(d.Say);
             a.ChangeState(a.IdleState);
@@ -216,15 +227,29 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
             if (a.HandleCombat(dt)) return;
-            if (a.Looting.Tick(dt)) return;
+            if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
 
             if (Vector2.Distance(a.Position, _destination) < 3f)
             {
                 a.ChangeState(a.HuntState);
                 return;
             }
+            // Parties travel in formation (P4-27): followers keep their slot, the leader sets the pace.
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out var leader))
+                {
+                    if (leader.Fsm.Current == leader.HuntState) a.ChangeState(a.HuntState);
+                    return;
+                }
+                if (party.PaceLeader(a)) return;
+            }
             if (!a.Mover.IsMoving) a.Mover.SetDestination(_destination, 1.5f);
         }
+
+        float _formationRepath;
+
+        public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
     }
 
     /// <summary>
@@ -241,6 +266,7 @@ namespace GuildMaster.Adventurers
 
         float _searchTimer;
         float _roamTimer;
+        float _formationRepath;
 
         public override string Label => "사냥 중";
 
@@ -249,6 +275,8 @@ namespace GuildMaster.Adventurers
             _searchTimer = 0f;
             _roamTimer = 0f;
         }
+
+        public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
 
         Vector2 Area => Owner.CurrentQuest.Point;
         float AreaRadius => Owner.CurrentQuest.Type == QuestType.Hunt ? Owner.CurrentQuest.Radius : NestRoamRadius;
@@ -277,7 +305,7 @@ namespace GuildMaster.Adventurers
         {
             var q = Owner.CurrentQuest;
             if (q == null || u is not Monster m) return false;
-            return q.Type == QuestType.ClearNest ? m.Home == q.Nest : m.Def == q.Species;
+            return m.Def == q.Species;
         }
 
         /// <summary>A quest target inside the quest area (hunts), or any resident of the nest (clearing).</summary>
@@ -295,25 +323,38 @@ namespace GuildMaster.Adventurers
             if (TryDrive(a)) return;
             if (a.HandleCombat(dt, IsAreaTarget)) return;
             // Loot left by the kills (P4-21) before searching on.
-            if (a.Looting.Tick(dt)) return;
+            if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
 
             _searchTimer -= dt;
-            if (_searchTimer <= 0f)
+            bool searched = _searchTimer <= 0f;
+            if (searched)
             {
                 _searchTimer = 0.6f;
                 // Only what this adventurer can actually see.
-                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius, u => IsAreaTarget(u) && !a.Engage.IsIgnoring(u) && a.CanSee(u));
+                // Party members hunt near their leader (P4-38).
+                var leash = a.PartyLeashCentre();
+                var target = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
+                    u => IsAreaTarget(u) && !a.Engage.IsIgnoring(u) && a.CanSee(u) && PartyTactics.InLeash(leash, u.Position));
                 if (target != null)
                 {
                     a.Engage.SetTarget(target);
                     return;
                 }
-                // Drifted out (a chase, a lure): walk back into the area.
-                if (Vector2.Distance(a.Position, Area) > AreaRadius + 2f && (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, Area) > AreaRadius))
-                {
-                    a.Mover.SetDestination(Area, 1.5f);
-                    return;
-                }
+            }
+
+            // Parties patrol together (P4-27): followers stay in formation around the leader.
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out _)) return;
+                if (party.PaceLeader(a)) return;
+            }
+
+            // Drifted out (a chase, a lure): walk back into the area.
+            if (searched && Vector2.Distance(a.Position, Area) > AreaRadius + 2f
+                && (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, Area) > AreaRadius))
+            {
+                a.Mover.SetDestination(Area, 1.5f);
+                return;
             }
 
             // Nothing in sight: patrol random spots inside the area.
@@ -363,6 +404,12 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             if (a.CheckRetreat()) return;
+            // P4-19: once the pack is right behind at the spot, break the chase with a skill.
+            if (TerritoryTactics.TryBreakAway(a, TerritoryTactics.FindPursuer(a), _point, AdvCtx.GuildDoor))
+            {
+                a.ChangeState(Next ?? a.ReturnState);
+                return;
+            }
             bool arrived = Vector2.Distance(a.Position, _point) < 0.8f || !a.Mover.IsMoving;
             if (arrived || TimeInState > Timeout) a.ChangeState(Next ?? a.ReturnState);
         }
@@ -372,7 +419,9 @@ namespace GuildMaster.Adventurers
 
     public class ReturnToTownState : State<Adventurer>
     {
-        public bool Retreating;
+        /// <summary>Running home badly hurt (or exhausted) rather than just walking back.</summary>
+        public bool Retreating { get; private set; }
+        bool _retreatRequested;
 
         const float LureTimeout = 12f;
         bool _luring;
@@ -380,9 +429,17 @@ namespace GuildMaster.Adventurers
 
         public override string Label => _luring ? "유인 후퇴" : Retreating ? "후퇴 중" : "귀환 중";
 
+        /// <summary>
+        /// Makes the next entry a retreat. A request survives the Exit of a re-entry, so a member
+        /// already walking home can still switch to retreating (Exit resets <see cref="Retreating"/>).
+        /// </summary>
+        public void RequestRetreat() => _retreatRequested = true;
+
         public override void Enter()
         {
             var a = Owner;
+            Retreating = _retreatRequested;
+            _retreatRequested = false;
             a.Mover.SpeedMultiplier = Retreating ? 1.15f : 1f;
             _luring = false;
             // Veterans drag their pursuer past a known hostile nest on the way out (P4-18).
@@ -406,10 +463,22 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             if (_luring)
             {
+                // P4-19: walking away alone leaves the pursuer on our heels, so it follows us back
+                // out again. A skill cuts the thread and leaves it among the residents.
+                if (TerritoryTactics.TryBreakAway(a, TerritoryTactics.FindPursuer(a), _lurePoint, AdvCtx.GuildDoor))
+                {
+                    _luring = false;
+                    a.Say("여기까지다!");
+                    a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
+                    return;
+                }
                 if (Vector2.Distance(a.Position, _lurePoint) > 0.8f && TimeInState < LureTimeout && a.Mover.IsMoving) return;
                 _luring = false;
                 a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
             }
+            // Walking home still fights whatever attacks on the way: badly hurt, drink a potion or
+            // turn it into a retreat instead of fighting to the death.
+            if (!Retreating && a.HpRatio < a.RetreatThreshold && a.CheckRetreat()) return;
             if (!Retreating && a.HandleCombat(dt)) return;
             if (!Retreating && a.Looting.Tick(dt)) return;
             if (Vector2.Distance(a.Position, AdvCtx.GuildDoor) < 1.2f)
@@ -427,18 +496,27 @@ namespace GuildMaster.Adventurers
         }
     }
 
-    /// <summary>At the guild: sell loot, turn in quests, buy supplies.</summary>
+    /// <summary>
+    /// At the guild: sell loot, turn in quests, buy supplies. Back from a party outing (P4-50) the
+    /// gold goes into the party's pool instead, and the member waits for the leader's split
+    /// before shopping with its share.
+    /// </summary>
     public class GuildVisitState : State<Adventurer>
     {
         const float VisitSeconds = 1.5f;
         bool _goingToDoor;
+        bool _shopped;
         float _guardTimer;
+        float _wanderTimer;
 
-        public override string Label => "길드 방문";
+        public override string Label => Waiting ? "정산 대기" : "길드 방문";
+
+        bool Waiting => !_shopped && Services.TryGet<GuildParties>(out var parties) && parties.IsWaiting(Owner);
 
         public override void Enter()
         {
             var a = Owner;
+            _shopped = false;
             _goingToDoor = Vector2.Distance(a.Position, AdvCtx.GuildDoor) > 1.2f;
             if (_goingToDoor) a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
             else DoBusiness();
@@ -448,9 +526,17 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             var trade = Services.Get<TradeService>();
+            Services.TryGet<GuildParties>(out var parties);
+            // Party loot is the party's (user decision): sold here, the gold goes into the pool.
+            bool pooled = parties != null && parties.PartyOf(a) is { } party && party.WentOut(a) && !party.Settling;
             int loot = a.Data.LootCount;
             int earned = trade.BuyLoot(a);
-            if (earned > 0) a.Say($"전리품을 팔아 {earned}G를 벌었다.");
+            if (earned > 0 && pooled && parties.Deposit(a, earned))
+            {
+                a.Data.gold -= earned;
+                a.Say($"전리품을 팔아 {earned}G를 파티 몫으로 모았다.");
+            }
+            else if (earned > 0) a.Say($"전리품을 팔아 {earned}G를 벌었다.");
             else if (loot > 0) a.Say("길드에 돈이 없다니... 전리품은 내가 들고 있지.");
 
             var q = a.CurrentQuest;
@@ -458,16 +544,28 @@ namespace GuildMaster.Adventurers
             {
                 if (AdvCtx.Board.TryTurnIn(q, a, out int gold, out int exp))
                 {
-                    a.Data.gold += gold;
                     a.Data.questsCompleted++;
-                    a.GainExp(exp);
+                    a.GainExp(exp); // EXP stays personal (user decision)
                     a.CurrentQuest = null;
-                    a.Say($"보상 {gold}G, {exp}EXP 받았다!");
+                    if (pooled && parties.Deposit(a, gold)) a.Say($"보상 {gold}G는 파티 몫으로, {exp}EXP 받았다!");
+                    else
+                    {
+                        a.Data.gold += gold;
+                        a.Say($"보상 {gold}G, {exp}EXP 받았다!");
+                    }
                 }
                 else if (!q.IsActive) a.CurrentQuest = null;
             }
 
-            var db = Services.Get<GameDatabase>();
+            if (pooled && parties.Arrive(a)) return; // shop once the share is paid
+            Shop();
+        }
+
+        void Shop()
+        {
+            var a = Owner;
+            var trade = Services.Get<TradeService>();
+            _shopped = true;
             while (a.Data.potions < 2 && trade.SellGoods(a, DefaultContent.Potion)) a.Data.potions++;
             // Survival first (potions), then the next gear tier if the gold is left (P4-4).
             GearShopping.TryBuy(a);
@@ -483,6 +581,12 @@ namespace GuildMaster.Adventurers
                 _goingToDoor = false;
                 DoBusiness();
                 return;
+            }
+            if (!_shopped)
+            {
+                // Waiting by the guild for the others and the leader's split.
+                if (Waiting) { AdvCtx.Wander(a, ref _wanderTimer, dt); return; }
+                Shop();
             }
             if (TimeInState < VisitSeconds) return;
 
@@ -534,7 +638,6 @@ namespace GuildMaster.Adventurers
 
         public override void Tick(float dt)
         {
-            var c = Owner.Visual.Body.color;
             Owner.Visual.SetTint(new Color(0.6f, 0.6f, 0.6f, Mathf.Clamp01(1f - TimeInState / FadeSeconds)));
             if (TimeInState >= FadeSeconds) Object.Destroy(Owner.gameObject);
         }

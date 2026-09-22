@@ -37,6 +37,7 @@ namespace GuildMaster.UI
             EventBus.Subscribe<AdventurerLevelUpEvent>(OnLevelUp);
             EventBus.Subscribe<SkillUsedEvent>(OnSkill);
             EventBus.Subscribe<ProjectileBlockedEvent>(OnBlocked);
+            EventBus.Subscribe<UnitHealedEvent>(OnHealed);
         }
 
         void OnDestroy()
@@ -46,6 +47,7 @@ namespace GuildMaster.UI
             EventBus.Unsubscribe<AdventurerLevelUpEvent>(OnLevelUp);
             EventBus.Unsubscribe<SkillUsedEvent>(OnSkill);
             EventBus.Unsubscribe<ProjectileBlockedEvent>(OnBlocked);
+            EventBus.Unsubscribe<UnitHealedEvent>(OnHealed);
         }
 
         static bool IsVisible(Vector2 p) => !Services.TryGet<FogOfWar>(out var fog) || fog.IsVisible(p);
@@ -60,6 +62,12 @@ namespace GuildMaster.UI
         {
             if (!IsVisible(e.Position)) return;
             Spawn(e.Position + new Vector2(0, 0.3f), "막힘", new Color(0.8f, 0.8f, 0.8f), 13);
+        }
+
+        void OnHealed(UnitHealedEvent e)
+        {
+            if (e.Target == null || !IsVisible(e.Target.Position)) return;
+            Spawn(e.Target.transform.position + new Vector3(0, 0.75f), $"+{e.Amount:0}", new Color(0.45f, 1f, 0.5f), 17);
         }
 
         void OnDamaged(UnitDamagedEvent e)
