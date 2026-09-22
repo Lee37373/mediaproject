@@ -41,9 +41,9 @@ namespace GuildMaster.Ecosystem
         /// <summary>At most this many bands on the move at once.</summary>
         public const int MaxBands = 3;
         /// <summary>Newcomers from beyond the map edge (user decision 2026-09-22): chance per game hour while an outer site stands empty.</summary>
-        public const float ArrivalChancePerHour = 0.3f;
+        public const float ArrivalChancePerHour = 0.6f; // 0.3 left 17 of 64 sites empty after five days (user: more)
         /// <summary>At most this many newcomer bands on their way in at once.</summary>
-        public const int MaxArrivals = 2;
+        public const int MaxArrivals = 3;
         /// <summary>Sites at least this far out (0 innermost .. 1 outermost) count as outer: newcomers settle there.</summary>
         public const float OuterSites = 0.5f;
         const float TickInterval = 0.5f;
