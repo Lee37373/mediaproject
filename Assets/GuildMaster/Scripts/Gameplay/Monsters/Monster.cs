@@ -19,8 +19,9 @@ namespace GuildMaster.Monsters
     }
 
     /// <summary>
-    /// Pooled monster driven by a small FSM: wander around its nest, engage prey/rivals/humans,
-    /// flee from predators, and return home when leashed.
+    /// Pooled monster driven by a small FSM: wander around its nest, engage other species,
+    /// territory intruders and (aggressive kinds) humans, flee from predators, and return home
+    /// when leashed (see Docs/CODEMAP.md §1 for where these rules live).
     /// </summary>
     public class Monster : Unit, IProjectileStyle, Fog.IFogGhostSubject
     {
