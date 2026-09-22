@@ -538,6 +538,27 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        /// <summary>Every living pack boss (P4-57): name, level, tier, HP and nest.</summary>
+        public static string Bosses()
+        {
+            var sb = new StringBuilder();
+            foreach (var u in Units.UnitRegistry.All)
+                if (u is Monster { IsBoss: true } m && m.IsAlive)
+                    sb.Append($"  {m.DisplayName} Lv.{m.Level} {Units.CombatTiers.Label(m.Tier)} HP {m.Hp:0}/{m.Stats.MaxHp:0} {m.StateLabel} nest={(m.Home != null ? m.Home.DisplayName : "-")} at {m.Position}\n");
+            return sb.Length == 0 ? "no bosses" : sb.ToString();
+        }
+
+        /// <summary>Adds a boss to nest #index (P4-57) and points the camera there.</summary>
+        public static string SpawnBoss(int index)
+        {
+            var eco = Services.Get<EcosystemManager>();
+            if (index < 0 || index >= eco.Nests.Count) return "bad index";
+            var nest = eco.Nests[index];
+            var boss = eco.Spawn(nest, null, true);
+            if (Services.TryGet<CameraControl.CameraController>(out var cam)) { cam.Follow(null); cam.JumpTo(boss.Position); }
+            return $"{boss.DisplayName} Lv.{boss.Level} HP {boss.Stats.MaxHp:0} in {nest.DisplayName}";
+        }
+
         /// <summary>Spawns nest-less monsters of a species at the edge of nest #index's territory and points the camera there.</summary>
         public static string InvadeNest(int index, string speciesId, int count)
         {

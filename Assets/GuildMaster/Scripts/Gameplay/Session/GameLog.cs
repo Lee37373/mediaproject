@@ -126,6 +126,13 @@ namespace GuildMaster.Session
                 Add(e.Absorbed ? $"{e.Monster.DisplayName}이(가) {e.Item.displayName}을(를) 삼켰습니다."
                                : $"{e.Monster.DisplayName}이(가) {e.Item.displayName}을(를) 주워 착용했습니다.", LogCategory.Ecosystem);
             });
+            // Pack bosses (P4-57): seen for the first time, and killed where the guild could see it.
+            EventBus.Subscribe<BossSightedEvent>(e => Add($"[보스] {e.Boss.DisplayName}(Lv.{e.Boss.Level})이(가) 이끄는 {e.Boss.Def.displayName} 무리를 발견했습니다!", LogCategory.Danger));
+            EventBus.Subscribe<Units.UnitDiedEvent>(e =>
+            {
+                if (e.Victim is not Monsters.Monster { IsBoss: true } boss || !Services.TryGet<Fog.FogOfWar>(out var fog) || !fog.IsVisibleRaw(boss.Position)) return;
+                Add(e.Killer != null ? $"[보스] {e.Killer.DisplayName}이(가) {boss.DisplayName}을(를) 쓰러뜨렸습니다!" : $"[보스] {boss.DisplayName}이(가) 쓰러졌습니다.", LogCategory.Ecosystem);
+            });
             EventBus.Subscribe<DayPassedEvent>(e => Add($"{e.Day}일차가 밝았습니다.", LogCategory.Info));
         }
 

@@ -94,20 +94,22 @@ namespace GuildMaster.Monsters
 
         /// <summary>
         /// What a dead monster leaves on the ground: everything it wore (always) plus its loot
-        /// table rolled (Q-C: all loot drops to the ground, whoever the killer).
+        /// table rolled <paramref name="rolls"/> times (Q-C: all loot drops to the ground, whoever the killer).
         /// </summary>
-        public static List<ItemStack> BuildDrops(MonsterDefinition def, IEnumerable<ItemDefinition> worn, GameRandom rng, List<ItemStack> into = null)
+        public static List<ItemStack> BuildDrops(MonsterDefinition def, IEnumerable<ItemDefinition> worn, GameRandom rng, List<ItemStack> into = null, int rolls = 1)
         {
             var list = into ?? new List<ItemStack>();
             list.Clear();
             if (worn != null)
                 foreach (var i in worn) if (i != null) list.Add(new ItemStack(i.id, 1));
             if (def == null) return list;
-            foreach (var entry in def.loot)
-            {
-                if (entry.item == null || !rng.Chance(entry.chance)) continue;
-                list.Add(new ItemStack(entry.item.id, rng.Range(entry.min, entry.max + 1)));
-            }
+            // Bosses roll the table several times (P4-57).
+            for (int roll = 0; roll < rolls; roll++)
+                foreach (var entry in def.loot)
+                {
+                    if (entry.item == null || !rng.Chance(entry.chance)) continue;
+                    list.Add(new ItemStack(entry.item.id, rng.Range(entry.min, entry.max + 1)));
+                }
             return list;
         }
     }

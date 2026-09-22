@@ -242,11 +242,12 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
-        public IEnumerator Monster_WearsGearDroppedNearItsNest()
+        public IEnumerator Monster_WearsGearDroppedNearItsNest_OrWhereItJustFought_AndABossLeadsItsPack()
         {
             yield return Boot();
-            var nest = Services.Get<EcosystemManager>().Nests
-                .First(n => n.Species.pickupMode == MonsterPickupMode.Equip && n.Population >= 2);
+            var eco = Services.Get<EcosystemManager>();
+            var nest = eco.Nests
+                .First(n => n.Species.pickupMode == MonsterPickupMode.Equip && n.Species.packHunter && n.Population >= 2);
             var at = nest.WorldPosition + new Vector2(1f, 0f);
             DebugCommands.DropItem("gear_t2", 1, at.x, at.y);
             Clock.SetSpeed(3);
@@ -254,6 +255,52 @@ namespace GuildMaster.Tests
             var wearer = nest.Members.FirstOrDefault(m => m.Equipment.Worn.Any(i => i.id == "gear_t2"));
             Assert.That(wearer, Is.Not.Null, $"a resident of {nest.DisplayName} wears the dropped gear");
             Assert.That(wearer.Stats.Attack, Is.GreaterThan(wearer.Def.attack), "gear raises attack");
+
+            // P4-57 (user report: "monsters leave the loot of their fights"): far from home, right
+            // after a fight, the spoils lying about are taken too.
+            Clock.SetSpeed(1);
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                // Fight 10 cells out (past the home range, inside the leash), spoils 13 cells out.
+                var grid = Services.Get<World.WorldService>().Grid;
+                bool Open(Vector2 p) => grid.IsWalkable(World.GridMap.WorldToCell(p)) && !grid.IsInTown(World.GridMap.WorldToCell(p));
+                var dir = Enumerable.Range(0, 16).Select(k => new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f)))
+                    .FirstOrDefault(d => Open(nest.WorldPosition + d * 10f) && Open(nest.WorldPosition + d * 13f) && Open(nest.WorldPosition + d * 11.5f));
+                Assume.That(dir, Is.Not.EqualTo(Vector2.zero), "open ground beside the nest");
+                var homeRange = nest.Species.wanderRadius + 3f;
+                Assert.That(13f, Is.GreaterThan(homeRange).And.LessThan(nest.Species.leashRadius), "the spoils lie outside the home range");
+
+                var fighter = nest.Members.First(m => m.IsAlive && m != wearer && !m.IsRangedVariant);
+                fighter.Mover.Stop();
+                fighter.transform.position = nest.WorldPosition + dir * 10f;
+                var slime = SpawnMonster("slime", fighter.Position + dir * 1.5f);
+                fighter.Engage.SetTarget(slime);
+                fighter.Fsm.ChangeState(fighter.EngageState);
+                yield return WaitFor(() => !slime.IsAlive, 15f);
+                // Dropped the moment the slime falls (a slime would swallow it first).
+                var spoils = nest.WorldPosition + dir * 13f;
+                DebugCommands.DropItem("gear_t3", 1, spoils.x, spoils.y);
+                Assert.That(slime.IsAlive, Is.False,
+                            $"the goblin killed the slime (goblin {fighter.StateLabel} hp {fighter.Hp:0} target {fighter.CurrentTarget?.DisplayName} d {Vector2.Distance(fighter.Position, slime.Position):0.0}; slime {slime.StateLabel} hp {slime.Hp:0}/{slime.Stats.MaxHp:0} target {slime.CurrentTarget?.DisplayName})");
+                // Whoever of the pack fought (mates in earshot join in) may take it; idlers at home cannot reach that far.
+                yield return WaitFor(() => nest.Members.Any(m => m.Equipment.Worn.Any(i => i.id == "gear_t3")), 10f);
+                Assert.That(nest.Members.Any(m => m.Equipment.Worn.Any(i => i.id == "gear_t3")), Is.True,
+                            $"the spoils where they fought were picked up (fighter {fighter.StateLabel} at {Vector2.Distance(fighter.Position, spoils):0.0} from them)");
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+
+            // A boss (P4-57): named, bigger, tougher, a step smarter, and it leads the pack.
+            var boss = eco.Spawn(nest, null, true);
+            var plain = eco.Spawn(nest);
+            while (plain.IsRangedVariant || plain.Equipment.WornCount > 0) plain = eco.Spawn(nest);
+            Assert.That(boss.IsBoss, Is.True);
+            Assert.That(boss.DisplayName, Is.EqualTo(nest.Species.bossName));
+            Assert.That(boss.Scale, Is.GreaterThan(nest.Species.scale));
+            Assert.That(boss.Stats.MaxHp, Is.GreaterThan(plain.Stats.MaxHp * 2.5f));
+            Assert.That((int)boss.Tier, Is.GreaterThan((int)plain.Tier));
+            Assert.That(boss.PackLeader, Is.EqualTo(boss), "the boss leads its pack");
+            Assert.That(plain.IsBoss, Is.False, "the rest are born ordinary");
         }
 
         /// <summary>
@@ -1404,7 +1451,7 @@ namespace GuildMaster.Tests
                 // The den goes for the lured monster, not the bait walking past (the master cannot fight).
                 Assert.That(fought, Is.True, $"the residents took it on ({home.Species.id} lured into {there.Species.id}, "
                     + $"dens {Vector2.Distance(home.WorldPosition, there.WorldPosition):0} apart, territory {there.TerritoryRadius:0}, "
-                    + $"closest {closest:0.0}, lured went {string.Join("/", states)}, residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => m.DebugState))})");
+                    + $"closest {closest:0.0}, lured went {string.Join("/", states)}, residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => m.DebugState + ">" + m.CurrentTarget?.name + (m.IsBoss ? "(boss)" : "")))}, lured target {lured.CurrentTarget?.name} hit by {lured.LastAttacker?.name})");
                 Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight");
             }
             finally { DebugCommands.Invulnerable(false); }

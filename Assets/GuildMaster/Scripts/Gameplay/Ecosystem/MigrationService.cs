@@ -163,7 +163,8 @@ namespace GuildMaster.Ecosystem
             var edge = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).First();
             var band = new Band { Id = ++_count, From = target, Target = target, StartedAtHour = _clock.TotalHours, Species = species, Arrival = true };
             int size = Mathf.Max(3, species.nestCapacity / 3);
-            for (int i = 0; i < size; i++) Enlist(band, _eco.Spawn(target, GridMap.CellToWorld(edge)));
+            bool boss = GameRandom.Shared.Chance(MonsterBoss.Chance); // a new pack may have a boss (P4-57)
+            for (int i = 0; i < size; i++) Enlist(band, _eco.Spawn(target, GridMap.CellToWorld(edge), boss && i == 0));
             _bands.Add(band);
             Debug.Log($"[Migration] newcomers #{band.Id}: {size} {species.displayName} from the edge {edge} → {target.DisplayName}");
             return true;

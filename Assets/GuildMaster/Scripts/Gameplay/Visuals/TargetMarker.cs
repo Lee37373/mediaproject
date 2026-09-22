@@ -82,7 +82,7 @@ namespace GuildMaster.Visuals
 
         void Place()
         {
-            float height = _unit is Monsters.Monster m && m.Def != null ? 1.05f * m.Def.scale : 1.05f;
+            float height = _unit is Monsters.Monster m && m.Def != null ? 1.05f * m.Scale : 1.05f;
             transform.position = (Vector3)(_unit.Position + new Vector2(0f, height + Mathf.Sin(_phase * 6f) * 0.06f));
             _sr.enabled = !Services.TryGet<FogOfWar>(out var fog) || fog.IsVisible(_unit.Position);
         }

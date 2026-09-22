@@ -214,7 +214,7 @@ namespace GuildMaster.UI
             float scale = 1f;
             switch (_selected)
             {
-                case Unit u: pos = u.Position + new Vector2(0, -0.28f); if (u is Monster m) scale = m.Def.scale; break;
+                case Unit u: pos = u.Position + new Vector2(0, -0.28f); if (u is Monster m) scale = m.Scale; break;
                 case Nest n: pos = n.WorldPosition; scale = 1.4f; break;
                 case FogGhost g: pos = g.Position + new Vector2(0, -0.28f); break;
                 case TownGate gate: pos = gate.Center; scale = 2.4f; break;
@@ -303,7 +303,7 @@ namespace GuildMaster.UI
         void ShowMonster(Monster m)
         {
             var d = m.Def;
-            _title.text = $"{d.displayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(d.danger), UITheme.Danger(d.danger))}";
+            _title.text = $"{(m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(d.danger), UITheme.Danger(d.danger))}";
             string prey = d.prey.Count == 0 ? "-" : string.Join(", ", d.prey.Select(p => p.displayName));
             string rivals = d.rivals.Count == 0 ? "-" : string.Join(", ", d.rivals.Select(p => p.displayName));
             _body.text =

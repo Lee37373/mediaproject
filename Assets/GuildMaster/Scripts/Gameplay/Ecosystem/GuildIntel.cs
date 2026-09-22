@@ -10,6 +10,9 @@ using UnityEngine;
 
 namespace GuildMaster.Ecosystem
 {
+    /// <summary>The guild saw a pack boss for the first time (P4-57).</summary>
+    public struct BossSightedEvent { public Monster Boss; }
+
     /// <summary>
     /// What the guild actually knows: species and nests it has seen, and the last observed
     /// nest populations. UI, adventurer navigation, logs and LLM prompts read this instead of
@@ -74,6 +77,8 @@ namespace GuildMaster.Ecosystem
         readonly HashSet<MonsterDefinition> _known = new();
         readonly Dictionary<Nest, NestIntel> _nests = new();
         readonly Dictionary<Monster, GearSighting> _gear = new();
+        /// <summary>Bosses the guild has seen (P4-57); dead ones leave on <see cref="OnUnitDied"/>.</summary>
+        readonly HashSet<Monster> _bossesSeen = new();
         static readonly GearIntel s_emptyGear = new();
         EcosystemManager _eco;
         FogOfWar _fog;
@@ -99,6 +104,8 @@ namespace GuildMaster.Ecosystem
         void OnUnitDied(UnitDiedEvent e)
         {
             if (e.Victim is Monster m && _fog != null && _fog.IsVisibleRaw(m.Position)) _gear.Remove(m);
+            // Pooled monsters come back as someone else: never keep a dead boss.
+            if (e.Victim is Monster dead) _bossesSeen.Remove(dead);
         }
 
         void Update()
@@ -119,6 +126,7 @@ namespace GuildMaster.Ecosystem
                 visible++;
                 _known.Add(m.Def);
                 RecordGear(m);
+                if (m.IsBoss && _bossesSeen.Add(m)) EventBus.Publish(new BossSightedEvent { Boss = m });
             }
             VisibleMonsters = visible;
 

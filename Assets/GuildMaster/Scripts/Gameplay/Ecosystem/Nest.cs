@@ -126,8 +126,8 @@ namespace GuildMaster.Ecosystem
             _renderer.enabled = false;
         }
 
-        /// <summary>A new member at the nest, or at <paramref name="at"/> (newcomers walking in from the map edge).</summary>
-        public Monster SpawnMember(Vector2? at = null)
+        /// <summary>A new member at the nest, or at <paramref name="at"/> (newcomers walking in from the map edge); <paramref name="boss"/> = the pack's boss (P4-57).</summary>
+        public Monster SpawnMember(Vector2? at = null, bool boss = false)
         {
             var pool = Services.Get<PoolService>();
             var world = Services.Get<WorldService>();
@@ -135,7 +135,7 @@ namespace GuildMaster.Ecosystem
             world.Grid.TryRandomWalkableNear(at.HasValue ? GridMap.WorldToCell(at.Value) : Cell, 2, rng, out var cell);
             var pos = GridMap.CellToWorld(cell) + rng.InsideUnitCircle() * 0.3f;
             var monster = pool.Spawn<Monster>(Monster.PoolKey, pos);
-            monster.Setup(Species, this);
+            monster.Setup(Species, this, boss);
             _members.Add(monster);
             return monster;
         }

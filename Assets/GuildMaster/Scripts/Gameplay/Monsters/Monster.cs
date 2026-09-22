@@ -94,19 +94,20 @@ namespace GuildMaster.Monsters
             return go;
         }
 
-        public void Setup(MonsterDefinition def, Nest home)
+        public void Setup(MonsterDefinition def, Nest home, bool boss = false)
         {
             Def = def;
             Home = home;
             UnitId = $"M_{++s_counter:0000}";
-            DisplayName = def.displayName;
+            IsBoss = boss;
+            DisplayName = boss ? MonsterBoss.Name(def.displayName, def.bossName) : def.displayName;
             name = $"{def.displayName}[{UnitId}]";
             Stats = new CombatStats
             {
                 MaxHp = Combat.ScaledHp(def.maxHp), Attack = def.attack, Defense = def.defense, AttackRange = def.attackRange,
                 AttackCooldown = def.attackCooldown, MoveSpeed = def.moveSpeed, SightRadius = def.sightRadius,
             };
-            IsRangedVariant = def.rangedVariantChance > 0f && GameRandom.Shared.Chance(def.rangedVariantChance);
+            IsRangedVariant = !boss && def.rangedVariantChance > 0f && GameRandom.Shared.Chance(def.rangedVariantChance);
             if (IsRangedVariant)
             {
                 Stats.AttackRange = def.rangedVariantRange;
@@ -115,14 +116,21 @@ namespace GuildMaster.Monsters
                 Stats.AttackCooldown *= 1.2f;
                 if (!string.IsNullOrEmpty(def.rangedVariantName)) DisplayName = def.rangedVariantName;
             }
-            Radius = 0.28f * def.scale;
-            Mass = def.scale * def.scale;
+            if (boss)
+            {
+                Stats.MaxHp *= MonsterBoss.HpMultiplier;
+                Stats.Attack *= MonsterBoss.AttackMultiplier;
+                Stats.Defense += MonsterBoss.DefenseBonus;
+            }
+            Radius = 0.28f * Scale;
+            Mass = Scale * Scale;
             SkillFactory.Assign(this, def.skillIds);
             _ownKnownOpenGates.Clear();
             // P4-21: base stats kept apart from gear; some spawn already wearing something.
             // Own level (user decision 2026-09-22): born higher the farther out the nest lies.
             _unlevelledStats = Stats;
-            Level = home != null ? home.BirthLevel : 1;
+            Level = Mathf.Min(MonsterLevel.MaxLevel, (home != null ? home.BirthLevel : 1) + (boss ? MonsterBoss.LevelBonus : 0));
+            _lastFightTime = float.NegativeInfinity;
             Exp = 0;
             ApplyLevel();
             Equipment.Clear();
@@ -133,13 +141,14 @@ namespace GuildMaster.Monsters
             foreach (var g in def.startingGear)
                 if (g.item != null && GameRandom.Shared.Chance(g.chance)) Equipment.Equip(g.item);
             RefreshStats(fullHeal: true);
-            // Imported Casual Monsters art when available (archer variants have their own image).
-            var art = ArtLibrary.Monster(IsRangedVariant && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
-            Visual.Init(art != null ? art : PixelArt.Monster(def), def.scale);
+            // Imported Casual Monsters art when available (archer variants and bosses have their own image).
+            var art = boss && !string.IsNullOrEmpty(def.bossArtKey) ? ArtLibrary.Monster(def.bossArtKey) : null;
+            if (art == null) art = ArtLibrary.Monster(IsRangedVariant && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
+            Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
             // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
             var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
             Visual.SetTint(baseTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
-            GetComponent<HealthBar>().Init(this, 0.75f * def.scale, new Color(0.9f, 0.25f, 0.2f));
+            GetComponent<HealthBar>().Init(this, 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
             GetComponent<FogHideable>().Refresh();
             Engage.Clear();
             Engage.GiveUpDistance = def.leashRadius;
@@ -161,6 +170,10 @@ namespace GuildMaster.Monsters
         }
 
         public bool IsRangedVariant { get; private set; }
+        /// <summary>The pack's boss (P4-57, <see cref="MonsterBoss"/>): bigger, tougher, leads the pack.</summary>
+        public bool IsBoss { get; private set; }
+        /// <summary>Drawn size: the species' scale, bigger for a boss.</summary>
+        public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : 1f);
         public Color ProjectileColor => new(0.8f, 0.7f, 0.45f);
 
         public Vector2 HomePosition => Home != null ? Home.WorldPosition : _spawnPosition;
@@ -174,6 +187,8 @@ namespace GuildMaster.Monsters
                 if (Home == null) return null;
                 // The crown holder leads, whatever the species (P4-21).
                 foreach (var m in Home.Members) if (m.IsAlive && m.Equipment.Has(MonsterEquipment.PackLeaderEffect)) return m;
+                // Then the pack's boss (P4-57).
+                foreach (var m in Home.Members) if (m.IsAlive && m.IsBoss) return m;
                 if (!Def.packHunter) return null;
                 foreach (var m in Home.Members) if (m.IsAlive) return m;
                 return null;
@@ -181,7 +196,7 @@ namespace GuildMaster.Monsters
         }
 
         /// <summary>Fighting smarts set per species (P4-26): slimes on instinct up to veteran bosses.</summary>
-        public override CombatTier Tier => Def == null ? CombatTier.Novice : MonsterLevel.TierAt(Def.combatTier, Level);
+        public override CombatTier Tier => Def == null ? CombatTier.Novice : MonsterLevel.TierAt(MonsterBoss.SpeciesTier(Def.combatTier, IsBoss), Level);
 
         // ---------------- Level and EXP (user decision 2026-09-22) ----------------
 
@@ -189,7 +204,7 @@ namespace GuildMaster.Monsters
         public int Exp { get; private set; }
         public int ExpToNext => MonsterLevel.ExpToNext(Level);
         /// <summary>What killing this one is worth.</summary>
-        public int ExpWorth => Def == null ? 0 : MonsterLevel.ExpWorth(Def.expValue, Level);
+        public int ExpWorth => Def == null ? 0 : MonsterLevel.ExpWorth(Def.expValue, Level) * (IsBoss ? MonsterBoss.ExpMultiplier : 1);
         CombatStats _unlevelledStats;
 
         /// <summary>Base stats = the species (and ranged variant) scaled by level; gear goes on top.</summary>
@@ -520,7 +535,18 @@ namespace GuildMaster.Monsters
                 Fsm.ChangeState(FleeState);
                 return;
             }
-            if (Fsm.Current == EngageState || Fsm.Current == ReturnState) return;
+            if (Fsm.Current == EngageState)
+            {
+                _lastFightTime = Time.time;
+                _pickupTimer = 0f; // look for the spoils as soon as the fight is over
+                return;
+            }
+            // Walking home after a fight: the spoils on the way are still worth a detour (P4-57).
+            if (Fsm.Current == ReturnState)
+            {
+                TryStartPickup();
+                return;
+            }
             var target = FindTarget();
             if (target != null)
             {
@@ -528,31 +554,45 @@ namespace GuildMaster.Monsters
                 Fsm.ChangeState(EngageState);
                 return;
             }
-            if (Fsm.Current == WanderState) TryStartPickup();
+            if (Fsm.Current == WanderState || DefaultStateOverride == MigrateState && Fsm.Current == MigrateState) TryStartPickup();
         }
 
         const float PickupCheckInterval = 1.5f;
         /// <summary>Pack mates leave a fresh drop to the leader for this long.</summary>
         const float LeaderFirstSeconds = 3f;
+        /// <summary>After a fight the spoils within this range of the monster are fair game, wherever it is (P4-57).</summary>
+        public const float PostFightPickupRange = 6f;
+        /// <summary>How long after its last fight a monster still looks for spoils away from home.</summary>
+        public const float PostFightPickupSeconds = 20f;
         float _pickupTimer;
+        float _lastFightTime = float.NegativeInfinity;
 
         /// <summary>
-        /// While idling at home: walk to a visible item worth taking (P4-21), only within the home
-        /// range (wander radius + 3) so monsters do not roam off after loot.
+        /// Walk to a visible item worth taking (P4-21): near home while idling (wander radius + 3, so
+        /// monsters do not roam off after loot), or — for a while after a fight (P4-57, user report:
+        /// "monsters leave the loot of their fights") — near where it stands. Raiders never stop for loot.
         /// </summary>
         void TryStartPickup()
         {
-            if (Def.pickupMode == MonsterPickupMode.None || DefaultStateOverride != null) return;
+            if (Def.pickupMode == MonsterPickupMode.None) return;
+            if (DefaultStateOverride != null && DefaultStateOverride != MigrateState) return;
             _pickupTimer -= SenseInterval;
             if (_pickupTimer > 0f) return;
             _pickupTimer = PickupCheckInterval;
             if (!Services.TryGet<Items.GroundItemService>(out var ground) || ground.Items.Count == 0) return;
             var home = HomePosition;
             float range = Def.wanderRadius + 3f;
+            var here = Position;
+            bool afterFight = Time.time - _lastFightTime <= PostFightPickupSeconds;
             var leader = PackLeader;
             var item = ground.FindNearest(Position, Stats.SightRadius, g =>
-                g.IsFreeFor(this) && (g.Position - home).sqrMagnitude <= range * range && WantsItem(g.Item) && CanSee(g.Position)
-                && (leader == null || leader == this || g.Age >= LeaderFirstSeconds || !leader.WantsItem(g.Item)));
+            {
+                if (!g.IsFreeFor(this) || !WantsItem(g.Item) || !CanSee(g.Position)) return false;
+                // The spoils of its own fight are its to take; the leader's first pick is for drops at home.
+                if (afterFight && (g.Position - here).sqrMagnitude <= PostFightPickupRange * PostFightPickupRange) return true;
+                return (g.Position - home).sqrMagnitude <= range * range
+                       && (leader == null || leader == this || g.Age >= LeaderFirstSeconds || !leader.WantsItem(g.Item));
+            });
             if (item == null || !item.Reserve(this)) return;
             PickupState.Begin(item);
             Fsm.ChangeState(PickupState);
@@ -574,7 +614,7 @@ namespace GuildMaster.Monsters
         {
             // P4-21: everything falls to the ground (worn gear always, the loot table when killed);
             // a killing adventurer still gets the kill and its EXP, but must pick the loot up.
-            if (killer != null) MonsterEquipment.BuildDrops(Def, Equipment.Worn, GameRandom.Shared, s_loot);
+            if (killer != null) MonsterEquipment.BuildDrops(Def, Equipment.Worn, GameRandom.Shared, s_loot, IsBoss ? MonsterBoss.LootRolls : 1);
             else MonsterEquipment.BuildDrops(null, Equipment.Worn, GameRandom.Shared, s_loot);
             if (s_loot.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, s_loot);
             Equipment.Clear();
@@ -683,7 +723,7 @@ namespace GuildMaster.Monsters
             float size = shown.IsUnique ? 0.3f : 0.22f;
             float s = size / _gearIcon.sprite.bounds.size.x;
             _gearIcon.transform.localScale = new Vector3(s, s, 1f);
-            _gearIcon.transform.localPosition = shown.IsUnique ? new Vector3(0f, 0.95f * Def.scale, 0f) : new Vector3(0.28f * Def.scale, 0.55f * Def.scale, 0f);
+            _gearIcon.transform.localPosition = shown.IsUnique ? new Vector3(0f, 0.95f * Scale, 0f) : new Vector3(0.28f * Scale, 0.55f * Scale, 0f);
             _gearIcon.sortingOrder = CharacterVisual.BaseSortingOrder + 900;
         }
 

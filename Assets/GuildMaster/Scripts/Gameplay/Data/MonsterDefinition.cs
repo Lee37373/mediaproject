@@ -73,6 +73,12 @@ namespace GuildMaster.Data
         public string artKey;
         public string rangedArtKey;
 
+        [Header("Boss (P4-57)")]
+        [Tooltip("Name of the species' pack boss (Monsters/MonsterBoss).")]
+        public string bossName;
+        [Tooltip("Art of the boss; the species' own art (drawn bigger) when empty or missing.")]
+        public string bossArtKey;
+
         [Header("Ecosystem")]
         [Range(0f, 1f)]
         [Tooltip("How far from town this species lives (P5-1): 0 = just outside the walls, 1 = the far " +

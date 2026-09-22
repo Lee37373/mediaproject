@@ -31,6 +31,10 @@ namespace GuildMaster.EditorTools
             ("goblin_green/goblin_warrior.png", "goblin_warrior"),
             ("green_slime/slime.png", "slime"), ("green_slime/stone_slime.png", "stone_slime"), ("green_slime/slime_king.png", "slime_king"),
             ("skull/skull.png", "skull"), ("skull/skull_archer.png", "skull_archer"),
+            // Pack bosses (P4-57).
+            ("orange_slime/slime.png", "boss_slime"), ("orange_slime/stone_slime.png", "boss_stone_slime"),
+            ("orange_slime/slime_king.png", "boss_slime_king"), ("skull_posion/skull_warrior.png", "boss_skull"),
+            ("goblin/goblin_warrior.png", "boss_goblin"),
         };
 
         [MenuItem("GuildMaster/아트 카탈로그 다시 만들기")]

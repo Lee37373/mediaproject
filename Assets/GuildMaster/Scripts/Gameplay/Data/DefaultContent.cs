@@ -204,6 +204,15 @@ namespace GuildMaster.Data
             goblinWarrior.skillIds.Add("charge");
             slimeKing.skillIds.Add("slam");
 
+            // Pack bosses (P4-57): a founded pack may have one (Monsters/MonsterBoss). Art from the
+            // Casual Monsters images the species do not use yet.
+            slime.bossName = "슬라임 대장"; slime.bossArtKey = "boss_slime";
+            stoneSlime.bossName = "바위 슬라임 대장"; stoneSlime.bossArtKey = "boss_stone_slime";
+            skull.bossName = "독 해골 기사"; skull.bossArtKey = "boss_skull";
+            goblin.bossName = "고블린 족장"; goblin.bossArtKey = "boss_goblin";
+            goblinWarrior.bossName = "고블린 대장군"; // no spare warrior image: its own, drawn bigger
+            slimeKing.bossName = "슬라임 황제"; slimeKing.bossArtKey = "boss_slime_king";
+
             // Food web / rivalries (monster-vs-monster combat).
             skull.prey.AddRange(new[] { slime, stoneSlime });
             goblinWarrior.prey.Add(stoneSlime);

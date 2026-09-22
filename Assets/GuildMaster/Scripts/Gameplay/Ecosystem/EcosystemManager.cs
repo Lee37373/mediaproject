@@ -86,7 +86,9 @@ namespace GuildMaster.Ecosystem
                 nest.GrowthFactor = GrowthFactorAt(nest.WorldPosition);
                 nest.BirthLevel = MonsterLevel.BirthLevel(Distance01(nest.WorldPosition));
                 _nests.Add(nest);
-                for (int k = 0; k < assignment[i].initialPopulation; k++) Spawn(nest);
+                // A founded pack may have a boss (P4-57): the first one born.
+                bool boss = GameRandom.Shared.Chance(MonsterBoss.Chance);
+                for (int k = 0; k < assignment[i].initialPopulation; k++) Spawn(nest, null, boss && k == 0);
             }
 
             EventBus.Subscribe<HourPassedEvent>(OnHourPassed);
@@ -189,9 +191,9 @@ namespace GuildMaster.Ecosystem
         }
 
         /// <summary>Adds one member to the nest and updates the population count (also used by debug tools).</summary>
-        internal Monster Spawn(Nest nest, Vector2? at = null)
+        internal Monster Spawn(Nest nest, Vector2? at = null, bool boss = false)
         {
-            var m = nest.SpawnMember(at);
+            var m = nest.SpawnMember(at, boss);
             ChangePopulation(nest.Species, +1);
             return m;
         }
