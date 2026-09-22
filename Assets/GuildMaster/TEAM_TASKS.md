@@ -2,8 +2,8 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-09-21
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-41**).
+- 마지막 갱신: 2026-09-22
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-48**).
 
 ## 사용 규칙
 
@@ -45,7 +45,7 @@
 | P4-43 | 사용자 결정: 보호 대상 없앰(둥지 마지막 몇 마리·멸종 위기 종 사냥 중단 삭제, 약한 슬라임을 "건드릴 상대가 아니야"로 피하던 원인)·멸종 개념 삭제(빈 둥지 6시간 뒤 2마리, 경고 표시 삭제) | 이재혁 | 완료 | Ecosystem/EcosystemManager·Nest, Adventurers/FreeHunt·FreeHuntState, UI 생태·게시판·게임 오버 | b859a56 |
 | P4-45 | 사용자 보고: 적 종끼리 안 싸움(모든 다른 종끼리 적대, 사용자 결정)·성문 부수는 몬스터 무시(마을 경비가 대응)·점검에서 찾은 성문/미니맵 초기화 전 예외 | 이재혁 | 완료 | Monsters/Monster, Adventurers/TownGuardState, Town/TownGate, UI/MinimapView | dcb1fbf, 4de02d6 |
 | P4-46 | 사용자 보고: 유인한 몬스터가 싸우다 둥지로 돌아감(마스터를 미끼로 취급해 싸울 수 있는 적 우선, 몬스터끼리 주고받는 중엔 귀소 안 함) | 이재혁 | 완료 | Units/TargetSelector, Monsters/MonsterStates | da43018 |
-| P4-47 | 근접 교전 국소 이동(컨텍스트 스티어링): 사거리 안에서 기다리는 동안 옆걸음·치고 빠지기·장판·겹침 회피(숙련+) | 이재혁 | 진행 중 | Units/LocalSteering(신규)·Combat·CombatTier, World/PathFollower, Visuals/CharacterVisual, Session/SkirmishMonitor | |
+| P4-47 | 근접 교전 국소 이동(컨텍스트 스티어링): 사거리 안에서 기다리는 동안 옆걸음·치고 빠지기·장판·겹침 회피(숙련+), 테스트·교전 때 카메라가 싸움을 따라감(FightCamera) | 이재혁 | 완료 | Units/LocalSteering(신규)·Combat·CombatTier, World/PathFollower, Visuals/CharacterVisual, Session/SkirmishMonitor·FightCamera(신규)·DebugCommands, Tests/PlayMode | 1230431 |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
@@ -80,7 +80,7 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45, P4-46, P5-1 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-47, P5-1 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
 - **진행 중**:
