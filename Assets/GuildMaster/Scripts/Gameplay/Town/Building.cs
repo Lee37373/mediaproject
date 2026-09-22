@@ -94,10 +94,16 @@ namespace GuildMaster.Town
 
         public void Repair(float amount) => Hp = Mathf.Min(MaxHp, Hp + amount);
 
+        /// <summary>Debug (ecosystem runs without a guild): blows land and are heard, but nothing falls.</summary>
+        public static bool DebugIndestructible { get; set; }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetDebug() => DebugIndestructible = false;
+
         public void Damage(float amount)
         {
             if (IsDestroyed) return;
-            Hp = Mathf.Max(0f, Hp - amount);
+            if (!DebugIndestructible) Hp = Mathf.Max(0f, Hp - amount);
             EventBus.Publish(new BuildingDamagedEvent { Building = this, Amount = amount });
             _tint = Color.Lerp(new Color(0.45f, 0.3f, 0.3f), Color.white, Hp / MaxHp);
             ApplyColor();

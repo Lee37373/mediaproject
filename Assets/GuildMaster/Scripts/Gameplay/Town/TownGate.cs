@@ -68,7 +68,7 @@ namespace GuildMaster.Town
         public void Damage(float amount, Units.Unit attacker = null)
         {
             if (IsBroken || amount <= 0f) return;
-            Hp = Mathf.Max(0f, Hp - amount);
+            if (!Building.DebugIndestructible) Hp = Mathf.Max(0f, Hp - amount);
             EventBus.Publish(new GateDamagedEvent { Gate = this, Amount = amount, Attacker = attacker });
             _tint = Color.Lerp(new Color(0.55f, 0.4f, 0.35f), Color.white, Hp / MaxHp);
             if (IsBroken)

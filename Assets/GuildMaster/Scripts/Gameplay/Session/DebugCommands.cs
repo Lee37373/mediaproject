@@ -792,6 +792,18 @@ namespace GuildMaster.Session
         /// <paramref name="autoPost"/> is false, keeps hunt quests on the board in the player's place.
         /// Writes a CSV under the project root when it finishes (or on BalanceStop).
         /// </summary>
+        /// <summary>The ecosystem with no guild (members off the map, town unbreakable): a snapshot per day. Read with <see cref="WildlifeReport"/>.</summary>
+        public static string WildlifeRun(int days = 20, int speed = 3)
+        {
+            var probe = WildlifeProbe.Ensure();
+            if (probe.Running) return "already running";
+            probe.Begin(days);
+            Services.Get<GameClock>().SetSpeed(speed);
+            return $"wildlife run started: {days} game days";
+        }
+
+        public static string WildlifeReport() => WildlifeProbe.Instance == null ? "not started" : WildlifeProbe.Instance.Report();
+
         public static string BalanceRun(int days = 10, bool autoPost = true, int speed = 3, string label = null)
         {
             var probe = BalanceProbe.Ensure();
