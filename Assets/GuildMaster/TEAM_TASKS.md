@@ -55,7 +55,7 @@
 | P4-54 | 숲을 낀 전투 검증(사용자 요청): 숲 안·가장자리·밖↔안 교전이 끝까지 올바르게 진행되는지 측정·수정 | 이재혁 | 완료 | Adventurers/Adventurer·AdventurerLooting, Session/DebugCommands, Ecosystem/GuildIntel | 8abbfda |
 | P4-55 | 지형 지대(사용자 결정): 초원(마을 주변)+사막·설원·늪지·황무지, 방향별 큰 지대, 이동·시야 배율, 색 변경(땅·나무·물·미니맵·몬스터) | 이재혁 | 완료 | World/TerrainRegions(신규)·MapData·MapGenerator·GridMap·ForestSight·CartoonGroundPainter·MapRenderer, UI/MinimapView, Monsters/Monster | 9fa1bcb |
 | P4-56 | 무리 이주(사용자 결정): 둥지에서 확률로 떠난 무리가 마을 쪽 둥지 자리로 옮겨 감(싸워서 빼앗음), 가는 길의 적과 싸우고 제자리 회복 후 계속, 마을 가까운 둥지의 무리만 마을 침공 | 이재혁 | 완료 | Ecosystem/MigrationService(신규), Monsters/MigrateState(신규)·Monster, Town/WaveManager, Session/GameBootstrap·DebugCommands | 5c94763 |
-| P4-57 | 사용자 보고·결정: 몬스터끼리 싸운 뒤 전리품 줍기(전투 직후·귀소 중), 종마다 보스 개체(둥지마다 낮은 확률, 죽으면 다시 안 생김) | 이재혁 | 진행 중 | Monsters/Monster·MonsterPickupState, Data/MonsterDefinition·DefaultContent, Ecosystem/EcosystemManager·MigrationService, Editor/ArtCatalogBuilder, UI/World/NameTagLayer | |
+| P4-57 | 사용자 보고·결정: 몬스터끼리 싸운 뒤 전리품 줍기(전투 직후·귀소 중), 종마다 보스 개체(둥지마다 낮은 확률, 죽으면 다시 안 생김) | 이재혁 | 완료 | Monsters/Monster·MonsterBoss(신규), Data/MonsterDefinition·DefaultContent, Ecosystem/EcosystemManager·MigrationService, Editor/ArtCatalogBuilder, UI/World/NameTagLayer | de157ed |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
