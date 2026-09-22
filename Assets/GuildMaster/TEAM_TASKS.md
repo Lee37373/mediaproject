@@ -43,6 +43,7 @@
 | P4-41 | 사용자 보고: 마을 시야 성벽 밖까지(8→18, 둥지 최소 거리 16→20)·몬스터 증식은 마릿수 대신 시간(약한 세 종 정원 원복·번식 속도 상향)·빠른 파티원 멈칫거림 | 이재혁 | 완료 | Session/GameBalance, Data/DefaultContent, Adventurers/PartyTactics | 0a77c97 |
 | P4-42 | 사용자 보고: 초반 돌 슬라임 안 잡음(둥지 남길 수 비례·관측 뒤 번식 추정)·침공 궁수 무시(반격·마을 사거리 원거리 허용)·전투 중 줍기(동료 교전 감지)·전투 시간 3배(유닛 체력·치유 ×3) | 이재혁 | 완료 | Adventurers/FreeHunt·FreeHuntState·DefendState·AdventurerLooting·Adventurer, Units/Combat·Skills, Monsters/Monster | 9855ff8 |
 | P4-43 | 사용자 결정: 보호 대상 없앰(둥지 마지막 몇 마리·멸종 위기 종 사냥 중단 삭제, 약한 슬라임을 "건드릴 상대가 아니야"로 피하던 원인)·멸종 개념 삭제(빈 둥지 6시간 뒤 2마리, 경고 표시 삭제) | 이재혁 | 완료 | Ecosystem/EcosystemManager·Nest, Adventurers/FreeHunt·FreeHuntState, UI 생태·게시판·게임 오버 | b859a56 |
+| P4-45 | 사용자 보고: 적 종끼리 안 싸움(모든 다른 종끼리 적대, 사용자 결정)·성문 부수는 몬스터 무시(마을 경비가 대응)·점검에서 찾은 성문/미니맵 초기화 전 예외 | 이재혁 | 완료 | Monsters/Monster, Adventurers/TownGuardState, Town/TownGate, UI/MinimapView | dcb1fbf, 4de02d6 |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
@@ -77,7 +78,7 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P5-1 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45, P5-1 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
 - **진행 중**:
