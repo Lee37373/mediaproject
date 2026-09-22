@@ -54,7 +54,7 @@
 | P4-53 | 맵 256×256(사용자 결정), 둥지 밀도 유지(16→64), 맵 전체 기준 거리 조정 | 이재혁 | 완료 | Session/GameBalance, Adventurers/FreeHunt, Tests | 8abbfda |
 | P4-54 | 숲을 낀 전투 검증(사용자 요청): 숲 안·가장자리·밖↔안 교전이 끝까지 올바르게 진행되는지 측정·수정 | 이재혁 | 완료 | Adventurers/Adventurer·AdventurerLooting, Session/DebugCommands, Ecosystem/GuildIntel | 8abbfda |
 | P4-55 | 지형 지대(사용자 결정): 초원(마을 주변)+사막·설원·늪지·황무지, 방향별 큰 지대, 이동·시야 배율, 색 변경(땅·나무·물·미니맵·몬스터) | 이재혁 | 완료 | World/TerrainRegions(신규)·MapData·MapGenerator·GridMap·ForestSight·CartoonGroundPainter·MapRenderer, UI/MinimapView, Monsters/Monster | 9fa1bcb |
-| P4-56 | 무리 이주(사용자 결정): 둥지에서 확률로 떠난 무리가 마을 쪽 둥지 자리로 옮겨 감(싸워서 빼앗음), 가는 길의 적과 싸우고 제자리 회복 후 계속, 마을 가까운 둥지의 무리만 마을 침공 | 이재혁 | 진행 중 | Ecosystem/MigrationService(신규), Monsters/MigrateState(신규)·Monster, Town/WaveManager, Session/GameBootstrap·DebugCommands | |
+| P4-56 | 무리 이주(사용자 결정): 둥지에서 확률로 떠난 무리가 마을 쪽 둥지 자리로 옮겨 감(싸워서 빼앗음), 가는 길의 적과 싸우고 제자리 회복 후 계속, 마을 가까운 둥지의 무리만 마을 침공 | 이재혁 | 완료 | Ecosystem/MigrationService(신규), Monsters/MigrateState(신규)·Monster, Town/WaveManager, Session/GameBootstrap·DebugCommands | 5c94763 |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
@@ -89,7 +89,7 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-55, P5-1 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P5-1 (위 표 참고)
 
 ### 팀원 (이름을 적어 주세요)
 - **진행 중**:
