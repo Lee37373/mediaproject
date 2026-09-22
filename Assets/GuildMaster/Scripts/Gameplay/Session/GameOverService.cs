@@ -16,8 +16,6 @@ namespace GuildMaster.Session
         public int Recruits;
         /// <summary>Raid waves the town has faced (the current one included).</summary>
         public int Waves;
-        /// <summary>Species wiped out by the end (revealed on the result screen only).</summary>
-        public int ExtinctSpecies;
     }
 
     /// <summary>
@@ -58,7 +56,6 @@ namespace GuildMaster.Session
             {
                 Reason = reason, Day = _clock.Day, Members = members, QuestsCompleted = done, Recruits = _recruits,
                 Waves = Services.TryGet<Town.WaveManager>(out var waves) ? waves.RaidCount : 0,
-                ExtinctSpecies = Services.TryGet<Ecosystem.EcosystemManager>(out var eco) ? eco.Species.Count(eco.IsExtinct) : 0,
             });
         }
     }

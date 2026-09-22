@@ -88,7 +88,6 @@ namespace GuildMaster.Session
                     : $"{e.TraderName}에게 {name} x{e.Count} 판매 (+{e.Gold}G)", LogCategory.Economy);
             });
             // Ecosystem news only when the guild could witness it (GuildIntel rule; also feeds LLM prompts).
-            // Extinction is never announced: the guild cannot know that a species is gone everywhere.
             EventBus.Subscribe<NestClearedEvent>(e =>
             {
                 if (Witnessed(e.Nest) || e.Killer is Adventurer)

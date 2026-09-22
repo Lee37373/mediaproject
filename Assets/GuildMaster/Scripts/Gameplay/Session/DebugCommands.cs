@@ -22,7 +22,7 @@ namespace GuildMaster.Session
             var t = Services.Get<GuildTreasury>();
             sb.AppendLine($"[{clock.FormatTime()}] gold={t.Gold} exp={t.Exp} stock={string.Join(",", t.Stock.Where(kv => kv.Value > 0).Select(kv => kv.Key + ":" + kv.Value))}");
             var eco = Services.Get<EcosystemManager>();
-            sb.AppendLine("pop: " + string.Join(" ", eco.Species.Select(s => $"{s.id}={eco.GetPopulation(s)}{(eco.IsExtinct(s) ? "(X)" : "")}")));
+            sb.AppendLine("pop: " + string.Join(" ", eco.Species.Select(s => $"{s.id}={eco.GetPopulation(s)}")));
             foreach (var a in Services.Get<GuildRoster>().Members)
                 sb.AppendLine($"  {a.Data.id} {a.Data.name} {a.Data.cls} Lv{a.Data.level} hp={a.Hp:0}/{a.Stats.MaxHp:0} gold={a.Data.gold} fat={a.Data.fatigue:0} loot={a.Data.LootCount} pot={a.Data.potions} state={a.StateLabel} quest={a.CurrentQuest?.Id}");
             foreach (var q in Services.Get<QuestBoard>().Quests)

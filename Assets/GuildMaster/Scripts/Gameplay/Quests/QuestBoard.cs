@@ -44,7 +44,6 @@ namespace GuildMaster.Quests
             _clock = clock;
             EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Subscribe<NestClearedEvent>(OnNestCleared);
-            EventBus.Subscribe<SpeciesExtinctEvent>(OnSpeciesExtinct);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
         }
 
@@ -52,7 +51,6 @@ namespace GuildMaster.Quests
         {
             EventBus.Unsubscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Unsubscribe<NestClearedEvent>(OnNestCleared);
-            EventBus.Unsubscribe<SpeciesExtinctEvent>(OnSpeciesExtinct);
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
         }
 
@@ -252,17 +250,6 @@ namespace GuildMaster.Quests
             if (n == null || q.Species == null) return false;
             var species = Services.TryGet<GuildIntel>(out var intel) ? intel.SpeciesOf(n) : n.Species;
             return species == q.Species && Vector2.Distance(n.WorldPosition, q.Point) <= q.Radius;
-        }
-
-        void OnSpeciesExtinct(SpeciesExtinctEvent e)
-        {
-            foreach (var q in _quests.ToList())
-                if (q.IsActive && q.Type == QuestType.Hunt && q.Species == e.Species)
-                {
-                    // Partial success counts: pay out if anything was hunted, otherwise fail and refund.
-                    if (q.Progress > 0 && q.Assignees.Count > 0) Complete(q);
-                    else Close(q, QuestStatus.Failed, refund: true);
-                }
         }
 
         // ---------------- Escort (P3-4a) ----------------

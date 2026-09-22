@@ -136,7 +136,6 @@ namespace GuildMaster.Session
 
             var eco = AddSystem<EcosystemManager>();
             Services.Register(eco);
-            eco.SpeciesReturnDays = Balance.speciesReturnDays; // P5-1: extinction is not permanent
             eco.Init(db, map, GameRandom.Shared);
             // Territorial clashes: lopsided fights rout the weaker side (P4-18).
             var territory = AddSystem<TerritoryService>();

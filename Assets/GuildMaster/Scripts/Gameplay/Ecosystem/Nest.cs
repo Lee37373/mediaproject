@@ -23,6 +23,8 @@ namespace GuildMaster.Ecosystem
         public Biome Biome { get; private set; }
         public int Capacity { get; private set; }
         public float GrowthAccumulator { get; set; }
+        /// <summary>Game hours the nest has been empty (it is settled again at <see cref="EcosystemManager.RefillHours"/>).</summary>
+        public int EmptyHours { get; set; }
         public bool Discovered { get; private set; }
 
         public IReadOnlyList<Monster> Members => _members;
@@ -91,6 +93,7 @@ namespace GuildMaster.Ecosystem
             Species = species;
             Capacity = species.nestCapacity;
             GrowthAccumulator = 0f;
+            EmptyHours = 0;
             name = $"Nest {NestId} ({species.id})";
             // The map keeps the old den art until the guild sees the new owners (GuildIntel).
         }

@@ -53,11 +53,6 @@ namespace GuildMaster.UI
                 // Compact here (the row is one line); the nest inspector shows the full item list.
                 var gear = intel.GearOf(s);
                 if (gear.Any) status += UIBuilder.Colored(GearTag(gear), gear.HasCrown ? UITheme.Accent : UITheme.Warn);
-                // P5-1: flag species the guild has hunted down to a handful.
-                var ecology = EcologyWarning.Status(s, seen, nests);
-                if (ecology != EcologyStatus.Healthy)
-                    status += UIBuilder.Colored(" · " + EcologyWarning.Label(ecology),
-                                                ecology == EcologyStatus.Endangered ? UITheme.Bad : UITheme.Warn);
                 _speciesRows[i].text = $"{s.displayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(s.danger), UITheme.Danger(s.danger))}\n" +
                                        $"<color=#{UITheme.Hex(UITheme.TextMuted)}>{nestText}</color>{status}";
             }

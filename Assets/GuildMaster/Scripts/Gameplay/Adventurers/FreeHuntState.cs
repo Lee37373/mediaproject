@@ -34,8 +34,6 @@ namespace GuildMaster.Adventurers
         int _enemies;
         int _nestNearby;
         HuntBand _band;
-        /// <summary>Species the guild's own count says to leave alone; refreshed on the search tick.</summary>
-        readonly System.Collections.Generic.HashSet<MonsterDefinition> _spared = new();
         /// <summary>Us and the members close enough to fight beside us, as the fight estimate sees them.</summary>
         readonly System.Collections.Generic.List<CombatStats> _bandStats = new();
         readonly System.Collections.Generic.List<float> _bandHp = new();
@@ -69,15 +67,10 @@ namespace GuildMaster.Adventurers
 
         bool IsLeader => _band == null || _band.Leader == Owner;
 
-        /// <summary>Worth attacking: one we can handle, of a species the guild is not running short of.</summary>
+        /// <summary>Worth attacking: one we can handle (P4-43: nothing is spared any more).</summary>
         bool Huntable(Unit u)
-            => u is Monster m && m.IsAlive && m.Def != null && !_spared.Contains(m.Def) && !LastOfItsDen(m)
+            => u is Monster m && m.IsAlive && m.Def != null
                && FreeHunt.CanTake(_bandStats, _bandHp, m.Stats, FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby));
-
-        /// <summary>One of the last few of a den the guild knows (P4-40): left to breed.</summary>
-        static bool LastOfItsDen(Monster m)
-            => m.Home != null && m.Home.Discovered && Services.TryGet<GuildIntel>(out var intel)
-               && FreeHunt.SpareAtDen(m.Def, ExpectedAt(intel, m.Home));
 
         /// <summary>What the guild expects at a den now: its last count, grown back since (P4-42).</summary>
         static int ExpectedAt(GuildIntel intel, Nest n)
@@ -165,7 +158,7 @@ namespace GuildMaster.Adventurers
 
         /// <summary>
         /// What the guild knows about here, refreshed once per search: how many of us, how many of
-        /// them, whose den we are standing in, and which species to leave alone. The den counts come
+        /// them, whose den we are standing in. The den counts come
         /// from <see cref="GuildIntel"/>, so they are what the whole guild has seen between them —
         /// a member walks in already knowing what a colleague found here (user request).
         /// </summary>
@@ -174,11 +167,7 @@ namespace GuildMaster.Adventurers
             CountBand(a);
             _enemies = UnitRegistry.CountInRadius(a.Position, a.Stats.SightRadius, u => u is Monster m && m.IsAlive);
             _nestNearby = 0;
-            _spared.Clear();
-            if (!Services.TryGet<GuildIntel>(out var intel) || !Services.TryGet<EcosystemManager>(out var eco)) return;
-            foreach (var s in eco.Species)
-                if (FreeHunt.Spare(EcologyWarning.Status(s, intel.ObservedPopulation(s), intel.KnownNestCount(s))))
-                    _spared.Add(s);
+            if (!Services.TryGet<GuildIntel>(out var intel)) return;
             foreach (var n in intel.KnownNests)
                 if (Vector2.Distance(n.WorldPosition, a.Position) <= NestNearRadius)
                     _nestNearby = Mathf.Max(_nestNearby, intel.Get(n).LastCount);
@@ -256,7 +245,7 @@ namespace GuildMaster.Adventurers
                 {
                     var s = intel.SpeciesOf(n);
                     int count = ExpectedAt(intel, n);
-                    if (s == null || count <= 0 || _spared.Contains(s)) continue;
+                    if (s == null || count <= 0) continue;
                     if (Vector2.Distance(n.WorldPosition, town) > _reach) continue;
                     if (Vector2.Distance(n.WorldPosition, a.Position) < SpotReached * 2f) continue;
                     if (avoid != null && Vector2.Distance(n.WorldPosition, avoid.Value) <= _reach * 0.3f) continue;

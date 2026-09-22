@@ -194,23 +194,7 @@ namespace GuildMaster.UI
                 ? UIBuilder.Colored($"예치 후 잔액 {t.Gold - draft.RewardGold}G / {t.Exp - draft.RewardExp}EXP", UITheme.TextMuted)
                 : UIBuilder.Colored("길드 자금이 부족합니다", UITheme.Bad);
             string risk = RiskText(draft, danger);
-            string ecology = EcologyText(draft.Species);
-            _danger.text = dangerText + (risk.Length > 0 ? "\n" + risk : "")
-                         + (ecology.Length > 0 ? "\n" + ecology : "") + "\n" + afford;
-        }
-
-        /// <summary>
-        /// P5-1: warns before the guild hunts a species it has already thinned out. It reads the
-        /// guild's own observations, so it says what the guild believes, not what really lives out
-        /// there — and it never blocks the posting.
-        /// </summary>
-        static string EcologyText(MonsterDefinition species)
-        {
-            if (species == null || !Services.TryGet<GuildIntel>(out var intel)) return "";
-            var status = EcologyWarning.Status(species, intel.ObservedPopulation(species), intel.KnownNestCount(species));
-            if (status == EcologyStatus.Healthy) return "";
-            var color = status == EcologyStatus.Endangered ? UITheme.Bad : UITheme.Warn;
-            return UIBuilder.Colored(EcologyWarning.Advice(species, status), color);
+            _danger.text = dangerText + (risk.Length > 0 ? "\n" + risk : "") + "\n" + afford;
         }
 
         /// <summary>

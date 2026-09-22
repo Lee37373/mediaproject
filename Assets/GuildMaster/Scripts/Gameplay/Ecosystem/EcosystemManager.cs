@@ -10,9 +10,6 @@ using UnityEngine;
 namespace GuildMaster.Ecosystem
 {
     public struct SpeciesPopulationChangedEvent { public MonsterDefinition Species; public int Population; }
-    public struct SpeciesExtinctEvent { public MonsterDefinition Species; }
-    /// <summary>A species wiped out earlier has settled again (P5-1: the last nest is protected).</summary>
-    public struct SpeciesReturnedEvent { public MonsterDefinition Species; public Nest Nest; }
     public struct NestClearedEvent { public Nest Nest; public Unit Killer; }
     public struct NestDiscoveredEvent { public Nest Nest; }
     public struct NestRecolonizedEvent { public Nest Nest; }
@@ -21,26 +18,23 @@ namespace GuildMaster.Ecosystem
     /// Monster ecosystem simulation:
     /// - logistic growth per nest each game hour,
     /// - predators' growth scales with prey availability; starving predators die off,
-    /// - empty nests can be recolonized by surviving members of the species,
-    /// - a species wiped out entirely is gone for a few days and then settles again
-    ///   (P5-1, user decision 2026-09-20: extinction is not permanent).
+    /// - an emptied nest is settled again by its species after <see cref="RefillHours"/>.
+    /// There is no extinction (P4-43, user decision 2026-09-22): a species always has its nests.
+    /// Extinction may come back later as a slow shift over time (stronger kinds appear at the edge,
+    /// the old ones move inwards) — not as something the guild's hunting causes.
     /// </summary>
     public class EcosystemManager : MonoBehaviour
     {
         readonly List<Nest> _nests = new();
         readonly Dictionary<MonsterDefinition, int> _population = new();
-        readonly HashSet<MonsterDefinition> _extinct = new();
-        /// <summary>Day each wiped-out species disappeared, so it can settle again (P5-1).</summary>
-        readonly Dictionary<MonsterDefinition, int> _goneSinceDay = new();
         GameDatabase _db;
-        int _day = 1;
 
         [SerializeField] float starvationChancePerHour = 0.03f;
-        // P4-37: free hunting empties near-town nests regularly, so survivors move back in faster.
-        [SerializeField] float recolonizeChancePerDay = 0.5f;
 
-        /// <summary>Days a wiped-out species stays away before it settles again (0 = never).</summary>
-        public int SpeciesReturnDays { get; set; } = 3;
+        /// <summary>Game hours an emptied nest stays empty before two of its kind move back in (user decision).</summary>
+        public const int RefillHours = 6;
+        /// <summary>How many settle an emptied nest again.</summary>
+        public const int RefillCount = 2;
 
         // P5-1 handed the guild its two nearest nests so day one was not pure fog. Removed on
         // 2026-09-20 (user decision): an orange minimap dot on ground nobody had walked broke the
@@ -51,7 +45,6 @@ namespace GuildMaster.Ecosystem
         public int TotalMonsters => _population.Values.Sum();
 
         public int GetPopulation(MonsterDefinition species) => species != null && _population.TryGetValue(species, out var n) ? n : 0;
-        public bool IsExtinct(MonsterDefinition species) => _extinct.Contains(species);
 
         public void Init(GameDatabase db, MapData map, GameRandom rng)
         {
@@ -71,13 +64,11 @@ namespace GuildMaster.Ecosystem
             }
 
             EventBus.Subscribe<HourPassedEvent>(OnHourPassed);
-            EventBus.Subscribe<DayPassedEvent>(OnDayPassed);
         }
 
         void OnDestroy()
         {
             EventBus.Unsubscribe<HourPassedEvent>(OnHourPassed);
-            EventBus.Unsubscribe<DayPassedEvent>(OnDayPassed);
         }
 
         /// <summary>
@@ -190,12 +181,6 @@ namespace GuildMaster.Ecosystem
             int pop = Mathf.Max(0, GetPopulation(species) + delta);
             _population[species] = pop;
             EventBus.Publish(new SpeciesPopulationChangedEvent { Species = species, Population = pop });
-            if (pop == 0 && delta < 0 && _extinct.Add(species))
-            {
-                _goneSinceDay[species] = _day;
-                Debug.Log($"[Ecosystem] {species.displayName} wiped out (day {_day})");
-                EventBus.Publish(new SpeciesExtinctEvent { Species = species });
-            }
         }
 
         /// <summary>0..1+ food availability for a predator species (1 = plenty of prey).</summary>
@@ -209,11 +194,18 @@ namespace GuildMaster.Ecosystem
 
         void OnHourPassed(HourPassedEvent e)
         {
-            _day = e.Day;
             var rng = GameRandom.Shared;
             foreach (var nest in _nests)
             {
-                if (nest.IsEmpty || IsExtinct(nest.Species)) continue;
+                if (nest.IsEmpty)
+                {
+                    if (++nest.EmptyHours < RefillHours) continue;
+                    nest.EmptyHours = 0;
+                    for (int i = 0; i < RefillCount; i++) Spawn(nest);
+                    EventBus.Publish(new NestRecolonizedEvent { Nest = nest });
+                    continue;
+                }
+                nest.EmptyHours = 0;
                 var s = nest.Species;
                 int pop = nest.Population;
                 float food = FoodFactor(s);
@@ -238,53 +230,6 @@ namespace GuildMaster.Ecosystem
                 }
             }
         }
-
-        void OnDayPassed(DayPassedEvent e)
-        {
-            _day = e.Day;
-            BringBackWipedOutSpecies(e.Day);
-
-            var rng = GameRandom.Shared;
-            foreach (var nest in _nests)
-            {
-                if (!nest.IsEmpty || IsExtinct(nest.Species)) continue;
-                // A single survivor is enough to repopulate an empty nest of its own kind.
-                if (GetPopulation(nest.Species) < 1 || !rng.Chance(recolonizeChancePerDay)) continue;
-                Spawn(nest);
-                Spawn(nest);
-                EventBus.Publish(new NestRecolonizedEvent { Nest = nest });
-            }
-        }
-
-        /// <summary>
-        /// Settles species that were wiped out entirely back into one of their empty nests
-        /// (P5-1, user decision: extinction is not permanent — the last nest is protected).
-        /// </summary>
-        void BringBackWipedOutSpecies(int day)
-        {
-            if (SpeciesReturnDays <= 0 || _extinct.Count == 0) return;
-            var returning = _extinct
-                .Where(s => day - (_goneSinceDay.TryGetValue(s, out var d) ? d : day) >= SpeciesReturnDays)
-                .ToList();
-            foreach (var species in returning)
-            {
-                var nest = PickReturnNest(species);
-                if (nest == null) continue; // no room right now; try again tomorrow
-                if (nest.Species != species) nest.ChangeSpecies(species);
-                _extinct.Remove(species);
-                _goneSinceDay.Remove(species);
-                Spawn(nest);
-                Spawn(nest);
-                Debug.Log($"[Ecosystem] {species.displayName} settled again at {nest.NestId} (day {day})");
-                EventBus.Publish(new SpeciesReturnedEvent { Species = species, Nest = nest });
-            }
-        }
-
-        /// <summary>An empty nest for a returning species: its own old ground first, else any free one.</summary>
-        Nest PickReturnNest(MonsterDefinition species)
-            => _nests.FirstOrDefault(n => n.IsEmpty && n.Species == species)
-            ?? _nests.FirstOrDefault(n => n.IsEmpty && !_extinct.Contains(n.Species) && GetPopulation(n.Species) > 0)
-            ?? _nests.FirstOrDefault(n => n.IsEmpty);
 
         public IEnumerable<Nest> NestsOf(MonsterDefinition species) => _nests.Where(n => n.Species == species);
 

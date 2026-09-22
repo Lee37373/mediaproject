@@ -52,7 +52,7 @@ namespace GuildMaster.Session
 
         // Cumulative counters, all collected from events so nothing is polled per frame.
         int _deaths, _joins, _levelUps, _questsPosted, _questsCompleted, _questsFailed, _questsCancelled;
-        int _raidsSighted, _raidersKilled, _gearBought, _extinctions, _nestsCleared, _recolonized;
+        int _raidsSighted, _raidersKilled, _gearBought, _nestsCleared, _recolonized;
         /// <summary>Monsters the guild killed, by species (P4-42: which prey the early hunts actually take).</summary>
         readonly Dictionary<string, int> _guildKills = new();
         int _startDay;
@@ -73,7 +73,7 @@ namespace GuildMaster.Session
             _rows.Clear();
             _deaths = _joins = _levelUps = 0;
             _questsPosted = _questsCompleted = _questsFailed = _questsCancelled = 0;
-            _raidsSighted = _raidersKilled = _gearBought = _extinctions = _nestsCleared = _recolonized = 0;
+            _raidsSighted = _raidersKilled = _gearBought = _nestsCleared = _recolonized = 0;
             _guildKills.Clear();
             StopAfterDays = days;
             CsvPath = csvPath;
@@ -90,7 +90,6 @@ namespace GuildMaster.Session
             EventBus.Subscribe<QuestClosedEvent>(OnClosed);
             EventBus.Subscribe<RaidSightedEvent>(OnRaidSighted);
             EventBus.Subscribe<RaidEndedEvent>(OnRaidEnded);
-            EventBus.Subscribe<SpeciesExtinctEvent>(OnExtinct);
             EventBus.Subscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Subscribe<NestRecolonizedEvent>(OnRecolonized);
             EventBus.Subscribe<GuildMaster.Units.UnitDiedEvent>(OnUnitDied);
@@ -111,7 +110,6 @@ namespace GuildMaster.Session
             EventBus.Unsubscribe<QuestClosedEvent>(OnClosed);
             EventBus.Unsubscribe<RaidSightedEvent>(OnRaidSighted);
             EventBus.Unsubscribe<RaidEndedEvent>(OnRaidEnded);
-            EventBus.Unsubscribe<SpeciesExtinctEvent>(OnExtinct);
             EventBus.Unsubscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Unsubscribe<NestRecolonizedEvent>(OnRecolonized);
             EventBus.Unsubscribe<GuildMaster.Units.UnitDiedEvent>(OnUnitDied);
@@ -131,7 +129,6 @@ namespace GuildMaster.Session
         void OnPosted(QuestPostedEvent e) => _questsPosted++;
         void OnRaidSighted(RaidSightedEvent e) => _raidsSighted++;
         void OnRaidEnded(RaidEndedEvent e) => _raidersKilled += e.Killed;
-        void OnExtinct(SpeciesExtinctEvent e) => _extinctions++;
         void OnNestCleared(NestClearedEvent e) => _nestsCleared++;
         void OnRecolonized(NestRecolonizedEvent e) => _recolonized++;
 
@@ -163,7 +160,7 @@ namespace GuildMaster.Session
             var sb = new StringBuilder(
                 "day,hour,gold,guild_exp,members,avg_level,max_level,avg_gear,avg_fatigue," +
                 "deaths,joins,level_ups,posted,completed,failed,cancelled," +
-                "raids_sighted,raiders_killed,gear_bought,extinct,nests_cleared,recolonized," +
+                "raids_sighted,raiders_killed,gear_bought,nests_cleared,recolonized," +
                 "open_quests,potions,townhall_hp,master_hp,known_nests,total_pop,nests");
             foreach (var s in species) sb.Append(",pop_").Append(s.id).Append(",nest_").Append(s.id);
             return sb.ToString();
@@ -204,7 +201,7 @@ namespace GuildMaster.Session
                .Append(_questsPosted).Append(',').Append(_questsCompleted).Append(',')
                .Append(_questsFailed).Append(',').Append(_questsCancelled).Append(',')
                .Append(_raidsSighted).Append(',').Append(_raidersKilled).Append(',')
-               .Append(_gearBought).Append(',').Append(_extinctions).Append(',')
+               .Append(_gearBought).Append(',')
                .Append(_nestsCleared).Append(',').Append(_recolonized).Append(',')
                .Append(openQuests).Append(',').Append(potions).Append(',')
                .Append(hallHp.ToString("0", c)).Append(',')
@@ -237,11 +234,11 @@ namespace GuildMaster.Session
             sb.AppendLine($"  gold={_treasury.Gold} guildExp={_treasury.Exp} potions={_treasury.GetStock(DefaultContent.Potion)}");
             sb.AppendLine($"  members={_roster.Members.Count} joins={_joins} deaths={_deaths} levelUps={_levelUps} gearBought={_gearBought}");
             sb.AppendLine($"  quests posted={_questsPosted} completed={_questsCompleted} failed={_questsFailed} cancelled={_questsCancelled}");
-            sb.AppendLine($"  raids sighted={_raidsSighted} raidersKilled={_raidersKilled} nestsCleared={_nestsCleared} recolonized={_recolonized} extinct={_extinctions}");
+            sb.AppendLine($"  raids sighted={_raidsSighted} raidersKilled={_raidersKilled} nestsCleared={_nestsCleared} recolonized={_recolonized}");
             foreach (var a in _roster.Members)
                 sb.AppendLine($"    {a.Data.name} {AdventurerData.ClassLabel(a.Data.cls)} Lv{a.Data.level} ({a.Data.exp}/{a.Data.ExpToNextLevel}) gear={a.Data.gearTier} kills={a.Data.kills} quests={a.Data.questsCompleted}");
             foreach (var s in _species)
-                sb.AppendLine($"    {s.id}: pop={_eco.GetPopulation(s)} nests={_eco.NestsOf(s).Count(x => !x.IsEmpty)}{(_eco.IsExtinct(s) ? " EXTINCT" : "")}");
+                sb.AppendLine($"    {s.id}: pop={_eco.GetPopulation(s)} nests={_eco.NestsOf(s).Count(x => !x.IsEmpty)}");
             sb.AppendLine("  guild kills: " + (_guildKills.Count == 0 ? "none" : string.Join(" ", _guildKills.OrderByDescending(k => k.Value).Select(k => $"{k.Key}={k.Value}"))));
             if (!string.IsNullOrEmpty(CsvPath)) sb.AppendLine("  csv: " + CsvPath);
             return sb.ToString();

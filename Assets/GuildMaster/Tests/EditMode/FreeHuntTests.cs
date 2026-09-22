@@ -88,11 +88,8 @@ namespace GuildMaster.Tests
             Assert.That(FreeHunt.DenScore(slime, 30, 20f), Is.EqualTo(FreeHunt.DenScore(slime, 20, 20f)),
                         "a trip only takes so many");
 
-            // The last few of a den are left to breed (first measured run: slimes gone on day 3).
-            int leave = FreeHunt.LeaveAt(slime);
-            Assert.That(FreeHunt.SpareAtDen(slime, leave), Is.True);
-            Assert.That(FreeHunt.SpareAtDen(slime, leave + 1), Is.False);
-            Assert.That(FreeHunt.DenScore(slime, leave, 5f), Is.EqualTo(0f), "nothing left worth taking there");
+            // P4-43: nothing is spared, so even the last one is worth the walk.
+            Assert.That(FreeHunt.DenScore(slime, 1, 5f), Is.GreaterThan(0f));
             Assert.That(FreeHunt.DenScore(skull, 4, 30f), Is.GreaterThan(FreeHunt.DenScore(slime, 4, 30f)), "richer prey is worth more");
 
             // Scouting is spread evenly out to the reach, so the near rings get walked too.
@@ -135,25 +132,6 @@ namespace GuildMaster.Tests
             Assert.That(FreeHunt.WorthGoing(AdventurerClass.Priest, 2), Is.True, "with a party it is exactly where it belongs");
             Assert.That(FreeHunt.WorthGoing(AdventurerClass.Warrior, 1), Is.True);
             Assert.That(FreeHunt.WorthGoing(AdventurerClass.Ranger, 1), Is.True);
-        }
-
-        [Test]
-        public void ASelfChosenHuntStopsBeforeItEmptiesTheCountryside()
-        {
-            // First measured run: three members hunting all day wiped the slimes out in two game
-            // hours, which also cut off the potion supply.
-            Assert.That(FreeHunt.Spare(EcologyStatus.Healthy), Is.False);
-            Assert.That(FreeHunt.Spare(EcologyStatus.Thinning), Is.False, "thinning alone is the milder warning, not a ban");
-            Assert.That(FreeHunt.Spare(EcologyStatus.Endangered), Is.True);
-
-            var db = DefaultContent.Build();
-            var slime = db.monsters.Find(m => m.id == "slime");
-            // Judged on what the guild counted, not on the simulation (information rule).
-            Assert.That(FreeHunt.Spare(EcologyWarning.Status(slime, observed: 15, knownNests: 3)), Is.False);
-            Assert.That(FreeHunt.Spare(EcologyWarning.Status(slime, observed: 6, knownNests: 3)), Is.False);
-            Assert.That(FreeHunt.Spare(EcologyWarning.Status(slime, observed: 2, knownNests: 3)), Is.True, "a last handful is left alone");
-            Assert.That(FreeHunt.Spare(EcologyWarning.Status(slime, observed: 0, knownNests: 0)), Is.False,
-                        "with no nest found the guild has no basis to spare anything");
         }
 
         [Test]
@@ -253,26 +231,24 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void AFreshStoneSlimeDenIsWorthHunting_AndASparedDenIsWorthALookLater()
+        public void AFreshStoneSlimeDenIsWorthHunting_AndAThinnedDenIsWorthALookLater()
         {
             // P4-42, user report 2026-09-22: "early on they never fight stone slimes".
             var db = DefaultContent.Build();
             MonsterDefinition M(string id) => db.monsters.Find(m => m.id == id);
             var stone = M("stone_slime");
-            Assert.That(stone.initialPopulation - FreeHunt.LeaveAt(stone), Is.GreaterThanOrEqualTo(2),
-                        "a den as it starts has a couple to take");
             Assert.That(FreeHunt.DenScore(stone, stone.initialPopulation, 40f), Is.GreaterThan(0f));
-            foreach (var s in db.monsters)
-                Assert.That(FreeHunt.LeaveAt(s), Is.InRange(1, FreeHunt.LeaveAtDen), s.id);
 
-            // A den left with its last few has bred back when nobody has looked for a while...
+            // A den left with a few has bred back when nobody has looked for a while...
             var slime = M("slime");
-            int left = FreeHunt.LeaveAt(slime);
-            Assert.That(FreeHunt.ExpectedDenCount(slime, left, 0f), Is.EqualTo(left));
-            Assert.That(FreeHunt.ExpectedDenCount(slime, left, 12f), Is.GreaterThan(left + 1));
-            Assert.That(FreeHunt.ExpectedDenCount(slime, left, 500f), Is.InRange(slime.nestCapacity - 1, slime.nestCapacity));
-            // ...but an emptied one is not guessed back to life.
-            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, 48f), Is.EqualTo(0));
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 2, 0f), Is.EqualTo(2));
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 2, 12f), Is.GreaterThan(3));
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 2, 500f), Is.InRange(slime.nestCapacity - 1, slime.nestCapacity));
+            // ...and an emptied one is known to be settled again after the refill time (P4-43).
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, Ecosystem.EcosystemManager.RefillHours - 1), Is.EqualTo(0));
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, Ecosystem.EcosystemManager.RefillHours),
+                        Is.EqualTo(Ecosystem.EcosystemManager.RefillCount));
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, 48f), Is.GreaterThan(Ecosystem.EcosystemManager.RefillCount));
         }
 
         [Test]

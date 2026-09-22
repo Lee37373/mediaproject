@@ -110,33 +110,21 @@ namespace GuildMaster.Adventurers
         public const int DenCountCap = 6;
 
         /// <summary>
-        /// Members of a known den a self-chosen hunt leaves alive, so it can breed back (P4-40).
-        /// With bigger slime nests and hunts aimed at the best den, the first measured run still
-        /// wiped slimes out on day 3: the species-wide warning only trips at three left in all.
-        /// Judged on what the guild last counted there, like everything else.
-        /// </summary>
-        public const int LeaveAtDen = 3;
-
-        /// <summary>
-        /// What to leave at a den of this species: about a third of a full nest, 1 to
-        /// <see cref="LeaveAtDen"/> (P4-42). A flat three left a stone slime den (six, four at the
-        /// start) with one to take, so the early hunts walked past them (user report 2026-09-22).
-        /// </summary>
-        public static int LeaveAt(MonsterDefinition species)
-            => species == null ? LeaveAtDen : Mathf.Clamp(Mathf.RoundToInt(species.nestCapacity * 0.3f), 1, LeaveAtDen);
-
-        public static bool SpareAtDen(MonsterDefinition species, int count) => count <= LeaveAt(species);
-
-        /// <summary>
         /// How many the guild expects at a den it last counted <paramref name="lastCount"/> at,
         /// <paramref name="hoursSince"/> ago (P4-42): everyone knows how fast a kind breeds, so a
         /// den left with its last few is worth a look again later. The old count stayed put until
-        /// someone happened by, and a spared den was never visited again. An emptied den stays
-        /// empty — who moves in is not something to guess.
+        /// someone happened by. An emptied den is known to be settled again after
+        /// <see cref="EcosystemManager.RefillHours"/> (P4-43).
         /// </summary>
         public static int ExpectedDenCount(MonsterDefinition species, int lastCount, float hoursSince)
         {
-            if (species == null || lastCount <= 0 || hoursSince <= 0f) return Mathf.Max(0, lastCount);
+            if (species == null || hoursSince <= 0f) return Mathf.Max(0, lastCount);
+            if (lastCount <= 0)
+            {
+                if (hoursSince < EcosystemManager.RefillHours) return 0;
+                lastCount = EcosystemManager.RefillCount;
+                hoursSince -= EcosystemManager.RefillHours;
+            }
             float pop = lastCount, cap = Mathf.Max(1, species.nestCapacity);
             for (float h = 0f; h < hoursSince && pop < cap; h += 1f)
             {
@@ -155,8 +143,8 @@ namespace GuildMaster.Adventurers
         /// fighting — random spots across a 65-cell circle mostly land on empty ground far out.
         /// </summary>
         public static float DenScore(MonsterDefinition species, int lastCount, float distance)
-            => species == null || SpareAtDen(species, lastCount) ? 0f
-             : species.expValue * Mathf.Min(lastCount - LeaveAt(species), DenCountCap) / (8f + Mathf.Max(0f, distance));
+            => species == null || lastCount <= 0 ? 0f
+             : species.expValue * Mathf.Min(lastCount, DenCountCap) / (8f + Mathf.Max(0f, distance));
 
         /// <summary>
         /// How far from town to scout: uniform in distance, not in area. Area-uniform points pile up
@@ -196,15 +184,6 @@ namespace GuildMaster.Adventurers
             if (species.packHunter) expected = Mathf.Max(expected, AssumedPackSize);
             return Mathf.Max(expected, Mathf.CeilToInt(nestNearby * NestJoinFraction));
         }
-
-        /// <summary>
-        /// Whether a species is off limits for a self-chosen hunt: the guild's own endangered
-        /// warning (P5-1) calls it off, and the player can still post a quest against them on
-        /// purpose. Only "멸종 위기", not "개체 감소" — the count comes from the nests the guild has
-        /// found, so one den it last saw emptied already reads low, and sparing at the milder step
-        /// left the members with nothing to hunt at all (measured run, day 1: everything spared).
-        /// </summary>
-        public static bool Spare(EcologyStatus status) => status == EcologyStatus.Endangered;
 
         /// <summary>
         /// Time to walk home. A newly posted quest wins: the player's orders come before a hunt the

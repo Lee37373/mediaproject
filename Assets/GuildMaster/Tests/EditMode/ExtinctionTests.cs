@@ -4,19 +4,16 @@ using NUnit.Framework;
 namespace GuildMaster.Tests
 {
     /// <summary>
-    /// Extinction is not permanent (P5-1, user decision 2026-09-20): a species wiped out settles
-    /// again after a few days, so the last nest of a species can never be lost for good.
+    /// There is no extinction (P4-43, user decision 2026-09-22): an emptied nest is settled again
+    /// after a few hours whatever else happened to its kind. Plus raid and building balance checks.
     /// </summary>
     public class ExtinctionTests
     {
         [Test]
-        public void BalanceAssetSchedulesAReturn()
+        public void AnEmptiedNestIsSettledAgainWithinHours()
         {
-            var balance = UnityEngine.ScriptableObject.CreateInstance<GameBalance>();
-            Assert.That(balance.speciesReturnDays, Is.GreaterThan(0),
-                        "0 would make extinction final again");
-            Assert.That(balance.speciesReturnDays, Is.LessThanOrEqualTo(7),
-                        "a species should come back inside a week, not vanish for the run");
+            Assert.That(Ecosystem.EcosystemManager.RefillHours, Is.InRange(1, 12));
+            Assert.That(Ecosystem.EcosystemManager.RefillCount, Is.GreaterThanOrEqualTo(2), "a pair, so it can breed");
         }
 
         [Test]

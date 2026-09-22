@@ -95,10 +95,6 @@ namespace GuildMaster.Session
         /// <summary>Gold per point of damage to repair a gate (a broken one: 150G at 300 HP).</summary>
         public float gateRepairGoldPerHp = 0.5f;
 
-        [Header("Ecosystem (P5-1)")]
-        /// <summary>Days a wiped-out species stays gone before settling again (0 = extinction is final).</summary>
-        public int speciesReturnDays = 3;
-
         public static GameBalance Load()
         {
             var asset = Resources.Load<GameBalance>("Data/GameBalance");
