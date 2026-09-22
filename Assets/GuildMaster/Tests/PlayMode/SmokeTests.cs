@@ -793,7 +793,9 @@ namespace GuildMaster.Tests
             avatar.transform.position = World.GridMap.CellToWorld(deep + new Vector2Int(-1, 0));
             yield return new WaitForSeconds(0.5f);
             Assert.That(fog.IsVisibleRaw(deepPos), Is.True, "one cell away inside the forest");
-            float third = avatar.Stats.SightRadius / 3f;
+            // A third of the sight, times the region's own factor (P4-55: mist, snow, ash).
+            var eye = World.GridMap.WorldToCell(avatar.Position);
+            float third = avatar.Stats.SightRadius * World.TerrainRegions.SightMultiplier(world.Map.RegionOf(eye.x, eye.y)) / 3f;
             Assert.That(avatar.EffectiveSightRadius, Is.EqualTo(third).Within(0.01f), "sight is a third in the forest");
         }
 
@@ -1081,6 +1083,8 @@ namespace GuildMaster.Tests
                 float a = k * Mathf.PI / 8f;
                 var c = c0 + new Vector2Int(Mathf.RoundToInt(Mathf.Cos(a) * r), Mathf.RoundToInt(Mathf.Sin(a) * r));
                 if (grid.IsInTown(c)) continue;
+                // Plain grassland: harsher regions (P4-55) slow the walk and shorten sight.
+                if (world.Map.RegionOf(c.x, c.y) != World.Region.Grassland) continue;
                 bool open = true;
                 for (int dy = -8; dy <= 8 && open; dy++)
                 for (int dx = -8; dx <= 8 && open; dx++)

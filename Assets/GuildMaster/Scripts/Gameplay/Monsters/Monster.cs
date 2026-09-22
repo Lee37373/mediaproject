@@ -5,6 +5,7 @@ using GuildMaster.Ecosystem;
 using GuildMaster.Fog;
 using GuildMaster.Units;
 using GuildMaster.Visuals;
+using GuildMaster.World;
 using UnityEngine;
 
 namespace GuildMaster.Monsters
@@ -124,7 +125,9 @@ namespace GuildMaster.Monsters
             // Imported Casual Monsters art when available (archer variants have their own image).
             var art = ArtLibrary.Monster(IsRangedVariant && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
             Visual.Init(art != null ? art : PixelArt.Monster(def), def.scale);
-            Visual.SetTint(IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white);
+            // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
+            var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
+            Visual.SetTint(baseTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
             GetComponent<HealthBar>().Init(this, 0.75f * def.scale, new Color(0.9f, 0.25f, 0.2f));
             GetComponent<FogHideable>().Refresh();
             Engage.Clear();
@@ -136,6 +139,14 @@ namespace GuildMaster.Monsters
             _corpseTimer = 0f;
             _senseTimer = GameRandom.Shared.Range(0f, SenseInterval);
             Fsm.ChangeState(WanderState);
+        }
+
+        /// <summary>The terrain region of its nest (or of where it appeared, when it has none).</summary>
+        Region RegionOfHome(Nest home)
+        {
+            if (!Services.TryGet<WorldService>(out var world)) return Region.Grassland;
+            var cell = home != null ? home.Cell : GridMap.WorldToCell(transform.position);
+            return world.Map.RegionOf(cell.x, cell.y);
         }
 
         public bool IsRangedVariant { get; private set; }

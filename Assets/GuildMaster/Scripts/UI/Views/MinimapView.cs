@@ -90,17 +90,18 @@ namespace GuildMaster.UI
             for (int x = 0; x < w; x++)
             {
                 int i = y * w + x;
-                _base[i] = TileColor(_mapData.Tiles[i]);
+                _base[i] = TileColor(_mapData.Tiles[i], _mapData.Regions[i]);
                 if (_mapData.Trees[i]) _base[i] = Color32.Lerp(_base[i], new Color32(0x2F, 0x6E, 0x2A, 255), 0.5f);
             }
         }
 
-        static Color32 TileColor(TileType t) => t switch
+        // Natural ground in the region's colours (P4-55), the rest as before.
+        static Color32 TileColor(TileType t, Region region) => t switch
         {
-            TileType.Grass => new Color32(0x7C, 0xCF, 0x4F, 255),
-            TileType.Forest => new Color32(0x4E, 0x9A, 0x35, 255),
-            TileType.Sand => new Color32(0xF2, 0xD8, 0x8F, 255),
-            TileType.Water => new Color32(0x4B, 0xA9, 0xE9, 255),
+            TileType.Grass => CartoonGroundPainter.PaletteOf(region).Grass,
+            TileType.Forest => CartoonGroundPainter.PaletteOf(region).ForestEdge,
+            TileType.Sand => CartoonGroundPainter.PaletteOf(region).Sand,
+            TileType.Water => CartoonGroundPainter.PaletteOf(region).Water,
             TileType.Mountain => new Color32(0x80, 0x7F, 0x8C, 255),
             TileType.Road => new Color32(0xDE, 0xB4, 0x72, 255),
             TileType.TownFloor => new Color32(0xD6, 0xCE, 0xC0, 255),

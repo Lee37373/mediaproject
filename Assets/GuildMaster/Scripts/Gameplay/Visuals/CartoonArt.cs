@@ -127,15 +127,27 @@ namespace GuildMaster.Visuals
 
         static readonly Color[] LeafColors = { Hex(0x4FAE3C), Hex(0x5DBB44), Hex(0x44A046), Hex(0x6BC04A) };
 
-        public static Sprite Tree(int variant)
+        public static Sprite Tree(int variant) => Tree(variant, World.Region.Grassland);
+
+        /// <summary>
+        /// A tree as it grows in a region (P4-55): green here, dry olive scrub in the desert, frosted
+        /// white in the snow, dark in the swamp, charred in the wasteland.
+        /// </summary>
+        public static Sprite Tree(int variant, World.Region region)
         {
-            string key = "c_tree:" + variant;
+            string key = "c_tree:" + variant + ":" + region;
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             var rng = new System.Random(variant * 7919 + 13);
             float J() => (float)rng.NextDouble() * 4f - 2f;
             var c = new Canvas(52, 64);
-            var leaf = LeafColors[variant % LeafColors.Length];
-            var outline = Hex(0x23402A);
+            var (leaf, outline) = region switch
+            {
+                World.Region.Desert => (Hex(0xA9A24C), Hex(0x4A4420)),
+                World.Region.Snow => (Hex(0xE6F0F7), Hex(0x587186)),
+                World.Region.Swamp => (Hex(0x3F5B2D), Hex(0x18261A)),
+                World.Region.Wasteland => (Hex(0x5E4B42), Hex(0x271B18)),
+                _ => (LeafColors[variant % LeafColors.Length], Hex(0x23402A)),
+            };
             // Ground shadow, trunk, then a cloud-like canopy.
             c.Shape(Ellipse(26, 7, 15, 4.5f), new Color(0f, 0f, 0f, 0.22f), new Color(0f, 0f, 0f, 0.22f), 0f);
             c.Shape(RoundRect(21, 5, 31, 26, 3f), Hex(0x8A5A30), Hex(0x3E2716), 2.5f);
@@ -146,13 +158,23 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.12f));
         }
 
-        public static Sprite Rock(int variant)
+        public static Sprite Rock(int variant) => Rock(variant, World.Region.Grassland);
+
+        /// <summary>A rock in a region's stone (P4-55): sandstone, snow-dusted, mossy, scorched.</summary>
+        public static Sprite Rock(int variant, World.Region region)
         {
-            string key = "c_rock:" + variant;
+            string key = "c_rock:" + variant + ":" + region;
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             var c = new Canvas(40, 30);
             float g = 0.62f + variant * 0.04f;
-            var stone = new Color(g, g * 0.98f, g * 1.04f);
+            var stone = region switch
+            {
+                World.Region.Desert => new Color(g * 1.3f, g * 1.1f, g * 0.78f),
+                World.Region.Snow => new Color(g * 1.42f, g * 1.47f, g * 1.53f),
+                World.Region.Swamp => new Color(g * 0.72f, g * 0.78f, g * 0.64f),
+                World.Region.Wasteland => new Color(g * 0.72f, g * 0.5f, g * 0.45f),
+                _ => new Color(g, g * 0.98f, g * 1.04f),
+            };
             var body = Union(Ellipse(18, 12, 14, 9), Ellipse(26 + variant % 2 * 2, 10, 11, 7));
             c.Shape(Ellipse(20, 5, 16, 3.5f), new Color(0f, 0f, 0f, 0.2f), new Color(0f, 0f, 0f, 0.2f), 0f);
             c.Shape(body, stone, Hex(0x3C3B45), 2.5f);

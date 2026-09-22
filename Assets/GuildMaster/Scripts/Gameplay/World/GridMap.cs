@@ -58,7 +58,14 @@ namespace GuildMaster.World
             Version++;
         }
 
-        public float Cost(int x, int y) => MapData.MoveCost(Data.Tiles[y * Width + x]);
+        /// <summary>Walking cost: the terrain, slowed further in harsh regions off the roads (P4-55).</summary>
+        public float Cost(int x, int y)
+        {
+            int i = y * Width + x;
+            var t = Data.Tiles[i];
+            float cost = MapData.MoveCost(t);
+            return t is TileType.Road or TileType.TownFloor or TileType.Gate ? cost : cost * TerrainRegions.MoveMultiplier(Data.Regions[i]);
+        }
 
         /// <summary>Mountains, walls and buildings fully block projectiles / sight lines.</summary>
         public bool IsHardCover(int x, int y)
