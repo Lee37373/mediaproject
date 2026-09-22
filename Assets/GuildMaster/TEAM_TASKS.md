@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-22
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-51**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-52**).
 
 ## 사용 규칙
 
@@ -49,6 +49,7 @@
 | P4-48 | 숲 시야: 숲 밖에서는 숲이 벽처럼 시야를 가림(가장자리 한 칸만 보임), 숲 안에서는 가시거리 1/3. 안개·유닛 AI 모두, 마을·감시탑 시야는 예외 | 이재혁 | 완료 | World/WorldService·GridMap·ForestSight(신규), Fog/FogOfWar, Units/Unit·UnitGizmos, Adventurers/FreeHuntState·AdventurerLooting, Monsters/Monster | 017d6af |
 | P4-49 | 길드원 창(R) 파티별 묶음: 같은 의뢰·같은 사냥 무리끼리(리더 먼저), 나머지는 혼자 | 이재혁 | 완료 | UI/Views/RosterView | 261f73d |
 | P4-50 | 파티 생애주기(사용자 제안): 길드에서 리더가 모집 → 함께 출발 → 전리품 공동 자루 → 귀환 후 리더가 LLM으로 분배 → 여러 번 유지, 불만이면 이탈(기여도: 가한·받은 피해·치유·처치) | 이재혁 | 완료 | Adventurers/Party·PartySettlement·Prompts/SplitPrompt(신규)·PartyService·HuntBandService·AdventurerStates, Session/GameBootstrap·GameLog | 4877d7a |
+| P4-51 | 자율 사냥도 LLM 초대(사용자 요청): 사냥을 정한 리더가 마을의 길드원을 초대(성격·관계·상태로 수락/거절), 답이 모이면 함께 출발 | 이재혁 | 진행 중 | Adventurers/PartyService·HuntBandService·Prompts/PartyPrompt | |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
