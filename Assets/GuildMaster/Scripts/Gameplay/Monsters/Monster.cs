@@ -161,9 +161,47 @@ namespace GuildMaster.Monsters
         /// <summary>Fighting smarts set per species (P4-26): slimes on instinct up to veteran bosses.</summary>
         public override CombatTier Tier => Def == null ? CombatTier.Novice : Def.combatTier;
 
-        /// <summary>Anything hostile we can see, or whoever just hit us.</summary>
+        /// <summary>
+        /// Anything hostile we can see, whoever just hit us, or one we can see fighting a pack mate
+        /// (P4-52, user report 2026-09-22: "the rest of the pack does not fight" — even slimes, which
+        /// never start a fight, stand by their own).
+        /// </summary>
         bool IsTargetCandidate(Unit u)
-            => u != this && (WasRecentlyAttackedBy(u) || (IsHostileTo(u) && CanSee(u)));
+            => u != this && (WasRecentlyAttackedBy(u) || ((IsHostileTo(u) || FightsAPackMate(u)) && CanSee(u)));
+
+        bool FightsAPackMate(Unit u) => u.IsAlive && u.CurrentTarget is Monster mate && IsPackMate(mate);
+
+        // ---------------- Pack alarm (P4-52) ----------------
+
+        /// <summary>Pack mates this close hear a member being hit (a cry, not sight: forests do not hide it).</summary>
+        public const float PackAlarmRadius = 8f;
+        const float AlarmInterval = 1f;
+        float _nextAlarm;
+        static readonly System.Collections.Generic.List<Unit> s_alarmed = new();
+
+        /// <summary>Hit: the pack mates within earshot turn on the attacker too.</summary>
+        void AlarmPack(Unit attacker)
+        {
+            if (attacker == null || !attacker.IsAlive || attacker is Monster m && IsPackMate(m) || Time.time < _nextAlarm) return;
+            _nextAlarm = Time.time + AlarmInterval;
+            UnitRegistry.Collect(Position, PackAlarmRadius, u => u is Monster o && IsPackMate(o), s_alarmed);
+            foreach (var u in s_alarmed) ((Monster)u).HearPackMateHit(attacker);
+        }
+
+        /// <summary>
+        /// A pack mate's cry: one that is idle about the nest, picking something up or on a raid joins
+        /// in; one already fighting keeps its own fight, one fleeing or walking home keeps doing that
+        /// (the leash still rules, see <see cref="MonsterLeash"/>).
+        /// </summary>
+        internal void HearPackMateHit(Unit attacker)
+        {
+            if (!IsAlive || !attacker.IsTargetableBy(this) || IsStunned) return;
+            var s = Fsm.Current;
+            bool free = s == WanderState || s == PickupState || (DefaultStateOverride != null && s == DefaultStateOverride);
+            if (!free) return;
+            Engage.SetTarget(attacker);
+            Fsm.ChangeState(EngageState);
+        }
 
         /// <summary>Best target by <see cref="TargetSelector"/> (tier-dependent), or null.</summary>
         public Unit FindTarget() => TargetSelector.Pick(this, Stats.SightRadius, IsTargetCandidate, Engage);
@@ -419,6 +457,7 @@ namespace GuildMaster.Monsters
 
         protected override void OnDamaged(float amount, Unit source)
         {
+            AlarmPack(source);
             // Retaliate immediately unless already fighting something.
             if (source != null && source.IsAlive && source.IsTargetableBy(this) && Fsm.Current != EngageState && Fsm.Current != FleeState
                 && Fsm.Current != LureState && Fsm.Current != RegroupState)

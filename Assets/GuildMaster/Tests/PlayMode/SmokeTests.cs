@@ -646,6 +646,39 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator HittingOneOfAPack_TurnsThePackMatesInEarshotOnTheAttacker()
+        {
+            // P4-52, user report 2026-09-22: "when one of a pack is attacked, the rest do not fight".
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var master = MasterOnOpenGround();
+                Assume.That(master, Is.Not.Null, "open ground on this map");
+                var hunter = Roster.Members.First(a => a.IsAlive);
+                hunter.Mover.Stop();
+                hunter.transform.position = master.Position + new Vector2(-2f, 0f);
+                // Slimes never start a fight; three together, one far out of earshot.
+                var near = new[]
+                {
+                    SpawnMonster("slime", master.Position + new Vector2(0f, 0f)),
+                    SpawnMonster("slime", master.Position + new Vector2(1.5f, 1f)),
+                    SpawnMonster("slime", master.Position + new Vector2(1.5f, -1f)),
+                };
+                var far = SpawnMonster("slime", master.Position + new Vector2(0f, 7f) + new Vector2(Monster.PackAlarmRadius, 0f));
+                yield return null;
+
+                Combat.ApplyHit(hunter, near[0]);
+                yield return null;
+                Assert.That(near[0].CurrentTarget, Is.EqualTo(hunter), "the one hit fights back");
+                Assert.That(near[1].CurrentTarget, Is.EqualTo(hunter), "its pack mate joins in");
+                Assert.That(near[2].CurrentTarget, Is.EqualTo(hunter), "and the other one too");
+                Assert.That(far.CurrentTarget, Is.Not.EqualTo(hunter), "one out of earshot does not hear it");
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
         public IEnumerator Forest_HidesItsInsideFromOutside_AndShortensSightWithin()
         {
             yield return Boot();
