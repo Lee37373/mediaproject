@@ -248,16 +248,16 @@ MonoBehaviour:
   _parallelPrompts: -1
   _contextSize: 8192
   _batchSize: 512
-  _model: gemma-3-4b-it-Q4_K_M.gguf
+  _model: kakaocorp.kanana-1.5-8b-instruct-2505.Q4_K_M.gguf
   _flashAttention: 0
   _reasoning: 0
   _lora: 
   _loraWeights: 
   dontDestroyOnLoad: 1
   _embeddingsOnly: 0
-  _embeddingLength: 2560
+  _embeddingLength: 4096
   minContextLength: 0
-  maxContextLength: 131072
+  maxContextLength: 32768
 --- !u!4 &421123124
 Transform:
   m_ObjectHideFlags: 0

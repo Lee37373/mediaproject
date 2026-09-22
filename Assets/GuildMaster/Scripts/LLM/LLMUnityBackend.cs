@@ -125,6 +125,14 @@ namespace GuildMaster.LLM
             // LLMUnity documents seed 0 as "random" but passes it to llama.cpp, where 0 is a fixed
             // seed: identical prompts then give identical lines forever. Use a fresh seed per call.
             _agent.seed = s_seedRng.Next(1, int.MaxValue);
+            // Earlier turns of a conversation go in as real chat turns. The agent itself stays stateless
+            // (addToHistory is false), so the history is reset on every call. A stable system prompt plus
+            // an unchanged history prefix lets llama.cpp reuse its cache between turns.
+            var history = new System.Collections.Generic.List<ChatMessage>();
+            if (request.Messages != null)
+                foreach (var m in request.Messages)
+                    if (!string.IsNullOrWhiteSpace(m.Text)) history.Add(new ChatMessage(m.FromUser ? "user" : "assistant", m.Text));
+            _agent.chat = history;
             return await _agent.Chat(request.User, null, null, addToHistory: false);
         }
 

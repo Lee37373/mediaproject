@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
+using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Core;
 using GuildMaster.Data;
+using GuildMaster.LLM;
 using GuildMaster.Recruitment;
 using GuildMaster.Traits;
 using NUnit.Framework;
@@ -56,19 +58,35 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void Prompt_KeepsOnlyRecentTurns_AndGrammarHasDecisions()
+        public void Prompt_SendsRecentTurnsAsChatTurns_WithFeelingsInWords()
         {
             var turns = new List<RecruitTurn>();
-            for (int i = 0; i < 20; i++) turns.Add(new RecruitTurn { FromPlayer = i % 2 == 0, Text = "말" + i });
-            var user = RecruitPrompt.BuildUser(turns, "리아", false);
-            Assert.That(user.Contains("말7"), Is.False, "old turns dropped");
-            Assert.That(user.Contains("말8"), Is.True);
-            Assert.That(user.TrimEnd().EndsWith("리아의 대답:"), Is.True);
+            for (int i = 0; i < 21; i++) turns.Add(new RecruitTurn { FromPlayer = i % 2 == 0, Text = "말" + i });
+            var req = new LlmRequest();
+            NpcVoice.SetChat(req, turns.Select(t => (t.FromPlayer, t.Text)), RecruitPrompt.HistoryTurns * 2, RecruitPrompt.BuildAside(55, false));
+
+            Assert.That(req.User, Does.StartWith("말20"), "the newest player line is the message being answered");
+            Assert.That(req.Messages.Any(m => m.Text.Contains("말8")), Is.False, "old turns dropped");
+            Assert.That(req.Messages.Any(m => m.Text == "말9"), Is.True);
+            Assert.That(req.Messages[0].FromUser, Is.True, "chat turns start with the user");
+            for (int i = 1; i < req.Messages.Count; i++)
+                Assert.That(req.Messages[i].FromUser, Is.Not.EqualTo(req.Messages[i - 1].FromUser), "turns alternate");
+
+            StringAssert.DoesNotContain("정식으로", req.User);
+            StringAssert.Contains("정식으로", RecruitPrompt.BuildAside(55, true));
+            Assert.That(RecruitPrompt.BuildAside(-1, false), Is.Null, "nothing to add");
+            Assert.That(RecruitPrompt.BuildAside(55, true), Does.Not.Match(@"\d"), "feelings are words, not numbers");
+        }
+
+        [Test]
+        public void Grammar_ChatReplyFirst_OfferDecisionFirst()
+        {
             StringAssert.Contains("undecided", RecruitPrompt.Grammar);
             StringAssert.Contains("affinity_delta", RecruitPrompt.Grammar);
             StringAssert.DoesNotContain("undecided", RecruitPrompt.ProposalGrammar);
             StringAssert.Contains("refuse", RecruitPrompt.ProposalGrammar);
-            Assert.That(RecruitPrompt.Grammar.IndexOf("decision"), Is.LessThan(RecruitPrompt.Grammar.IndexOf("reply")), "decision comes first");
+            Assert.That(RecruitPrompt.Grammar.IndexOf("reply"), Is.LessThan(RecruitPrompt.Grammar.IndexOf("decision")), "chat: the line comes first");
+            Assert.That(RecruitPrompt.ProposalGrammar.IndexOf("decision"), Is.LessThan(RecruitPrompt.ProposalGrammar.IndexOf("reply")), "an offer is answered first, then explained");
             Assert.That(RecruitPrompt.ParseDecision("join"), Is.EqualTo(RecruitDecision.Join));
             Assert.That(RecruitPrompt.ParseDecision("??"), Is.EqualTo(RecruitDecision.Undecided));
         }

@@ -1,6 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 using GuildMaster.Adventurers;
+using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Core;
+using GuildMaster.LLM;
 using GuildMaster.Persuasion;
 using GuildMaster.Quests;
 using NUnit.Framework;
@@ -144,22 +147,31 @@ namespace GuildMaster.Tests
         // ---- LLM prompt ----
 
         [Test]
-        public void Prompt_KeepsOnlyRecentTurns_AndGrammarHasDecisions()
+        public void Prompt_SendsRecentTurnsAsChatTurns_WithWillingnessInWords()
         {
             var turns = new List<PersuadeTurn>();
-            for (int i = 0; i < 20; i++) turns.Add(new PersuadeTurn { FromPlayer = i % 2 == 0, Text = "말" + i });
-            var user = PersuadePrompt.BuildUser(turns, "리아", false);
-            Assert.That(user.Contains("말7"), Is.False, "old turns dropped");
-            Assert.That(user.Contains("말8"), Is.True);
-            Assert.That(user.TrimEnd().EndsWith("리아의 대답:"), Is.True);
-            StringAssert.DoesNotContain("정식으로", user);
-            StringAssert.Contains("정식으로", PersuadePrompt.BuildUser(turns, "리아", true));
+            for (int i = 0; i < 21; i++) turns.Add(new PersuadeTurn { FromPlayer = i % 2 == 0, Text = "말" + i });
+            var req = new LlmRequest();
+            NpcVoice.SetChat(req, turns.Select(t => (t.FromPlayer, t.Text)), PersuadePrompt.HistoryTurns * 2, PersuadePrompt.BuildAside(40, 50, false));
 
+            Assert.That(req.User, Does.StartWith("말20"));
+            Assert.That(req.Messages.Any(m => m.Text.Contains("말8")), Is.False, "old turns dropped");
+            Assert.That(req.Messages.Any(m => m.Text == "말9"), Is.True);
+            Assert.That(req.Messages[0].FromUser, Is.True);
+            StringAssert.DoesNotContain("정식으로", req.User);
+            StringAssert.Contains("정식으로", PersuadePrompt.BuildAside(40, 50, true));
+            Assert.That(PersuadePrompt.BuildAside(40, 50, true), Does.Not.Match(@"\d"), "willingness and the bar stay out of the prompt");
+        }
+
+        [Test]
+        public void Grammar_ChatReplyFirst_RequestDecisionFirst()
+        {
             StringAssert.Contains("undecided", PersuadePrompt.Grammar);
             StringAssert.Contains("willingness_delta", PersuadePrompt.Grammar);
             StringAssert.DoesNotContain("undecided", PersuadePrompt.ProposalGrammar);
             StringAssert.Contains("refuse", PersuadePrompt.ProposalGrammar);
-            Assert.That(PersuadePrompt.Grammar.IndexOf("decision"), Is.LessThan(PersuadePrompt.Grammar.IndexOf("reply")), "decision comes first");
+            Assert.That(PersuadePrompt.Grammar.IndexOf("reply"), Is.LessThan(PersuadePrompt.Grammar.IndexOf("decision")), "chat: the line comes first");
+            Assert.That(PersuadePrompt.ProposalGrammar.IndexOf("decision"), Is.LessThan(PersuadePrompt.ProposalGrammar.IndexOf("reply")), "a request is answered first, then explained");
             Assert.That(PersuadePrompt.ParseDecision("accept"), Is.EqualTo(PersuadeDecision.Accept));
             Assert.That(PersuadePrompt.ParseDecision("refuse"), Is.EqualTo(PersuadeDecision.Refuse));
             Assert.That(PersuadePrompt.ParseDecision("??"), Is.EqualTo(PersuadeDecision.Undecided));
