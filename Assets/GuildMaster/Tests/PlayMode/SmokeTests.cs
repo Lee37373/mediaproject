@@ -333,6 +333,61 @@ namespace GuildMaster.Tests
             Assert.That(member.Looting.IsBusy, Is.False, "fighting comes before tidying up");
         }
 
+        [UnityTest]
+        public IEnumerator Looting_WaitsWhileAComradeFightsAMonsterThatNeverStartsFights()
+        {
+            // User report 2026-09-22: "they pick up items first in the middle of a fight". A slime
+            // is not hostile to anyone who has not hit it, so only "hostile to me" used to stop a round.
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var master = MasterOnOpenGround();
+                Assert.That(master, Is.Not.Null, "open ground for the test");
+                var fighter = Roster.Members.First(a => a.IsAlive && a.Data.cls == AdventurerClass.Warrior);
+                var looter = Roster.Members.First(a => a.IsAlive && a != fighter && a.Data.cls != AdventurerClass.Priest);
+                foreach (var a in Roster.Members) { a.ChangeState(a.RestState); a.Mover.Stop(); }
+                yield return null;
+                var p = master.Position;
+                looter.transform.position = p;
+                fighter.transform.position = p + new Vector2(3f, 0f);
+                ClearHomelessOf("slime");
+                var slime = SpawnMonster("slime", p + new Vector2(4f, 0f));
+                DebugCommands.DropItem("slime_jelly", 1, p.x - 1.5f, p.y);
+
+                // A comrade trades blows with the slime...
+                fighter.Engage.SetTarget(slime);
+                float until = Time.time + 6f;
+                while (Time.time < until && slime.IsAlive && fighter.Engage.Target == slime)
+                {
+                    fighter.Engage.Tick(Time.deltaTime);
+                    if (slime.LastAttacker == fighter) break;
+                    yield return null;
+                }
+                Assume.That(slime.IsAlive && slime.LastAttacker == fighter, "the fight got going");
+
+                // ...so the one standing by does not go tidying up around it.
+                bool looted = false;
+                for (int i = 0; i < 20; i++)
+                {
+                    looted |= looter.Looting.Tick(0.3f) || looter.Looting.IsBusy;
+                    yield return null;
+                }
+                Assert.That(looted, Is.False, "a comrade's fight in sight comes before the loot");
+
+                // Once it is over the loot is picked up as usual.
+                slime.Perish();
+                yield return null;
+                for (int i = 0; i < 20 && !looted; i++)
+                {
+                    looted |= looter.Looting.Tick(0.3f) || looter.Looting.IsBusy;
+                    yield return null;
+                }
+                Assert.That(looted, Is.True, "with the fight over the round starts");
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
         /// <summary>
         /// P4-32: the clear-nest quest is gone. A hunt finishes on its kill count, or as soon as
         /// the nest inside its marked area is wiped out, whichever comes first.

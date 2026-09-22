@@ -53,6 +53,8 @@ namespace GuildMaster.Session
         // Cumulative counters, all collected from events so nothing is polled per frame.
         int _deaths, _joins, _levelUps, _questsPosted, _questsCompleted, _questsFailed, _questsCancelled;
         int _raidsSighted, _raidersKilled, _gearBought, _extinctions, _nestsCleared, _recolonized;
+        /// <summary>Monsters the guild killed, by species (P4-42: which prey the early hunts actually take).</summary>
+        readonly Dictionary<string, int> _guildKills = new();
         int _startDay;
         float _startHour;
 
@@ -72,6 +74,7 @@ namespace GuildMaster.Session
             _deaths = _joins = _levelUps = 0;
             _questsPosted = _questsCompleted = _questsFailed = _questsCancelled = 0;
             _raidsSighted = _raidersKilled = _gearBought = _extinctions = _nestsCleared = _recolonized = 0;
+            _guildKills.Clear();
             StopAfterDays = days;
             CsvPath = csvPath;
             _startDay = _clock.Day;
@@ -90,6 +93,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<SpeciesExtinctEvent>(OnExtinct);
             EventBus.Subscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Subscribe<NestRecolonizedEvent>(OnRecolonized);
+            EventBus.Subscribe<GuildMaster.Units.UnitDiedEvent>(OnUnitDied);
 
             Sample(); // day 0 baseline
         }
@@ -110,6 +114,7 @@ namespace GuildMaster.Session
             EventBus.Unsubscribe<SpeciesExtinctEvent>(OnExtinct);
             EventBus.Unsubscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Unsubscribe<NestRecolonizedEvent>(OnRecolonized);
+            EventBus.Unsubscribe<GuildMaster.Units.UnitDiedEvent>(OnUnitDied);
             Flush();
         }
 
@@ -129,6 +134,12 @@ namespace GuildMaster.Session
         void OnExtinct(SpeciesExtinctEvent e) => _extinctions++;
         void OnNestCleared(NestClearedEvent e) => _nestsCleared++;
         void OnRecolonized(NestRecolonizedEvent e) => _recolonized++;
+
+        void OnUnitDied(GuildMaster.Units.UnitDiedEvent e)
+        {
+            if (e.Victim is Monster m && m.Def != null && e.Killer != null && e.Killer.Faction == GuildMaster.Units.Faction.Guild)
+                _guildKills[m.Def.id] = (_guildKills.TryGetValue(m.Def.id, out var n) ? n : 0) + 1;
+        }
 
         void OnClosed(QuestClosedEvent e)
         {
@@ -231,6 +242,7 @@ namespace GuildMaster.Session
                 sb.AppendLine($"    {a.Data.name} {AdventurerData.ClassLabel(a.Data.cls)} Lv{a.Data.level} ({a.Data.exp}/{a.Data.ExpToNextLevel}) gear={a.Data.gearTier} kills={a.Data.kills} quests={a.Data.questsCompleted}");
             foreach (var s in _species)
                 sb.AppendLine($"    {s.id}: pop={_eco.GetPopulation(s)} nests={_eco.NestsOf(s).Count(x => !x.IsEmpty)}{(_eco.IsExtinct(s) ? " EXTINCT" : "")}");
+            sb.AppendLine("  guild kills: " + (_guildKills.Count == 0 ? "none" : string.Join(" ", _guildKills.OrderByDescending(k => k.Value).Select(k => $"{k.Key}={k.Value}"))));
             if (!string.IsNullOrEmpty(CsvPath)) sb.AppendLine("  csv: " + CsvPath);
             return sb.ToString();
         }

@@ -268,7 +268,7 @@ namespace GuildMaster.Units
             var patient = MostEndangeredAlly(self, Range, Below);
             if (patient == null) return false;
             if (patient != self) Fx?.Beam(self.Position, patient.Position, Color, 0.08f, 0.3f);
-            HealUnit(self, patient, self.Stats.Attack * 3f);
+            HealUnit(self, patient, self.Stats.Attack * 3f * Combat.HpScale);
             Announce(self);
             return true;
         }
@@ -296,7 +296,7 @@ namespace GuildMaster.Units
                     && (u.Position - self.Position).sqrMagnitude <= Radius * Radius)
                     s_patients.Add(u);
             if (s_patients.Count < MinPatients) return false;
-            foreach (var u in s_patients.ToArray()) HealUnit(self, u, self.Stats.Attack * 1.5f);
+            foreach (var u in s_patients.ToArray()) HealUnit(self, u, self.Stats.Attack * 1.5f * Combat.HpScale);
             Fx?.Ring(self.Position, Radius, Color, 0.5f);
             Announce(self);
             return true;

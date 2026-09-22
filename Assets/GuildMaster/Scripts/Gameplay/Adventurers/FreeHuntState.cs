@@ -77,7 +77,15 @@ namespace GuildMaster.Adventurers
         /// <summary>One of the last few of a den the guild knows (P4-40): left to breed.</summary>
         static bool LastOfItsDen(Monster m)
             => m.Home != null && m.Home.Discovered && Services.TryGet<GuildIntel>(out var intel)
-               && FreeHunt.SpareAtDen(intel.Get(m.Home).LastCount);
+               && FreeHunt.SpareAtDen(m.Def, ExpectedAt(intel, m.Home));
+
+        /// <summary>What the guild expects at a den now: its last count, grown back since (P4-42).</summary>
+        static int ExpectedAt(GuildIntel intel, Nest n)
+        {
+            var rec = intel.Get(n);
+            float since = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours - rec.LastSeenHour : 0f;
+            return FreeHunt.ExpectedDenCount(intel.SpeciesOf(n), rec.LastCount, since);
+        }
 
         /// <summary>What may be fought at all: our own prey, plus anything that has just hit us.</summary>
         bool Allowed(Unit u) => Huntable(u) || Owner.WasRecentlyAttackedBy(u);
@@ -247,7 +255,7 @@ namespace GuildMaster.Adventurers
                 foreach (var n in intel.KnownNests)
                 {
                     var s = intel.SpeciesOf(n);
-                    int count = intel.Get(n).LastCount;
+                    int count = ExpectedAt(intel, n);
                     if (s == null || count <= 0 || _spared.Contains(s)) continue;
                     if (Vector2.Distance(n.WorldPosition, town) > _reach) continue;
                     if (Vector2.Distance(n.WorldPosition, a.Position) < SpotReached * 2f) continue;

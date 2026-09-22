@@ -60,7 +60,7 @@ namespace GuildMaster.Town
             Radius = 0.3f;
             Stats = new CombatStats
             {
-                MaxHp = 60f, Attack = 0f, Defense = 2f, AttackRange = 1f, AttackCooldown = 1f,
+                MaxHp = 60f * Combat.HpScale, Attack = 0f, Defense = 2f, AttackRange = 1f, AttackCooldown = 1f,
                 MoveSpeed = 2.2f, SightRadius = 4f,
             };
             ResetVitals();

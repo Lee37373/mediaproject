@@ -117,7 +117,35 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public const int LeaveAtDen = 3;
 
-        public static bool SpareAtDen(int lastCount) => lastCount <= LeaveAtDen;
+        /// <summary>
+        /// What to leave at a den of this species: about a third of a full nest, 1 to
+        /// <see cref="LeaveAtDen"/> (P4-42). A flat three left a stone slime den (six, four at the
+        /// start) with one to take, so the early hunts walked past them (user report 2026-09-22).
+        /// </summary>
+        public static int LeaveAt(MonsterDefinition species)
+            => species == null ? LeaveAtDen : Mathf.Clamp(Mathf.RoundToInt(species.nestCapacity * 0.3f), 1, LeaveAtDen);
+
+        public static bool SpareAtDen(MonsterDefinition species, int count) => count <= LeaveAt(species);
+
+        /// <summary>
+        /// How many the guild expects at a den it last counted <paramref name="lastCount"/> at,
+        /// <paramref name="hoursSince"/> ago (P4-42): everyone knows how fast a kind breeds, so a
+        /// den left with its last few is worth a look again later. The old count stayed put until
+        /// someone happened by, and a spared den was never visited again. An emptied den stays
+        /// empty — who moves in is not something to guess.
+        /// </summary>
+        public static int ExpectedDenCount(MonsterDefinition species, int lastCount, float hoursSince)
+        {
+            if (species == null || lastCount <= 0 || hoursSince <= 0f) return Mathf.Max(0, lastCount);
+            float pop = lastCount, cap = Mathf.Max(1, species.nestCapacity);
+            for (float h = 0f; h < hoursSince && pop < cap; h += 1f)
+            {
+                float rate = species.growthPerHour * pop * (1f - pop / cap);
+                if (pop < 2f) rate *= 0.35f;
+                pop += Mathf.Max(0f, rate) * Mathf.Min(1f, hoursSince - h);
+            }
+            return Mathf.Clamp(Mathf.FloorToInt(pop), lastCount, (int)cap);
+        }
         /// <summary>Chance to go scouting even with a good den known, so new dens keep being found.</summary>
         public const float ScoutChance = 0.15f;
 
@@ -127,8 +155,8 @@ namespace GuildMaster.Adventurers
         /// fighting — random spots across a 65-cell circle mostly land on empty ground far out.
         /// </summary>
         public static float DenScore(MonsterDefinition species, int lastCount, float distance)
-            => species == null || SpareAtDen(lastCount) ? 0f
-             : species.expValue * Mathf.Min(lastCount - LeaveAtDen, DenCountCap) / (8f + Mathf.Max(0f, distance));
+            => species == null || SpareAtDen(species, lastCount) ? 0f
+             : species.expValue * Mathf.Min(lastCount - LeaveAt(species), DenCountCap) / (8f + Mathf.Max(0f, distance));
 
         /// <summary>
         /// How far from town to scout: uniform in distance, not in area. Area-uniform points pile up
@@ -139,7 +167,7 @@ namespace GuildMaster.Adventurers
         /// <summary>A species' stats before any gear it picked up, for a den judged from afar.</summary>
         public static CombatStats StatsOf(MonsterDefinition def) => new CombatStats
         {
-            MaxHp = def.maxHp, Attack = def.attack, Defense = def.defense,
+            MaxHp = def.maxHp * Combat.HpScale, Attack = def.attack, Defense = def.defense,
             AttackRange = def.attackRange, AttackCooldown = def.attackCooldown,
             MoveSpeed = def.moveSpeed, SightRadius = def.sightRadius,
         };

@@ -95,7 +95,7 @@ namespace GuildMaster.Monsters
             name = $"{def.displayName}[{UnitId}]";
             Stats = new CombatStats
             {
-                MaxHp = def.maxHp, Attack = def.attack, Defense = def.defense, AttackRange = def.attackRange,
+                MaxHp = def.maxHp * Combat.HpScale, Attack = def.attack, Defense = def.defense, AttackRange = def.attackRange,
                 AttackCooldown = def.attackCooldown, MoveSpeed = def.moveSpeed, SightRadius = def.sightRadius,
             };
             IsRangedVariant = def.rangedVariantChance > 0f && GameRandom.Shared.Chance(def.rangedVariantChance);

@@ -316,8 +316,12 @@ namespace GuildMaster.Adventurers
             // and the caller's optional extra targets, limited to the optional zone.
             // Party members only take fights near their leader (P4-38); what hits them is fought anyway.
             var leash = PartyLeashCentre();
+            // Also one that is fighting a comrade: a slime never starts a fight, but once it hits
+            // back at one of us the rest pitch in instead of looting around it (user report 2026-09-22).
             System.Func<Unit, bool> threat = u => u is Monster m && (allowed == null || allowed(m))
-                                                   && (WasRecentlyAttackedBy(m) || (m.IsHostileTo(this) && CanSee(m) && PartyTactics.InLeash(leash, m.Position)));
+                                                   && (WasRecentlyAttackedBy(m)
+                                                       || ((m.IsHostileTo(this) || m.CombatEngagement?.Target is Adventurer { IsGuildMember: true })
+                                                           && CanSee(m) && PartyTactics.InLeash(leash, m.Position)));
             System.Func<Unit, bool> extra = extraTargets == null ? null
                 : u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u) && PartyTactics.InLeash(leash, u.Position);
             Engage.CandidateFilter = extra == null ? threat : u => threat(u) || extra(u);
@@ -378,7 +382,7 @@ namespace GuildMaster.Adventurers
             if (HpRatio < RetreatThreshold && Data.potions > 0 && Services.TryGet<GameDatabase>(out var db))
             {
                 Data.potions--;
-                Heal(db.Item(DefaultContent.Potion)?.healAmount ?? 40f);
+                Heal((db.Item(DefaultContent.Potion)?.healAmount ?? 40f) * Combat.HpScale);
                 Say("물약을 마셨다!");
             }
             if (HpRatio < RetreatThreshold || Data.fatigue >= 95f)

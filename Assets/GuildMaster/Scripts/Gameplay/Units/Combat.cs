@@ -13,6 +13,14 @@ namespace GuildMaster.Units
         public const float CritMultiplier = 1.6f;
 
         /// <summary>
+        /// Every unit's HP (and every heal) is this many times the listed numbers (P4-42, user
+        /// decision 2026-09-22: an idle game is about watching the fights, and they were over in a
+        /// couple of seconds). Both sides scale alike, so who wins is unchanged; fights just last
+        /// longer. Buildings and gates keep their durability, so a raid breaks in as fast as before.
+        /// </summary>
+        public const float HpScale = 3f;
+
+        /// <summary>
         /// Defence that halves a hit. Armour divides damage instead of subtracting from it (P4-38,
         /// user report 2026-09-21: "one member clears a whole pack alone"): with subtraction a few
         /// points of gear turned a goblin's 6 into 1.5 and levelled members stopped needing a party.

@@ -174,7 +174,22 @@ namespace GuildMaster.Adventurers
             _route.Clear();
         }
 
+        /// <summary>
+        /// A monster in sight that is a fight right now: hostile to us, or in a fight with the guild
+        /// either way — hitting one of us, targeted by one of us, or hit by one of us lately. Only
+        /// "hostile to us" used to count, so while a comrade fought a slime (which never starts
+        /// fights) the others went shopping for loot (user report 2026-09-22).
+        /// </summary>
         static bool EnemyInSight(Adventurer a)
-            => UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius, u => u is Monster m && m.IsAlive && m.IsHostileTo(a) && a.CanSee(u)) != null;
+            => UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
+                   u => u is Monster m && m.IsAlive && (m.IsHostileTo(a) || InFightWithGuild(m)) && a.CanSee(u)) != null;
+
+        static bool InFightWithGuild(Monster m)
+        {
+            if (m.CombatEngagement?.Target is Unit t && t.Faction == Faction.Guild) return true;
+            if (m.LastAttacker != null && m.LastAttacker.Faction == Faction.Guild && Time.time - m.LastAttackedTime < 4f) return true;
+            return UnitRegistry.FindNearest(m.Position, 12f,
+                       u => u.Faction == Faction.Guild && u.IsAlive && u.CombatEngagement?.Target == m) != null;
+        }
     }
 }

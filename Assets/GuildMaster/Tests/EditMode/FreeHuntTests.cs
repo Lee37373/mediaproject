@@ -89,9 +89,10 @@ namespace GuildMaster.Tests
                         "a trip only takes so many");
 
             // The last few of a den are left to breed (first measured run: slimes gone on day 3).
-            Assert.That(FreeHunt.SpareAtDen(FreeHunt.LeaveAtDen), Is.True);
-            Assert.That(FreeHunt.SpareAtDen(FreeHunt.LeaveAtDen + 1), Is.False);
-            Assert.That(FreeHunt.DenScore(slime, FreeHunt.LeaveAtDen, 5f), Is.EqualTo(0f), "nothing left worth taking there");
+            int leave = FreeHunt.LeaveAt(slime);
+            Assert.That(FreeHunt.SpareAtDen(slime, leave), Is.True);
+            Assert.That(FreeHunt.SpareAtDen(slime, leave + 1), Is.False);
+            Assert.That(FreeHunt.DenScore(slime, leave, 5f), Is.EqualTo(0f), "nothing left worth taking there");
             Assert.That(FreeHunt.DenScore(skull, 4, 30f), Is.GreaterThan(FreeHunt.DenScore(slime, 4, 30f)), "richer prey is worth more");
 
             // Scouting is spread evenly out to the reach, so the near rings get walked too.
@@ -249,6 +250,29 @@ namespace GuildMaster.Tests
                 }
                 Assert.That(hours, Is.LessThanOrEqualTo(20), $"{id} takes {hours} h to refill");
             }
+        }
+
+        [Test]
+        public void AFreshStoneSlimeDenIsWorthHunting_AndASparedDenIsWorthALookLater()
+        {
+            // P4-42, user report 2026-09-22: "early on they never fight stone slimes".
+            var db = DefaultContent.Build();
+            MonsterDefinition M(string id) => db.monsters.Find(m => m.id == id);
+            var stone = M("stone_slime");
+            Assert.That(stone.initialPopulation - FreeHunt.LeaveAt(stone), Is.GreaterThanOrEqualTo(2),
+                        "a den as it starts has a couple to take");
+            Assert.That(FreeHunt.DenScore(stone, stone.initialPopulation, 40f), Is.GreaterThan(0f));
+            foreach (var s in db.monsters)
+                Assert.That(FreeHunt.LeaveAt(s), Is.InRange(1, FreeHunt.LeaveAtDen), s.id);
+
+            // A den left with its last few has bred back when nobody has looked for a while...
+            var slime = M("slime");
+            int left = FreeHunt.LeaveAt(slime);
+            Assert.That(FreeHunt.ExpectedDenCount(slime, left, 0f), Is.EqualTo(left));
+            Assert.That(FreeHunt.ExpectedDenCount(slime, left, 12f), Is.GreaterThan(left + 1));
+            Assert.That(FreeHunt.ExpectedDenCount(slime, left, 500f), Is.InRange(slime.nestCapacity - 1, slime.nestCapacity));
+            // ...but an emptied one is not guessed back to life.
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, 48f), Is.EqualTo(0));
         }
 
         [Test]
