@@ -45,6 +45,7 @@
 | P4-43 | 사용자 결정: 보호 대상 없앰(둥지 마지막 몇 마리·멸종 위기 종 사냥 중단 삭제, 약한 슬라임을 "건드릴 상대가 아니야"로 피하던 원인)·멸종 개념 삭제(빈 둥지 6시간 뒤 2마리, 경고 표시 삭제) | 이재혁 | 완료 | Ecosystem/EcosystemManager·Nest, Adventurers/FreeHunt·FreeHuntState, UI 생태·게시판·게임 오버 | b859a56 |
 | P4-45 | 사용자 보고: 적 종끼리 안 싸움(모든 다른 종끼리 적대, 사용자 결정)·성문 부수는 몬스터 무시(마을 경비가 대응)·점검에서 찾은 성문/미니맵 초기화 전 예외 | 이재혁 | 완료 | Monsters/Monster, Adventurers/TownGuardState, Town/TownGate, UI/MinimapView | dcb1fbf, 4de02d6 |
 | P4-46 | 사용자 보고: 유인한 몬스터가 싸우다 둥지로 돌아감(마스터를 미끼로 취급해 싸울 수 있는 적 우선, 몬스터끼리 주고받는 중엔 귀소 안 함) | 이재혁 | 완료 | Units/TargetSelector, Monsters/MonsterStates | da43018 |
+| P4-47 | 근접 교전 국소 이동(컨텍스트 스티어링): 사거리 안에서 기다리는 동안 옆걸음·치고 빠지기·장판·겹침 회피(숙련+) | 이재혁 | 진행 중 | Units/LocalSteering(신규)·Combat·CombatTier, World/PathFollower, Visuals/CharacterVisual, Session/SkirmishMonitor | |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
