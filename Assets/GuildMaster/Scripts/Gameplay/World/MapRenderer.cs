@@ -22,6 +22,9 @@ namespace GuildMaster.World
         Tilemap _decor;
         readonly List<Tile> _trees = new();
         readonly List<Tile> _rocks = new();
+        /// <summary>Textures, sprites and tiles made here: runtime assets outlive the scene unless destroyed
+        /// (PlayMode tests boot the game 40-odd times in one session; each boot leaked ~256 MB of ground).</summary>
+        readonly List<Object> _owned = new();
 
         public void Build(MapData map)
         {
@@ -93,14 +96,22 @@ namespace GuildMaster.World
                 };
                 tex.SetPixels32(buffers[i]);
                 tex.Apply(false, true); // free the CPU copy
+                _owned.Add(tex);
                 var go = new GameObject(tex.name);
                 go.transform.SetParent(root, false);
                 go.transform.position = new Vector3(tx, ty, 0f);
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = Sprite.Create(tex, new Rect(0, 0, pw, ph), Vector2.zero, GroundPixelsPerCell, 0, SpriteMeshType.FullRect);
+                _owned.Add(sr.sprite);
                 sr.sortingOrder = GroundOrder;
             }
             Debug.Log($"[Map] Ground painted: {buffers.Length} chunks in {sw.ElapsedMilliseconds} ms");
+        }
+
+        void OnDestroy()
+        {
+            foreach (var o in _owned) if (o != null) Destroy(o);
+            _owned.Clear();
         }
 
         public void ClearDecor(RectInt area)
@@ -120,9 +131,10 @@ namespace GuildMaster.World
             return tm;
         }
 
-        static Tile MakeTile(Sprite sprite)
+        Tile MakeTile(Sprite sprite)
         {
             var t = ScriptableObject.CreateInstance<Tile>();
+            _owned.Add(t);
             t.sprite = sprite;
             t.colliderType = Tile.ColliderType.None;
             return t;

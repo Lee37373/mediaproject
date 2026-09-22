@@ -82,6 +82,7 @@ namespace GuildMaster.Ecosystem
                 var nest = go.AddComponent<Nest>();
                 nest.Init(this, $"N_{i + 1:00}", assignment[i], map.Nests[i]);
                 nest.GrowthFactor = GrowthFactorAt(nest.WorldPosition);
+                nest.BirthLevel = MonsterLevel.BirthLevel(Mathf.InverseLerp(_innermost, _outermost, Vector2.Distance(nest.WorldPosition, _town)));
                 _nests.Add(nest);
                 for (int k = 0; k < assignment[i].initialPopulation; k++) Spawn(nest);
             }

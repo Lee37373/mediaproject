@@ -60,6 +60,10 @@ namespace GuildMaster.Tests
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
             if (_scene.IsValid() && _scene.isLoaded) yield return SceneManager.UnloadSceneAsync(_scene);
+            // Forty-odd boots share one play session: free what the last one left (runtime
+            // assets, the content database) before the next, or memory climbs by the gigabyte.
+            yield return Resources.UnloadUnusedAssets();
+            GC.Collect();
         }
 
         // ---------------- Helpers ----------------
@@ -1665,6 +1669,31 @@ namespace GuildMaster.Tests
                 Assert.That(svc.Bands.Count(b => b.From == from), Is.Zero);
             }
             finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
+        public IEnumerator BadlyHurtAfterAFight_StillPicksUpTheLootNearby()
+        {
+            // User report 2026-09-22: a member badly hurt when the fight ended went home and left
+            // the loot lying (retreating skipped looting altogether).
+            yield return Boot();
+            var master = MasterOnOpenGround();
+            Assume.That(master, Is.Not.Null, "open ground for the test");
+            var ground = Services.Get<GroundItemService>();
+            var member = Roster.Members.First(a => a.IsAlive && a.Data.cls != AdventurerClass.Priest);
+            foreach (var other in Roster.Members) if (other != member) other.ChangeState(other.RestState);
+            member.Mover.Stop();
+            member.transform.position = master.Position;
+            DebugCommands.DropItem("slime_jelly", 1, member.Position.x + 3f, member.Position.y);
+            Assert.That(ground.Items.Count, Is.EqualTo(1));
+            member.ReceiveDamage(member.Stats.MaxHp * 0.8f, null, false);
+            member.Data.potions = 0;
+            member.ReturnState.RequestRetreat();
+            member.ChangeState(member.ReturnState);
+            Assert.That(member.ReturnState.Retreating, Is.True);
+            yield return WaitFor(() => ground.Items.Count == 0, 8f);
+            Assert.That(ground.Items.Count, Is.Zero, "the jelly three cells away was picked up on the way");
+            Assert.That(member.Data.loot.Any(s => s.itemId == "slime_jelly"), Is.True);
         }
 
         [UnityTest]

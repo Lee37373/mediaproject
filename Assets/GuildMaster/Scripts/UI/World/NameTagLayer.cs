@@ -98,7 +98,7 @@ namespace GuildMaster.UI
                             break;
                         case Monster m:
                             if (fog != null && !fog.IsVisible(m.Position)) break;
-                            Place(m.transform.position + new Vector3(0f, HeadOffset * m.Def.scale), m.DisplayName, MonsterColor);
+                            Place(m.transform.position + new Vector3(0f, HeadOffset * m.Def.scale), $"Lv.{m.Level} {m.DisplayName}", MonsterColor);
                             break;
                     }
                 }

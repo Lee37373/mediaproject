@@ -31,6 +31,11 @@ namespace GuildMaster.Visuals
         PoolService _pool;
         Material _material;
 
+        void OnDestroy()
+        {
+            if (_material != null) Destroy(_material);
+        }
+
         public void Init(PoolService pool)
         {
             _pool = pool;

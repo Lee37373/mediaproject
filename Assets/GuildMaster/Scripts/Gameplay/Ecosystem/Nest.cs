@@ -25,6 +25,8 @@ namespace GuildMaster.Ecosystem
         public float GrowthAccumulator { get; set; }
         /// <summary>Breeding factor of this site by its distance from the town (<see cref="EcosystemManager.GrowthFactor"/>).</summary>
         public float GrowthFactor { get; internal set; } = 1f;
+        /// <summary>Level its young are born at, by the site's distance from the town (<see cref="Monsters.MonsterLevel.BirthLevel"/>).</summary>
+        public int BirthLevel { get; internal set; } = 1;
         /// <summary>Game hours the nest has been empty (it is settled again at <see cref="EcosystemManager.RefillHours"/>).</summary>
         public int EmptyHours { get; set; }
         public bool Discovered { get; private set; }

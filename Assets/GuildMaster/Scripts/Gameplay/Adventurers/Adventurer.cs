@@ -466,6 +466,8 @@ namespace GuildMaster.Adventurers
             if (Data.gearTier > 0) drops.Add(new ItemStack(GearShopping.GearItemId(Data.gearTier), 1));
             if (drops.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, drops);
             Data.loot.Clear();
+            // Monsters learn from their kills too (user decision 2026-09-22).
+            if (killer is Monster slayer && slayer.IsAlive) slayer.GainKillExp(MonsterLevel.ExpForAdventurer(Data.level));
             Fsm.ChangeState(DeadState);
             if (Services.TryGet<GuildRoster>(out var roster)) roster.NotifyDeath(this, killer);
         }
@@ -474,16 +476,16 @@ namespace GuildMaster.Adventurers
         public const float ExpShareRadius = 10f;
         static readonly List<Unit> s_expShare = new();
 
-        public void ReceiveKillRewards(MonsterDefinition victim, List<ItemStack> loot)
+        public void ReceiveKillRewards(MonsterDefinition victim, int exp, List<ItemStack> loot)
         {
             Data.kills++;
             foreach (var s in loot) Data.AddLoot(s.itemId, s.count);
-            GainExp(victim.expValue);
+            GainExp(exp); // the victim's own level counts (user decision 2026-09-22)
             // Everyone fighting alongside gets the full EXP too (P4-40, user report 2026-09-21:
             // "levelling is too slow"). Parties focus one target, so the last hit is luck, and a
             // priest that heals the whole fight never landed one at all — Lv1 after three days.
             UnitRegistry.Collect(Position, ExpShareRadius, u => u != this && u is Adventurer m && m.IsGuildMember, s_expShare);
-            foreach (var u in s_expShare) ((Adventurer)u).GainExp(victim.expValue);
+            foreach (var u in s_expShare) ((Adventurer)u).GainExp(exp);
         }
 
         public void GainExp(int amount)

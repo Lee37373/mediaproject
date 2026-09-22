@@ -16,7 +16,7 @@ namespace GuildMaster.Monsters
     /// <summary>Receives loot and kill experience when this unit lands a killing blow.</summary>
     public interface ILootReceiver
     {
-        void ReceiveKillRewards(MonsterDefinition victim, System.Collections.Generic.List<ItemStack> loot);
+        void ReceiveKillRewards(MonsterDefinition victim, int exp, System.Collections.Generic.List<ItemStack> loot);
     }
 
     /// <summary>
@@ -115,7 +115,11 @@ namespace GuildMaster.Monsters
             Mass = def.scale * def.scale;
             SkillFactory.Assign(this, def.skillIds);
             // P4-21: base stats kept apart from gear; some spawn already wearing something.
-            _baseStats = Stats;
+            // Own level (user decision 2026-09-22): born higher the farther out the nest lies.
+            _unlevelledStats = Stats;
+            Level = home != null ? home.BirthLevel : 1;
+            Exp = 0;
+            ApplyLevel();
             Equipment.Clear();
             _crownAura = false;
             NextLureTime = 0f;
@@ -172,7 +176,52 @@ namespace GuildMaster.Monsters
         }
 
         /// <summary>Fighting smarts set per species (P4-26): slimes on instinct up to veteran bosses.</summary>
-        public override CombatTier Tier => Def == null ? CombatTier.Novice : Def.combatTier;
+        public override CombatTier Tier => Def == null ? CombatTier.Novice : MonsterLevel.TierAt(Def.combatTier, Level);
+
+        // ---------------- Level and EXP (user decision 2026-09-22) ----------------
+
+        public int Level { get; private set; } = 1;
+        public int Exp { get; private set; }
+        public int ExpToNext => MonsterLevel.ExpToNext(Level);
+        /// <summary>What killing this one is worth.</summary>
+        public int ExpWorth => Def == null ? 0 : MonsterLevel.ExpWorth(Def.expValue, Level);
+        CombatStats _unlevelledStats;
+
+        /// <summary>Base stats = the species (and ranged variant) scaled by level; gear goes on top.</summary>
+        void ApplyLevel()
+        {
+            var s = _unlevelledStats;
+            s.MaxHp *= MonsterLevel.HpScale(Level);
+            s.Attack *= MonsterLevel.AttackScale(Level);
+            _baseStats = s;
+        }
+
+        /// <summary>EXP for a kill: this monster's own, and the same for pack mates fighting close by.</summary>
+        public void GainKillExp(int amount)
+        {
+            GainExp(amount);
+            if (Home == null) return;
+            foreach (var m in Home.Members)
+                if (m != this && m.IsAlive && (m.Position - Position).sqrMagnitude <= MonsterLevel.ExpShareRadius * MonsterLevel.ExpShareRadius)
+                    m.GainExp(amount);
+        }
+
+        public void GainExp(int amount)
+        {
+            if (amount <= 0 || !IsAlive || Level >= MonsterLevel.MaxLevel) return;
+            Exp += amount;
+            bool levelled = false;
+            while (Level < MonsterLevel.MaxLevel && Exp >= ExpToNext)
+            {
+                Exp -= ExpToNext;
+                Level++;
+                levelled = true;
+            }
+            if (!levelled) return;
+            ApplyLevel();
+            RefreshStats();
+            Heal(Stats.MaxHp * 0.3f);
+        }
 
         /// <summary>
         /// Anything hostile we can see, whoever just hit us, or one we can see fighting a pack mate
@@ -489,7 +538,8 @@ namespace GuildMaster.Monsters
             else MonsterEquipment.BuildDrops(null, Equipment.Worn, GameRandom.Shared, s_loot);
             if (s_loot.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, s_loot);
             Equipment.Clear();
-            if (killer is ILootReceiver receiver) receiver.ReceiveKillRewards(Def, s_noLoot);
+            if (killer is ILootReceiver receiver) receiver.ReceiveKillRewards(Def, ExpWorth, s_noLoot);
+            else if (killer is Monster rival) rival.GainKillExp(ExpWorth);
             Home?.OnMemberDied(this, killer);
         }
 

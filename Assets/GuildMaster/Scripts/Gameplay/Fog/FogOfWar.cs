@@ -50,6 +50,7 @@ namespace GuildMaster.Fog
         Color32[] _pixels;
         int _tw, _th;
         Texture2D _texture;
+        Sprite _sprite;
         float _exploredAlpha = 0.55f;
         float _tickInterval = 0.1f;
         float _timer;
@@ -69,6 +70,13 @@ namespace GuildMaster.Fog
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() { s_sources.Clear(); s_hideables.Clear(); }
+
+        /// <summary>Runtime assets outlive the scene unless destroyed (PlayMode tests boot many times per session).</summary>
+        void OnDestroy()
+        {
+            if (_sprite != null) Destroy(_sprite);
+            if (_texture != null) Destroy(_texture);
+        }
 
         public void Init(int width, int height, float exploredAlpha, float tickInterval)
         {
@@ -96,7 +104,7 @@ namespace GuildMaster.Fog
 
             // RenderScale pixels per unit: the sprite still covers exactly the map.
             var sr = gameObject.AddComponent<SpriteRenderer>();
-            sr.sprite = Sprite.Create(_texture, new Rect(0, 0, _tw, _th), Vector2.zero, RenderScale, 0, SpriteMeshType.FullRect);
+            sr.sprite = _sprite = Sprite.Create(_texture, new Rect(0, 0, _tw, _th), Vector2.zero, RenderScale, 0, SpriteMeshType.FullRect);
             sr.sortingOrder = SortingOrder;
             transform.position = Vector3.zero;
             Tick(0f);

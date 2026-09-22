@@ -424,6 +424,9 @@ namespace GuildMaster.Adventurers
         bool _retreatRequested;
 
         const float LureTimeout = 12f;
+        /// <summary>Hurt as they are, members still pick up what lies this close to where the retreat began once no enemy is in sight.</summary>
+        const float RetreatLootRadius = 8f;
+        Vector2 _retreatFrom;
         bool _luring;
         Vector2 _lurePoint;
 
@@ -440,6 +443,7 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             Retreating = _retreatRequested;
             _retreatRequested = false;
+            _retreatFrom = a.Position;
             a.Mover.SpeedMultiplier = Retreating ? 1.15f : 1f;
             _luring = false;
             // Veterans drag their pursuer past a known hostile nest on the way out (P4-18).
@@ -481,6 +485,9 @@ namespace GuildMaster.Adventurers
             if (!Retreating && a.HpRatio < a.RetreatThreshold && a.CheckRetreat()) return;
             if (!Retreating && a.HandleCombat(dt)) return;
             if (!Retreating && a.Looting.Tick(dt)) return;
+            // The fight is over but they are badly hurt (user report 2026-09-22: the loot was left
+            // lying): gather what fell close by — looting stops by itself when an enemy shows.
+            if (Retreating && a.Looting.Tick(dt, p => Vector2.Distance(p, _retreatFrom) <= RetreatLootRadius)) return;
             if (Vector2.Distance(a.Position, AdvCtx.GuildDoor) < 1.2f)
             {
                 a.ChangeState(a.VisitState);
