@@ -45,6 +45,9 @@ namespace GuildMaster.World
 
         public bool IsWalkable(Vector2Int c, bool passesGates) => IsWalkable(c.x, c.y, passesGates);
 
+        /// <summary>Any gate cell, standing or broken.</summary>
+        public bool IsGate(int x, int y) => Data.InBounds(x, y) && Data.Tiles[y * Width + x] == TileType.Gate;
+
         /// <summary>A cell of a gate that is still standing (shut to monsters).</summary>
         public bool IsClosedGate(Vector2Int c) => Data.InBounds(c) && _gateClosed[c.y * Width + c.x];
 

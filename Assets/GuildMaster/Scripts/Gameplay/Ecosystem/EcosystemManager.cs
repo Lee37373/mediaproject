@@ -18,10 +18,11 @@ namespace GuildMaster.Ecosystem
     /// Monster ecosystem simulation:
     /// - logistic growth per nest each game hour,
     /// - predators' growth scales with prey availability; starving predators die off,
-    /// - an emptied nest is settled again by its species after <see cref="RefillHours"/>.
-    /// There is no extinction (P4-43, user decision 2026-09-22): a species always has its nests.
-    /// Extinction may come back later as a slow shift over time (stronger kinds appear at the edge,
-    /// the old ones move inwards) — not as something the guild's hunting causes.
+    /// - an emptied nest stays empty until a band moves in: one migrating inwards, or (at the
+    ///   outer sites) a new band from beyond the map edge (<see cref="MigrationService"/>, user
+    ///   decision 2026-09-22; the old six-hour refill by the same kind is gone).
+    /// A kind may vanish for a while (the P4-43 "no extinction" guarantee went with the refill):
+    /// newcomers from beyond the edge are of any kind and bring it back.
     /// </summary>
     public class EcosystemManager : MonoBehaviour
     {
@@ -30,11 +31,6 @@ namespace GuildMaster.Ecosystem
         GameDatabase _db;
 
         [SerializeField] float starvationChancePerHour = 0.03f;
-
-        /// <summary>Game hours an emptied nest stays empty before two of its kind move back in (user decision).</summary>
-        public const int RefillHours = 6;
-        /// <summary>How many settle an emptied nest again.</summary>
-        public const int RefillCount = 2;
 
         // P5-1 handed the guild its two nearest nests so day one was not pure fog. Removed on
         // 2026-09-20 (user decision): an orange minimap dot on ground nobody had walked broke the
@@ -59,6 +55,12 @@ namespace GuildMaster.Ecosystem
         /// <summary>Breeding factor of a site at this position (the rule is public; the guild may use it).</summary>
         public float GrowthFactorAt(Vector2 p) => GrowthFactor(Vector2.Distance(p, _town), _innermost, _outermost);
 
+        /// <summary>0 at the innermost nest site's distance from the town, 1 at the outermost.</summary>
+        public float Distance01(Vector2 p) => Mathf.InverseLerp(_innermost, _outermost, Vector2.Distance(p, _town));
+
+        /// <summary>Species that exist in the game (newcomers from beyond the edge are drawn from these).</summary>
+        internal IReadOnlyList<MonsterDefinition> AllSpecies => _db.monsters;
+
         public IReadOnlyList<Nest> Nests => _nests;
         public IEnumerable<MonsterDefinition> Species => _db.monsters;
         public int TotalMonsters => _population.Values.Sum();
@@ -82,7 +84,7 @@ namespace GuildMaster.Ecosystem
                 var nest = go.AddComponent<Nest>();
                 nest.Init(this, $"N_{i + 1:00}", assignment[i], map.Nests[i]);
                 nest.GrowthFactor = GrowthFactorAt(nest.WorldPosition);
-                nest.BirthLevel = MonsterLevel.BirthLevel(Mathf.InverseLerp(_innermost, _outermost, Vector2.Distance(nest.WorldPosition, _town)));
+                nest.BirthLevel = MonsterLevel.BirthLevel(Distance01(nest.WorldPosition));
                 _nests.Add(nest);
                 for (int k = 0; k < assignment[i].initialPopulation; k++) Spawn(nest);
             }
@@ -187,9 +189,9 @@ namespace GuildMaster.Ecosystem
         }
 
         /// <summary>Adds one member to the nest and updates the population count (also used by debug tools).</summary>
-        internal Monster Spawn(Nest nest)
+        internal Monster Spawn(Nest nest, Vector2? at = null)
         {
-            var m = nest.SpawnMember();
+            var m = nest.SpawnMember(at);
             ChangePopulation(nest.Species, +1);
             return m;
         }
@@ -223,10 +225,7 @@ namespace GuildMaster.Ecosystem
             {
                 if (nest.IsEmpty)
                 {
-                    if (++nest.EmptyHours < RefillHours) continue;
-                    nest.EmptyHours = 0;
-                    for (int i = 0; i < RefillCount; i++) Spawn(nest);
-                    EventBus.Publish(new NestRecolonizedEvent { Nest = nest });
+                    nest.EmptyHours++;
                     continue;
                 }
                 nest.EmptyHours = 0;

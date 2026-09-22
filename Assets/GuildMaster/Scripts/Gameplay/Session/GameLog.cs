@@ -112,7 +112,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<NestRecolonizedEvent>(e =>
             {
                 if (Witnessed(e.Nest))
-                    Add($"[생태계] {e.Nest.DisplayName}에 {e.Nest.Species.displayName}이(가) 다시 자리잡았습니다.", LogCategory.Ecosystem);
+                    Add($"[생태계] 먼 곳에서 온 {e.Nest.Species.displayName} 무리가 {e.Nest.DisplayName}에 자리잡았습니다.", LogCategory.Ecosystem);
             });
             // Territorial routs, only when the guild saw them (GuildIntel rule).
             EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 {e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다.", LogCategory.Ecosystem); });

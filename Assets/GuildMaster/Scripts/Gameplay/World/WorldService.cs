@@ -21,7 +21,8 @@ namespace GuildMaster.World
 
         public Bounds WorldBounds => new(new Vector3(Map.Width / 2f, Map.Height / 2f), new Vector3(Map.Width, Map.Height));
 
-        public bool FindPath(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true) => Pathfinder.FindPathWorld(from, to, result, passesGates);
+        public bool FindPath(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true, System.Func<int, int, bool> believedShut = null)
+            => Pathfinder.FindPathWorld(from, to, result, passesGates, believedShut);
 
         /// <summary>
         /// Grid ray cast (Amanatides–Woo DDA) from a to b. Stops at the first hard-cover cell

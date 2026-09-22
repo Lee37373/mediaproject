@@ -158,7 +158,7 @@ namespace GuildMaster.Town
                 // Only a nest by the town sends its band against the walls; the others move their
                 // home a step closer instead (P4-56, user decision 2026-09-22).
                 if (migration == null || IsByTheTown(nest)) Launch(nest);
-                else migration.TryLaunch(nest, PartySize(HomeMembers(nest).Count(), _cfg.SendFraction, _cfg.MinParty));
+                else migration.TryLaunch(nest); // the whole nest moves (user decision 2026-09-22)
             }
         }
 

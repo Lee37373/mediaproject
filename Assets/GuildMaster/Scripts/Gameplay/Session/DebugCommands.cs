@@ -449,7 +449,7 @@ namespace GuildMaster.Session
         }
 
         /// <summary>Sends a band of that raid nest (same numbering as <see cref="RaidNests"/>) off to a nearer site (P4-56).</summary>
-        public static string ForceMigrate(int index, bool fill = true, int count = 5)
+        public static string ForceMigrate(int index, bool fill = true)
         {
             var eco = Services.Get<EcosystemManager>();
             var nests = eco.Nests.Where(n => n.Species.canRaid && !n.IsEmpty).ToList();
@@ -458,8 +458,17 @@ namespace GuildMaster.Session
             if (fill) while (nest.Population < nest.Capacity) eco.Spawn(nest);
             var svc = Services.Get<MigrationService>();
             var target = svc.PickTarget(nest, nest.Species);
-            bool ok = svc.TryLaunch(nest, count);
+            bool ok = svc.TryLaunch(nest);
             return ok ? $"{nest.DisplayName} → {target?.DisplayName} ({target?.Species.displayName} pop={target?.Population})" : $"{nest.DisplayName}: nowhere to go (or too many bands)";
+        }
+
+        /// <summary>Newcomers from beyond the map edge into an empty outer site (random kind unless given).</summary>
+        public static string ForceArrival(string speciesId = null)
+        {
+            var eco = Services.Get<EcosystemManager>();
+            var species = string.IsNullOrEmpty(speciesId) ? null : eco.Species.FirstOrDefault(s => s.id == speciesId);
+            bool ok = Services.Get<MigrationService>().TryArrive(null, species);
+            return ok ? MigrationStatus() : "no empty outer site (or two newcomer bands already on the way)";
         }
 
         /// <summary>Bands on the move: where from and to, how many, resting or not, average HP and distance left.</summary>
@@ -471,7 +480,7 @@ namespace GuildMaster.Session
             {
                 var alive = b.Members.Where(m => m != null && m.IsAlive).ToList();
                 float left = alive.Count == 0 || b.Target == null ? 0f : alive.Min(m => Vector2.Distance(m.Position, b.Target.WorldPosition));
-                sb.Append($"  #{b.Id} {b.Species.displayName} x{alive.Count} {b.From.DisplayName} → {b.Target?.DisplayName}({b.Target?.Species.displayName} {b.Target?.Population})"
+                sb.Append($"  #{b.Id} {(b.Arrival ? "[newcomers] " : "")}{b.Species.displayName} Lv{(alive.Count > 0 ? alive.Max(m => m.Level) : 0)} x{alive.Count} {b.From.DisplayName} → {b.Target?.DisplayName}({b.Target?.Species.displayName} {b.Target?.Population})"
                           + $" resting={b.Resting} hp={(alive.Count > 0 ? alive.Average(m => m.HpRatio) : 0f):0.00} left={left:0}"
                           + $" states={string.Join("/", alive.Select(m => m.StateLabel).Distinct())}\n");
             }

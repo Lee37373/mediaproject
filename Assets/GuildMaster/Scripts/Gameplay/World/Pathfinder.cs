@@ -43,19 +43,23 @@ namespace GuildMaster.World
         /// <summary>Whether the search in progress may pass intact town gates (P4-39).</summary>
         bool _passesGates = true;
 
-        bool Walkable(int x, int y) => _grid.IsWalkable(x, y, _passesGates);
+        /// <summary>Cells the walker believes shut though they are not (a breach its kind has not seen).</summary>
+        System.Func<int, int, bool> _believedShut;
+
+        bool Walkable(int x, int y) => _grid.IsWalkable(x, y, _passesGates) && (_believedShut == null || !_believedShut(x, y));
 
         /// <summary>Finds a path of cells from start to goal (inclusive). Returns false if unreachable.</summary>
         public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result) => FindPath(start, goal, result, true);
 
         /// <summary>As above; <paramref name="passesGates"/> false keeps the path out of intact gates (monsters).</summary>
-        public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result, bool passesGates)
+        public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result, bool passesGates, System.Func<int, int, bool> believedShut = null)
         {
             _passesGates = passesGates;
+            _believedShut = believedShut;
             result.Clear();
             if (!_grid.InBounds(start) || !_grid.InBounds(goal)) return false;
             // Every gate shut: no way through the walls for a monster, so skip the whole-map search.
-            if (!passesGates && _grid.TownSealed && _grid.IsInTown(start) != _grid.IsInTown(goal)) return false;
+            if (!passesGates && _grid.IsInTown(start) != _grid.IsInTown(goal) && !AnyGateOpenTo(believedShut)) return false;
             if (!_grid.IsWalkable(goal) && !_grid.TryFindNearestWalkable(goal, 6, out goal)) return false;
             if (!_grid.IsWalkable(start)) _grid.TryFindNearestWalkable(start, 3, out start);
             if (start == goal) { result.Add(goal); return true; }
@@ -125,8 +129,17 @@ namespace GuildMaster.World
             result.Reverse();
         }
 
-        public bool FindPathWorld(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true)
-            => FindPath(GridMap.WorldToCell(from), GridMap.WorldToCell(to), result, passesGates);
+        public bool FindPathWorld(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true, System.Func<int, int, bool> believedShut = null)
+            => FindPath(GridMap.WorldToCell(from), GridMap.WorldToCell(to), result, passesGates, believedShut);
+
+        /// <summary>Some gate is open and known to be (else a monster cannot cross the wall at all: skip the search).</summary>
+        bool AnyGateOpenTo(System.Func<int, int, bool> believedShut)
+        {
+            if (_grid.TownSealed) return false;
+            foreach (var g in _grid.Data.Gates)
+                if (!_grid.IsClosedGate(g) && (believedShut == null || !believedShut(g.x, g.y))) return true;
+            return false;
+        }
 
         /// <summary>Binary min-heap of (index, priority).</summary>
         class MinHeap

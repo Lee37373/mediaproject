@@ -113,18 +113,12 @@ namespace GuildMaster.Adventurers
         /// How many the guild expects at a den it last counted <paramref name="lastCount"/> at,
         /// <paramref name="hoursSince"/> ago (P4-42): everyone knows how fast a kind breeds, so a
         /// den left with its last few is worth a look again later. The old count stayed put until
-        /// someone happened by. An emptied den is known to be settled again after
-        /// <see cref="EcosystemManager.RefillHours"/> (P4-43).
+        /// someone happened by. An emptied den stays empty until a band moves in, which nobody can
+        /// foretell (user decision 2026-09-22: the six-hour refill is gone) — it has to be seen.
         /// </summary>
         public static int ExpectedDenCount(MonsterDefinition species, int lastCount, float hoursSince, float growthFactor = 1f)
         {
-            if (species == null || hoursSince <= 0f) return Mathf.Max(0, lastCount);
-            if (lastCount <= 0)
-            {
-                if (hoursSince < EcosystemManager.RefillHours) return 0;
-                lastCount = EcosystemManager.RefillCount;
-                hoursSince -= EcosystemManager.RefillHours;
-            }
+            if (species == null || hoursSince <= 0f || lastCount <= 0) return Mathf.Max(0, lastCount);
             float pop = lastCount, cap = Mathf.Max(1, species.nestCapacity);
             for (float h = 0f; h < hoursSince && pop < cap; h += 1f)
             {

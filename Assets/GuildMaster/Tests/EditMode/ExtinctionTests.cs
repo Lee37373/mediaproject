@@ -4,16 +4,17 @@ using NUnit.Framework;
 namespace GuildMaster.Tests
 {
     /// <summary>
-    /// There is no extinction (P4-43, user decision 2026-09-22): an emptied nest is settled again
-    /// after a few hours whatever else happened to its kind. Plus raid and building balance checks.
+    /// Emptied nests (user decision 2026-09-22): no refill by the same kind any more; the outer
+    /// sites are taken by newcomers from beyond the map edge. Plus raid and building balance checks.
     /// </summary>
     public class ExtinctionTests
     {
         [Test]
-        public void AnEmptiedNestIsSettledAgainWithinHours()
+        public void EmptyOuterSites_AreTakenByNewcomersFromBeyondTheEdge()
         {
-            Assert.That(Ecosystem.EcosystemManager.RefillHours, Is.InRange(1, 12));
-            Assert.That(Ecosystem.EcosystemManager.RefillCount, Is.GreaterThanOrEqualTo(2), "a pair, so it can breed");
+            Assert.That(Ecosystem.MigrationService.ArrivalChancePerHour, Is.InRange(0.05f, 1f), "within a day or so");
+            Assert.That(Ecosystem.MigrationService.MaxArrivals, Is.GreaterThanOrEqualTo(1));
+            Assert.That(Ecosystem.MigrationService.OuterSites, Is.InRange(0.3f, 0.8f), "the outer rings, not the town's");
         }
 
         [Test]

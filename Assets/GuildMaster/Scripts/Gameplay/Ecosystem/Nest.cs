@@ -27,7 +27,12 @@ namespace GuildMaster.Ecosystem
         public float GrowthFactor { get; internal set; } = 1f;
         /// <summary>Level its young are born at, by the site's distance from the town (<see cref="Monsters.MonsterLevel.BirthLevel"/>).</summary>
         public int BirthLevel { get; internal set; } = 1;
-        /// <summary>Game hours the nest has been empty (it is settled again at <see cref="EcosystemManager.RefillHours"/>).</summary>
+        /// <summary>
+        /// Town gates (centre cells) this pack has seen broken (user report 2026-09-22): what the
+        /// members see is shared among them, nothing more — a breach nobody saw is thought shut.
+        /// </summary>
+        public HashSet<Vector2Int> KnownOpenGates { get; } = new();
+        /// <summary>Game hours the nest has been empty (a band may move in, see <see cref="MigrationService"/>).</summary>
         public int EmptyHours { get; set; }
         public bool Discovered { get; private set; }
 
@@ -121,12 +126,13 @@ namespace GuildMaster.Ecosystem
             _renderer.enabled = false;
         }
 
-        public Monster SpawnMember()
+        /// <summary>A new member at the nest, or at <paramref name="at"/> (newcomers walking in from the map edge).</summary>
+        public Monster SpawnMember(Vector2? at = null)
         {
             var pool = Services.Get<PoolService>();
             var world = Services.Get<WorldService>();
             var rng = GameRandom.Shared;
-            world.Grid.TryRandomWalkableNear(Cell, 2, rng, out var cell);
+            world.Grid.TryRandomWalkableNear(at.HasValue ? GridMap.WorldToCell(at.Value) : Cell, 2, rng, out var cell);
             var pos = GridMap.CellToWorld(cell) + rng.InsideUnitCircle() * 0.3f;
             var monster = pool.Spawn<Monster>(Monster.PoolKey, pos);
             monster.Setup(Species, this);

@@ -31,6 +31,10 @@ namespace GuildMaster.World
         public bool FacingLeft { get; private set; }
         /// <summary>Whether intact town gates open for this walker (P4-39): false for monsters.</summary>
         public bool PassesGates { get; set; } = true;
+        /// <summary>Cells this walker takes to be shut though they are open: a broken gate its kind has not seen (monsters).</summary>
+        public Func<int, int, bool> BelievedShut { get; set; }
+
+        bool Passable(Vector2Int c) => World.Grid.IsWalkable(c, PassesGates) && (BelievedShut == null || !BelievedShut(c.x, c.y));
 
         public event Action Arrived;
         public event Action PathFailed;
@@ -94,12 +98,12 @@ namespace GuildMaster.World
             _steerVelocity = Vector2.MoveTowards(_steerVelocity, desired, top * SteerAcceleration * dt);
 
             var next = pos + _steerVelocity * dt;
-            if (!World.Grid.IsWalkable(GridMap.WorldToCell(next), PassesGates))
+            if (!Passable(GridMap.WorldToCell(next)))
             {
                 var nx = pos + new Vector2(_steerVelocity.x * dt, 0f);
                 var ny = pos + new Vector2(0f, _steerVelocity.y * dt);
-                if (World.Grid.IsWalkable(GridMap.WorldToCell(nx), PassesGates)) { next = nx; _steerVelocity.y = 0f; }
-                else if (World.Grid.IsWalkable(GridMap.WorldToCell(ny), PassesGates)) { next = ny; _steerVelocity.x = 0f; }
+                if (Passable(GridMap.WorldToCell(nx))) { next = nx; _steerVelocity.y = 0f; }
+                else if (Passable(GridMap.WorldToCell(ny))) { next = ny; _steerVelocity.x = 0f; }
                 else { next = pos; _steerVelocity = Vector2.zero; }
             }
             Velocity = _steerVelocity;
@@ -121,7 +125,7 @@ namespace GuildMaster.World
             _waypoints.Clear();
             _index = 0;
             Vector2 from = transform.position;
-            if (!World.FindPath(from, _destination, _cells, PassesGates)) return false;
+            if (!World.FindPath(from, _destination, _cells, PassesGates, BelievedShut)) return false;
 
             for (int i = 1; i < _cells.Count; i++) _waypoints.Add(GridMap.CellToWorld(_cells[i]));
             // End exactly at the requested point if it is inside the last cell.
@@ -142,7 +146,7 @@ namespace GuildMaster.World
             if (_gridVersion != World.Grid.Version)
             {
                 _gridVersion = World.Grid.Version;
-                if (_index < _waypoints.Count && !World.Grid.IsWalkable(GridMap.WorldToCell(_waypoints[_index]), PassesGates))
+                if (_index < _waypoints.Count && !Passable(GridMap.WorldToCell(_waypoints[_index])))
                 {
                     if (!BuildPath()) { Stop(); PathFailed?.Invoke(); return; }
                 }

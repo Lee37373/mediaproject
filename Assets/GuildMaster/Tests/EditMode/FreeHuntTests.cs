@@ -256,11 +256,9 @@ namespace GuildMaster.Tests
             Assert.That(FreeHunt.ExpectedDenCount(slime, 2, 0f), Is.EqualTo(2));
             Assert.That(FreeHunt.ExpectedDenCount(slime, 2, 12f), Is.GreaterThan(3));
             Assert.That(FreeHunt.ExpectedDenCount(slime, 2, 500f), Is.InRange(slime.nestCapacity - 1, slime.nestCapacity));
-            // ...and an emptied one is known to be settled again after the refill time (P4-43).
-            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, Ecosystem.EcosystemManager.RefillHours - 1), Is.EqualTo(0));
-            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, Ecosystem.EcosystemManager.RefillHours),
-                        Is.EqualTo(Ecosystem.EcosystemManager.RefillCount));
-            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, 48f), Is.GreaterThan(Ecosystem.EcosystemManager.RefillCount));
+            // ...but an emptied one stays empty in the guild's reckoning: who moves in, and when,
+            // cannot be foretold (user decision 2026-09-22: no refill by the same kind).
+            Assert.That(FreeHunt.ExpectedDenCount(slime, 0, 48f), Is.EqualTo(0));
         }
 
         [Test]

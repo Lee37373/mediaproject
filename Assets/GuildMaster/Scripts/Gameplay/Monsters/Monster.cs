@@ -76,7 +76,11 @@ namespace GuildMaster.Monsters
             GateBreakState = new MonsterGateBreakState();
             Engage.ApproachSpot = EncircleSpot;
             // Town gates stay shut to monsters until broken (P4-39).
-            if (Mover) Mover.PassesGates = false;
+            if (Mover)
+            {
+                Mover.PassesGates = false;
+                Mover.BelievedShut = BelievedShut;
+            }
         }
 
         public static GameObject CreatePooledInstance()
@@ -114,6 +118,7 @@ namespace GuildMaster.Monsters
             Radius = 0.28f * def.scale;
             Mass = def.scale * def.scale;
             SkillFactory.Assign(this, def.skillIds);
+            _ownKnownOpenGates.Clear();
             // P4-21: base stats kept apart from gear; some spawn already wearing something.
             // Own level (user decision 2026-09-22): born higher the farther out the nest lies.
             _unlevelledStats = Stats;
@@ -464,9 +469,44 @@ namespace GuildMaster.Monsters
             if (_senseTimer <= 0f)
             {
                 _senseTimer = SenseInterval;
+                LookAtGates();
                 Sense();
             }
             Fsm.Tick(Time.deltaTime);
+        }
+
+        // ---------------- What it knows of the town gates (user report 2026-09-22) ----------------
+
+        readonly System.Collections.Generic.HashSet<Vector2Int> _ownKnownOpenGates = new();
+        /// <summary>Broken gates this monster's pack has seen (its own memory when it has no nest).</summary>
+        System.Collections.Generic.HashSet<Vector2Int> KnownOpenGates => Home != null ? Home.KnownOpenGates : _ownKnownOpenGates;
+
+        /// <summary>
+        /// Raiders came straight for a breach nobody had seen: paths used the real state of every
+        /// gate. A broken gate the pack has not seen is taken to be shut; they bash the gate in front
+        /// of them instead, and only head for a breach once one of them has seen it.
+        /// </summary>
+        bool BelievedShut(int x, int y)
+        {
+            if (!Services.TryGet<WorldService>(out var world) || !world.Grid.IsGate(x, y)) return false;
+            var cell = new Vector2Int(x, y);
+            if (world.Grid.IsClosedGate(cell)) return false; // really shut: the grid says so already
+            var known = KnownOpenGates;
+            foreach (var g in world.Map.Gates)
+                if ((g - cell).sqrMagnitude <= 2 && known.Contains(g)) return false;
+            return true;
+        }
+
+        void LookAtGates()
+        {
+            if (!Services.TryGet<Town.GateService>(out var gates)) return;
+            float r = EffectiveSightRadius;
+            foreach (var g in gates.Gates)
+            {
+                if ((g.Center - Position).sqrMagnitude > r * r || !CanSee(g.Center)) continue;
+                if (g.IsBroken) KnownOpenGates.Add(g.CenterCell);
+                else KnownOpenGates.Remove(g.CenterCell);
+            }
         }
 
         void Sense()

@@ -1657,7 +1657,7 @@ namespace GuildMaster.Tests
                 EventBus.Subscribe<BandSettledEvent>(OnSettled);
                 try
                 {
-                    Assert.That(svc.TryLaunch(from, 6), Is.True);
+                    Assert.That(svc.TryLaunch(from), Is.True);
                     Assert.That(from.Members.Count(m => m.StateLabel == "이주"), Is.GreaterThan(0), "the band sets off");
                     Clock.SetSpeed(3);
                     yield return WaitFor(() => settledAt != null, 60f);
@@ -1667,6 +1667,7 @@ namespace GuildMaster.Tests
                 Assert.That(target.Species, Is.EqualTo(from.Species), "the site is theirs now");
                 Assert.That(target.Members.Count(m => m.IsAlive), Is.GreaterThan(0));
                 Assert.That(svc.Bands.Count(b => b.From == from), Is.Zero);
+                Assert.That(from.IsEmpty, Is.True, "the whole nest moved: no pack left behind as its friend (user decision 2026-09-22)");
             }
             finally { Unit.GuildInvulnerable = false; }
         }
@@ -1694,6 +1695,79 @@ namespace GuildMaster.Tests
             yield return WaitFor(() => ground.Items.Count == 0, 8f);
             Assert.That(ground.Items.Count, Is.Zero, "the jelly three cells away was picked up on the way");
             Assert.That(member.Data.loot.Any(s => s.itemId == "slime_jelly"), Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator NewcomersWalkInFromTheMapEdge_AndSettleAnEmptyOuterSite()
+        {
+            // User decision 2026-09-22: emptied outer sites are taken by bands from beyond the edge.
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var eco = Services.Get<EcosystemManager>();
+                var svc = Services.Get<MigrationService>();
+                var edge = Services.Get<World.WorldService>().Map.EdgeSpawnCells;
+                // The outer site closest to the edge, emptied (a short walk for the test).
+                float ToEdge(Ecosystem.Nest n) => edge.Min(c => (c - n.Cell).magnitude);
+                var target = eco.Nests.Where(n => eco.Distance01(n.WorldPosition) >= MigrationService.OuterSites).OrderBy(ToEdge).First();
+                foreach (var m in target.Members.ToList()) m.Perish();
+                Assert.That(target.IsEmpty, Is.True);
+                var species = eco.Species.First(s => s.id == "goblin");
+
+                bool settled = false;
+                void OnSettled(NestRecolonizedEvent e) { if (e.Nest == target) settled = true; }
+                EventBus.Subscribe<NestRecolonizedEvent>(OnSettled);
+                try
+                {
+                    Assert.That(svc.TryArrive(target, species), Is.True);
+                    var band = svc.Bands.Single(b => b.Arrival && b.Target == target);
+                    Assert.That(band.Members.All(m => (m.Position - target.WorldPosition).magnitude >= ToEdge(target) - 3f), Is.True, "they appear at the edge");
+                    Assert.That(band.Members.All(m => m.Level == target.BirthLevel), Is.True, "born to the outer site's level");
+                    Clock.SetSpeed(3);
+                    yield return WaitFor(() => settled, 60f);
+                }
+                finally { EventBus.Unsubscribe<NestRecolonizedEvent>(OnSettled); }
+                Assert.That(settled, Is.True, "the newcomers reached their site");
+                Assert.That(target.Species, Is.EqualTo(species));
+                Assert.That(target.Members.Count(m => m.IsAlive), Is.GreaterThan(0));
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
+        public IEnumerator Raiders_BashTheGateInFront_KnowingNothingOfABreachNobodySaw()
+        {
+            // User report 2026-09-22: raiders made for a broken gate none of them could have seen.
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var waves = Services.Get<Town.WaveManager>();
+                var eco = Services.Get<EcosystemManager>();
+                var gates = Services.Get<Town.GateService>().Gates;
+                var west = gates.OrderBy(g => g.OutsidePoint.x).First();
+                var east = gates.OrderBy(g => g.OutsidePoint.x).Last();
+                west.Damage(west.Hp + 1f);
+                Assert.That(west.IsBroken, Is.True);
+                foreach (var a in Roster.Members) { a.ChangeState(a.RestState); a.Mover.Stop(); }
+
+                var nest = eco.Nests.First(n => n.Species.canRaid && !n.IsEmpty);
+                while (nest.Population < 4) eco.Spawn(nest);
+                waves.Launch(nest);
+                var raiders = nest.Members.Where(m => m != null && m.IsAlive && m.DefaultStateOverride != null).ToList();
+                foreach (var m in raiders) { m.Mover.Stop(); m.transform.position = east.OutsidePoint + (Vector2)east.Outward * 3f; }
+                yield return WaitFor(() => raiders.Any(m => m.IsBreakingGate), 8f);
+                Assert.That(raiders.Any(m => m.IsBreakingGate), Is.True, "they went for the gate in front of them");
+                Assert.That(nest.KnownOpenGates.Contains(west.CenterCell), Is.False, "nobody saw the breach");
+
+                // Once one of them sees the breach, the pack knows it.
+                var scout = raiders.First(m => m.IsAlive);
+                scout.transform.position = west.OutsidePoint + (Vector2)west.Outward * 2f;
+                yield return WaitFor(() => nest.KnownOpenGates.Contains(west.CenterCell), 3f);
+                Assert.That(nest.KnownOpenGates.Contains(west.CenterCell), Is.True, "seen: the pack knows the way in");
+            }
+            finally { Unit.GuildInvulnerable = false; }
         }
 
         [UnityTest]

@@ -13,12 +13,14 @@ namespace GuildMaster.Ecosystem
     public struct BandSettledEvent { public Nest From; public Nest To; public MonsterDefinition Species; public int Count; public bool Observed; }
 
     /// <summary>
-    /// Band migration (P4-56, user decisions 2026-09-22): part of a crowded nest leaves (the raid roll
-    /// of <see cref="Town.WaveManager"/>) and moves its home a step towards the town — it walks to a
-    /// nest site nearer the walls, fights whatever it meets on the way (and whoever lives there: the
-    /// site is taken by force), rests where it stands when badly hurt, then goes on. Settled, the
-    /// members belong to the new nest. So the strong kinds creep inwards over the days, and only a
-    /// nest close to the town sends its band against the town itself (the raid).
+    /// Band migration (P4-56, user decisions 2026-09-22): a crowded nest (the raid roll of
+    /// <see cref="Town.WaveManager"/>) moves as a whole — no split packs that stayed friends — a
+    /// step towards the town: it walks to a nest site nearer the walls, fights whatever it meets on
+    /// the way (and whoever lives there: the site is taken by force), rests where it stands when
+    /// badly hurt, then goes on. The nest it left stands empty; empty outer sites are taken by
+    /// newcomers from beyond the map edge (<see cref="TryArrive"/>). So the strong kinds creep
+    /// inwards over the days, and only a nest close to the town sends its band against the town
+    /// itself (the raid).
     /// </summary>
     public class MigrationService : MonoBehaviour
     {
@@ -38,6 +40,12 @@ namespace GuildMaster.Ecosystem
         public const float MaxHours = 30f;
         /// <summary>At most this many bands on the move at once.</summary>
         public const int MaxBands = 3;
+        /// <summary>Newcomers from beyond the map edge (user decision 2026-09-22): chance per game hour while an outer site stands empty.</summary>
+        public const float ArrivalChancePerHour = 0.3f;
+        /// <summary>At most this many newcomer bands on their way in at once.</summary>
+        public const int MaxArrivals = 2;
+        /// <summary>Sites at least this far out (0 innermost .. 1 outermost) count as outer: newcomers settle there.</summary>
+        public const float OuterSites = 0.5f;
         const float TickInterval = 0.5f;
 
         public class Band
@@ -50,6 +58,8 @@ namespace GuildMaster.Ecosystem
             public float StartedAtHour;
             public bool Resting;
             public MonsterDefinition Species;
+            /// <summary>Newcomers from beyond the edge heading for an empty outer site (their home already).</summary>
+            public bool Arrival;
         }
 
         EcosystemManager _eco;
@@ -105,8 +115,8 @@ namespace GuildMaster.Ecosystem
             return best;
         }
 
-        /// <summary>Sends <paramref name="count"/> members of the nest off to a nearer site. False if there is nowhere to go.</summary>
-        public bool TryLaunch(Nest nest, int count)
+        /// <summary>Sends the whole nest (those at home) off to a nearer site. False if there is nowhere to go.</summary>
+        public bool TryLaunch(Nest nest)
         {
             if (_bands.Count >= MaxBands || IsMigrating(nest)) return false;
             var home = nest.Members.Where(m => m != null && m.IsAlive && m.DefaultStateOverride == null).ToList();
@@ -118,16 +128,44 @@ namespace GuildMaster.Ecosystem
                 Id = ++_count, From = nest, Target = target, StartedAtHour = _clock.TotalHours,
                 Species = nest.Species,
             };
-            foreach (var m in home.OrderBy(_ => GameRandom.Shared.Value).Take(Mathf.Clamp(count, 1, home.Count)))
-            {
-                band.Members.Add(m);
-                _of[m] = band;
-                m.Died += OnMemberDied;
-                m.DefaultStateOverride = m.MigrateState;
-                m.GoToDefaultState();
-            }
+            foreach (var m in home) Enlist(band, m);
             _bands.Add(band);
             Debug.Log($"[Migration] band #{band.Id}: {band.Members.Count} {nest.Species.displayName} {nest.DisplayName} → {target.DisplayName}");
+            return true;
+        }
+
+        void Enlist(Band band, Monster m)
+        {
+            band.Members.Add(m);
+            _of[m] = band;
+            m.Died += OnMemberDied;
+            m.DefaultStateOverride = m.MigrateState;
+            m.GoToDefaultState();
+        }
+
+        /// <summary>
+        /// A new band walks in from beyond the map edge towards an empty outer site (user decision
+        /// 2026-09-22: of any kind, born to that site's level). The site is theirs from the start;
+        /// they fight their way there like any band.
+        /// </summary>
+        public bool TryArrive(Nest target = null, MonsterDefinition species = null)
+        {
+            if (_bands.Count(b => b.Arrival) >= MaxArrivals || _world.Map.EdgeSpawnCells.Count == 0) return false;
+            if (target == null)
+            {
+                var free = _eco.Nests.Where(n => n.IsEmpty && _eco.Distance01(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)).ToList();
+                if (free.Count == 0) return false;
+                target = free[GameRandom.Shared.Range(0, free.Count)];
+            }
+            if (!target.IsEmpty) return false;
+            species ??= _eco.AllSpecies[GameRandom.Shared.Range(0, _eco.AllSpecies.Count)];
+            target.ChangeSpecies(species);
+            var edge = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).First();
+            var band = new Band { Id = ++_count, From = target, Target = target, StartedAtHour = _clock.TotalHours, Species = species, Arrival = true };
+            int size = Mathf.Max(3, species.nestCapacity / 3);
+            for (int i = 0; i < size; i++) Enlist(band, _eco.Spawn(target, GridMap.CellToWorld(edge)));
+            _bands.Add(band);
+            Debug.Log($"[Migration] newcomers #{band.Id}: {size} {species.displayName} from the edge {edge} → {target.DisplayName}");
             return true;
         }
 
@@ -143,6 +181,7 @@ namespace GuildMaster.Ecosystem
         {
             foreach (var band in _bands.ToList())
                 if (_clock.TotalHours - band.StartedAtHour >= MaxHours) GoHome(band);
+            if (GameRandom.Shared.Value < ArrivalChancePerHour) TryArrive();
         }
 
         /// <summary>Beaten back on the way or at the target: rest, then try elsewhere (or go home).</summary>
@@ -151,6 +190,13 @@ namespace GuildMaster.Ecosystem
             foreach (var band in _bands)
             {
                 if (band.From != e.IntruderHome) continue;
+                if (band.Arrival)
+                {
+                    // Newcomers have nowhere else: back off, rest, and try their site again.
+                    foreach (var m in band.Members) if (m != null && m.IsAlive && e.Territory != null) m.FleeFrom(e.Territory.WorldPosition);
+                    band.Resting = true;
+                    continue;
+                }
                 // Back off from the stronger residents, then rest out of their way.
                 foreach (var m in band.Members) if (m != null && m.IsAlive && e.Territory != null) m.FleeFrom(e.Territory.WorldPosition);
                 if (e.Territory != null) band.Refused.Add(e.Territory);
@@ -208,7 +254,8 @@ namespace GuildMaster.Ecosystem
             }
             _bands.Remove(band);
             Debug.Log($"[Migration] band #{band.Id}: {band.Members.Count} {band.Species.displayName} settled {to.DisplayName}");
-            EventBus.Publish(new BandSettledEvent { From = band.From, To = to, Species = band.Species, Count = band.Members.Count, Observed = observed });
+            if (band.Arrival) EventBus.Publish(new NestRecolonizedEvent { Nest = to });
+            else EventBus.Publish(new BandSettledEvent { From = band.From, To = to, Species = band.Species, Count = band.Members.Count, Observed = observed });
         }
 
         /// <summary>Gives up: back to the nest they came from.</summary>
