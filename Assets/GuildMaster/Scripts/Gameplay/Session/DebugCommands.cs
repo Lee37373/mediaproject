@@ -465,10 +465,15 @@ namespace GuildMaster.Session
             var sb = new StringBuilder($"raids={w.RaidCount} active={w.RaidActive} sighted={w.RaidSighted} seenRaiders={w.Raiders.Count(m => m != null && m.IsAlive)}\n");
             foreach (var g in w.Raiders.Where(m => m != null && m.IsAlive).GroupBy(m => m.DisplayName))
                 sb.Append($"  {g.Key} x{g.Count()} ({string.Join(",", g.Select(m => m.StateLabel).Distinct())})\n");
+            var centre = Services.Get<World.WorldService>().TownCenterWorld;
+            foreach (var f in w.Fronts)
+                sb.Append($"  front raid#{f.RaidId} at {f.Point - centre} strength={f.Strength}\n");
             foreach (var b in Services.Get<Town.TownService>().Buildings)
                 sb.Append($"  {b.DisplayName} {b.Hp:0}/{b.MaxHp:0}\n");
             foreach (var a in Services.Get<GuildRoster>().Members)
-                sb.Append($"  {a.Data.name} {a.StateLabel} hp={a.Hp:0}/{a.Stats.MaxHp:0}\n");
+                sb.Append($"  {a.Data.name} {a.StateLabel} hp={a.Hp:0}/{a.Stats.MaxHp:0}"
+                          + (a.Fsm.Current == a.DefendState && a.DefendState.Front is { } fp ? $" front={fp - centre}" : "")
+                          + (a.CurrentTarget != null ? $" target={a.CurrentTarget.name}" : "") + "\n");
             return sb.ToString();
         }
 

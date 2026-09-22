@@ -32,6 +32,74 @@ namespace GuildMaster.World
             _ => new TerrainThresholds { Water = 0.30f, Sand = 0.34f, Mountain = 0.72f, Forest = 0.56f },
         };
 
+        /// <summary>
+        /// Cut-offs averaged over the regions around a cell, so terrain changes gradually across a
+        /// border. Where lava meets water there is no pool at all: a lake half blue, half lava read
+        /// as a rendering fault.
+        /// </summary>
+        static TerrainThresholds BlendedThresholds(Region[] around)
+        {
+            TerrainThresholds sum = default;
+            foreach (var r in around)
+            {
+                var t = Thresholds(r);
+                sum.Water += t.Water; sum.Sand += t.Sand; sum.Mountain += t.Mountain; sum.Forest += t.Forest;
+            }
+            float n = around.Length;
+            return new TerrainThresholds { Water = sum.Water / n, Sand = sum.Sand / n, Mountain = sum.Mountain / n, Forest = sum.Forest / n };
+        }
+
+        /// <summary>Which terrain feature a tile belongs to (0 = open ground). A lake and its shore are one.</summary>
+        static int FeatureKind(TileType t) => t switch
+        {
+            TileType.Water or TileType.Sand => 1,
+            TileType.Forest => 2,
+            TileType.Mountain => 3,
+            _ => 0,
+        };
+
+        /// <summary>
+        /// Borders follow the terrain (user decision 2026-09-22): each connected lake (with its shore),
+        /// wood or rock mass lies wholly in the region holding most of it, so a lake is never half
+        /// water, half lava; the border runs round it. Open ground keeps the winding line.
+        /// </summary>
+        static void SnapRegionsToFeatures(MapData map)
+        {
+            int w = map.Width, h = map.Height;
+            var seen = new bool[w * h];
+            var cells = new List<int>();
+            var stack = new Stack<int>();
+            var votes = new int[System.Enum.GetValues(typeof(Region)).Length];
+            for (int start = 0; start < seen.Length; start++)
+            {
+                int kind = FeatureKind(map.Tiles[start]);
+                if (seen[start] || kind == 0) continue;
+                cells.Clear();
+                System.Array.Clear(votes, 0, votes.Length);
+                seen[start] = true;
+                stack.Push(start);
+                while (stack.Count > 0)
+                {
+                    int i = stack.Pop();
+                    cells.Add(i);
+                    votes[(int)map.Regions[i]]++;
+                    int x = i % w, y = i / w;
+                    for (int k = 0; k < 4; k++)
+                    {
+                        int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        int n = ny * w + nx;
+                        if (seen[n] || FeatureKind(map.Tiles[n]) != kind) continue;
+                        seen[n] = true;
+                        stack.Push(n);
+                    }
+                }
+                int best = 0;
+                for (int r = 1; r < votes.Length; r++) if (votes[r] > votes[best]) best = r;
+                foreach (int i in cells) map.Regions[i] = (Region)best;
+            }
+        }
+
         public static MapData Generate(MapGenSettings s)
         {
             var map = new MapData(s.Width, s.Height);
@@ -45,12 +113,14 @@ namespace GuildMaster.World
 
             // 1. Terrain from height + moisture noise; each region has its own mix (few trees in the
             //    desert, many pools in the swamp, rocks in the wasteland whose "water" is lava).
+            var around = new Region[9];
             for (int y = 0; y < s.Height; y++)
             for (int x = 0; x < s.Width; x++)
             {
-                var region = TerrainRegions.At(layout, x + 0.5f, y + 0.5f);
+                TerrainRegions.SampleAround(layout, x + 0.5f, y + 0.5f, around);
+                var region = around[0];
                 map.Regions[map.Index(x, y)] = region;
-                var th = Thresholds(region);
+                var th = BlendedThresholds(around);
                 float h = Fbm(x * 0.035f + ox, y * 0.035f + oy);
                 float m = Fbm(x * 0.05f + mx, y * 0.05f + my);
                 TileType t;
@@ -61,6 +131,8 @@ namespace GuildMaster.World
                 else t = TileType.Grass;
                 map[x, y] = t;
             }
+            // Regions snap to the terrain before roads and the town clearing cut features in two.
+            SnapRegionsToFeatures(map);
 
             // 2. Town: cleared surroundings, floor, walls and 4 gates.
             var c = new Vector2Int(s.Width / 2, s.Height / 2);

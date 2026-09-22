@@ -63,6 +63,33 @@ namespace GuildMaster.World
             return Outer[Mathf.Min(Outer.Length - 1, (int)(t * Outer.Length))];
         }
 
+        /// <summary>Cells over which two regions' terrain mixes (lakes and woods thin out instead of being cut off).</summary>
+        public const float BlendRadius = 7f;
+        /// <summary>How far (cells) the painted border frays either way: the regions bite into each other.</summary>
+        public const float Fringe = 2.5f;
+
+        /// <summary>
+        /// Regions sampled around a point (itself and 8 around it at <see cref="BlendRadius"/>), for
+        /// mixing terrain across borders (user report 2026-09-22: borders looked cut with a ruler).
+        /// </summary>
+        public static void SampleAround(in RegionLayout l, float x, float y, Region[] into)
+        {
+            into[0] = At(l, x, y);
+            for (int k = 0; k < 8; k++)
+            {
+                float a = k * Mathf.PI / 4f;
+                into[k + 1] = At(l, x + Mathf.Cos(a) * BlendRadius, y + Mathf.Sin(a) * BlendRadius);
+            }
+        }
+
+        /// <summary>The region as painted: the border frayed by fine noise (the cell rule stays <see cref="At"/>).</summary>
+        public static Region AtFrayed(in RegionLayout l, float x, float y)
+        {
+            float fx = (Noise(x * 0.45f + l.NoiseY + 13f, y * 0.45f + l.NoiseX) - 0.5f) * 2f * Fringe;
+            float fy = (Noise(x * 0.45f + l.NoiseY, y * 0.45f + l.NoiseX + 29f) - 0.5f) * 2f * Fringe;
+            return At(l, x + fx, y + fy);
+        }
+
         /// <summary>Smooth value noise in 0..1, pure C# (the ground is painted on worker threads).</summary>
         static float Noise(float x, float y)
         {

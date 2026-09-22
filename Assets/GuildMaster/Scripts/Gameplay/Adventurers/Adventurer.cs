@@ -392,7 +392,11 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>Drinks a potion or signals retreat when badly hurt/exhausted. Returns true if retreating.</summary>
-        internal bool CheckRetreat()
+        /// <param name="wearinessCounts">
+        /// False while defending the town: going home to rest makes no sense at home (user report
+        /// 2026-09-22: exhausted defenders "retreated" the moment a raid came, one member fought alone).
+        /// </param>
+        internal bool CheckRetreat(bool wearinessCounts = true)
         {
             if (HpRatio < RetreatThreshold && Data.potions > 0 && Services.TryGet<GameDatabase>(out var db))
             {
@@ -400,7 +404,7 @@ namespace GuildMaster.Adventurers
                 Heal(Combat.ScaledHp(db.Item(DefaultContent.Potion)?.healAmount ?? 40f));
                 Say("물약을 마셨다!");
             }
-            if (HpRatio < RetreatThreshold || Data.fatigue >= 95f)
+            if (HpRatio < RetreatThreshold || wearinessCounts && Data.fatigue >= 95f)
             {
                 if (HpRatio < RetreatThreshold)
                     EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });

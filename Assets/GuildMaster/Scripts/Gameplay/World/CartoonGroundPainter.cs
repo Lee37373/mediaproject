@@ -16,7 +16,7 @@ namespace GuildMaster.World
         readonly MapData _map;
         readonly int _w, _h;
         // Per-layer indicator per tile (0/1): smoothed at paint time.
-        readonly byte[] _forest, _sand, _water, _road, _mountain;
+        readonly byte[] _forest, _sand, _water, _road, _mountain, _nearBorder;
 
         // ---- Palette ----
         static readonly Color32 Grass = C(0x7C, 0xCF, 0x4F), GrassLight = C(0x8E, 0xDA, 0x5C);
@@ -68,15 +68,83 @@ namespace GuildMaster.World
         public static Palette PaletteOf(Region r) => Palettes[(int)r];
 
         /// <summary>
-        /// Region under a pixel: the cell's own, unless a neighbour differs — then the exact border
-        /// curve (so the edge is smooth, and the costly lookup only runs along borders).
+        /// Ground region under a pixel: the cell's own, except on open ground near a border — there
+        /// the frayed border (the regions bite into each other), as long as it names a region of a
+        /// neighbouring cell. Features (lakes, woods, rocks) keep their cells' region, so the border
+        /// runs round them (user decision 2026-09-22).
         /// </summary>
         Region RegionAt(float u, float v, int cx, int cy)
         {
-            var r = _map.Regions[cy * _w + cx];
-            if (_map.RegionOf(cx - 1, cy) == r && _map.RegionOf(cx + 1, cy) == r && _map.RegionOf(cx, cy - 1) == r && _map.RegionOf(cx, cy + 1) == r)
-                return r;
-            return TerrainRegions.At(_map.RegionLayout, u, v);
+            var own = _map.Regions[cy * _w + cx];
+            if (_nearBorder[cy * _w + cx] == 0) return own;
+            // Under a feature the ground only shows at its wobbly rim: that ground belongs to the
+            // open land around it (else the feature's own region showed in cell-shaped notches).
+            if (!IsOpen(cx, cy)) return OpenNeighbourRegion(cx, cy, own);
+            var frayed = TerrainRegions.AtFrayed(_map.RegionLayout, u, v);
+            if (frayed == own) return own;
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int x = Mathf.Clamp(cx + dx, 0, _w - 1), y = Mathf.Clamp(cy + dy, 0, _h - 1);
+                if (_map.Regions[y * _w + x] == frayed) return frayed;
+            }
+            return own;
+        }
+
+        bool IsOpen(int x, int y) => _forest[y * _w + x] == 0 && _sand[y * _w + x] == 0 && _mountain[y * _w + x] == 0;
+
+        Region OpenNeighbourRegion(int cx, int cy, Region fallback)
+        {
+            for (int ring = 0; ring < 2; ring++)
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                bool corner = dx != 0 && dy != 0, side = (dx == 0) != (dy == 0);
+                if (ring == 0 ? !side : !corner) continue;
+                int x = cx + dx, y = cy + dy;
+                if (x < 0 || y < 0 || x >= _w || y >= _h || !IsOpen(x, y)) continue;
+                return _map.Regions[y * _w + x];
+            }
+            return fallback;
+        }
+
+        /// <summary>Region of the nearest cell of a feature layer around (cx, cy): the whole feature is one region.</summary>
+        Region LayerRegion(byte[] layer, int cx, int cy, Region fallback)
+        {
+            if (layer[cy * _w + cx] != 0) return _map.Regions[cy * _w + cx];
+            // Sides first, then corners.
+            for (int ring = 0; ring < 2; ring++)
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                bool corner = dx != 0 && dy != 0, side = (dx == 0) != (dy == 0);
+                if (ring == 0 ? !side : !corner) continue;
+                int x = cx + dx, y = cy + dy;
+                if (x < 0 || y < 0 || x >= _w || y >= _h || layer[y * _w + x] == 0) continue;
+                return _map.Regions[y * _w + x];
+            }
+            return fallback;
+        }
+
+        /// <summary>1 where another region lies within the fraying distance (+1 cell).</summary>
+        byte[] NearBorder()
+        {
+            int reach = Mathf.CeilToInt(TerrainRegions.Fringe) + 1;
+            var near = new byte[_w * _h];
+            for (int y = 0; y < _h; y++)
+            for (int x = 0; x < _w; x++)
+            {
+                var r = _map.Regions[y * _w + x];
+                for (int dy = -reach; dy <= reach && near[y * _w + x] == 0; dy++)
+                for (int dx = -reach; dx <= reach; dx++)
+                {
+                    int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= _w || ny >= _h || _map.Regions[ny * _w + nx] == r) continue;
+                    near[y * _w + x] = 1;
+                    break;
+                }
+            }
+            return near;
         }
 
         public CartoonGroundPainter(MapData map, int pixelsPerTile)
@@ -97,6 +165,7 @@ namespace GuildMaster.World
                 _road[i] = (byte)(t == TileType.Road ? 1 : 0);
                 _mountain[i] = (byte)(t == TileType.Mountain ? 1 : 0);
             }
+            _nearBorder = NearBorder();
         }
 
         /// <summary>Fills a block of tiles [tx0, tx0+tilesW) × [ty0, ty0+tilesH) into pixels (row-major, bottom row first).</summary>
@@ -144,7 +213,8 @@ namespace GuildMaster.World
             }
 
             bool town = _map.TownRect.Contains(new Vector2Int(cx, cy));
-            var pal = town ? Palettes[0] : Palettes[(int)RegionAt(u, v, cx, cy)];
+            var region = town ? Region.Grassland : RegionAt(u, v, cx, cy);
+            var pal = Palettes[(int)region];
             Color32 c = town ? CobblePixel(u, v) : GrassPixel(u, v, pal);
             if (town)
             {
@@ -153,9 +223,12 @@ namespace GuildMaster.World
                 return c;
             }
 
-            Overlay(ref c, _forest, u, v, pal.ForestFloor, pal.ForestEdge, 0.05f, 0.5f);
-            Overlay(ref c, _sand, u, v, pal.Sand, pal.SandEdge, 0.05f, 0.45f);
-            WaterOverlay(ref c, u, v, pal);
+            // Each feature in its own region's colours (a lake is all water or all lava).
+            var forestPal = Palettes[(int)LayerRegion(_forest, cx, cy, region)];
+            var wetPal = Palettes[(int)LayerRegion(_sand, cx, cy, region)];
+            Overlay(ref c, _forest, u, v, forestPal.ForestFloor, forestPal.ForestEdge, 0.05f, 0.5f);
+            Overlay(ref c, _sand, u, v, wetPal.Sand, wetPal.SandEdge, 0.05f, 0.45f);
+            WaterOverlay(ref c, u, v, wetPal);
             Overlay(ref c, _road, u, v, Road, RoadEdge, 0.07f, 0.3f);
             MountainOverlay(ref c, u, v);
             return c;

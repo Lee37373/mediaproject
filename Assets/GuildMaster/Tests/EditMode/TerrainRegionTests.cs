@@ -31,6 +31,26 @@ namespace GuildMaster.Tests
                 Assert.That(present, Does.Contain(r), $"{r} on the map");
         }
 
+        [TestCase(1)]
+        [TestCase(42)]
+        [TestCase(9999)]
+        public void EveryLakeWoodAndRockMass_LiesWhollyInOneRegion(int seed)
+        {
+            // User decision 2026-09-22: borders follow the terrain (no lake half water, half lava).
+            var map = Generate(seed);
+            static int Kind(TileType t) => t is TileType.Water or TileType.Sand ? 1 : t == TileType.Forest ? 2 : t == TileType.Mountain ? 3 : 0;
+            int crossing = 0;
+            for (int y = 0; y < map.Height; y++)
+            for (int x = 0; x < map.Width; x++)
+            {
+                int k = Kind(map[x, y]);
+                if (k == 0) continue;
+                if (x + 1 < map.Width && Kind(map[x + 1, y]) == k && map.RegionOf(x + 1, y) != map.RegionOf(x, y)) crossing++;
+                if (y + 1 < map.Height && Kind(map[x, y + 1]) == k && map.RegionOf(x, y + 1) != map.RegionOf(x, y)) crossing++;
+            }
+            Assert.That(crossing, Is.Zero, "neighbouring cells of one feature in different regions");
+        }
+
         [Test]
         public void HarshRegions_SlowWalkingOffTheRoads()
         {

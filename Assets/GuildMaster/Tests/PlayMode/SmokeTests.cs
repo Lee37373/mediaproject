@@ -488,7 +488,8 @@ namespace GuildMaster.Tests
             // A one-person quest: nobody can be invited, so the claim rule is what is measured.
             var solo = board.FindById(DebugCommands.PostHunt("slime", 2, 40, 10, party: 1));
             Assert.That(solo, Is.Not.Null);
-            var free = Roster.Members.Where(a => a.IsAlive && a.CurrentQuest == null).Take(2).ToList();
+            // Leave the party leader free for the group quest below.
+            var free = Roster.Members.Where(a => a.IsAlive && a.CurrentQuest == null && Services.Get<GuildParties>().PartyOf(a)?.Leader != a).Take(2).ToList();
             Assert.That(free.Count, Is.EqualTo(2), "two idle members to try with");
 
             Assert.That(board.AvailableFor(free[1]).Contains(solo), Is.True, "unclaimed: anyone may take it");
@@ -507,9 +508,22 @@ namespace GuildMaster.Tests
 
             // Invitations still fill a party: accepting a three-person quest pulls companions in.
             var group = board.FindById(DebugCommands.PostHunt("slime", 2, 60, 20, party: 3));
-            var leader = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
+            // Not a follower of the starting party's leader: followers wait for their own leader and
+            // are not invited (P4-50), so a follower "leading" here would go alone.
+            var parties = Services.Get<GuildParties>();
+            var leader = Roster.Members.Where(a => a.IsAlive && a.CurrentQuest == null && !parties.FollowsALeader(a))
+                                       .OrderByDescending(a => parties.PartyOf(a)?.Leader == a).First();
+            // Fond of the leader and valuing companionship, so the rule-based answer is a near-certain
+            // yes: with a fixed seed the same dice fall every run, and a map change turned them into
+            // two refusals (2026-09-22).
+            foreach (var a in Roster.Members)
+                if (a != leader) { Relationships.Add(a, leader, 200, "test"); a.Data.values = "동료"; }
             Assert.That(board.TryAccept(group, leader), Is.True);
-            Assert.That(group.Assignees.Count, Is.GreaterThan(1), "the leader brought companions along");
+            yield return WaitFor(() => group.Assignees.Count > 1, 3f); // answers may land a frame or two later
+            Assert.That(group.Assignees.Count, Is.GreaterThan(1), "the leader brought companions along: "
+                + string.Join(", ", Roster.Members.Select(a => $"{a.Data.name} {a.StateLabel} q={a.CurrentQuest?.Id} score={RuleBasedDecisionMaker.Score(a, group):0.00}"
+                    + $" partyLeader={parties.PartyOf(a)?.Leader?.Data.name} feel={Relationships.Get(a, leader)}/{Relationships.Get(leader, a)}"))
+                + $" max={group.MaxParty}");
         }
 
         /// <summary>
@@ -1183,7 +1197,7 @@ namespace GuildMaster.Tests
                 }
 
                 var warriors = ChargeFromTheEast("goblin_warrior");
-                yield return new WaitForSeconds(4f); // scaled: 8 s at x2
+                yield return new WaitForSeconds(5f); // scaled: 10 s at x2 (8 s left it at the 200° edge on the 256 map)
                 float skilledGap = LargestGap(master.Position, warriors);
                 foreach (var m in warriors) m.Perish();
 
@@ -1373,12 +1387,18 @@ namespace GuildMaster.Tests
             yield return Boot();
             var eco = Services.Get<EcosystemManager>();
             Nest there = null, home = null;
+            // Out of the woods: trees (P4-48) would hide the
+            // intruder from the den, and this test is about the leash, not about sight.
+            var world = Services.Get<World.WorldService>();
+            bool Plain(Nest n) => !world.Grid.IsForest(n.Cell);
             // Near enough that the chase stays inside the lured one's pursuit leash (2 x 14 cells).
-            foreach (var a in eco.Nests.Where(n => n.Population >= 2))
-            foreach (var b in eco.Nests.Where(n => n.Population >= 1 && n.Species != a.Species))
+            // The widest territory on offer: in a tiny den (stone slimes, radius 4) the residents go
+            // for the bait walking through rather than the monster at its heels.
+            foreach (var a in eco.Nests.Where(n => n.Population >= 2 && Plain(n)))
+            foreach (var b in eco.Nests.Where(n => n.Population >= 1 && n.Species != a.Species && Plain(n)))
             {
                 float d = Vector2.Distance(a.WorldPosition, b.WorldPosition);
-                if (d >= 12f && d <= 22f && there == null) { there = a; home = b; }
+                if (d >= 12f && d <= 22f && (there == null || a.TerritoryRadius > there.TerritoryRadius)) { there = a; home = b; }
             }
             Assume.That(there, Is.Not.Null, "two dens of different kinds a lure apart");
             var lured = home.Members.First(m => m.IsAlive);
@@ -1396,16 +1416,31 @@ namespace GuildMaster.Tests
                 lured.ForceTarget(master);
                 master.MoveTo(there.WorldPosition + through * (there.TerritoryRadius + 12f));
 
-                bool fought = false, walkedHome = false;
+                bool fought = false, walkedHome = false, baitGone = false;
+                float closest = float.MaxValue;
+                var states = new System.Collections.Generic.HashSet<string>();
                 float until = Time.time + 25f;
                 while (Time.time < until && lured.IsAlive && there.Members.Any(m => m.IsAlive))
                 {
+                    // The lure has done its job once the bait is past the den with the monster at its
+                    // heels: the bait slips away (else the residents may go for it instead).
+                    if (!baitGone && Vector2.Dot(master.Position - there.WorldPosition, through) >= 1f)
+                    {
+                        baitGone = true;
+                        DebugCommands.Invulnerable(true, untargetable: true);
+                        master.Mover.Stop();
+                        master.transform.position = Services.Get<World.WorldService>().TownCenterWorld;
+                    }
                     if (lured.LastAttacker is Monster) fought = true;
                     if (fought && lured.DebugState == "귀소") walkedHome = true;
+                    states.Add(lured.DebugState);
+                    foreach (var r in there.Members.Where(m => m.IsAlive)) closest = Mathf.Min(closest, Vector2.Distance(r.Position, lured.Position));
                     yield return null;
                 }
                 // The den goes for the lured monster, not the bait walking past (the master cannot fight).
-                Assert.That(fought, Is.True, "the residents took it on");
+                Assert.That(fought, Is.True, $"the residents took it on ({home.Species.id} lured into {there.Species.id}, "
+                    + $"dens {Vector2.Distance(home.WorldPosition, there.WorldPosition):0} apart, territory {there.TerritoryRadius:0}, "
+                    + $"closest {closest:0.0}, lured went {string.Join("/", states)}, residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => m.DebugState))})");
                 Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight");
             }
             finally { DebugCommands.Invulnerable(false); }
@@ -1539,6 +1574,56 @@ namespace GuildMaster.Tests
             }
             Assert.That(pickedIt, Is.False, "a Lv1 member does not pick a fight with a slime king");
             king.Perish();
+        }
+
+        [UnityTest]
+        public IEnumerator TwoRaidsAtOnce_BothAreMet_TheRestingGetUp_AndAFrontFollowsItsRaid()
+        {
+            // User reports 2026-09-22: with raids from two sides only the latest was defended, only
+            // one member fought (the rest slept on), and defenders stayed at the first gate seen
+            // while the raid went round to another.
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var waves = Services.Get<Town.WaveManager>();
+                var eco = Services.Get<EcosystemManager>();
+                var gates = Services.Get<Town.GateService>().Gates;
+                var west = gates.OrderBy(g => g.OutsidePoint.x).First();
+                var east = gates.OrderBy(g => g.OutsidePoint.x).Last();
+                var south = gates.OrderBy(g => g.OutsidePoint.y).First();
+                foreach (var a in Roster.Members) { a.Data.fatigue = 100f; a.ChangeState(a.RestState); a.Mover.Stop(); }
+
+                // Two raids, each put down just outside its own gate.
+                var nests = eco.Nests.Where(n => n.Species.canRaid && !n.IsEmpty).Take(2).ToList();
+                Assume.That(nests.Count, Is.EqualTo(2), "two raid-capable nests");
+                System.Collections.Generic.List<Monster> RaidAt(Ecosystem.Nest nest, Town.TownGate gate)
+                {
+                    waves.Launch(nest);
+                    var raiders = nest.Members.Where(m => m != null && m.IsAlive && m.DefaultStateOverride != null).ToList();
+                    foreach (var m in raiders) { m.Mover.Stop(); m.transform.position = gate.OutsidePoint + (Vector2)gate.Outward * 4f; }
+                    return raiders;
+                }
+                var westRaid = RaidAt(nests[0], west);
+                RaidAt(nests[1], east);
+                yield return WaitFor(() => waves.Fronts.Count == 2, 8f);
+                Assert.That(waves.Fronts.Count, Is.EqualTo(2), "both raids seen, one front each");
+                yield return new WaitForSeconds(2f); // the coordinator shares the defenders out once a second
+
+                var defenders = Roster.Members.Where(a => a.IsAlive && a.Fsm.Current == a.DefendState).ToList();
+                Assert.That(defenders.Count, Is.EqualTo(Roster.Members.Count(a => a.IsAlive && !a.IsVisitor)), "the tired got up to defend the town");
+                foreach (var f in waves.Fronts)
+                    Assert.That(defenders.Any(a => a.DefendState.Front is { } p && Vector2.Distance(p, f.Point) < 0.5f), Is.True,
+                                $"someone holds the front of raid #{f.RaidId}");
+
+                // The western raid goes round to the south gate: its front follows it there.
+                int westId = waves.Fronts.OrderBy(f => f.Point.x).First().RaidId;
+                foreach (var m in westRaid.Where(m => m != null && m.IsAlive)) { m.Mover.Stop(); m.transform.position = south.OutsidePoint + (Vector2)south.Outward * 2f; }
+                yield return WaitFor(() => waves.Fronts.Any(f => f.RaidId == westId && Vector2.Distance(f.Point, south.InsidePoint) < 5f), 4f);
+                Assert.That(waves.Fronts.Any(f => f.RaidId == westId && Vector2.Distance(f.Point, south.InsidePoint) < 5f), Is.True,
+                            "the front moved to the south gate with its raid");
+            }
+            finally { Unit.GuildInvulnerable = false; }
         }
 
         [UnityTest]

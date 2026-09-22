@@ -79,7 +79,7 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
-            if (a.CheckRetreat()) return;
+            if (a.CheckRetreat(wearinessCounts: false)) return;
             var town = AdvCtx.Town;
             bool Allowed(Unit u) => (u is Monster m && IsIntruder(town, m)) || a.WasRecentlyAttackedBy(u);
             // Monsters inside the walls are targets even if not aggressive (e.g. a fleeing wolf).
