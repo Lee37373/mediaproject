@@ -64,20 +64,41 @@ namespace GuildMaster.Adventurers
             return null;
         }
 
-        /// <summary>Joins the band still gathering at the gate, or opens a new one and leads it.</summary>
+        /// <summary>
+        /// Joins the band still gathering at the guild, or opens a new one and leads it. A standing
+        /// party's leader always opens its own and brings the members who are free in town (P4-50);
+        /// others may still join it while it musters.
+        /// </summary>
         public HuntBand Join(Adventurer a)
         {
             var existing = BandOf(a);
             if (existing != null) return existing;
-            foreach (var b in _bands)
+            Services.TryGet<GuildParties>(out var parties);
+            var party = parties?.PartyOf(a);
+            bool leadsParty = party != null && party.Leader == a;
+            if (!leadsParty)
             {
-                if (!b.Mustering || b.Members.Count >= _capacity) continue;
-                b.Members.Add(a);
-                return b;
+                foreach (var b in _bands)
+                {
+                    if (!b.Mustering || b.Members.Count >= _capacity) continue;
+                    b.Members.Add(a);
+                    return b;
+                }
             }
             var band = new HuntBand { MusterUntilHour = (_clock != null ? _clock.TotalHours : 0f) + MusterHours };
             band.Members.Add(a);
             _bands.Add(band);
+            if (leadsParty)
+            {
+                foreach (var m in party.Members)
+                {
+                    if (m == a || band.Members.Count >= _capacity || !m.IsAlive || m.CurrentQuest != null) continue;
+                    if (m.Fsm.Current != m.IdleState && m.Fsm.Current != m.DecidingState) continue;
+                    band.Members.Add(m); // before the state change, so its Enter finds this band
+                    m.Say("같이 가자!");
+                    m.ChangeState(m.FreeHuntState);
+                }
+            }
             return band;
         }
 
@@ -99,7 +120,12 @@ namespace GuildMaster.Adventurers
                 var b = _bands[i];
                 b.Members.RemoveAll(m => m == null || !m.IsAlive || !m.IsGuildMember);
                 if (b.Members.Count == 0) { _bands.RemoveAt(i); continue; }
-                if (b.Mustering && (hour >= b.MusterUntilHour || b.Members.Count >= _capacity)) b.Mustering = false;
+                if (b.Mustering && (hour >= b.MusterUntilHour || b.Members.Count >= _capacity))
+                {
+                    b.Mustering = false;
+                    // Setting out together: a standing party forms or goes on an outing (P4-50).
+                    if (b.Members.Count >= 2 && Services.TryGet<GuildParties>(out var parties)) parties.SetOut(b.Members);
+                }
             }
         }
     }

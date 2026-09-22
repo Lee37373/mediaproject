@@ -89,13 +89,26 @@ namespace GuildMaster.Adventurers
         {
             var q = e.Quest;
             if (q.MaxParty <= 1 || q.Assignees.Count != 1 || e.Taker is not Adventurer leader || _gatherings.ContainsKey(q)) return;
+            // The leader's standing party comes along without being asked (P4-50): those in town
+            // and free take the quest with it; invitations only fill the slots left.
+            var comrades = PartyComrades(q, leader);
             var candidates = PickCandidates(q, leader);
-            if (candidates.Count == 0) return;
+            if (candidates.Count == 0 && comrades.Count == 0) return;
 
             var g = new Gathering { Quest = q, Leader = leader, StartRealTime = Time.unscaledTime, Cts = new CancellationTokenSource() };
+            g.Joined.AddRange(comrades);
             g.Invited.AddRange(candidates);
             g.Pending = candidates.Count;
             _gatherings[q] = g;
+            // After the gathering exists, so they wait in PartyGatherState with the rest; with no
+            // invitations left to answer IsGathering finishes it at once and all leave together.
+            foreach (var m in comrades)
+            {
+                m.CurrentQuest = q;
+                m.Say("가자, 리더!");
+                m.ChangeState(m.TravelState);
+            }
+            if (candidates.Count == 0) return;
 
             string invite = PartyPrompt.InviteLine(q);
             leader.Say(invite);
@@ -108,19 +121,39 @@ namespace GuildMaster.Adventurers
             }
         }
 
+        static bool FreeInTown(Adventurer a)
+            => a.IsAlive && !a.IsVisitor && a.CurrentQuest == null && (a.Fsm.Current == a.IdleState || a.Fsm.Current == a.DecidingState);
+
+        /// <summary>The leader's party members free in town, in party order, as many as the quest takes (they accept it here).</summary>
+        List<Adventurer> PartyComrades(Quest q, Adventurer leader)
+        {
+            var list = new List<Adventurer>();
+            if (!Services.TryGet<GuildParties>(out var parties) || parties.PartyOf(leader) is not { } party || party.Leader != leader) return list;
+            foreach (var m in party.Members)
+            {
+                if (m == leader || !FreeInTown(m) || IsInvited(m) || !q.HasFreeSlot) continue;
+                if (_board.TryAccept(q, m, invited: true)) list.Add(m);
+            }
+            return list;
+        }
+
         /// <summary>Idle members in town that could reasonably take this quest, best fit first.</summary>
         List<Adventurer> PickCandidates(Quest q, Adventurer leader)
         {
+            Services.TryGet<GuildParties>(out var parties);
+            int slots = q.MaxParty - q.Assignees.Count;
+            if (slots <= 0) return new List<Adventurer>();
             return _roster.Members
-                .Where(a => a != leader && a.IsAlive && !a.IsVisitor && a.CurrentQuest == null
-                            && (a.Fsm.Current == a.IdleState || a.Fsm.Current == a.DecidingState)
+                .Where(a => a != leader && FreeInTown(a)
                             && !IsInvited(a)
+                            // Someone else's party member waits for its own leader (P4-50).
+                            && (parties == null || !parties.FollowsALeader(a))
                             && Relationships.Get(leader, a) > HostileThreshold)
                 // Friends first: fitness scaled by how the leader feels about them.
                 .Select(a => (a, score: RuleBasedDecisionMaker.Score(a, q) * (1f + Relationships.Get(leader, a) / 100f)))
                 .Where(x => x.score > 0f)
                 .OrderByDescending(x => x.score)
-                .Take(q.MaxParty - 1)
+                .Take(slots)
                 .Select(x => x.a)
                 .ToList();
         }

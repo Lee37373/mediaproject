@@ -52,6 +52,18 @@ namespace GuildMaster.Session
                 $"{e.Invitee.Data.name}이(가) {e.Leader.Data.name}의 파티 제안을 {(e.Accepted ? "수락" : "거절")}했습니다.", LogCategory.Quest));
             EventBus.Subscribe<PartyFormedEvent>(e => Add(
                 $"파티 출발: {e.Leader.Data.name}, {string.Join(", ", e.Members.Select(m => m.Data.name))} → '{e.Quest.Title}'", LogCategory.Quest));
+            // Standing parties (P4-50): who joins or leaves, and how the leader split the pay.
+            EventBus.Subscribe<PartyChangedEvent>(e =>
+            {
+                if (e.Member == null) return;
+                if (e.Joined) Add($"{e.Member.Data.name}이(가) {e.Party.Name}에 합류했습니다.", LogCategory.Quest);
+                else if (e.Reason != "사망") Add($"{e.Member.Data.name}이(가) 파티를 떠났습니다 ({e.Reason ?? "해산"}).", LogCategory.Quest);
+            });
+            EventBus.Subscribe<PartySettledEvent>(e =>
+            {
+                if (e.Pool <= 0) return;
+                Add($"{e.Party.Name} 정산 {e.Pool}G{(e.FromLlm ? "" : " (규칙 분배)")}: {string.Join(", ", e.Shares.Select(s => $"{s.member.Data.name} {s.share}G"))}", LogCategory.Economy);
+            });
             // Only when the relationship grade changes (friendly → close, etc.), not every point.
             EventBus.Subscribe<RelationChangedEvent>(e =>
             {

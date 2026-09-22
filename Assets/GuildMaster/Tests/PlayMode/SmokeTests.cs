@@ -564,6 +564,56 @@ namespace GuildMaster.Tests
         /// the real monster, and seeing the spot again settles the question and removes it.
         /// </summary>
         [UnityTest]
+        public IEnumerator Party_PoolsItsLootAtTheGuild_SplitsIt_StaysTogether_AndFollowsItsLeader()
+        {
+            yield return Boot();
+            var parties = Services.Get<GuildParties>();
+            var board = Services.Get<QuestBoard>();
+            var members = Roster.Members.Where(m => m.IsAlive).Take(2).ToList();
+            Assume.That(members.Count, Is.EqualTo(2), "two members to start with");
+            var (leader, mate) = (members[0], members[1]);
+            // Neutral feelings, so nobody leaves over bad blood (that has its own EditMode test).
+            Relationships.Add(leader, mate, -Relationships.Get(leader, mate), "test");
+            Relationships.Add(mate, leader, -Relationships.Get(mate, leader), "test");
+
+            // They set out together: a standing party is on an outing.
+            var party = parties.SetOut(members);
+            Assert.That(party, Is.Not.Null);
+            Assert.That(party.Leader, Is.EqualTo(leader));
+            Assert.That(parties.FollowsALeader(mate), Is.True, "the mate waits for its leader's decisions");
+
+            // Back at the guild with loot: it is sold into the pool and split (no LLM: rule split).
+            leader.Data.AddLoot("bone_shard", 3);
+            mate.Data.AddLoot("bone_shard", 3);
+            int settledPool = -1, sharesSum = -1;
+            System.Action<PartySettledEvent> onSettled = e => { settledPool = e.Pool; sharesSum = e.Shares.Sum(s => s.share); };
+            EventBus.Subscribe(onSettled);
+            foreach (var m in members)
+            {
+                m.Mover.Stop();
+                m.transform.position = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+                m.ChangeState(m.VisitState);
+            }
+            yield return WaitFor(() => !party.OnOuting, 5f);
+            EventBus.Unsubscribe(onSettled);
+            Assert.That(party.OnOuting, Is.False, "everyone who went out is back: the split is done");
+            int soldFor = 6 * Services.Get<Economy.TradeService>().LootPrice(Services.Get<Data.GameDatabase>().Item("bone_shard"));
+            Assert.That(settledPool, Is.EqualTo(soldFor), "both bags were sold into one pool");
+            Assert.That(sharesSum, Is.EqualTo(settledPool), "the shares add up to the pool");
+            Assert.That(parties.PartyOf(mate), Is.EqualTo(party), "a fair split keeps the party together");
+
+            // The leader takes a party quest: the mate comes along without an invitation.
+            yield return WaitFor(() => mate.Fsm.Current == mate.IdleState || mate.Fsm.Current == mate.RestState, 5f);
+            if (mate.Fsm.Current == mate.RestState) mate.ChangeState(mate.IdleState);
+            MakeKnown(Services.Get<EcosystemManager>().Species.First(s2 => s2.id == "slime"));
+            var q = board.FindById(DebugCommands.PostHunt("slime", 2, 60, 20, party: 2));
+            Assert.That(q, Is.Not.Null);
+            Assert.That(board.TryAccept(q, leader), Is.True);
+            leader.CurrentQuest = q;
+            Assert.That(mate.CurrentQuest, Is.EqualTo(q), "the party member took the quest with its leader");
+        }
+
+        [UnityTest]
         public IEnumerator Forest_HidesItsInsideFromOutside_AndShortensSightWithin()
         {
             yield return Boot();

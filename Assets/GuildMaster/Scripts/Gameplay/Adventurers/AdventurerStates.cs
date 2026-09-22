@@ -95,6 +95,9 @@ namespace GuildMaster.Adventurers
             if (_decisionTimer > 0f) return;
             // A pending party invitation is this member's decision for now.
             if (Services.TryGet<PartyService>(out var party) && party.IsInvited(a)) { _decisionTimer = 2f; return; }
+            // A standing party's members go where their leader takes them (P4-50).
+            // The leader too while the last outing is not settled yet (the others are still coming back).
+            if (Services.TryGet<GuildParties>(out var parties) && (parties.FollowsALeader(a) || parties.OutingUnfinished(a))) { _decisionTimer = 2f; return; }
             a.ChangeState(a.DecidingState);
         }
     }
@@ -493,18 +496,27 @@ namespace GuildMaster.Adventurers
         }
     }
 
-    /// <summary>At the guild: sell loot, turn in quests, buy supplies.</summary>
+    /// <summary>
+    /// At the guild: sell loot, turn in quests, buy supplies. Back from a party outing (P4-50) the
+    /// gold goes into the party's pool instead, and the member waits for the leader's split
+    /// before shopping with its share.
+    /// </summary>
     public class GuildVisitState : State<Adventurer>
     {
         const float VisitSeconds = 1.5f;
         bool _goingToDoor;
+        bool _shopped;
         float _guardTimer;
+        float _wanderTimer;
 
-        public override string Label => "길드 방문";
+        public override string Label => Waiting ? "정산 대기" : "길드 방문";
+
+        bool Waiting => !_shopped && Services.TryGet<GuildParties>(out var parties) && parties.IsWaiting(Owner);
 
         public override void Enter()
         {
             var a = Owner;
+            _shopped = false;
             _goingToDoor = Vector2.Distance(a.Position, AdvCtx.GuildDoor) > 1.2f;
             if (_goingToDoor) a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
             else DoBusiness();
@@ -514,9 +526,17 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             var trade = Services.Get<TradeService>();
+            Services.TryGet<GuildParties>(out var parties);
+            // Party loot is the party's (user decision): sold here, the gold goes into the pool.
+            bool pooled = parties != null && parties.PartyOf(a) is { } party && party.WentOut(a) && !party.Settling;
             int loot = a.Data.LootCount;
             int earned = trade.BuyLoot(a);
-            if (earned > 0) a.Say($"전리품을 팔아 {earned}G를 벌었다.");
+            if (earned > 0 && pooled && parties.Deposit(a, earned))
+            {
+                a.Data.gold -= earned;
+                a.Say($"전리품을 팔아 {earned}G를 파티 몫으로 모았다.");
+            }
+            else if (earned > 0) a.Say($"전리품을 팔아 {earned}G를 벌었다.");
             else if (loot > 0) a.Say("길드에 돈이 없다니... 전리품은 내가 들고 있지.");
 
             var q = a.CurrentQuest;
@@ -524,15 +544,28 @@ namespace GuildMaster.Adventurers
             {
                 if (AdvCtx.Board.TryTurnIn(q, a, out int gold, out int exp))
                 {
-                    a.Data.gold += gold;
                     a.Data.questsCompleted++;
-                    a.GainExp(exp);
+                    a.GainExp(exp); // EXP stays personal (user decision)
                     a.CurrentQuest = null;
-                    a.Say($"보상 {gold}G, {exp}EXP 받았다!");
+                    if (pooled && parties.Deposit(a, gold)) a.Say($"보상 {gold}G는 파티 몫으로, {exp}EXP 받았다!");
+                    else
+                    {
+                        a.Data.gold += gold;
+                        a.Say($"보상 {gold}G, {exp}EXP 받았다!");
+                    }
                 }
                 else if (!q.IsActive) a.CurrentQuest = null;
             }
 
+            if (pooled && parties.Arrive(a)) return; // shop once the share is paid
+            Shop();
+        }
+
+        void Shop()
+        {
+            var a = Owner;
+            var trade = Services.Get<TradeService>();
+            _shopped = true;
             while (a.Data.potions < 2 && trade.SellGoods(a, DefaultContent.Potion)) a.Data.potions++;
             // Survival first (potions), then the next gear tier if the gold is left (P4-4).
             GearShopping.TryBuy(a);
@@ -548,6 +581,12 @@ namespace GuildMaster.Adventurers
                 _goingToDoor = false;
                 DoBusiness();
                 return;
+            }
+            if (!_shopped)
+            {
+                // Waiting by the guild for the others and the leader's split.
+                if (Waiting) { AdvCtx.Wander(a, ref _wanderTimer, dt); return; }
+                Shop();
             }
             if (TimeInState < VisitSeconds) return;
 

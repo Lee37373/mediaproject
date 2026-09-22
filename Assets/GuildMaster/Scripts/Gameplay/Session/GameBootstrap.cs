@@ -173,6 +173,10 @@ namespace GuildMaster.Session
             var bands = AddSystem<HuntBandService>();
             bands.Init(clock, Balance.rosterCapacity);
             Services.Register(bands);
+            // Standing parties (P4-50): formed in town, pooled pay split by the leader back home.
+            var parties = AddSystem<GuildParties>();
+            parties.Init(clock, new PartySettlement(llm));
+            Services.Register(parties);
             // Party roles, formation and focus fire on the leader's call (P4-27).
             var partyTactics = AddSystem<PartyTactics>();
             partyTactics.Init(pool);
