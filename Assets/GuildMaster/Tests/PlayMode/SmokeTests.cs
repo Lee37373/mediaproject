@@ -57,6 +57,7 @@ namespace GuildMaster.Tests
             Time.timeScale = 1f;
             GameSettings.ShowTitle = true;
             MenuState.Reset();
+            GameSettings.PaintGround = true;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
             if (_scene.IsValid() && _scene.isLoaded) yield return SceneManager.UnloadSceneAsync(_scene);
@@ -76,6 +77,7 @@ namespace GuildMaster.Tests
         {
             GameSettings.ShowTitle = showTitle;
             GameSettings.PendingSeed = TestSeed;
+            GameSettings.PaintGround = false; // ~9 s a boot; no test looks at the ground
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -119,12 +121,41 @@ namespace GuildMaster.Tests
 
         // ---------------- Tests ----------------
 
+        /// <summary>
+        /// One boot for the session basics (four tests before 2026-09-22, each paying for a boot):
+        /// the title holds the clock, nothing is known at the start, ESC pauses and resumes, and
+        /// the game runs four hours without errors.
+        /// </summary>
         [UnityTest]
-        public IEnumerator Boot_RunsFourGameHoursWithoutErrors()
+        public IEnumerator Boot_TitleNewGameEscape_AndFourGameHoursWithoutErrors()
         {
-            yield return Boot();
+            yield return Boot(showTitle: true);
             Assert.That(Roster.Members.Count, Is.GreaterThan(0), "starting members");
             Assert.That(UnitRegistry.All.OfType<Monster>().Count(m => m.IsAlive), Is.GreaterThan(0), "monsters spawned");
+
+            // The title holds the clock until "new game" (P4-10).
+            var title = UnityEngine.Object.FindFirstObjectByType<TitleView>();
+            Assert.That(title.IsOpen && Clock.IsHeld && MenuState.IsOpen, Is.True, "title shown, game paused");
+            Assert.That(Time.timeScale, Is.EqualTo(0f));
+            typeof(TitleView).GetMethod("NewGame", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(title, null);
+            yield return null;
+            Assert.That(title.IsOpen || Clock.IsHeld || MenuState.IsOpen, Is.False, "new game resumes");
+            Assert.That(Time.timeScale, Is.EqualTo(1f));
+
+            // P5-1 handed over the two nearest nests; removed on 2026-09-20 (user decision) because
+            // an orange minimap dot on unwalked ground breaks the information rule.
+            Assert.That(Services.Get<GuildIntel>().KnownNests.Any(), Is.False, "every nest has to be found by looking at it");
+
+            // ESC with nothing open pauses; again resumes.
+            var pause = UnityEngine.Object.FindFirstObjectByType<PauseMenuView>();
+            yield return PressEscape();
+            string state = $"pauseViews={UnityEngine.Object.FindObjectsByType<PauseMenuView>(FindObjectsSortMode.None).Length} "
+                           + $"open={pause.IsOpen} held={Clock.IsHeld} menu={MenuState.IsOpen} "
+                           + $"selected={Services.Get<InspectorView>().Selected} esc={Keyboard.current?.escapeKey.isPressed}";
+            Assert.That(pause.IsOpen && Clock.IsHeld, Is.True, "ESC with nothing open pauses — " + state);
+            yield return PressEscape();
+            Assert.That(pause.IsOpen || Clock.IsHeld, Is.False, "ESC again resumes");
+
             float start = Clock.TotalHours;
             Clock.SetSpeed(3);
             yield return WaitFor(() => Clock.TotalHours >= start + 4f, 30f);
@@ -208,34 +239,6 @@ namespace GuildMaster.Tests
             Assert.That(gate.IsBroken, Is.False);
             Assert.That(grid.TownSealed, Is.True);
             Assert.That(grid.IsWalkable(gate.CenterCell, passesGates: false), Is.False);
-        }
-
-        [UnityTest]
-        public IEnumerator Title_HoldsTheClock_UntilNewGame()
-        {
-            yield return Boot(showTitle: true);
-            var title = UnityEngine.Object.FindFirstObjectByType<TitleView>();
-            Assert.That(title.IsOpen && Clock.IsHeld && MenuState.IsOpen, Is.True, "title shown, game paused");
-            Assert.That(Time.timeScale, Is.EqualTo(0f));
-
-            typeof(TitleView).GetMethod("NewGame", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(title, null);
-            yield return null;
-            Assert.That(title.IsOpen || Clock.IsHeld || MenuState.IsOpen, Is.False, "new game resumes");
-            Assert.That(Time.timeScale, Is.EqualTo(1f));
-        }
-
-        [UnityTest]
-        public IEnumerator Escape_OpensThePauseMenu_AndClosesIt()
-        {
-            yield return Boot();
-            var pause = UnityEngine.Object.FindFirstObjectByType<PauseMenuView>();
-            yield return PressEscape();
-            string state = $"pauseViews={UnityEngine.Object.FindObjectsByType<PauseMenuView>(FindObjectsSortMode.None).Length} "
-                           + $"open={pause.IsOpen} held={Clock.IsHeld} menu={MenuState.IsOpen} "
-                           + $"selected={Services.Get<InspectorView>().Selected} esc={Keyboard.current?.escapeKey.isPressed}";
-            Assert.That(pause.IsOpen && Clock.IsHeld, Is.True, "ESC with nothing open pauses — " + state);
-            yield return PressEscape();
-            Assert.That(pause.IsOpen || Clock.IsHeld, Is.False, "ESC again resumes");
         }
 
         [UnityTest]
@@ -857,25 +860,6 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
-        public IEnumerator Adventurer_PicksUpAnItemDroppedInTown()
-        {
-            yield return Boot();
-            Unit taker = null;
-            Action<GroundItemTakenEvent> onTaken = e => taker = e.Taker;
-            EventBus.Subscribe(onTaken);
-            var member = Roster.Members.First(a => a.IsAlive);
-            var at = member.Position + new Vector2(1.5f, 0f);
-            // Next to the member, but never inside a building wall.
-            var grid = Services.Get<World.WorldService>().Grid;
-            if (grid.TryFindNearestWalkable(World.GridMap.WorldToCell(at), 3, out var cell)) at = World.GridMap.CellToWorld(cell);
-            DebugCommands.DropItem("slime_jelly", 1, at.x, at.y);
-            yield return WaitFor(() => taker != null, 15f);
-            EventBus.Unsubscribe(onTaken);
-            Assert.That(taker, Is.InstanceOf<Adventurer>(), "a guild member picked it up");
-            Assert.That(Services.Get<GroundItemService>().Items.Count, Is.EqualTo(0));
-        }
-
-        [UnityTest]
         public IEnumerator LootDroppedAtAGate_IsPickedUpFromTown()
         {
             // P4-40, user report 2026-09-21: raiders die at the gate and their loot was never picked
@@ -1359,30 +1343,6 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
-        public IEnumerator LuredIntoAnotherPacksTerritory_TheIntruderFightsInsteadOfTurningBack()
-        {
-            // A monster the player drags into a nest is alone against the whole pack, so the rout
-            // rule used to send it home within half a second and luring never started a brawl
-            // (user report 2026-09-20).
-            yield return Boot();
-            var nest = Services.Get<EcosystemManager>().Nests.First(n => n.Population >= 2);
-            var resident = nest.Members.First(m => m.IsAlive);
-            var intruderSpecies = Services.Get<EcosystemManager>().Species.First(s => s != nest.Species);
-            var intruder = SpawnMonster(intruderSpecies.id, nest.WorldPosition + Vector2.up * (nest.TerritoryRadius * 0.6f));
-            Assert.That(intruder, Is.Not.Null);
-            Assert.That(nest.InTerritory(intruder.Position), Is.True, "the lure ends inside the territory");
-
-            // What a lure looks like on arrival: already swinging at something.
-            intruder.ForceTarget(resident);
-            float startHp = intruder.Hp;
-            yield return WaitFor(() => intruder.DebugState == "도주" || intruder.Hp < startHp || !intruder.IsAlive, 8f);
-
-            Assert.That(intruder.DebugState, Is.Not.EqualTo("도주"), "a fight in progress is not called off by the rout rule");
-            Assert.That(!intruder.IsAlive || intruder.Hp < startHp || intruder.CurrentTarget != null,
-                Is.True, "the residents and the intruder actually trade blows");
-        }
-
-        [UnityTest]
         public IEnumerator ALuredMonster_FightsItOut_InsteadOfWalkingHome()
         {
             // User report 2026-09-22: "after the player lures one in, they stop fighting and go
@@ -1768,15 +1728,6 @@ namespace GuildMaster.Tests
                 Assert.That(nest.KnownOpenGates.Contains(west.CenterCell), Is.True, "seen: the pack knows the way in");
             }
             finally { Unit.GuildInvulnerable = false; }
-        }
-
-        [UnityTest]
-        public IEnumerator AtTheStart_TheGuildKnowsNoNest()
-        {
-            // P5-1 handed over the two nearest nests; removed on 2026-09-20 (user decision) because
-            // an orange minimap dot on unwalked ground breaks the information rule.
-            yield return Boot();
-            Assert.That(Services.Get<GuildIntel>().KnownNests.Any(), Is.False, "every nest has to be found by looking at it");
         }
     }
 }

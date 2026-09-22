@@ -30,7 +30,7 @@ namespace GuildMaster.World
         {
             if (!TryGetComponent<Grid>(out var grid)) grid = gameObject.AddComponent<Grid>();
             grid.cellSize = Vector3.one;
-            BuildGround(map);
+            if (Session.GameSettings.PaintGround) BuildGround(map);
             _decor = CreateTilemap("Decor", DecorOrder);
 
             // One set per region (P4-55: dry scrub, frosted trees, dark swamp trees, charred stumps; rocks likewise).

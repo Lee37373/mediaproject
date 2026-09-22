@@ -73,11 +73,18 @@ namespace GuildMaster.Session
         /// <summary>Show the title screen on the next load (false after "new game" / restart).</summary>
         public static bool ShowTitle { get; set; } = true;
 
+        /// <summary>
+        /// Paint the cartoon ground (~9 s on the 256 map). The smoke tests turn it off: they boot the
+        /// game forty-odd times and never look at the ground, so it made up most of their run time.
+        /// </summary>
+        public static bool PaintGround { get; set; } = true;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetSession()
         {
             PendingSeed = 0;
             ShowTitle = true;
+            PaintGround = true;
         }
     }
 }
