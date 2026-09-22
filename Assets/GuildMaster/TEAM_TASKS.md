@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-22
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-50**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-51**).
 
 ## 사용 규칙
 
@@ -47,7 +47,8 @@
 | P4-46 | 사용자 보고: 유인한 몬스터가 싸우다 둥지로 돌아감(마스터를 미끼로 취급해 싸울 수 있는 적 우선, 몬스터끼리 주고받는 중엔 귀소 안 함) | 이재혁 | 완료 | Units/TargetSelector, Monsters/MonsterStates | da43018 |
 | P4-47 | 근접 교전 국소 이동(컨텍스트 스티어링): 사거리 안에서 기다리는 동안 옆걸음·치고 빠지기·장판·겹침 회피(숙련+), 테스트·교전 때 카메라가 싸움을 따라감(FightCamera) | 이재혁 | 완료 | Units/LocalSteering(신규)·Combat·CombatTier, World/PathFollower, Visuals/CharacterVisual, Session/SkirmishMonitor·FightCamera(신규)·DebugCommands, Tests/PlayMode | 1230431 |
 | P4-48 | 숲 시야: 숲 밖에서는 숲이 벽처럼 시야를 가림(가장자리 한 칸만 보임), 숲 안에서는 가시거리 1/3. 안개·유닛 AI 모두, 마을·감시탑 시야는 예외 | 이재혁 | 완료 | World/WorldService·GridMap·ForestSight(신규), Fog/FogOfWar, Units/Unit·UnitGizmos, Adventurers/FreeHuntState·AdventurerLooting, Monsters/Monster | 017d6af |
-| P4-49 | 길드원 창(R) 파티별 묶음: 같은 의뢰·같은 사냥 무리끼리(리더 먼저), 나머지는 혼자 | 이재혁 | 진행 중 | UI/Views/RosterView, Adventurers/PartyTactics | |
+| P4-49 | 길드원 창(R) 파티별 묶음: 같은 의뢰·같은 사냥 무리끼리(리더 먼저), 나머지는 혼자 | 이재혁 | 진행 중(P4-50 뒤 마무리) | UI/Views/RosterView | |
+| P4-50 | 파티 생애주기(사용자 제안): 길드에서 리더가 모집 → 함께 출발 → 전리품 공동 자루 → 귀환 후 리더가 LLM으로 분배 → 여러 번 유지, 불만이면 이탈 | 이재혁 | 예정 | Adventurers/PartyService·HuntBandService·PartyTactics·FreeHuntState·AdventurerStates·AdventurerLooting, Economy, Prompts, UI | |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
