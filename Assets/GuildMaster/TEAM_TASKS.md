@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-22
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-55**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-56**).
 
 ## 사용 규칙
 
@@ -53,6 +53,7 @@
 | P4-52 | 사용자 보고: 적 무리 한 마리가 맞아도 나머지가 안 싸움(비명: 8칸 안 같은 무리가 공격자에게 합류, 목격: 동료와 싸우는 적도 목표) | 이재혁 | 완료 | Monsters/Monster | 2b66b44 |
 | P4-53 | 맵 256×256(사용자 결정), 둥지 밀도 유지(16→64), 맵 전체 기준 거리 조정 | 이재혁 | 완료 | Session/GameBalance, Adventurers/FreeHunt, Tests | 8abbfda |
 | P4-54 | 숲을 낀 전투 검증(사용자 요청): 숲 안·가장자리·밖↔안 교전이 끝까지 올바르게 진행되는지 측정·수정 | 이재혁 | 완료 | Adventurers/Adventurer·AdventurerLooting, Session/DebugCommands, Ecosystem/GuildIntel | 8abbfda |
+| P4-55 | 지형 지대(사용자 결정): 초원(마을 주변)+사막·설원·늪지·황무지, 방향별 큰 지대, 이동·시야 배율, 색 변경(땅·나무·물·미니맵·몬스터) | 이재혁 | 진행 중 | World/TerrainRegions(신규)·MapData·MapGenerator·GridMap·ForestSight·CartoonGroundPainter·MapRenderer, UI/MinimapView, Monsters/Monster | |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
