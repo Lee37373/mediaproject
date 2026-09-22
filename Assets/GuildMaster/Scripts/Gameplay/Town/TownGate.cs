@@ -98,6 +98,7 @@ namespace GuildMaster.Town
         /// <summary>Closest point of the gate's span, for attackers measuring their reach.</summary>
         public Vector2 ClosestPoint(Vector2 from)
         {
+            if (_cells.Count == 0) return transform.position;
             var a = GridMap.CellToWorld(_cells[0]);
             var b = GridMap.CellToWorld(_cells[_cells.Count - 1]);
             var ab = b - a;
@@ -135,6 +136,9 @@ namespace GuildMaster.Town
 
         bool FriendNear()
         {
+            // Update can run before Init has laid the cells (the editor log held thousands of
+            // index errors from ClosestPoint on an empty span).
+            if (_cells.Count == 0) return false;
             var c = Center;
             foreach (var u in Units.UnitRegistry.All)
                 if (u != null && u.IsAlive && u.PassesGates && (u.Position - ClosestPoint(u.Position)).sqrMagnitude < OpenDistance * OpenDistance

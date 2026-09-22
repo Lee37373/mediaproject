@@ -124,6 +124,7 @@ namespace GuildMaster.UI
 
         void Refresh()
         {
+            if (_mapData == null) return; // before the world is built, or while a scene unloads
             DrawFog();
             DrawMarkers();
             UpdateFrame();
