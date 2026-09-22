@@ -56,7 +56,11 @@ namespace GuildMaster.Session
             EventBus.Subscribe<PartyChangedEvent>(e =>
             {
                 if (e.Member == null) return;
-                if (e.Joined) Add($"{e.Member.Data.name}이(가) {e.Party.Name}에 합류했습니다.", LogCategory.Quest);
+                if (e.Joined)
+                {
+                    // The one a party forms around does not "join" its own party.
+                    if (e.Member != e.Party.Leader) Add($"{e.Member.Data.name}이(가) {e.Party.Name}에 합류했습니다.", LogCategory.Quest);
+                }
                 else if (e.Reason != "사망") Add($"{e.Member.Data.name}이(가) 파티를 떠났습니다 ({e.Reason ?? "해산"}).", LogCategory.Quest);
             });
             EventBus.Subscribe<PartySettledEvent>(e =>

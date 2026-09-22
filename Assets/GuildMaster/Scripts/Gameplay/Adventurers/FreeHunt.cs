@@ -16,7 +16,7 @@ namespace GuildMaster.Adventurers
         /// <summary>How far from the town centre a free hunt roams at the least (user decision: 40 cells, wide).</summary>
         public const float Radius = 40f;
         /// <summary>How far the strongest band roams: the far edge where the slime king lives.</summary>
-        public const float MaxRadius = 90f;
+        public const float MaxRadius = 180f; // P4-53: the map doubled (256), the far edge moved out with it
 
         /// <summary>
         /// How far this band dares to roam (P4-38, user decision 2026-09-21: "wider as they grow").

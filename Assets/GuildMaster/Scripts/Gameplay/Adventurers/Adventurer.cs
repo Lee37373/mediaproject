@@ -289,6 +289,20 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>
+        /// A comrade fighting this close is heard, not seen (P4-54, user request: fights at forests):
+        /// one ambushed inside a forest calls the rest in, though they cannot see in from outside.
+        /// Same range as a monster pack's alarm (P4-52).
+        /// </summary>
+        public const float ComradeCryRadius = Monster.PackAlarmRadius;
+
+        /// <summary>Debug A/B switch (P4-54 forest checks): off = only what is seen.</summary>
+        public static bool HearComrades = true;
+
+        internal bool HearsFightingAComrade(Monster m)
+            => HearComrades && m.IsAlive && m.CombatEngagement?.Target is Adventurer { IsGuildMember: true } comrade && comrade != this
+               && (comrade.Position - Position).sqrMagnitude <= ComradeCryRadius * ComradeCryRadius;
+
+        /// <summary>
         /// Shared combat logic for out-of-town states. Returns true while fighting
         /// (the calling state should skip its own movement that frame).
         /// </summary>
@@ -321,11 +335,12 @@ namespace GuildMaster.Adventurers
             System.Func<Unit, bool> threat = u => u is Monster m && (allowed == null || allowed(m))
                                                    && (WasRecentlyAttackedBy(m)
                                                        || ((m.IsHostileTo(this) || m.CombatEngagement?.Target is Adventurer { IsGuildMember: true })
-                                                           && CanSee(m) && PartyTactics.InLeash(leash, m.Position)));
+                                                           && CanSee(m) && PartyTactics.InLeash(leash, m.Position))
+                                                       || HearsFightingAComrade(m) && PartyTactics.InLeash(leash, m.Position));
             System.Func<Unit, bool> extra = extraTargets == null ? null
                 : u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u) && PartyTactics.InLeash(leash, u.Position);
             Engage.CandidateFilter = extra == null ? threat : u => threat(u) || extra(u);
-            Engage.SearchRadius = Stats.SightRadius;
+            Engage.SearchRadius = Mathf.Max(Stats.SightRadius, ComradeCryRadius);
 
             // Optional zone (town defense): drop targets outside it instead of chasing them.
             if (Engage.Target != null && allowed != null && !allowed(Engage.Target)) Engage.Clear();
@@ -346,7 +361,7 @@ namespace GuildMaster.Adventurers
             // The leader's call first (anywhere in sight, P4-27), then threats (aggressive monsters or
             // anything that hit us), then optional quest targets.
             var target = CalledCandidate(threat, extra)
-                         ?? TargetSelector.Pick(this, Stats.SightRadius * 0.8f, threat, Engage)
+                         ?? TargetSelector.Pick(this, Mathf.Max(Stats.SightRadius * 0.8f, ComradeCryRadius), threat, Engage)
                          ?? (extra != null ? TargetSelector.Pick(this, Stats.SightRadius, extra, Engage) : null);
             if (target == null) return false;
             Engage.SetTarget(target);

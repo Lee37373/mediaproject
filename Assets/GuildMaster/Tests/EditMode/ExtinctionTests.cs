@@ -20,7 +20,7 @@ namespace GuildMaster.Tests
         public void RaidersReachingTheTownFindDefendersAlreadyOnTheirWay()
         {
             var balance = UnityEngine.ScriptableObject.CreateInstance<GameBalance>();
-            // The map is 128 cells across; members must come home from a hunt on the far side.
+            // Members must come home from a hunt on the far side of the map, however big it is.
             Assert.That(balance.raidDefendRadius, Is.GreaterThanOrEqualTo(balance.mapWidth * 0.5f),
                         "members out on a distant quest were missing the defence entirely");
         }

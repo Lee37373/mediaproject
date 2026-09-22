@@ -180,10 +180,12 @@ namespace GuildMaster.Adventurers
         /// either way — hitting one of us, targeted by one of us, or hit by one of us lately. Only
         /// "hostile to us" used to count, so while a comrade fought a slime (which never starts
         /// fights) the others went shopping for loot (user report 2026-09-22).
+        /// A comrade's fight close by counts even unseen (P4-54: heard, e.g. through a forest).
         /// </summary>
         static bool EnemyInSight(Adventurer a)
-            => UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
-                   u => u is Monster m && m.IsAlive && (m.IsHostileTo(a) || InFightWithGuild(m)) && a.CanSee(u)) != null;
+            => UnitRegistry.FindNearest(a.Position, Mathf.Max(a.Stats.SightRadius, Adventurer.ComradeCryRadius),
+                   u => u is Monster m && m.IsAlive
+                        && ((m.IsHostileTo(a) || InFightWithGuild(m)) && a.CanSee(u) || a.HearsFightingAComrade(m))) != null;
 
         static bool InFightWithGuild(Monster m)
         {

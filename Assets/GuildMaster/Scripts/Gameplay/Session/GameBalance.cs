@@ -15,10 +15,11 @@ namespace GuildMaster.Session
         public int startHour = 8;
 
         [Header("Map")]
-        public int mapWidth = 128;
-        public int mapHeight = 128;
+        /// <summary>P4-53 (user decision 2026-09-22): 256×256, was 128. Nests keep their density (nestCount ×4).</summary>
+        public int mapWidth = 256;
+        public int mapHeight = 256;
         public int townHalfSize = 11;
-        public int nestCount = 16;
+        public int nestCount = 64;
         /// <summary>
         /// P5-1: was 24, which left no nest inside the first day's walk. Species are placed by
         /// distance now, so the closest ring is the weakest one and it should be findable early.
@@ -79,7 +80,7 @@ namespace GuildMaster.Session
         /// <summary>Game hours after which surviving raiders give up and go home.</summary>
         public int raidMaxHours = 10;
         /// <summary>Guild members within this many cells of the town rush to defend.</summary>
-        public float raidDefendRadius = 80f;
+        public float raidDefendRadius = 180f; // P4-53: the whole 256 map (half its diagonal), was 80 for 128
         /// <summary>
         /// Share of a monster's attack that lands on a building (P5-1). Walls are not people: without
         /// this a dozen raiders flattened the town hall before anyone could walk back.

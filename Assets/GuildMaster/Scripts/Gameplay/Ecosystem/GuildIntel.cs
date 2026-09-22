@@ -268,6 +268,9 @@ namespace GuildMaster.Ecosystem
 
         public bool IsKnown(MonsterDefinition species) => species != null && _known.Contains(species);
 
+        /// <summary>Debug/test only: the guild has seen this species (quests for it can be posted).</summary>
+        public void MarkKnown(MonsterDefinition species) { if (species != null) _known.Add(species); }
+
         /// <summary>Known species in database order.</summary>
         public IEnumerable<MonsterDefinition> KnownSpecies => _eco.Species.Where(_known.Contains);
 

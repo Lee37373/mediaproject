@@ -165,9 +165,11 @@ namespace GuildMaster.Tests
             var member = Roster.Members.First(a => a.IsAlive);
             // Resting members stay out of it: this test is about the gate (the town guard sallies
             // against a gate breaker since P4-45, see GateBreaker_BringsTheTownOutToMeetIt).
-            foreach (var a in Roster.Members) a.ChangeState(a.RestState);
+            // Tired, so the rest lasts the whole test: rested members would go hunting (P4-51) out of this gate.
+            foreach (var a in Roster.Members) { a.Data.fatigue = 100f; a.ChangeState(a.RestState); }
             member.Mover.Stop();
             member.transform.position = gate.InsidePoint - (Vector2)gate.Outward * 2f;
+            EmptyNestsNear(gate.OutsidePoint, 16f); // a nest by the gate (256 map) would pull the goblin into its own fight
             ClearHomelessOf("goblin");
             var goblin = SpawnMonster("goblin", gate.OutsidePoint + (Vector2)gate.Outward * 2f, meleeOnly: true);
             goblin.ForceTarget(member);
@@ -679,6 +681,76 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator AComradeAmbushedInAForest_IsHeardByTheOthersOutside()
+        {
+            // P4-54 (user request: check fights at forests): the forest hides the ambusher from those
+            // outside, but they hear their comrade fighting and come to help.
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            bool hear = Adventurer.HearComrades;
+            try
+            {
+                Assume.That(FindForestBlock(out var deep, out var outside), Is.True, "a forest block with open ground beside it");
+                EmptyNestsNear(World.GridMap.CellToWorld(deep), 24f); // only the ambusher, no residents joining in
+                var members = Roster.Members.Where(a => a.IsAlive).Take(2).ToList();
+                var (inside, outsider) = (members[0], members[1]);
+                // Both on their way home: no quest makes the goblin a target of its own.
+                foreach (var m in members) m.ChangeState(m.ReturnState);
+                inside.Mover.Stop();
+                inside.transform.position = World.GridMap.CellToWorld(deep);
+                outsider.transform.position = World.GridMap.CellToWorld(outside);
+                var goblin = SpawnMonster("goblin", World.GridMap.CellToWorld(deep) + new Vector2(0f, 0.8f), meleeOnly: true);
+                goblin.ForceTarget(inside);
+                var world = Services.Get<World.WorldService>();
+                Assert.That(outsider.CanSee(goblin), Is.False, "from outside, the forest hides the goblin");
+
+                Adventurer.HearComrades = false;
+                yield return new WaitForSeconds(0.8f);
+                Assert.That(outsider.CurrentTarget, Is.Not.EqualTo(goblin), "without hearing, the one outside walks on");
+
+                Adventurer.HearComrades = true;
+                outsider.Mover.Stop();
+                outsider.transform.position = World.GridMap.CellToWorld(outside);
+                yield return WaitFor(() => outsider.CurrentTarget == goblin, 3f);
+                Assert.That(outsider.CurrentTarget, Is.EqualTo(goblin), "it hears the fight and comes to help");
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = false;
+                Adventurer.HearComrades = hear;
+            }
+        }
+
+        /// <summary>A 5×5 forest block away from town with open ground 5 cells to its west.</summary>
+        static bool FindForestBlock(out Vector2Int deep, out Vector2Int outside)
+        {
+            deep = outside = default;
+            var world = Services.Get<World.WorldService>();
+            var grid = world.Grid;
+            var town = World.GridMap.WorldToCell(world.TownCenterWorld);
+            for (int y = 3; y < grid.Height - 3; y++)
+            for (int x = 8; x < grid.Width - 3; x++)
+            {
+                var c = new Vector2Int(x, y);
+                if ((c - town).magnitude < 30f) continue;
+                bool block = true;
+                for (int dy = -2; dy <= 2 && block; dy++)
+                for (int dx = -2; dx <= 2 && block; dx++)
+                    if (!grid.IsForest(c + new Vector2Int(dx, dy)) || !grid.IsWalkable(c + new Vector2Int(dx, dy))) block = false;
+                if (!block) continue;
+                var o = c + new Vector2Int(-5, 0);
+                bool clear = true;
+                for (int dx = 0; dx <= 2 && clear; dx++)
+                    if (grid.IsForest(o + new Vector2Int(dx, 0)) || !grid.IsWalkable(o + new Vector2Int(dx, 0))) clear = false;
+                if (!clear || !world.HasLineOfSight(World.GridMap.CellToWorld(o), World.GridMap.CellToWorld(c), 99)) continue;
+                deep = c;
+                outside = o;
+                return true;
+            }
+            return false;
+        }
+
+        [UnityTest]
         public IEnumerator Forest_HidesItsInsideFromOutside_AndShortensSightWithin()
         {
             yield return Boot();
@@ -1012,7 +1084,8 @@ namespace GuildMaster.Tests
                 bool open = true;
                 for (int dy = -8; dy <= 8 && open; dy++)
                 for (int dx = -8; dx <= 8 && open; dx++)
-                    if (!grid.IsWalkable(c + new Vector2Int(dx, dy))) open = false;
+                    // Open means open: forest (walkable, P4-48 hides and shortens sight) is not.
+                    if (!grid.IsWalkable(c + new Vector2Int(dx, dy)) || grid.IsForest(c + new Vector2Int(dx, dy))) open = false;
                 if (!open) continue;
                 // Clear of any nest's territory too: residents would join the fight and these tests
                 // are about the spawned units alone (P5-1 moved nests closer to town).
