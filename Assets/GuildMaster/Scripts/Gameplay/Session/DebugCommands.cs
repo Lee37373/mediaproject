@@ -141,6 +141,7 @@ namespace GuildMaster.Session
                 cam.Follow(null);
                 cam.JumpTo(site + toTown * 3.5f);
             }
+            FightCamera.Ensure(); // keeps the view on the brawl as it moves (user request 2026-09-22)
             SkirmishMonitor.Ensure().ResetStats();
             return $"skirmish {species.id}x{count} at {site} (guild pulled: {pulled})";
         }
@@ -437,6 +438,20 @@ namespace GuildMaster.Session
 
         public static string SkirmishReport()
             => SkirmishMonitor.Instance != null ? SkirmishMonitor.Instance.Report() : "no monitor (call SpawnSkirmish first)";
+
+        /// <summary>Camera follows the busiest fight (<see cref="FightCamera"/>) on/off.</summary>
+        public static string WatchFights(bool on)
+        {
+            if (on) FightCamera.Ensure(); else FightCamera.Stop();
+            return $"watchFights={(on ? "on" : "off")}";
+        }
+
+        /// <summary>Melee footwork on/off (P4-47) for before/after comparisons with SkirmishReport.</summary>
+        public static string Steering(bool on)
+        {
+            Units.LocalSteering.Enabled = on;
+            return $"steering={(on ? "on" : "off")}";
+        }
 
         /// <summary>Positions/states of living units within radius of the camera centre.</summary>
         public static string UnitsNearCamera(float radius = 12f)

@@ -65,6 +65,15 @@ namespace GuildMaster.Units
         public static bool SeeksFiringPosition(CombatTier t) => t >= CombatTier.Veteran;
 
         /// <summary>
+        /// Melee footwork between blows (P4-47, <see cref="LocalSteering"/>): side-steps round the
+        /// target and keeps clear of crowds and telegraphs. Below this they stand and strike.
+        /// </summary>
+        public static bool SteersInMelee(CombatTier t) => t >= CombatTier.Skilled;
+
+        /// <summary>Melee hit-and-run: steps back right after a blow and closes in as it recovers.</summary>
+        public static bool HitAndRun(CombatTier t) => t >= CombatTier.Veteran;
+
+        /// <summary>
         /// Target-score penalty for a candidate that <paramref name="crowd"/> allies already attack:
         /// a mild cost per attacker plus a heavy one past the free slots, so a pack splits up instead of
         /// queueing behind one back. Instinct does not spread at all; Novice only a little.

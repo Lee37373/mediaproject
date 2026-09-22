@@ -115,7 +115,7 @@ namespace GuildMaster.Visuals
         void LateUpdate()
         {
             if (_body == null) return;
-            bool moving = _mover != null && _mover.IsMoving;
+            bool moving = _mover != null && (_mover.IsMoving || _mover.IsSteering);
             bool left = _faceOverrideTimer > 0f ? _facingLeftOverride : _mover != null && _mover.FacingLeft;
             _faceOverrideTimer -= Time.deltaTime;
             _body.flipX = ArtFacesLeft ? !left : left;

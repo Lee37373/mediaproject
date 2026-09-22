@@ -41,6 +41,7 @@ namespace GuildMaster.World
         {
             _destination = target;
             _stopDistance = Mathf.Max(0.05f, stopDistance);
+            _steerFrame = -10;
             if (!BuildPath())
             {
                 IsMoving = false;
@@ -56,6 +57,54 @@ namespace GuildMaster.World
             IsMoving = false;
             Velocity = Vector2.zero;
             _waypoints.Clear();
+            _steerVelocity = Vector2.zero;
+            _steerFrame = -10;
+        }
+
+        // ---------------- Local steering (P4-47) ----------------
+
+        /// <summary>Speed change per second while steering, as a multiple of the top speed.</summary>
+        const float SteerAcceleration = 5f;
+        Vector2 _steerVelocity;
+        int _steerFrame = -10;
+
+        bool SteeredLately => Time.frameCount - _steerFrame <= 1;
+
+        /// <summary>Moving under <see cref="Steer"/> (no path): walks on screen like <see cref="IsMoving"/>.</summary>
+        public bool IsSteering => SteeredLately && _steerVelocity.sqrMagnitude > 0.01f;
+
+        /// <summary>
+        /// Moves by a velocity instead of along a path (close-quarters footwork, P4-47): drops any path
+        /// and turns with limited acceleration towards <paramref name="direction"/> (length 0..1, zero
+        /// brakes) × walking speed × <paramref name="speedFactor"/>. Never enters unwalkable cells.
+        /// Call every frame while it should last.
+        /// </summary>
+        public void Steer(Vector2 direction, float speedFactor, float dt)
+        {
+            if (IsMoving) { IsMoving = false; _waypoints.Clear(); }
+            if (!SteeredLately) _steerVelocity = Vector2.zero;
+            _steerFrame = Time.frameCount;
+
+            Vector2 pos = transform.position;
+            var cell = GridMap.WorldToCell(pos);
+            float cost = World.Grid.InBounds(cell) ? World.Grid.Cost(cell) : 1f;
+            if (float.IsInfinity(cost)) cost = 1f;
+            float top = speed * SpeedMultiplier * BuffMultiplier / cost * speedFactor;
+            var desired = Vector2.ClampMagnitude(direction, 1f) * top;
+            _steerVelocity = Vector2.MoveTowards(_steerVelocity, desired, top * SteerAcceleration * dt);
+
+            var next = pos + _steerVelocity * dt;
+            if (!World.Grid.IsWalkable(GridMap.WorldToCell(next), PassesGates))
+            {
+                var nx = pos + new Vector2(_steerVelocity.x * dt, 0f);
+                var ny = pos + new Vector2(0f, _steerVelocity.y * dt);
+                if (World.Grid.IsWalkable(GridMap.WorldToCell(nx), PassesGates)) { next = nx; _steerVelocity.y = 0f; }
+                else if (World.Grid.IsWalkable(GridMap.WorldToCell(ny), PassesGates)) { next = ny; _steerVelocity.x = 0f; }
+                else { next = pos; _steerVelocity = Vector2.zero; }
+            }
+            Velocity = _steerVelocity;
+            if (Mathf.Abs(_steerVelocity.x) > 0.05f) FacingLeft = _steerVelocity.x < 0f;
+            transform.position = new Vector3(next.x, next.y, transform.position.z);
         }
 
         /// <summary>Remaining path distance estimate (straight segments).</summary>

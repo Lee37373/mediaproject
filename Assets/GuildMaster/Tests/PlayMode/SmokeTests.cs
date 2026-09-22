@@ -74,6 +74,7 @@ namespace GuildMaster.Tests
             GameSettings.PendingSeed = TestSeed;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
+            FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
             yield return null;
             yield return null;
         }
@@ -859,6 +860,7 @@ namespace GuildMaster.Tests
                 var master = Services.Get<PlayerAvatar>();
                 master.Mover.Stop();
                 master.transform.position = World.GridMap.CellToWorld(c);
+                if (FightCamera.Instance != null) FightCamera.Instance.Subject = master;
                 return master;
             }
             return null;
@@ -952,6 +954,51 @@ namespace GuildMaster.Tests
 
                 Assert.That(skilledGap, Is.LessThan(200f), "skilled goblin warriors spread around the target");
                 Assert.That(noviceGap, Is.GreaterThan(250f), "novice goblins all come at it from one side");
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
+        public IEnumerator SkilledMelee_SideStepsBetweenBlows_NoviceStandsAndStrikes()
+        {
+            yield return Boot();
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                var master = MasterOnOpenGround();
+                Assume.That(master, Is.Not.Null, "open ground on this map");
+                Clock.SetSpeed(2);
+                // One on one (no pack slot): how far round the target it works, and whether it keeps swinging.
+                IEnumerator Duel(string species, System.Action<float, int> result)
+                {
+                    var m = SpawnMonster(species, master.Position + new Vector2(1.2f, 0f), meleeOnly: true);
+                    m.ForceTarget(master);
+                    yield return WaitFor(() => Combat.InRange(m, master), 5f);
+                    float turned = 0f, lastSwing = m.NextAttackTime;
+                    int swings = 0;
+                    var last = m.Position - master.Position;
+                    float until = Time.time + 5f;
+                    while (Time.time < until)
+                    {
+                        yield return null;
+                        var now = m.Position - master.Position;
+                        turned += Mathf.Abs(Vector2.SignedAngle(last, now));
+                        last = now;
+                        if (m.NextAttackTime > lastSwing + 0.01f) { swings++; lastSwing = m.NextAttackTime; }
+                    }
+                    m.Perish();
+                    result(turned, swings);
+                }
+
+                float skilledTurn = 0f, noviceTurn = 0f;
+                int skilledSwings = 0, noviceSwings = 0;
+                yield return Duel("goblin_warrior", (t, s) => { skilledTurn = t; skilledSwings = s; });
+                yield return Duel("goblin", (t, s) => { noviceTurn = t; noviceSwings = s; });
+
+                Assert.That(skilledTurn, Is.GreaterThan(30f), "a skilled warrior side-steps round its target");
+                Assert.That(noviceTurn, Is.LessThan(15f), "a novice goblin stands and strikes");
+                Assert.That(skilledSwings, Is.GreaterThanOrEqualTo(3), "footwork does not stop the blows");
+                Assert.That(noviceSwings, Is.GreaterThanOrEqualTo(3), "the novice keeps swinging too");
             }
             finally { Unit.GuildInvulnerable = false; }
         }

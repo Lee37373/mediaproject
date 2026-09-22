@@ -85,6 +85,11 @@ namespace GuildMaster.Session
             _spreadSamples = _allOnOneSamples = _monsterSwitches = _advSwitches = _dropped = 0;
             _focusShareSum = 0f;
             _partyCalls = _focusSamples = _focusHits = _noviceFocusSamples = _noviceFocusHits = _backSamples = _backBehind = 0;
+            System.Array.Clear(_tierWait, 0, _tierWait.Length);
+            System.Array.Clear(_tierWaitMoving, 0, _tierWaitMoving.Length);
+            System.Array.Clear(_tierCloseSamples, 0, _tierCloseSamples.Length);
+            System.Array.Clear(_tierSwings, 0, _tierSwings.Length);
+            _lastSwing.Clear();
         }
 
         void OnLog(string message, string stackTrace, LogType type)
@@ -121,6 +126,7 @@ namespace GuildMaster.Session
             SampleKiting();
             SampleTargets();
             SampleParties();
+            SampleFootwork();
         }
 
         // ---------------- Parties (P4-27) ----------------
@@ -228,6 +234,37 @@ namespace GuildMaster.Session
             foreach (var k in stale) _overlapSince.Remove(k);
         }
 
+        // ---------------- Melee footwork (P4-47) ----------------
+
+        readonly int[] _tierWait = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierWaitMoving = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierCloseSamples = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierSwings = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly Dictionary<Unit, float> _lastSwing = new();
+
+        /// <summary>
+        /// Melee units with a target: while waiting on the next blow in reach (or stepping), how often
+        /// they move; and swings per minute while close to the target (footwork must not cost tempo).
+        /// </summary>
+        void SampleFootwork()
+        {
+            foreach (var u in UnitRegistry.All)
+            {
+                if (!u.IsAlive || u.Stats.IsRanged || u.CombatEngagement?.Target is not { IsAlive: true } target) continue;
+                int tier = (int)u.Tier;
+                bool inRange = Combat.InRange(u, target);
+                if (Time.time < u.NextAttackTime && (inRange || u.CombatEngagement.IsSteering))
+                {
+                    _tierWait[tier]++;
+                    if (u.Mover.IsMoving || u.Mover.IsSteering) _tierWaitMoving[tier]++;
+                }
+                if (Combat.Distance(u, target) > u.Stats.AttackRange + Combat.ContactPadding + target.Radius + 1f) continue;
+                _tierCloseSamples[tier]++;
+                if (_lastSwing.TryGetValue(u, out var last) && u.NextAttackTime > last + 0.01f) _tierSwings[tier]++;
+                _lastSwing[u] = u.NextAttackTime;
+            }
+        }
+
         void SampleKiting()
         {
             foreach (var u in UnitRegistry.All)
@@ -265,7 +302,14 @@ namespace GuildMaster.Session
             float allOne = _spreadSamples > 0 ? 100f * _allOnOneSamples / _spreadSamples : 0f;
             static string Pct(int hit, int all) => all > 0 ? $"{100f * hit / all:0}%/{all}" : "-";
             sb.AppendLine($"  party: calls={_partyCalls} focusSkilled+={Pct(_focusHits, _focusSamples)} focusNovice={Pct(_noviceFocusHits, _noviceFocusSamples)} backLineBehind={Pct(_backBehind, _backSamples)}");
-            sb.AppendLine($"  targets: spreadSamples={_spreadSamples} avgTopShare={share:0}% allOnOne={allOne:0}% monsterSwitches={_monsterSwitches} advSwitches={_advSwitches} dropped={_dropped}");
+            sb.Append($"  footwork: steering={(LocalSteering.Enabled ? "on" : "off")} movingWhileWaiting:");
+            for (int t = 0; t < _tierWait.Length; t++)
+                if (_tierWait[t] > 0) sb.Append($" {CombatTiers.Label((CombatTier)t)}={Pct(_tierWaitMoving[t], _tierWait[t])}");
+            sb.Append(" swingsPerMinClose:");
+            for (int t = 0; t < _tierCloseSamples.Length; t++)
+                if (_tierCloseSamples[t] > 0) sb.Append($" {CombatTiers.Label((CombatTier)t)}={_tierSwings[t] * 60f / (_tierCloseSamples[t] * SampleInterval):0}");
+            sb.AppendLine();
+            sb.AppendLine($"  targets:spreadSamples={_spreadSamples} avgTopShare={share:0}% allOnOne={allOne:0}% monsterSwitches={_monsterSwitches} advSwitches={_advSwitches} dropped={_dropped}");
             return sb.ToString();
         }
     }

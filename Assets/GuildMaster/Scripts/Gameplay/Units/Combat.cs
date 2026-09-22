@@ -165,6 +165,7 @@ namespace GuildMaster.Units
             Target = null;
             _self.CurrentTarget = null;
             _kiting = false;
+            _steering = false;
             _lockedUntil = 0f;
             ResetChase();
         }
@@ -311,7 +312,15 @@ namespace GuildMaster.Units
 
         EngageStatus MeleeTick(float dt, float dist)
         {
-            if (Combat.InRange(_self, Target))
+            bool inRange = Combat.InRange(_self, Target);
+            // Footwork between blows (P4-47, Skilled+); a hit-and-run step may leave reach for a moment.
+            if (Time.time < _self.NextAttackTime && (inRange || _steering && dist <= MeleeReach() + SteerSlack) && SteerInReach(dt))
+            {
+                ResetChase();
+                return EngageStatus.Attacking;
+            }
+            _steering = false;
+            if (inRange)
             {
                 ResetChase();
                 // Encircling (P4-28): between blows, keep working round to the own slot.
@@ -333,6 +342,65 @@ namespace GuildMaster.Units
                 if (!ok) return DropUnreachable();
             }
             return EngageStatus.Chasing;
+        }
+
+        // ---------------- Close-quarters footwork (P4-47) ----------------
+
+        /// <summary>How far outside reach a stepping unit keeps stepping instead of chasing.</summary>
+        const float SteerSlack = 1f;
+        const float SteerChooseSeconds = 0.1f;
+        const float SteerSlotSeconds = 0.4f;
+        bool _steering;
+        int _side;
+        float _sideTimer, _steerTimer, _slotTimer;
+        Vector2 _steerDir;
+        Vector2? _steerSlot;
+
+        /// <summary>Moving under close-quarters footwork this frame (debug).</summary>
+        public bool IsSteering => _steering;
+
+        float MeleeReach() => _self.Stats.AttackRange + Combat.ContactPadding + Target.Radius;
+
+        /// <summary>
+        /// Skilled+ melee units waiting on the next blow side-step round the target (or walk to the
+        /// pack's encircling slot) and keep clear of crowds and telegraphs; Veteran+ also step back
+        /// right after a blow. False when this unit does not steer.
+        /// </summary>
+        bool SteerInReach(float dt)
+        {
+            var tier = _self.Tier;
+            if (!LocalSteering.Enabled || !CombatTiers.SteersInMelee(tier)) return false;
+            var rng = GameRandom.Shared;
+            if (_side == 0) _side = rng.Chance(0.5f) ? 1 : -1;
+            _sideTimer -= dt;
+            if (_sideTimer <= 0f)
+            {
+                _sideTimer = rng.Range(2.5f, 5f);
+                if (rng.Chance(0.4f)) _side = -_side;
+            }
+            _slotTimer -= dt;
+            if (_slotTimer <= 0f || !_steering)
+            {
+                _slotTimer = SteerSlotSeconds;
+                _steerSlot = ApproachSpot?.Invoke(Target);
+            }
+            _steerTimer -= dt;
+            if (_steerTimer <= 0f || !_steering)
+            {
+                _steerTimer = SteerChooseSeconds;
+                float backstep = 0f;
+                if (CombatTiers.HitAndRun(tier))
+                {
+                    float left = (_self.NextAttackTime - Time.time) / Mathf.Max(0.1f, _self.Stats.AttackCooldown);
+                    if (left > 0.45f) backstep = LocalSteering.HitAndRunStep;
+                }
+                _steerDir = LocalSteering.Choose(_self, Target, _steerSlot, _side, backstep, out bool blocked);
+                if (blocked) { _side = -_side; _sideTimer = rng.Range(2.5f, 5f); }
+            }
+            _self.Mover.Steer(_steerDir, LocalSteering.SpeedFactor, dt);
+            _self.Visual?.FaceTowards(Target.Position);
+            _steering = true;
+            return true;
         }
 
         float _circleTimer;
