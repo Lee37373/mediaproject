@@ -8,6 +8,30 @@ namespace GuildMaster.Tests
     public class MonsterLevelTests
     {
         [Test]
+        public void StrengthIsTheLevel_NotTheSpecies()
+        {
+            // P4-58 (user decision 2026-09-22): species differ a little, the level a lot.
+            var db = GuildMaster.Data.DefaultContent.Build();
+            float Power(string id, int level)
+            {
+                var s = GuildMaster.Adventurers.FreeHunt.StatsOf(db.monsters.Find(m => m.id == id), level);
+                return s.MaxHp * s.Attack;
+            }
+            float weakest = float.MaxValue, strongest = 0f;
+            foreach (var m in db.monsters)
+            {
+                float p = Power(m.id, 1);
+                weakest = UnityEngine.Mathf.Min(weakest, p);
+                strongest = UnityEngine.Mathf.Max(strongest, p);
+            }
+            Assert.That(strongest / weakest, Is.LessThan(3f), "species stay within a small spread");
+            Assert.That(Power("slime", MonsterLevel.BirthLevel(1f)), Is.GreaterThan(Power("slime_king", 1)),
+                        "a slime from the edge outclasses a slime king by the walls");
+            Assert.That(MonsterLevel.DangerAt(MonsterLevel.BirthLevel(0f)), Is.EqualTo(GuildMaster.Data.DangerLevel.Low));
+            Assert.That(MonsterLevel.DangerAt(MonsterLevel.BirthLevel(1f)), Is.EqualTo(GuildMaster.Data.DangerLevel.High));
+        }
+
+        [Test]
         public void FartherOutIsBornHigher()
         {
             Assert.That(MonsterLevel.BirthLevel(0f), Is.EqualTo(1), "the ring by the town");

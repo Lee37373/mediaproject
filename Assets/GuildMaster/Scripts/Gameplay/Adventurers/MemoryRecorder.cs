@@ -81,7 +81,7 @@ namespace GuildMaster.Adventurers
 
         void OnUnitDied(UnitDiedEvent e)
         {
-            if (e.Killer is not Adventurer a || e.Victim is not Monster m || m.Def.danger < DangerLevel.Medium) return;
+            if (e.Killer is not Adventurer a || e.Victim is not Monster m || m.Danger < DangerLevel.Medium) return;
             string name = m.DisplayName;
             Remember(a, 2, $"{name}{Josa(name, "을", "를")} 쓰러뜨렸다 (오늘 {{n}}마리)", "kill:" + m.Def.id);
         }

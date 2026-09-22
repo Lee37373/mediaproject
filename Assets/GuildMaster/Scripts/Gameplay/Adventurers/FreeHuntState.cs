@@ -253,8 +253,8 @@ namespace GuildMaster.Adventurers
                     if (Vector2.Distance(n.WorldPosition, town) > _reach) continue;
                     if (Vector2.Distance(n.WorldPosition, a.Position) < SpotReached * 2f) continue;
                     if (avoid != null && Vector2.Distance(n.WorldPosition, avoid.Value) <= _reach * 0.3f) continue;
-                    if (!FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(s), FreeHunt.ExpectedEnemies(1, s, count))) continue;
-                    float score = FreeHunt.DenScore(s, count, Vector2.Distance(n.WorldPosition, a.Position));
+                    if (!FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(s, n.BirthLevel), FreeHunt.ExpectedEnemies(1, s, count))) continue;
+                    float score = FreeHunt.DenScore(s, count, Vector2.Distance(n.WorldPosition, a.Position), n.BirthLevel);
                     if (score <= bestScore) continue;
                     bestScore = score;
                     chosen = n.WorldPosition;

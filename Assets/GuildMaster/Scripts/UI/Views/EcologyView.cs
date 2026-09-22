@@ -53,7 +53,8 @@ namespace GuildMaster.UI
                 // Compact here (the row is one line); the nest inspector shows the full item list.
                 var gear = intel.GearOf(s);
                 if (gear.Any) status += UIBuilder.Colored(GearTag(gear), gear.HasCrown ? UITheme.Accent : UITheme.Warn);
-                _speciesRows[i].text = $"{s.displayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(s.danger), UITheme.Danger(s.danger))}\n" +
+                // P4-58: danger is the level (distance from town), not the species — shown per nest and monster.
+                _speciesRows[i].text = $"{s.displayName}\n" +
                                        $"<color=#{UITheme.Hex(UITheme.TextMuted)}>{nestText}</color>{status}";
             }
 

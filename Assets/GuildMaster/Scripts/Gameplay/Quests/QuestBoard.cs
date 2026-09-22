@@ -324,16 +324,26 @@ namespace GuildMaster.Quests
         public static DangerLevel Raise(DangerLevel d, int steps)
             => (DangerLevel)Mathf.Clamp((int)d + Mathf.Max(0, steps), (int)DangerLevel.Low, (int)DangerLevel.High);
 
-        /// <summary>Hunt danger: species danger, +1 for large hunts (8+). Shared with the posting form's preview.</summary>
-        public static DangerLevel HuntDanger(MonsterDefinition species, int count)
-            => Raise(species.danger, count >= 8 ? 1 : 0);
+        /// <summary>
+        /// Hunt danger (P4-58: by the level the monsters there are born at, not the species), +1 for
+        /// large hunts (8+). Pure; shared with the posting form's preview.
+        /// </summary>
+        public static DangerLevel HuntDanger(int level, int count)
+            => Raise(MonsterLevel.DangerAt(level), count >= 8 ? 1 : 0);
+
+        /// <summary>A hunt with no marked spot: rated as the nearest ring (level 1).</summary>
+        public static DangerLevel HuntDanger(MonsterDefinition species, int count) => HuntDanger(1, count);
+
+        /// <summary>Birth level at a spot (its distance from town is no secret), 1 without an ecosystem.</summary>
+        static int LevelAt(Vector2 point)
+            => Services.TryGet<EcosystemManager>(out var eco) ? eco.BirthLevelAt(point) : 1;
 
         /// <summary>
         /// Hunt danger at a marked spot: also +1 when the guild has seen armed monsters of that
         /// species at a known nest inside the hunting area (P4-22).
         /// </summary>
         public static DangerLevel HuntDanger(MonsterDefinition species, int count, Vector2 point, float radius)
-            => Raise(HuntDanger(species, count), GearedNearby(species, point, radius) ? 1 : 0);
+            => Raise(HuntDanger(LevelAt(point), count), GearedNearby(species, point, radius) ? 1 : 0);
 
         /// <summary>Did the guild observe danger-raising gear on this species inside the hunting area?</summary>
         static bool GearedNearby(MonsterDefinition species, Vector2 point, float radius)
@@ -350,13 +360,13 @@ namespace GuildMaster.Quests
         }
 
         /// <summary>
-        /// Clear-nest danger: species danger, +1 when at least 5 were last observed there, and
+        /// Clear-nest danger: the level its young are born at (P4-58), +1 when at least 5 were last observed there, and
         /// +1 when the guild saw armed monsters (2+) or a crown wearer there (P4-22).
         /// </summary>
         public static DangerLevel NestDanger(Nest nest)
         {
             bool hasIntel = Services.TryGet<GuildIntel>(out var intel);
-            var d = (hasIntel ? intel.SpeciesOf(nest) : nest.Species).danger;
+            var d = MonsterLevel.DangerAt(nest.BirthLevel);
             int seen = hasIntel ? intel.Get(nest).LastCount : 0;
             bool geared = hasIntel && GuildIntel.RaisesDanger(intel.GearAt(nest));
             return Raise(d, (seen >= 5 ? 1 : 0) + (geared ? 1 : 0));

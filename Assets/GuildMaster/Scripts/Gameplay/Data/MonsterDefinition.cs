@@ -40,6 +40,7 @@ namespace GuildMaster.Data
         public float attackCooldown = 1.2f;
         public float moveSpeed = 2.5f;
         public float sightRadius = 6f;
+        [Tooltip("Rarity class only (P4-58): how dangerous a monster is comes from its level (Monster.Danger).")]
         public DangerLevel danger;
         [Tooltip("Fighting smarts (P4-26): Instinct for mindless beasts up to Veteran for bosses.")]
         public Units.CombatTier combatTier = Units.CombatTier.Novice;

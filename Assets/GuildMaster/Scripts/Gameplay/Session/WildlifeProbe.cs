@@ -101,7 +101,8 @@ namespace GuildMaster.Session
             }
         }
 
-        static int DangerRank(MonsterDefinition s) => s.danger switch { DangerLevel.High => 2, DangerLevel.Medium => 1, _ => 0 };
+        /// <summary>0 낮음 .. 2 높음, by the monsters' own danger (P4-58: their level, not their species).</summary>
+        static int DangerRank(Monsters.Monster m) => (int)m.Danger;
 
         string Snapshot(string label)
         {
@@ -114,7 +115,7 @@ namespace GuildMaster.Session
                 var nests = eco.Nests.Where(n => { float d = Vector2.Distance(n.WorldPosition, town); return d > lo && d <= hi; }).ToList();
                 var held = nests.Where(n => !n.IsEmpty).ToList();
                 var alive = held.SelectMany(n => n.Members).Where(m => m != null && m.IsAlive).ToList();
-                float danger = held.Count == 0 ? 0f : (float)held.Average(n => DangerRank(n.Species));
+                float danger = alive.Count == 0 ? 0f : (float)alive.Average(m => DangerRank(m));
                 float level = alive.Count == 0 ? 0f : (float)alive.Average(m => m.Level);
                 int skilled = alive.Count(m => m.Tier >= CombatTier.Skilled);
                 string kinds = string.Join(",", held.GroupBy(n => n.Species.id).OrderByDescending(g => g.Count()).Select(g => $"{Short(g.Key)}{g.Count()}"));

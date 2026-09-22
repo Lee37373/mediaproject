@@ -42,8 +42,8 @@ namespace GuildMaster.Adventurers
         public static float DangerRequirement(DangerLevel d) => d switch
         {
             DangerLevel.Low => 1f,
-            DangerLevel.Medium => 3f,
-            _ => 6f,
+            DangerLevel.Medium => 5f, // P4-58: levels now run 1..15 across the map (were 1..5)
+            _ => 9f,
         };
 
         public static AdventurerDecision Decide(Adventurer a, IReadOnlyList<Quest> available)

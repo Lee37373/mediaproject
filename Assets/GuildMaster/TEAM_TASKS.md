@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-22
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-58**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-59**).
 
 ## 사용 규칙
 
@@ -56,6 +56,7 @@
 | P4-55 | 지형 지대(사용자 결정): 초원(마을 주변)+사막·설원·늪지·황무지, 방향별 큰 지대, 이동·시야 배율, 색 변경(땅·나무·물·미니맵·몬스터) | 이재혁 | 완료 | World/TerrainRegions(신규)·MapData·MapGenerator·GridMap·ForestSight·CartoonGroundPainter·MapRenderer, UI/MinimapView, Monsters/Monster | 9fa1bcb |
 | P4-56 | 무리 이주(사용자 결정): 둥지에서 확률로 떠난 무리가 마을 쪽 둥지 자리로 옮겨 감(싸워서 빼앗음), 가는 길의 적과 싸우고 제자리 회복 후 계속, 마을 가까운 둥지의 무리만 마을 침공 | 이재혁 | 완료 | Ecosystem/MigrationService(신규), Monsters/MigrateState(신규)·Monster, Town/WaveManager, Session/GameBootstrap·DebugCommands | 5c94763 |
 | P4-57 | 사용자 보고·결정: 몬스터끼리 싸운 뒤 전리품 줍기(전투 직후·귀소 중), 종마다 보스 개체(둥지마다 낮은 확률, 죽으면 다시 안 생김) | 이재혁 | 완료 | Monsters/Monster·MonsterBoss(신규), Data/MonsterDefinition·DefaultContent, Ecosystem/EcosystemManager·MigrationService, Editor/ArtCatalogBuilder, UI/World/NameTagLayer | de157ed |
+| P4-58 | 사용자 결정: 강함은 레벨(종 능력치 차이 축소·태어남 레벨 1~15·위험도는 레벨로), 지형별 서식(지형만으로 배정), 무리는 쪼개지거나 합쳐지지 않음, 쫓겨난 무리는 서식 지형의 빈 땅을 떠돎 | 이재혁 | 진행 중 | Monsters/MonsterLevel·Monster, Data/DefaultContent·MonsterDefinition, Quests/QuestBoard, Adventurers/FreeHunt·Decisions, Ecosystem/EcosystemManager·TerritoryService·MigrationService, UI/Views | |
 | P5-2 | 성능 | 미정 | 예정 | 전반 | |
 | P5-3 | LLM 지연과 예외 처리 | 미정 | 예정 | LLM/LlmGateway | |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |

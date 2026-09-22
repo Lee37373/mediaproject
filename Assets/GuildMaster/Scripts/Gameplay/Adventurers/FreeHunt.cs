@@ -22,19 +22,28 @@ namespace GuildMaster.Adventurers
         /// How far this band dares to roam (P4-38, user decision 2026-09-21: "wider as they grow").
         /// At a flat 40 cells the hunt never left the slime rings — P5-1 puts goblins and skulls at
         /// 40–70 — so nothing else was ever met. Everyone knows the dangerous kinds live further out
-        /// (<see cref="MonsterDefinition.distanceBand"/>, 0 = by the walls, 1 = the edge); where their
-        /// dens are still has to be found. The band goes as far out as the furthest species it could
-        /// take on as a pack.
+        /// (P4-58: monsters are born higher the further out, 0 = by the walls, 1 = the edge); where
+        /// their dens are still has to be found. The band goes as far out as it could still take on a
+        /// pack of any kind born there.
         /// </summary>
         public static float RoamRadius(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, IEnumerable<MonsterDefinition> species)
         {
             float frontier = 0f;
             if (species != null)
-                foreach (var s in species)
-                    if (s != null && s.distanceBand > frontier && CanTake(band, hp, StatsOf(s), ExpectedEnemies(1, s, 0)))
-                        frontier = s.distanceBand;
+                for (int step = 1; step <= RoamSteps; step++)
+                {
+                    float d = step / (float)RoamSteps;
+                    int level = Monsters.MonsterLevel.BirthLevel(d);
+                    bool all = true;
+                    foreach (var s in species)
+                        if (s != null && !CanTake(band, hp, StatsOf(s, level), ExpectedEnemies(1, s, 0))) { all = false; break; }
+                    if (!all) break;
+                    frontier = d;
+                }
             return Mathf.Lerp(Radius, MaxRadius, frontier);
         }
+
+        const int RoamSteps = 20;
         /// <summary>Game hours one trip lasts before heading back to sell what it found.</summary>
         public const float MaxHours = 8f;
         /// <summary>
@@ -136,9 +145,9 @@ namespace GuildMaster.Adventurers
         /// early"): EXP on offer over the walk. A measured run spent 55% of its time hunting and 3%
         /// fighting — random spots across a 65-cell circle mostly land on empty ground far out.
         /// </summary>
-        public static float DenScore(MonsterDefinition species, int lastCount, float distance)
+        public static float DenScore(MonsterDefinition species, int lastCount, float distance, int level = 1)
             => species == null || lastCount <= 0 ? 0f
-             : species.expValue * Mathf.Min(lastCount, DenCountCap) / (8f + Mathf.Max(0f, distance));
+             : Monsters.MonsterLevel.ExpWorth(species.expValue, level) * Mathf.Min(lastCount, DenCountCap) / (8f + Mathf.Max(0f, distance));
 
         /// <summary>
         /// How far from town to scout: uniform in distance, not in area. Area-uniform points pile up
@@ -146,13 +155,16 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public static float ScoutDistance(float t01, float reach) => Mathf.Lerp(12f, Mathf.Max(12f, reach), Mathf.Clamp01(t01));
 
-        /// <summary>A species' stats before any gear it picked up, for a den judged from afar.</summary>
-        public static CombatStats StatsOf(MonsterDefinition def) => new CombatStats
+        /// <summary>
+        /// A species' stats at a level, before any gear it picked up, for a den judged from afar
+        /// (P4-58: the level is the strength; a den's is its birth level, known from its distance).
+        /// </summary>
+        public static CombatStats StatsOf(MonsterDefinition def, int level = 1) => Monsters.MonsterLevel.Grow(new CombatStats
         {
             MaxHp = Combat.ScaledHp(def.maxHp), Attack = def.attack, Defense = def.defense,
             AttackRange = def.attackRange, AttackCooldown = def.attackCooldown,
             MoveSpeed = def.moveSpeed, SightRadius = def.sightRadius,
-        };
+        }, level);
 
         /// <summary>A pack hunter never travels alone: assume at least this many (user request).</summary>
         public const int AssumedPackSize = 3;

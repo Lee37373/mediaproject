@@ -303,7 +303,7 @@ namespace GuildMaster.UI
         void ShowMonster(Monster m)
         {
             var d = m.Def;
-            _title.text = $"{(m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(d.danger), UITheme.Danger(d.danger))}";
+            _title.text = $"{(m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(m.Danger), UITheme.Danger(m.Danger))}";
             string prey = d.prey.Count == 0 ? "-" : string.Join(", ", d.prey.Select(p => p.displayName));
             string rivals = d.rivals.Count == 0 ? "-" : string.Join(", ", d.rivals.Select(p => p.displayName));
             _body.text =

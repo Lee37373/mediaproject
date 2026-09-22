@@ -58,6 +58,9 @@ namespace GuildMaster.Ecosystem
         /// <summary>0 at the innermost nest site's distance from the town, 1 at the outermost.</summary>
         public float Distance01(Vector2 p) => Mathf.InverseLerp(_innermost, _outermost, Vector2.Distance(p, _town));
 
+        /// <summary>The level monsters are born at around this spot (P4-58: the level is the strength).</summary>
+        public int BirthLevelAt(Vector2 p) => MonsterLevel.BirthLevel(Distance01(p));
+
         /// <summary>Species that exist in the game (newcomers from beyond the edge are drawn from these).</summary>
         internal IReadOnlyList<MonsterDefinition> AllSpecies => _db.monsters;
 

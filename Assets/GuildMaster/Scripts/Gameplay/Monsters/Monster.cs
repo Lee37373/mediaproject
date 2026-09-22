@@ -210,11 +210,20 @@ namespace GuildMaster.Monsters
         /// <summary>Base stats = the species (and ranged variant) scaled by level; gear goes on top.</summary>
         void ApplyLevel()
         {
-            var s = _unlevelledStats;
-            s.MaxHp *= MonsterLevel.HpScale(Level);
-            s.Attack *= MonsterLevel.AttackScale(Level);
-            _baseStats = s;
+            _baseStats = MonsterLevel.Grow(_unlevelledStats, Level);
         }
+
+        /// <summary>Sets the level outright (tests and debug tools; P4-58 the level is the strength). Heals fully.</summary>
+        internal void SetLevel(int level)
+        {
+            Level = Mathf.Clamp(level, 1, MonsterLevel.MaxLevel);
+            Exp = 0;
+            ApplyLevel();
+            RefreshStats(fullHeal: true);
+        }
+
+        /// <summary>Danger shown to the guild (P4-58): by level, one step more for a boss.</summary>
+        public DangerLevel Danger => (DangerLevel)Mathf.Min((int)DangerLevel.High, (int)MonsterLevel.DangerAt(Level) + (IsBoss ? 1 : 0));
 
         /// <summary>EXP for a kill: this monster's own, and the same for pack mates fighting close by.</summary>
         public void GainKillExp(int amount)

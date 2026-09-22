@@ -84,7 +84,7 @@ namespace GuildMaster.Visuals
             if (victim == null || !OnScreen(victim.Position, out float closeness)) return;
             var at = victim.Position + new Vector2(0f, 0.3f);
             var color = ColorOf(victim);
-            bool big = victim is Monster m && m.Def != null && m.Def.danger == DangerLevel.High;
+            bool big = victim is Monster m && m.Def != null && m.Danger == DangerLevel.High;
 
             _particles.Burst(at, new BurstSpec
             {

@@ -117,7 +117,7 @@ namespace GuildMaster.UI
             _species.ClearOptions();
             _species.AddOptions(_speciesOptions.Count == 0
                 ? new List<string> { "(확인한 몬스터 없음)" }
-                : _speciesOptions.Select(s => $"{s.displayName} (위험 {Quest.DangerLabel(s.danger)}, 관측 {intel.ObservedPopulation(s)}마리)").ToList());
+                : _speciesOptions.Select(s => $"{s.displayName} (관측 {intel.ObservedPopulation(s)}마리)").ToList());
             _species.SetValueWithoutNotify(Mathf.Clamp(prevSpecies, 0, Mathf.Max(0, _speciesOptions.Count - 1)));
 
         }

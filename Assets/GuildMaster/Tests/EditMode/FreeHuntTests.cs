@@ -25,7 +25,7 @@ namespace GuildMaster.Tests
             // P4-38: judged on the real stats and damage formula, so the judgement matches what
             // actually happens in the fight (user report 2026-09-21: nothing above slimes was hunted).
             var db = DefaultContent.Build();
-            CombatStats M(string id) => FreeHunt.StatsOf(db.monsters.Find(m => m.id == id));
+            CombatStats M(string id, int level = 1) => FreeHunt.StatsOf(db.monsters.Find(m => m.id == id), level);
             var goblin = M("goblin");
             var warrior3 = Member(AdventurerClass.Warrior, 3);
 
@@ -35,12 +35,13 @@ namespace GuildMaster.Tests
             Assert.That(CanTake(goblin, 3, warrior3), Is.False, "a Lv3 alone does not walk into a pack");
             Assert.That(CanTake(goblin, 3, warrior3, Member(AdventurerClass.Ranger, 3), Member(AdventurerClass.Mage, 3)), Is.True);
 
-            // The founding party can hunt goblins, but not goblin warriors by the pack, nor walk into a full den.
+            // The founding party can hunt goblins by the walls, but not a pack born far out (P4-58: the
+            // level is the strength), nor walk into a full den.
             var founders = new[] { Member(AdventurerClass.Warrior, 1), Member(AdventurerClass.Ranger, 1),
                                    Member(AdventurerClass.Priest, 1), Member(AdventurerClass.Mage, 1) };
             Assert.That(FreeHunt.CanTake(founders, null, goblin, 3), Is.True);
             Assert.That(FreeHunt.CanTake(founders, null, M("goblin_warrior"), 1), Is.True);
-            Assert.That(FreeHunt.CanTake(founders, null, M("goblin_warrior"), 3), Is.False);
+            Assert.That(FreeHunt.CanTake(founders, null, M("goblin", 12), 3), Is.False);
             Assert.That(FreeHunt.CanTake(founders, null, goblin, 10), Is.False);
 
             // Growing stronger shows: a geared Lv5 takes what a Lv3 would not.
@@ -56,7 +57,6 @@ namespace GuildMaster.Tests
             // P4-38, user decision 2026-09-21: at a flat 40 cells only the slime rings were in reach.
             var db = DefaultContent.Build();
             float Reach(params CombatStats[] band) => FreeHunt.RoamRadius(band, null, db.monsters);
-            var skull = db.monsters.Find(m => m.id == "skull");
 
             float priestAlone = Reach(Member(AdventurerClass.Priest, 1));
             float warriorAlone = Reach(Member(AdventurerClass.Warrior, 1));
@@ -67,8 +67,8 @@ namespace GuildMaster.Tests
 
             Assert.That(priestAlone, Is.GreaterThanOrEqualTo(FreeHunt.Radius), "never less than the old reach");
             Assert.That(founders, Is.GreaterThan(warriorAlone), "a party goes further than one member");
-            Assert.That(founders, Is.GreaterThanOrEqualTo(Mathf.Lerp(FreeHunt.Radius, FreeHunt.MaxRadius, skull.distanceBand)),
-                        "the founding party reaches the skull ring");
+            // P4-58: the level (distance) is the strength, so reach is where the born level becomes too much.
+            Assert.That(founders, Is.LessThan(FreeHunt.MaxRadius), "the founding party does not head for the edge");
             Assert.That(veterans, Is.GreaterThan(founders));
             Assert.That(veterans, Is.LessThanOrEqualTo(FreeHunt.MaxRadius));
         }

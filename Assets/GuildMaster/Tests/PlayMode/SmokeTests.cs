@@ -1183,7 +1183,11 @@ namespace GuildMaster.Tests
             return true;
         }
 
-        static Monster SpawnMonster(string speciesId, Vector2 at, bool meleeOnly = false)
+        /// <summary>A skilled monster (P4-58: smarts come with the level): a novice species one tier up.</summary>
+        const int SkilledLevel = 1 + MonsterLevel.LevelsPerTier;
+
+        /// <summary>A homeless monster at a spot; <paramref name="level"/> 0 = born level (1 with no nest).</summary>
+        static Monster SpawnMonster(string speciesId, Vector2 at, bool meleeOnly = false, int level = 0)
         {
             var def = Services.Get<EcosystemManager>().Species.First(s => s.id == speciesId);
             var pool = Services.Get<PoolService>();
@@ -1193,7 +1197,11 @@ namespace GuildMaster.Tests
             {
                 var m = pool.Spawn<Monster>(Monster.PoolKey, at);
                 m.Setup(def, null);
-                if (!meleeOnly || !m.IsRangedVariant) return m;
+                if (!meleeOnly || !m.IsRangedVariant)
+                {
+                    if (level > 0) m.SetLevel(level);
+                    return m;
+                }
                 m.Perish();
             }
             return null;
@@ -1219,24 +1227,24 @@ namespace GuildMaster.Tests
                 Assume.That(master, Is.Not.Null, "open ground on this map");
                 Clock.SetSpeed(2);
                 // Four melee monsters charge the guild master from the same spot to the east.
-                System.Collections.Generic.List<Monster> ChargeFromTheEast(string species)
+                System.Collections.Generic.List<Monster> ChargeFromTheEast(string species, int level)
                 {
                     var pack = new System.Collections.Generic.List<Monster>();
                     for (int i = 0; i < 4; i++)
                     {
-                        var m = SpawnMonster(species, master.Position + new Vector2(6f, (i - 1.5f) * 0.4f), meleeOnly: true);
+                        var m = SpawnMonster(species, master.Position + new Vector2(6f, (i - 1.5f) * 0.4f), meleeOnly: true, level: level);
                         m.ForceTarget(master);
                         pack.Add(m);
                     }
                     return pack;
                 }
 
-                var warriors = ChargeFromTheEast("goblin_warrior");
+                var warriors = ChargeFromTheEast("goblin_warrior", SkilledLevel);
                 yield return new WaitForSeconds(5f); // scaled: 10 s at x2 (8 s left it at the 200° edge on the 256 map)
                 float skilledGap = LargestGap(master.Position, warriors);
                 foreach (var m in warriors) m.Perish();
 
-                var goblins = ChargeFromTheEast("goblin");
+                var goblins = ChargeFromTheEast("goblin", 1);
                 yield return new WaitForSeconds(4f);
                 float noviceGap = LargestGap(master.Position, goblins);
 
@@ -1257,9 +1265,9 @@ namespace GuildMaster.Tests
                 Assume.That(master, Is.Not.Null, "open ground on this map");
                 Clock.SetSpeed(2);
                 // One on one (no pack slot): how far round the target it works, and whether it keeps swinging.
-                IEnumerator Duel(string species, System.Action<float, int> result)
+                IEnumerator Duel(string species, int level, System.Action<float, int> result)
                 {
-                    var m = SpawnMonster(species, master.Position + new Vector2(1.2f, 0f), meleeOnly: true);
+                    var m = SpawnMonster(species, master.Position + new Vector2(1.2f, 0f), meleeOnly: true, level: level);
                     m.ForceTarget(master);
                     yield return WaitFor(() => Combat.InRange(m, master), 5f);
                     float turned = 0f, lastSwing = m.NextAttackTime;
@@ -1280,8 +1288,8 @@ namespace GuildMaster.Tests
 
                 float skilledTurn = 0f, noviceTurn = 0f;
                 int skilledSwings = 0, noviceSwings = 0;
-                yield return Duel("goblin_warrior", (t, s) => { skilledTurn = t; skilledSwings = s; });
-                yield return Duel("goblin", (t, s) => { noviceTurn = t; noviceSwings = s; });
+                yield return Duel("goblin_warrior", SkilledLevel, (t, s) => { skilledTurn = t; skilledSwings = s; });
+                yield return Duel("goblin", 1, (t, s) => { noviceTurn = t; noviceSwings = s; });
 
                 Assert.That(skilledTurn, Is.GreaterThan(30f), "a skilled warrior side-steps round its target");
                 Assert.That(noviceTurn, Is.LessThan(15f), "a novice goblin stands and strikes");
@@ -1301,14 +1309,14 @@ namespace GuildMaster.Tests
                 var master = MasterOnOpenGround();
                 Assume.That(master, Is.Not.Null, "open ground on this map");
                 ClearHomelessOf("goblin_warrior");
-                var lone = SpawnMonster("goblin_warrior", master.Position + new Vector2(1.5f, 0f));
+                var lone = SpawnMonster("goblin_warrior", master.Position + new Vector2(1.5f, 0f), level: SkilledLevel);
                 // Beyond the 6-cell "already together" radius, but inside the ground MasterOnOpenGround
                 // guarantees walkable (+-8): at 12 the walk back could not be pathed and the warrior
                 // dropped straight out of the fall-back, with a 20s cooldown before it would try again.
                 var mates = new[]
                 {
-                    SpawnMonster("goblin_warrior", master.Position + new Vector2(0f, 7f)),
-                    SpawnMonster("goblin_warrior", master.Position + new Vector2(1f, 7.5f)),
+                    SpawnMonster("goblin_warrior", master.Position + new Vector2(0f, 7f), level: SkilledLevel),
+                    SpawnMonster("goblin_warrior", master.Position + new Vector2(1f, 7.5f), level: SkilledLevel),
                 };
                 typeof(Unit).GetProperty(nameof(Unit.Hp)).SetValue(lone, lone.Stats.MaxHp * 0.3f);
                 lone.ForceTarget(master);
@@ -1572,7 +1580,8 @@ namespace GuildMaster.Tests
             // Something it cannot: left alone until it strikes first.
             slime.Perish();
             member.Engage.Clear();
-            var king = SpawnMonster("slime_king", member.Position + Vector2.left * 4f);
+            // P4-58: born at the edge of the map (the level is the strength).
+            var king = SpawnMonster("slime_king", member.Position + Vector2.left * 4f, level: MonsterLevel.BirthLevel(1f));
             Assert.That(king, Is.Not.Null);
             // The king comes at people, so a blow from it is fair reason to fight back; what must
             // not happen is the member starting it.

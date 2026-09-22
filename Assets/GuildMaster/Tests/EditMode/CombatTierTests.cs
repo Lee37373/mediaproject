@@ -57,8 +57,9 @@ namespace GuildMaster.Tests
             Assert.That(TierOf("stone_slime"), Is.EqualTo(CombatTier.Instinct));
             Assert.That(TierOf("goblin"), Is.EqualTo(CombatTier.Novice));
             Assert.That(TierOf("skull"), Is.EqualTo(CombatTier.Novice));
-            Assert.That(TierOf("goblin_warrior"), Is.EqualTo(CombatTier.Skilled));
-            Assert.That(TierOf("slime_king"), Is.EqualTo(CombatTier.Veteran));
+            // P4-58: the level makes them smarter; the species only sets where they start.
+            Assert.That(TierOf("goblin_warrior"), Is.EqualTo(CombatTier.Novice));
+            Assert.That(TierOf("slime_king"), Is.EqualTo(CombatTier.Novice));
         }
 
         [Test]

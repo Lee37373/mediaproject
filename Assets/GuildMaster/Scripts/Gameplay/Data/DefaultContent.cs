@@ -93,6 +93,10 @@ namespace GuildMaster.Data
             // Species follow the imported Casual Monsters art; roles in the ecosystem are unchanged
             // from the previous roster (prey / skittish prey / pack predator / raiders / boss).
             //
+            // P4-58 (user decision 2026-09-22: "strength is the level"): base stats and EXP sit within
+            // about ±30% of the goblin's; the level (born by distance from town) carries the strength.
+            // The slime king was 220 HP / 22 attack / 160 EXP, the goblin warrior 70 / 11 / 40.
+            //
             // growthPerHour was raised about 1.5x over the P5-1 values on 2026-09-20 (P4-37): with
             // free hunting the guild clears the near rings even on an empty board, and at the old
             // rates the species nearest town were farmed down to the recolonisation floor. The far
@@ -108,19 +112,19 @@ namespace GuildMaster.Data
             // faster. From three left, a slime den refills in ~11 h (P4-40: 34 h), stone slime ~14 h
             // from two, skull ~17 h from two.
             var slime = Mon("slime", "슬라임", MonsterShape.Slime, new Color(0.4f, 0.85f, 0.45f), new Color(0.8f, 1f, 0.8f), 0.75f,
-                18, 3, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 8, 0.30f, 5, 6, Biome.Plains, Biome.Shore, Biome.Forest);
+                24, 5, 0, 1.0f, 1.2f, 1.6f, 4, DangerLevel.Low, false, 8, 0.30f, 5, 10, Biome.Plains, Biome.Shore, Biome.Forest);
             slime.artKey = "slime";
             Loot(slime, jelly, 0.85f, 1, 2);
 
             var stoneSlime = Mon("stone_slime", "돌 슬라임", MonsterShape.Slime, new Color(0.55f, 0.58f, 0.55f), new Color(0.8f, 0.82f, 0.8f), 0.9f,
-                35, 6, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 6, 0.25f, 4, 12, Biome.Plains, Biome.Forest);
+                34, 5, 3, 1.1f, 1.3f, 2.2f, 5, DangerLevel.Low, false, 6, 0.25f, 4, 12, Biome.Plains, Biome.Forest);
             stoneSlime.artKey = "stone_slime";
             stoneSlime.fleesFromPredators = true;
             Loot(stoneSlime, stoneShard, 0.7f);
             Loot(stoneSlime, denseJelly, 0.6f, 1, 2);
 
             var skull = Mon("skull", "해골", MonsterShape.Humanoid, new Color(0.9f, 0.88f, 0.8f), new Color(0.3f, 0.3f, 0.35f), 0.8f,
-                30, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 6, 0.20f, 3, 16, Biome.Forest, Biome.Plains);
+                26, 7, 1, 1.1f, 1.0f, 3.4f, 7, DangerLevel.Low, true, 6, 0.20f, 3, 14, Biome.Forest, Biome.Plains);
             skull.artKey = "skull";
             skull.rangedArtKey = "skull_archer";
             Loot(skull, boneShard, 0.7f);
@@ -137,7 +141,7 @@ namespace GuildMaster.Data
             goblin.pickupMode = MonsterPickupMode.Equip;
 
             var goblinWarrior = Mon("goblin_warrior", "고블린 전사", MonsterShape.Humanoid, new Color(0.3f, 0.45f, 0.3f), new Color(0.4f, 0.3f, 0.25f), 0.95f,
-                70, 11, 5, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.025f, 2, 40, Biome.Mountain, Biome.Forest);
+                34, 7.5f, 3, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.025f, 2, 16, Biome.Mountain, Biome.Forest);
             goblinWarrior.artKey = "goblin_warrior";
             goblinWarrior.canRaid = true;
             // P5-1: warriors live far out (band 0.75), so their raids are a late-game threat.
@@ -147,7 +151,7 @@ namespace GuildMaster.Data
             Loot(goblinWarrior, ironOre, 0.35f);
 
             var slimeKing = Mon("slime_king", "슬라임 킹", MonsterShape.Brute, new Color(0.35f, 0.8f, 0.4f), new Color(0.95f, 0.8f, 0.3f), 1.5f,
-                220, 22, 8, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 4, 0.011f, 1, 160, Biome.Mountain);
+                38, 8, 3, 1.5f, 1.8f, 2.2f, 6, DangerLevel.High, true, 4, 0.011f, 1, 18, Biome.Mountain);
             slimeKing.artKey = "slime_king";
             slimeKing.canRaid = true;
             slimeKing.raidThreshold = 2; slimeKing.raidStep = 1; // 2 / 3 / 4
@@ -181,14 +185,15 @@ namespace GuildMaster.Data
             goblinWarrior.territoryRadius = 6f;
             slimeKing.territoryRadius = 6.5f;
 
-            // Fighting smarts (P4-26): slimes act on instinct, goblins and skeletons fight like novices,
-            // goblin warriors are skilled, the slime king is a veteran.
+            // Fighting smarts (P4-26): slimes act on instinct, the rest fight like novices. P4-58: the
+            // level does the rest (a step up every MonsterLevel.LevelsPerTier levels, a boss one more),
+            // so only the edge of the map and its bosses reach the top.
             slime.combatTier = CombatTier.Instinct;
             stoneSlime.combatTier = CombatTier.Instinct;
             skull.combatTier = CombatTier.Novice;
             goblin.combatTier = CombatTier.Novice;
-            goblinWarrior.combatTier = CombatTier.Skilled;
-            slimeKing.combatTier = CombatTier.Veteran;
+            goblinWarrior.combatTier = CombatTier.Novice;
+            slimeKing.combatTier = CombatTier.Novice;
 
             // Tactics & skills.
             stoneSlime.skillIds.Add("charge");
