@@ -22,6 +22,8 @@ namespace GuildMaster.World
     {
         public Vector2Int Cell;
         public Biome Biome;
+        /// <summary>Terrain region of the site (P4-58: species live by region).</summary>
+        public Region Region;
         /// <summary>Walk distance from the town centre in cells; species are placed by it (P5-1).</summary>
         public int DistanceFromTown;
     }

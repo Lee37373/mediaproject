@@ -88,6 +88,8 @@ namespace GuildMaster.Ecosystem
         }
 
         public bool IsMigrating(Nest n) => _bands.Any(b => b.From == n);
+        /// <summary>A band is on its way to take this site.</summary>
+        public bool IsTarget(Nest n) => _bands.Any(b => b.Target == n);
         public bool TryGetBand(Monster m, out Band band) => _of.TryGetValue(m, out band);
 
         /// <summary>Distance from the town centre (cells).</summary>
@@ -95,7 +97,8 @@ namespace GuildMaster.Ecosystem
 
         /// <summary>
         /// The next home: a site nearer the town by <see cref="MinStep"/>, within <see cref="MaxStep"/>,
-        /// nearest first; an empty site or the band's own kind is easier than a fight.
+        /// nearest first, within its habitat (P4-58); an empty site is easier than a fight, and a site
+        /// held by another pack — of its own kind too, packs never merge — is fought for.
         /// </summary>
         public Nest PickTarget(Nest from, MonsterDefinition species, ICollection<Nest> refused = null)
         {
@@ -105,21 +108,26 @@ namespace GuildMaster.Ecosystem
             foreach (var n in _eco.Nests)
             {
                 if (n == from || refused != null && refused.Contains(n)) continue;
+                if (!n.Suits(species)) continue;
                 if (FromTown(n) > home - MinStep) continue;
                 float d = Vector2.Distance(n.WorldPosition, from.WorldPosition);
                 if (d > MaxStep) continue;
                 if (_bands.Any(b => b.Target == n)) continue;
-                float score = d + (n.IsEmpty ? 0f : n.Species == species ? 5f : 10f + 2f * n.Population);
+                float score = d + (n.IsEmpty ? 0f : 10f + 2f * n.Population);
                 if (score < bestScore) { bestScore = score; best = n; }
             }
             return best;
         }
 
-        /// <summary>Sends the whole nest (those at home) off to a nearer site. False if there is nowhere to go.</summary>
+        /// <summary>
+        /// Sends the whole pack off to a nearer site. False if there is nowhere to go, or while some
+        /// of it is away (on a raid): a pack moves as one (P4-58, user decision).
+        /// </summary>
         public bool TryLaunch(Nest nest)
         {
             if (_bands.Count >= MaxBands || IsMigrating(nest)) return false;
-            var home = nest.Members.Where(m => m != null && m.IsAlive && m.DefaultStateOverride == null).ToList();
+            var home = nest.Members.Where(m => m != null && m.IsAlive).ToList();
+            if (home.Any(m => m.DefaultStateOverride != null)) return false;
             if (home.Count == 0) return false;
             var target = PickTarget(nest, nest.Species);
             if (target == null) return false;
@@ -158,7 +166,13 @@ namespace GuildMaster.Ecosystem
                 target = free[GameRandom.Shared.Range(0, free.Count)];
             }
             if (!target.IsEmpty) return false;
-            species ??= _eco.AllSpecies[GameRandom.Shared.Range(0, _eco.AllSpecies.Count)];
+            if (species == null)
+            {
+                // A kind that lives there (P4-58: habitat by terrain).
+                var kinds = _eco.AllSpecies.Where(target.Suits).ToList();
+                if (kinds.Count == 0) return false;
+                species = kinds[GameRandom.Shared.Range(0, kinds.Count)];
+            }
             target.ChangeSpecies(species);
             var edge = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).First();
             var band = new Band { Id = ++_count, From = target, Target = target, StartedAtHour = _clock.TotalHours, Species = species, Arrival = true };
@@ -228,12 +242,14 @@ namespace GuildMaster.Ecosystem
             if (!fighting && hp < RestBelow) band.Resting = true;
             if (band.Resting && hp >= RestUntil) band.Resting = false;
 
-            // The target changed hands while we walked: our own kind now, or emptied — both fine;
-            // a stronger kind is fought for when we get there.
+            // The target changed hands while we walked: emptied is fine; anyone holding it — our own
+            // kind too (P4-58: packs never merge) — is fought for when we get there.
             if (fighting || band.Resting) return;
             var lead = band.Members.OrderBy(m => Vector2.Distance(m.Position, band.Target.WorldPosition)).First();
             if (Vector2.Distance(lead.Position, band.Target.WorldPosition) > ArriveRadius + band.Target.TerritoryRadius * 0.5f) return;
-            if (!band.Target.IsEmpty && band.Target.Species != band.Species) return; // residents still hold it: the fight goes on
+            // Residents other than the band itself (newcomers belong to their site from the start)
+            // still hold it: the fight goes on.
+            if (band.Target.Members.Any(m => m.IsAlive && !band.Members.Contains(m))) return;
             Settle(band);
         }
 

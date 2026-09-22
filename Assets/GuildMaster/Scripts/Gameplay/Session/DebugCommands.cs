@@ -538,6 +538,31 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        /// <summary>Roaming packs (P4-58): species, size, where they are, walking or resting.</summary>
+        public static string Roamers()
+        {
+            var svc = Services.Get<RoamingPackService>();
+            var clock = Services.Get<GameClock>();
+            var sb = new StringBuilder();
+            foreach (var p in svc.Packs)
+                sb.Append($"  #{p.Id} {p.Species.id} x{p.Members.Count} at {p.Center} " +
+                          (p.Moving ? $"walking to {p.Goal}" : $"resting {Mathf.Max(0f, p.RestUntilHour - clock.TotalHours):0.0}h") +
+                          $" states={string.Join("/", p.Members.Select(m => m.StateLabel))}\n");
+            return sb.Length == 0 ? "no roaming packs" : sb.ToString();
+        }
+
+        /// <summary>Sends nest #index's whole pack on the road as if driven out with nowhere to go (P4-58).</summary>
+        public static string ExileNest(int index)
+        {
+            var eco = Services.Get<EcosystemManager>();
+            if (index < 0 || index >= eco.Nests.Count) return "bad index";
+            var nest = eco.Nests[index];
+            var pack = Services.Get<RoamingPackService>().SendOnTheRoad(nest, null);
+            if (pack == null) return "empty nest";
+            if (Services.TryGet<CameraControl.CameraController>(out var cam)) { cam.Follow(null); cam.JumpTo(pack.Center); }
+            return $"pack #{pack.Id}: {pack.Members.Count} {pack.Species.id} left {nest.DisplayName}, goal {(pack.Moving ? pack.Goal.ToString() : "-")}";
+        }
+
         /// <summary>Every living pack boss (P4-57): name, level, tier, HP and nest.</summary>
         public static string Bosses()
         {

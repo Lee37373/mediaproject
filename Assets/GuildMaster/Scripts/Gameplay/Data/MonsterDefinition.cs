@@ -81,10 +81,12 @@ namespace GuildMaster.Data
         public string bossArtKey;
 
         [Header("Ecosystem")]
-        [Range(0f, 1f)]
-        [Tooltip("How far from town this species lives (P5-1): 0 = just outside the walls, 1 = the far " +
-                 "edge of the map. Nests are handed out by this, so the danger grows with the distance.")]
-        public float distanceBand = 0.5f;
+        [Tooltip("Terrain regions this species lives in (P4-58, user decision: habitat by terrain only). " +
+                 "Nests, newcomers, migrations and roaming packs keep to them.")]
+        public List<Region> regions = new();
+        [Tooltip("Also lives on sites of these biomes in any region (goblins: woods).")]
+        public List<Biome> habitatBiomes = new();
+        [Tooltip("Preferred biomes within its habitat (a site of another biome is taken less often).")]
         public List<Biome> biomes = new();
         [Tooltip("Nests this species is guaranteed on a map (P5-1). The weak ring around town needs " +
                  "several, or the early economy runs dry: potions are made from slime jelly.")]
@@ -103,6 +105,9 @@ namespace GuildMaster.Data
         public MonsterPickupMode pickupMode;
         [Tooltip("Gear worn at spawn (chance each); worn gear always drops on death.")]
         public List<LootEntry> startingGear = new();
+
+        /// <summary>Whether this species can live on ground of this region and biome (P4-58).</summary>
+        public bool LivesAt(Region region, Biome biome) => regions.Contains(region) || habitatBiomes.Contains(biome);
 
         /// <summary>True if this species can drop the item (loot table or gear it may spawn with).</summary>
         public bool CanDrop(ItemDefinition item)

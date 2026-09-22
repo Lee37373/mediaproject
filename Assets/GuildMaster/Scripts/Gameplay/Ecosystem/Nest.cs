@@ -21,6 +21,10 @@ namespace GuildMaster.Ecosystem
         public MonsterDefinition Species { get; private set; }
         public Vector2Int Cell { get; private set; }
         public Biome Biome { get; private set; }
+        /// <summary>Terrain region of the site (P4-58: species live by region).</summary>
+        public Region Region { get; private set; }
+        /// <summary>Whether a species can live here (P4-58).</summary>
+        public bool Suits(MonsterDefinition species) => species != null && species.LivesAt(Region, Biome);
         public int Capacity { get; private set; }
         public float GrowthAccumulator { get; set; }
         /// <summary>Breeding factor of this site by its distance from the town (<see cref="EcosystemManager.GrowthFactor"/>).</summary>
@@ -87,6 +91,17 @@ namespace GuildMaster.Ecosystem
             return u.Faction == Faction.Guild;
         }
 
+        /// <summary>A member leaves with its whole pack for no nest (P4-58 roaming); population unchanged.</summary>
+        internal bool ReleaseMember(Monster m) => _members.Remove(m);
+
+        /// <summary>A roaming pack's member settles here (P4-58); population unchanged.</summary>
+        internal void AdoptMember(Monster m)
+        {
+            if (m == null || _members.Contains(m)) return;
+            _members.Add(m);
+            m.ChangeHome(this);
+        }
+
         /// <summary>Moves a living member to another nest (migration). Population per species is unchanged.</summary>
         internal void TransferMember(Monster m, Nest to)
         {
@@ -116,6 +131,7 @@ namespace GuildMaster.Ecosystem
             Species = species;
             Cell = site.Cell;
             Biome = site.Biome;
+            Region = site.Region;
             Capacity = species.nestCapacity;
             name = $"Nest {id} ({species.id})";
             transform.position = WorldPosition;

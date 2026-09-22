@@ -271,6 +271,7 @@ namespace GuildMaster.Tests
                 var homeRange = nest.Species.wanderRadius + 3f;
                 Assert.That(13f, Is.GreaterThan(homeRange).And.LessThan(nest.Species.leashRadius), "the spoils lie outside the home range");
 
+                ClearStrangersNear(nest.WorldPosition, 30f, nest);
                 var fighter = nest.Members.First(m => m.IsAlive && m != wearer && !m.IsRangedVariant);
                 fighter.Mover.Stop();
                 fighter.transform.position = nest.WorldPosition + dir * 10f;
@@ -1159,6 +1160,17 @@ namespace GuildMaster.Tests
         /// homeless, and pack membership is "same species, same home" — so any other stray of that
         /// species counts as a pack mate and can be rallied to instead of the ones we placed.
         /// </summary>
+        /// <summary>
+        /// Removes every monster near a spot that is not of the kept nests: a band passing by (P4-56
+        /// migrations, P4-58 roaming packs) drew the residents into a fight of its own and the test
+        /// measured that one instead.
+        /// </summary>
+        static void ClearStrangersNear(Vector2 at, float radius, params Ecosystem.Nest[] keep)
+        {
+            foreach (var u in UnitRegistry.All.ToList())
+                if (u is Monster m && m.IsAlive && !keep.Contains(m.Home) && Vector2.Distance(m.Position, at) <= radius) m.Perish();
+        }
+
         static void ClearHomelessOf(string speciesId)
         {
             foreach (var u in UnitRegistry.All.ToList())
@@ -1420,6 +1432,7 @@ namespace GuildMaster.Tests
                 if (d >= 12f && d <= 22f && (there == null || a.TerritoryRadius > there.TerritoryRadius)) { there = a; home = b; }
             }
             Assume.That(there, Is.Not.Null, "two dens of different kinds a lure apart");
+            ClearStrangersNear(there.WorldPosition, 30f, there, home);
             var lured = home.Members.First(m => m.IsAlive);
             var master = Services.Get<PlayerAvatar>();
             DebugCommands.Invulnerable(true, untargetable: false); // the bait takes no harm but stays bait
@@ -1436,6 +1449,7 @@ namespace GuildMaster.Tests
                 master.MoveTo(there.WorldPosition + through * (there.TerritoryRadius + 12f));
 
                 bool fought = false, walkedHome = false, baitGone = false;
+                string homeNote = null;
                 float closest = float.MaxValue;
                 var states = new System.Collections.Generic.HashSet<string>();
                 float until = Time.time + 25f;
@@ -1451,7 +1465,11 @@ namespace GuildMaster.Tests
                         master.transform.position = Services.Get<World.WorldService>().TownCenterWorld;
                     }
                     if (lured.LastAttacker is Monster) fought = true;
-                    if (fought && lured.DebugState == "귀소") walkedHome = true;
+                    if (fought && lured.DebugState == "귀소" && homeNote == null)
+                    {
+                        walkedHome = true;
+                        homeNote = $"lured Lv{lured.Level} hp {lured.HpRatio:P0} target {lured.CurrentTarget?.name} lastHit {lured.LastAttacker?.name}; residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => $"Lv{m.Level} {m.DebugState}>{m.CurrentTarget?.name}"))}";
+                    }
                     states.Add(lured.DebugState);
                     foreach (var r in there.Members.Where(m => m.IsAlive)) closest = Mathf.Min(closest, Vector2.Distance(r.Position, lured.Position));
                     yield return null;
@@ -1460,7 +1478,7 @@ namespace GuildMaster.Tests
                 Assert.That(fought, Is.True, $"the residents took it on ({home.Species.id} lured into {there.Species.id}, "
                     + $"dens {Vector2.Distance(home.WorldPosition, there.WorldPosition):0} apart, territory {there.TerritoryRadius:0}, "
                     + $"closest {closest:0.0}, lured went {string.Join("/", states)}, residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => m.DebugState + ">" + m.CurrentTarget?.name + (m.IsBoss ? "(boss)" : "")))}, lured target {lured.CurrentTarget?.name} hit by {lured.LastAttacker?.name})");
-                Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight");
+                Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight: " + homeNote);
             }
             finally { DebugCommands.Invulnerable(false); }
         }
@@ -1784,6 +1802,61 @@ namespace GuildMaster.Tests
                 Assert.That(nest.KnownOpenGates.Contains(west.CenterCell), Is.True, "seen: the pack knows the way in");
             }
             finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
+        public IEnumerator APackWithNowhereToGo_RoamsAsOne_AndSettlesAnEmptyNestOfItsHabitat()
+        {
+            // P4-58, user decisions 2026-09-22: a pack never splits or merges; driven out with nowhere
+            // to go it walks the empty land of its habitat together, and moves into an empty nest of
+            // its habitat when it comes near one.
+            yield return Boot();
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                var eco = Services.Get<EcosystemManager>();
+                var roaming = Services.Get<RoamingPackService>();
+                var from = eco.Nests.First(n => n.Population >= 3);
+                var species = from.Species;
+                int population = eco.GetPopulation(species);
+                var members = from.Members.ToList();
+
+                var pack = roaming.SendOnTheRoad(from, null);
+                Assert.That(pack, Is.Not.Null);
+                Assert.That(from.IsEmpty, Is.True, "the whole pack left");
+                Assert.That(pack.Members, Is.EquivalentTo(members));
+                Assert.That(members.All(m => m.Home == null && m.StateLabel == "떠돌이"), Is.True);
+                Assert.That(eco.GetPopulation(species), Is.EqualTo(population), "nobody was lost on the way out");
+                Assert.That(pack.Moving, Is.True, "it sets off for open ground of its habitat");
+                var goalCell = World.GridMap.WorldToCell(pack.Goal);
+                var map = Services.Get<World.WorldService>().Map;
+                Assert.That(species.LivesAt(map.RegionOf(goalCell.x, goalCell.y), World.Biome.Plains)
+                            || Services.Get<World.WorldService>().Grid.IsForest(goalCell), Is.True, "the stop is in its habitat");
+
+                // They walk together.
+                Clock.SetSpeed(2);
+                var start = pack.Center;
+                yield return WaitFor(() => Vector2.Distance(pack.Center, start) > 6f, 12f);
+                Assert.That(Vector2.Distance(pack.Center, start), Is.GreaterThan(6f), "the pack is on its way");
+                float spread = pack.Members.Where(m => m.IsAlive).Max(m => Vector2.Distance(m.Position, pack.Center));
+                Assert.That(spread, Is.LessThan(8f), "and keeps together");
+
+                // An empty nest of its habitat nearby: they move in, all of them.
+                var target = eco.Nests.Where(n => n != from && n.Suits(species))
+                    .OrderBy(n => Vector2.Distance(n.WorldPosition, pack.Center)).First();
+                foreach (var m in target.Members.ToList()) m.Perish();
+                foreach (var m in pack.Members)
+                {
+                    m.Mover.Stop();
+                    m.transform.position = target.WorldPosition + new Vector2(6f, 0f);
+                }
+                yield return WaitFor(() => !roaming.Packs.Contains(pack), 5f);
+                Assert.That(roaming.Packs.Contains(pack), Is.False, "the pack settled");
+                Assert.That(target.Species, Is.EqualTo(species));
+                Assert.That(members.Where(m => m.IsAlive).All(m => m.Home == target && target.Members.Contains(m)), Is.True,
+                            "every member moved in");
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
     }
 }

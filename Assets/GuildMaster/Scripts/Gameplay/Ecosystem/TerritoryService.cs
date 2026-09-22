@@ -95,7 +95,7 @@ namespace GuildMaster.Ecosystem
             foreach (var u in UnitRegistry.All)
             {
                 if (u is not Monster m || !m.IsAlive || m.Home == nest || !nest.InTerritory(m.Position)) continue;
-                object pack = m.Home != null ? m.Home : m.Def;
+                object pack = m.Home != null ? m.Home : m.Roaming != null ? m.Roaming : m.Def;
                 if (!_groups.TryGetValue(pack, out var list)) _groups[pack] = list = new List<Monster>();
                 list.Add(m);
                 any = true;
@@ -133,41 +133,53 @@ namespace GuildMaster.Ecosystem
 
         static bool Observed(Vector2 p) => Services.TryGet<FogOfWar>(out var fog) && fog.IsVisible(p);
 
-        /// <summary>Outmatched residents move to the best other nest; if there is none they just run.</summary>
+        /// <summary>
+        /// Outmatched residents leave — the whole pack, never a part of it (P4-58, user decision
+        /// 2026-09-22: a pack is one) — for the nearest safe empty nest of their habitat. With none,
+        /// the pack takes to the road (<see cref="RoamingPackService"/>); it never moves in with
+        /// another pack, of its own kind or not.
+        /// </summary>
         void Abandon(Nest nest, List<Monster> residents, MonsterDefinition drivenBy, Vector2 threat, Nest drivenFrom)
         {
             if (residents.Count == 0) return;
-            var dest = FindNewHome(nest, nest.Species, residents.Count, threat, drivenFrom);
+            Services.TryGet<MigrationService>(out var migration);
+            if (migration != null && migration.IsMigrating(nest)) return; // the pack is already on its way elsewhere
+            var pack = nest.Members.Where(m => m != null && m.IsAlive).ToList();
+            var dest = FindNewHome(nest, nest.Species, threat, drivenFrom, migration);
             bool observed = Observed(nest.WorldPosition);
-            if (dest == null)
+            var species = nest.Species;
+            if (dest != null)
+            {
+                if (dest.Species != species) dest.ChangeSpecies(species);
+                foreach (var m in pack) nest.TransferMember(m, dest);
+                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy.displayName} → {dest.DisplayName}");
+            }
+            else if (Services.TryGet<RoamingPackService>(out var roaming))
+            {
+                roaming.SendOnTheRoad(nest, threat);
+                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy.displayName} → roaming");
+            }
+            else
             {
                 foreach (var r in residents) r.FleeFrom(threat);
                 return;
             }
-            if (dest.IsEmpty && dest.Species != nest.Species) dest.ChangeSpecies(nest.Species);
-            foreach (var r in residents) nest.TransferMember(r, dest);
-            Debug.Log($"[Territory] {nest.DisplayName}: {residents.Count} {nest.Species.displayName} driven out by {drivenBy.displayName} → {dest.DisplayName}");
             EventBus.Publish(new NestAbandonedEvent
             {
-                From = nest, To = dest, Species = nest.Species, DrivenBy = drivenBy, Count = residents.Count, Observed = observed,
+                From = nest, To = dest, Species = species, DrivenBy = drivenBy, Count = pack.Count, Observed = observed,
             });
         }
 
         /// <summary>
-        /// Nearest empty nest site at a safe distance (preferring the species' biomes), else the
-        /// same-species nest with the most free room.
+        /// Nearest empty nest of the species' habitat at a safe distance, that no migrating band is
+        /// heading for (preferring its biomes); null when there is none.
         /// </summary>
-        Nest FindNewHome(Nest from, MonsterDefinition species, int movers, Vector2 threat, Nest avoid)
+        Nest FindNewHome(Nest from, MonsterDefinition species, Vector2 threat, Nest avoid, MigrationService migration)
         {
-            // Never into the nest of the pack that drove them out (same-species rivals).
             bool Safe(Nest n) => n != from && n != avoid && Vector2.Distance(n.WorldPosition, threat) >= MinResettleDistance;
-            var empty = _eco.Nests.Where(n => n.IsEmpty && Safe(n))
+            return _eco.Nests.Where(n => n.IsEmpty && n.Suits(species) && Safe(n) && (migration == null || !migration.IsTarget(n)))
                 .OrderBy(n => species.biomes.Contains(n.Biome) ? 0 : 1)
                 .ThenBy(n => Vector2.Distance(n.WorldPosition, from.WorldPosition))
-                .FirstOrDefault();
-            if (empty != null) return empty;
-            return _eco.Nests.Where(n => n.Species == species && Safe(n) && n.Capacity - n.Population >= Mathf.Min(movers, 2))
-                .OrderBy(n => Vector2.Distance(n.WorldPosition, from.WorldPosition))
                 .FirstOrDefault();
         }
 

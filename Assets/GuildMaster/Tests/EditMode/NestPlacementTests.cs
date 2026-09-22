@@ -10,128 +10,93 @@ using UnityEngine;
 namespace GuildMaster.Tests
 {
     /// <summary>
-    /// Nests are handed out by how far the site is from town (P5-1, user decision 2026-09-20):
-    /// weak species ring the walls, dangerous ones live out at the edges.
+    /// Nests are handed out by terrain (P4-58, user decision 2026-09-22): a species lives only in its
+    /// regions; how strong its young are is the site's distance (the birth level), not the species.
     /// </summary>
     public class NestPlacementTests
     {
-        static MonsterDefinition Species(string id, float band, DangerLevel danger, params Biome[] biomes)
+        static MonsterDefinition Species(string id, DangerLevel danger, params Region[] regions)
         {
             var m = ScriptableObject.CreateInstance<MonsterDefinition>();
             m.name = m.id = id;
             m.displayName = id;
-            m.distanceBand = band;
             m.danger = danger;
-            m.biomes.AddRange(biomes.Length > 0 ? biomes : new[] { Biome.Plains });
+            m.regions.AddRange(regions);
             return m;
         }
 
         static List<MonsterDefinition> Roster() => new()
         {
-            Species("weak", 0.05f, DangerLevel.Low),
-            Species("mid", 0.4f, DangerLevel.Low),
-            Species("strong", 0.8f, DangerLevel.Medium),
-            Species("boss", 1f, DangerLevel.High),
+            Species("grass", DangerLevel.Low, Region.Grassland),
+            Species("sand", DangerLevel.Low, Region.Desert),
+            Species("both", DangerLevel.Medium, Region.Grassland, Region.Desert),
         };
 
+        /// <summary>Alternating grassland and desert sites, ordered by distance from town.</summary>
         static List<NestSite> Sites(int count)
         {
             var sites = new List<NestSite>();
             for (int i = 0; i < count; i++)
-                sites.Add(new NestSite { Cell = new Vector2Int(i, 0), Biome = Biome.Plains, DistanceFromTown = 20 + i * 5 });
+                sites.Add(new NestSite
+                {
+                    Cell = new Vector2Int(i, 0), Biome = Biome.Plains, DistanceFromTown = 20 + i * 5,
+                    Region = i % 2 == 0 ? Region.Grassland : Region.Desert,
+                });
             return sites;
         }
 
         [Test]
-        public void Fit_PeaksAtTheSpeciesOwnBand()
+        public void Fit_IsZeroOutsideTheHabitat_AndPrefersItsBiomes()
         {
-            var s = Species("mid", 0.4f, DangerLevel.Low);
-            float onBand = EcosystemManager.Fit(s, 0.4f, Biome.Plains);
-            float nearBand = EcosystemManager.Fit(s, 0.55f, Biome.Plains);
-            float farOff = EcosystemManager.Fit(s, 1f, Biome.Plains);
-            Assert.That(onBand, Is.GreaterThan(nearBand));
-            Assert.That(nearBand, Is.GreaterThan(farOff));
+            var s = Species("grass", DangerLevel.Low, Region.Grassland);
+            Assert.That(EcosystemManager.Fit(s, Region.Desert, Biome.Plains), Is.Zero);
+            Assert.That(EcosystemManager.Fit(s, Region.Grassland, Biome.Plains), Is.GreaterThan(0f));
+            s.biomes.Add(Biome.Forest);
+            Assert.That(EcosystemManager.Fit(s, Region.Grassland, Biome.Forest),
+                        Is.GreaterThan(EcosystemManager.Fit(s, Region.Grassland, Biome.Plains)));
+            // A woodland kind lives in woods anywhere.
+            s.habitatBiomes.Add(Biome.Forest);
+            Assert.That(EcosystemManager.Fit(s, Region.Desert, Biome.Forest), Is.GreaterThan(0f));
         }
 
         [Test]
-        public void Fit_PrefersAMatchingBiomeAtTheSameDistance()
-        {
-            var s = Species("mid", 0.4f, DangerLevel.Low, Biome.Forest);
-            Assert.That(EcosystemManager.Fit(s, 0.4f, Biome.Forest),
-                        Is.GreaterThan(EcosystemManager.Fit(s, 0.4f, Biome.Plains)));
-        }
-
-        [Test]
-        public void EverySpeciesGetsAtLeastOneNest()
+        public void EverySiteGoesToAKindThatLivesThere_AndNobodyIsLeftOut()
         {
             var species = Roster();
-            var result = EcosystemManager.AssignSpecies(species, Sites(12), new GameRandom(1234));
-            foreach (var s in species)
-                Assert.That(result, Does.Contain(s), $"{s.id} was left out of the world");
-        }
-
-        /// <summary>Mean distance from town of the sites a species ended up on (0 sites = 0).</summary>
-        static float Average(List<MonsterDefinition> assignment, List<NestSite> sites, string speciesId)
-        {
-            float sum = 0f;
-            int n = 0;
-            for (int i = 0; i < assignment.Count; i++)
+            for (int seed = 0; seed < 8; seed++)
             {
-                if (assignment[i] == null || assignment[i].id != speciesId) continue;
-                sum += sites[i].DistanceFromTown;
-                n++;
-            }
-            return n == 0 ? 0f : sum / n;
-        }
-
-        [Test]
-        public void StrongSpeciesEndUpFurtherFromTownThanWeakOnes()
-        {
-            var species = Roster();
-            var sites = Sites(14);
-            // Average over seeds: any single map may be lopsided, the rule must hold in general.
-            float weakSum = 0f, strongSum = 0f;
-            int seeds = 12;
-            for (int seed = 0; seed < seeds; seed++)
-            {
+                var sites = Sites(12);
                 var result = EcosystemManager.AssignSpecies(species, sites, new GameRandom(seed));
-                weakSum += Average(result, sites, "weak");
-                strongSum += Average(result, sites, "strong");
+                for (int i = 0; i < sites.Count; i++)
+                    Assert.That(result[i].LivesAt(sites[i].Region, sites[i].Biome), Is.True, $"{result[i].id} on {sites[i].Region}");
+                foreach (var s in species)
+                    Assert.That(result, Does.Contain(s), $"{s.id} was left out of the world");
             }
-            Assert.That(strongSum / seeds, Is.GreaterThan(weakSum / seeds),
-                        "strong species should settle further out than weak ones");
         }
 
         [Test]
-        public void TheNearestSiteGoesToTheWeakestSpecies()
+        public void GuaranteedNestsAreTheNearestOfTheHabitat()
         {
+            // The early economy lives off the slimes by the walls (minNests at the nearest sites).
             var species = Roster();
-            var sites = Sites(14);
-            int nearest = 0; // Sites() is ordered by distance
-            int weakWins = 0;
-            for (int seed = 0; seed < 12; seed++)
-            {
-                var result = EcosystemManager.AssignSpecies(species, sites, new GameRandom(seed));
-                if (result[nearest].id == "weak") weakWins++;
-            }
-            Assert.That(weakWins, Is.GreaterThanOrEqualTo(10), "the ring around the walls should be the weak species'");
+            species[0].minNests = 2;
+            var sites = Sites(12);
+            var result = EcosystemManager.AssignSpecies(species, sites, new GameRandom(3));
+            Assert.That(result[0].id, Is.EqualTo("grass"), "the nearest grassland site");
+            Assert.That(result[2].id, Is.EqualTo("grass"), "the next grassland site");
         }
 
         /// <summary>
-        /// The real roster on real maps: the walk out of town must get harder, species by species.
-        /// This is the rule the user asked for, so it is checked end to end, not just on the formula.
+        /// The real roster on real maps: every kind lives only on its own terrain, and every kind
+        /// is somewhere on the map.
         /// </summary>
         [Test]
-        public void OnGeneratedMaps_TheRosterRingsTheTownByDanger()
+        public void OnGeneratedMaps_EachKindLivesOnItsOwnTerrain()
         {
             var db = DefaultContent.Build();
-            var order = new[] { "slime", "stone_slime", "goblin", "skull", "goblin_warrior", "slime_king" };
-            var totals = new Dictionary<string, float>();
-            var counts = new Dictionary<string, int>();
-            foreach (var id in order) { totals[id] = 0f; counts[id] = 0; }
-
             var balance = ScriptableObject.CreateInstance<Session.GameBalance>();
-            for (int seed = 1; seed <= 8; seed++)
+            var seen = new HashSet<string>();
+            for (int seed = 1; seed <= 4; seed++)
             {
                 var map = MapGenerator.Generate(new MapGenSettings
                 {
@@ -142,30 +107,25 @@ namespace GuildMaster.Tests
                     NestCount = balance.nestCount,
                     MinNestDistanceFromTown = balance.minNestDistanceFromTown,
                 });
-
                 var assignment = EcosystemManager.AssignSpecies(db.monsters, map.Nests, new GameRandom(seed));
                 for (int i = 0; i < assignment.Count; i++)
                 {
-                    var id = assignment[i].id;
-                    if (!totals.ContainsKey(id)) continue;
-                    totals[id] += map.Nests[i].DistanceFromTown;
-                    counts[id]++;
+                    var site = map.Nests[i];
+                    Assert.That(assignment[i].LivesAt(site.Region, site.Biome), Is.True,
+                                $"seed {seed}: {assignment[i].id} on {site.Region}/{site.Biome}");
+                    seen.Add(assignment[i].id);
                 }
             }
-
-            float Mean(string id) => counts[id] == 0 ? float.MaxValue : totals[id] / counts[id];
-            for (int i = 1; i < order.Length; i++)
-                Assert.That(Mean(order[i]), Is.GreaterThan(Mean(order[i - 1])),
-                            $"{order[i]} should live further out than {order[i - 1]} " +
-                            $"({Mean(order[i]):0} vs {Mean(order[i - 1]):0} cells)");
+            Object.DestroyImmediate(balance);
+            foreach (var s in db.monsters) Assert.That(seen, Does.Contain(s.id), $"{s.id} never got a nest");
         }
 
         [Test]
-        public void FewerSitesThanSpeciesStillFillsFromTheTownOutwards()
+        public void EveryRegionHasAKindLivingInIt()
         {
-            var result = EcosystemManager.AssignSpecies(Roster(), Sites(2), new GameRandom(7));
-            Assert.That(result.Count, Is.EqualTo(2));
-            Assert.That(result.Select(r => r.id), Does.Contain("weak"));
+            var db = DefaultContent.Build();
+            foreach (Region r in System.Enum.GetValues(typeof(Region)))
+                Assert.That(db.monsters.Any(m => m.LivesAt(r, Biome.Plains)), Is.True, $"nobody lives in {r}");
         }
     }
 }

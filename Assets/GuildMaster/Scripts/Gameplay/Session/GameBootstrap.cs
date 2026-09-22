@@ -145,6 +145,10 @@ namespace GuildMaster.Session
             var migration = AddSystem<MigrationService>();
             migration.Init(eco, world, clock);
             Services.Register(migration);
+            // Packs driven out with nowhere to go walk their habitat as one (P4-58).
+            var roaming = AddSystem<RoamingPackService>();
+            roaming.Init(eco, world, clock);
+            Services.Register(roaming);
             // What the guild has actually seen; UI and adventurers read this, not the simulation.
             var intel = AddSystem<GuildIntel>();
             intel.Init(eco, fog, clock, world);

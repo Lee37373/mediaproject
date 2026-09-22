@@ -102,27 +102,19 @@ namespace GuildMaster.Ecosystem
             EventBus.Unsubscribe<HourPassedEvent>(OnHourPassed);
         }
 
-        /// <summary>
-        /// How far outside its band a species may still settle (0..1 of the map's span). Keep this
-        /// tight: at 0.45 the bands overlapped so much that goblins and goblin warriors shared the
-        /// same ring and the walk out stopped getting harder.
-        /// </summary>
-        public const float BandWidth = 0.22f;
-        /// <summary>Multiplier applied when the site's biome does not suit the species.</summary>
+        /// <summary>Multiplier applied when the site's biome is not one the species prefers.</summary>
         public const float BiomeMismatch = 0.35f;
-        /// <summary>Floor on the band term, so a species is unlikely — not impossible — off its ring.</summary>
-        public const float OffBandFloor = 0.005f;
 
         /// <summary>
-        /// How well a species suits a nest site: mostly its distance from town (P5-1, user decision
-        /// 2026-09-20 — weak species ring the walls, dangerous ones live out at the edges), then the
-        /// biome, then rarity. Pure, so the placement rule can be tested.
+        /// How well a species suits a nest site (P4-58, user decision 2026-09-22: by terrain only —
+        /// how strong its young are is the site's distance, via the birth level). Zero where it does
+        /// not live; then the preferred biome, then rarity. Pure, so the placement rule can be tested.
         /// </summary>
-        public static float Fit(MonsterDefinition species, float distance01, Biome biome)
+        public static float Fit(MonsterDefinition species, Region region, Biome biome)
         {
-            float band = Mathf.Max(OffBandFloor, 1f - Mathf.Abs(distance01 - species.distanceBand) / BandWidth);
-            float biomeFit = species.biomes.Contains(biome) ? 1f : BiomeMismatch;
-            return band * biomeFit * Rarity(species);
+            if (!species.LivesAt(region, biome)) return 0f;
+            float biomeFit = species.biomes.Count == 0 || species.biomes.Contains(biome) ? 1f : BiomeMismatch;
+            return biomeFit * Rarity(species);
         }
 
         static float Rarity(MonsterDefinition s) => s.danger switch
@@ -133,59 +125,42 @@ namespace GuildMaster.Ecosystem
         };
 
         /// <summary>
-        /// Hands every nest site to a species. Each species gets its best free site first so none is
-        /// missing from the world, then the rest go to whoever fits that distance best.
+        /// Hands every nest site to a species that lives there. Each species first takes its
+        /// guaranteed share (minNests) at the sites of its habitat nearest the town — the early
+        /// economy lives off the slimes by the walls — then the rest go by a weighted draw among the
+        /// species living at each site.
         /// </summary>
         public static List<MonsterDefinition> AssignSpecies(List<MonsterDefinition> species, List<NestSite> sites, GameRandom rng)
         {
             var result = new MonsterDefinition[sites.Count];
             if (sites.Count == 0 || species.Count == 0) return result.ToList();
 
-            // Normalise the walk distances so the bands mean the same thing on any map.
-            int minD = int.MaxValue, maxD = int.MinValue;
-            foreach (var s in sites)
-            {
-                if (s.DistanceFromTown < minD) minD = s.DistanceFromTown;
-                if (s.DistanceFromTown > maxD) maxD = s.DistanceFromTown;
-            }
-            float span = Mathf.Max(1, maxD - minD);
-            var t = new float[sites.Count];
-            for (int i = 0; i < sites.Count; i++) t[i] = (sites[i].DistanceFromTown - minD) / span;
-
             var order = Enumerable.Range(0, sites.Count).ToList();
             rng.Shuffle(order); // ties fall differently per seed
+            var byDistance = order.OrderBy(i => sites[i].DistanceFromTown).ToList();
 
-            // 1. Coverage: nearest-to-town species pick first, so the ring around the walls is filled
-            //    by the weak ones even when there are fewer sites than species. Each takes its
-            //    guaranteed share (minNests) — the early economy lives off the closest, weakest nests.
-            foreach (var m in species.OrderBy(x => x.distanceBand))
-            {
+            // 1. Coverage: nobody is missing from the world.
+            foreach (var m in species)
                 for (int taken = 0; taken < Mathf.Max(1, m.minNests); taken++)
                 {
                     int best = -1;
-                    float bestFit = float.MinValue;
-                    foreach (int i in order)
-                    {
-                        if (result[i] != null) continue;
-                        // Rarity must not decide who *exists*, only how often; band and biome alone.
-                        float fit = Fit(m, t[i], sites[i].Biome) / Mathf.Max(0.001f, Rarity(m));
-                        if (fit > bestFit) { bestFit = fit; best = i; }
-                    }
-                    if (best < 0) break; // nothing free left
+                    foreach (int i in byDistance)
+                        if (result[i] == null && m.LivesAt(sites[i].Region, sites[i].Biome)) { best = i; break; }
+                    if (best < 0) break; // no free site of its habitat left
                     result[best] = m;
                 }
-            }
 
-            // 2. The remaining sites go to a weighted draw among the species that suit that distance.
+            // 2. The remaining sites go to a weighted draw among the species that live there.
             foreach (int i in order)
             {
                 if (result[i] != null) continue;
                 float total = 0f;
-                foreach (var m in species) total += Fit(m, t[i], sites[i].Biome);
+                foreach (var m in species) total += Fit(m, sites[i].Region, sites[i].Biome);
+                if (total <= 0f) { result[i] = species[rng.Range(0, species.Count)]; continue; } // nobody's habitat: anyone
                 float roll = rng.Range(0f, total);
                 foreach (var m in species)
                 {
-                    roll -= Fit(m, t[i], sites[i].Biome);
+                    roll -= Fit(m, sites[i].Region, sites[i].Biome);
                     if (roll <= 0f) { result[i] = m; break; }
                 }
                 result[i] ??= species[^1];
@@ -200,6 +175,9 @@ namespace GuildMaster.Ecosystem
             ChangePopulation(nest.Species, +1);
             return m;
         }
+
+        /// <summary>A member of a roaming pack (no nest) died (P4-58).</summary>
+        internal void NotifyRoamerDied(MonsterDefinition species) => ChangePopulation(species, -1);
 
         internal void NotifyMemberDied(Nest nest, Monster m, Unit killer)
         {

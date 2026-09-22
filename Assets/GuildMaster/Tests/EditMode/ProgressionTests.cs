@@ -46,13 +46,13 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void SpeciesLiveFurtherOutTheMoreDangerousTheyAre()
+        public void TheWalkOutGetsHarder_ByTheLevelMonstersAreBornAt()
         {
-            var db = DefaultContent.Build();
-            float Band(string id) => db.monsters.Find(m => m.id == id).distanceBand;
-            Assert.That(Band("slime"), Is.LessThan(Band("goblin")));
-            Assert.That(Band("goblin"), Is.LessThan(Band("goblin_warrior")));
-            Assert.That(Band("goblin_warrior"), Is.LessThan(Band("slime_king")));
+            // P4-58 (user decision 2026-09-22): the kinds live by terrain; the walk out still gets
+            // harder because the farther out, the higher they are born (the level is the strength).
+            Assert.That(Monsters.MonsterLevel.BirthLevel(0.5f), Is.GreaterThan(Monsters.MonsterLevel.BirthLevel(0f)));
+            Assert.That(Monsters.MonsterLevel.DangerAt(Monsters.MonsterLevel.BirthLevel(0f)), Is.EqualTo(DangerLevel.Low));
+            Assert.That(Monsters.MonsterLevel.DangerAt(Monsters.MonsterLevel.BirthLevel(1f)), Is.EqualTo(DangerLevel.High));
         }
 
         [Test]

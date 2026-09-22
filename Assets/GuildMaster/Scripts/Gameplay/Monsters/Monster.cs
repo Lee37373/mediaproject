@@ -44,6 +44,9 @@ namespace GuildMaster.Monsters
         internal MonsterReturnState ReturnState;
         internal RaidState RaidState;
         internal MigrateState MigrateState;
+        internal RoamState RoamState;
+        /// <summary>The roaming pack it walks with when its pack has no nest (P4-58), else null.</summary>
+        internal RoamingPack Roaming;
         internal MonsterPickupState PickupState;
         internal MonsterRegroupState RegroupState;
         internal MonsterGateBreakState GateBreakState;
@@ -71,6 +74,7 @@ namespace GuildMaster.Monsters
             ReturnState = new MonsterReturnState();
             RaidState = new RaidState();
             MigrateState = new MigrateState();
+            RoamState = new RoamState();
             PickupState = new MonsterPickupState();
             RegroupState = new MonsterRegroupState();
             GateBreakState = new MonsterGateBreakState();
@@ -98,7 +102,8 @@ namespace GuildMaster.Monsters
         {
             Def = def;
             Home = home;
-            UnitId = $"M_{++s_counter:0000}";
+            Roaming = null;
+            UnitId =$"M_{++s_counter:0000}";
             IsBoss = boss;
             DisplayName = boss ? MonsterBoss.Name(def.displayName, def.bossName) : def.displayName;
             name = $"{def.displayName}[{UnitId}]";
@@ -176,7 +181,10 @@ namespace GuildMaster.Monsters
         public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : 1f);
         public Color ProjectileColor => new(0.8f, 0.7f, 0.45f);
 
-        public Vector2 HomePosition => Home != null ? Home.WorldPosition : _spawnPosition;
+        public Vector2 HomePosition => Home != null ? Home.WorldPosition : Roaming != null ? Roaming.Center : _spawnPosition;
+
+        /// <summary>Its pack: the nest's members, or the roaming pack's (P4-58); null when alone.</summary>
+        public System.Collections.Generic.IReadOnlyList<Monster> PackMembers => Home != null ? Home.Members : Roaming?.Members;
         Vector2 _spawnPosition;
 
         /// <summary>Pack leader = first living member of the nest (packs flock around it).</summary>
@@ -184,13 +192,14 @@ namespace GuildMaster.Monsters
         {
             get
             {
-                if (Home == null) return null;
+                var pack = PackMembers;
+                if (pack == null) return null;
                 // The crown holder leads, whatever the species (P4-21).
-                foreach (var m in Home.Members) if (m.IsAlive && m.Equipment.Has(MonsterEquipment.PackLeaderEffect)) return m;
+                foreach (var m in pack) if (m.IsAlive && m.Equipment.Has(MonsterEquipment.PackLeaderEffect)) return m;
                 // Then the pack's boss (P4-57).
-                foreach (var m in Home.Members) if (m.IsAlive && m.IsBoss) return m;
+                foreach (var m in pack) if (m.IsAlive && m.IsBoss) return m;
                 if (!Def.packHunter) return null;
-                foreach (var m in Home.Members) if (m.IsAlive) return m;
+                foreach (var m in pack) if (m.IsAlive) return m;
                 return null;
             }
         }
@@ -229,8 +238,9 @@ namespace GuildMaster.Monsters
         public void GainKillExp(int amount)
         {
             GainExp(amount);
-            if (Home == null) return;
-            foreach (var m in Home.Members)
+            var pack = PackMembers;
+            if (pack == null) return;
+            foreach (var m in pack)
                 if (m != this && m.IsAlive && (m.Position - Position).sqrMagnitude <= MonsterLevel.ExpShareRadius * MonsterLevel.ExpShareRadius)
                     m.GainExp(amount);
         }
@@ -339,7 +349,7 @@ namespace GuildMaster.Monsters
             // walked past each other). Same-species packs only clash over territory (above).
             // Raiders on the march do not start fights on the way; hit, they still hit back. A band
             // on the move to a new home fights whatever it meets (P4-56, user decision 2026-09-22).
-            if (other is Monster m) return m.Def != Def && (DefaultStateOverride == null || DefaultStateOverride == MigrateState);
+            if (other is Monster m) return m.Def != Def && (DefaultStateOverride == null || DefaultStateOverride == MigrateState || DefaultStateOverride == RoamState);
             return other.Faction == Faction.Guild && Def.aggressiveToHumans;
         }
 
@@ -360,7 +370,18 @@ namespace GuildMaster.Monsters
         internal void ChangeHome(Nest nest)
         {
             Home = nest;
-            if (IsAlive && Fsm.Current != EngageState) GoToReturn();
+            // On a raid it finishes the raid first, then walks to the new home.
+            if (IsAlive && Fsm.Current != EngageState && DefaultStateOverride == null) GoToReturn();
+        }
+
+        /// <summary>Its pack lost its nest with nowhere to go (P4-58): it roams with the pack from now on.</summary>
+        internal void StartRoaming(RoamingPack pack)
+        {
+            Home = null;
+            Roaming = pack;
+            if (DefaultStateOverride != null && DefaultStateOverride != RoamState) return; // raiders finish their raid
+            DefaultStateOverride = RoamState;
+            if (IsAlive && Fsm.Current != EngageState) GoToDefaultState();
         }
 
         /// <summary>A living predator (a monster that preys on us) within sight, if any.</summary>
@@ -377,7 +398,7 @@ namespace GuildMaster.Monsters
         static readonly System.Collections.Generic.List<float> s_bearings = new();
 
         /// <summary>Another living member of the same pack: same species and nest (or both nest-less).</summary>
-        public bool IsPackMate(Monster o) => o != null && o != this && o.IsAlive && o.Def == Def && o.Home == Home;
+        public bool IsPackMate(Monster o) => o != null && o != this && o.IsAlive && o.Def == Def && o.Home == Home && o.Roaming == Roaming;
 
         /// <summary>Who calls the pack's target: the crown holder / pack leader, else the first member of the nest.</summary>
         Monster CallingLeader
@@ -385,8 +406,9 @@ namespace GuildMaster.Monsters
             get
             {
                 var leader = PackLeader;
-                if (leader != null || Home == null) return leader;
-                foreach (var m in Home.Members) if (m.IsAlive) return m;
+                var pack = PackMembers;
+                if (leader != null || pack == null) return leader;
+                foreach (var m in pack) if (m.IsAlive) return m;
                 return null;
             }
         }
@@ -537,7 +559,7 @@ namespace GuildMaster.Monsters
         {
             if (Fsm.Current == FleeState || Fsm.Current == LureState || Fsm.Current == RegroupState) return;
             // Raiders march together; they do not scatter from predators in their own wave.
-            var predator = DefaultStateOverride == null ? FindPredator() : null;
+            var predator = DefaultStateOverride == null || DefaultStateOverride == RoamState ? FindPredator() : null;
             if (predator != null && !WasRecentlyAttackedBy(predator, 2f))
             {
                 FleeState.From = predator;
@@ -563,8 +585,11 @@ namespace GuildMaster.Monsters
                 Fsm.ChangeState(EngageState);
                 return;
             }
-            if (Fsm.Current == WanderState || DefaultStateOverride == MigrateState && Fsm.Current == MigrateState) TryStartPickup();
+            if (Fsm.Current == WanderState || Fsm.Current == DefaultStateOverride && LootsOnTheWay) TryStartPickup();
         }
+
+        /// <summary>A migrating or roaming pack stops for loot; raiders on the march do not.</summary>
+        bool LootsOnTheWay => DefaultStateOverride == MigrateState || DefaultStateOverride == RoamState;
 
         const float PickupCheckInterval = 1.5f;
         /// <summary>Pack mates leave a fresh drop to the leader for this long.</summary>
@@ -584,7 +609,7 @@ namespace GuildMaster.Monsters
         void TryStartPickup()
         {
             if (Def.pickupMode == MonsterPickupMode.None) return;
-            if (DefaultStateOverride != null && DefaultStateOverride != MigrateState) return;
+            if (DefaultStateOverride != null && !LootsOnTheWay) return;
             _pickupTimer -= SenseInterval;
             if (_pickupTimer > 0f) return;
             _pickupTimer = PickupCheckInterval;
@@ -630,6 +655,7 @@ namespace GuildMaster.Monsters
             if (killer is ILootReceiver receiver) receiver.ReceiveKillRewards(Def, ExpWorth, s_noLoot);
             else if (killer is Monster rival) rival.GainKillExp(ExpWorth);
             Home?.OnMemberDied(this, killer);
+            Roaming?.OnMemberDied(this);
         }
 
         static readonly System.Collections.Generic.List<ItemStack> s_noLoot = new();
@@ -697,8 +723,8 @@ namespace GuildMaster.Monsters
             if (_auraTimer > 0f) return;
             _auraTimer = 1f;
             bool aura = false;
-            if (Home != null && !Equipment.Has(MonsterEquipment.PackLeaderEffect))
-                foreach (var m in Home.Members)
+            if (PackMembers != null && !Equipment.Has(MonsterEquipment.PackLeaderEffect))
+                foreach (var m in PackMembers)
                     if (m != this && m.IsAlive && m.Equipment.Has(MonsterEquipment.PackLeaderEffect)
                         && (m.Position - Position).sqrMagnitude <= 6f * 6f) { aura = true; break; }
             if (aura == _crownAura) return;

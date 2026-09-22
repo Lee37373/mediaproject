@@ -204,6 +204,7 @@ namespace GuildMaster.World
                 {
                     Cell = cell,
                     Biome = ClassifyBiome(map, cell),
+                    Region = map.RegionOf(cell.x, cell.y),
                     DistanceFromTown = dist[map.Index(cell.x, cell.y)],
                 });
             }

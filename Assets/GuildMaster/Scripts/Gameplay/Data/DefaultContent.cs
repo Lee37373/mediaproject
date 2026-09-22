@@ -164,18 +164,19 @@ namespace GuildMaster.Data
             stoneSlime.pickupMode = MonsterPickupMode.Absorb;
             slimeKing.pickupMode = MonsterPickupMode.Absorb;
 
-            // How far from town each species settles (P5-1, user decision 2026-09-20): the walk out
-            // gets more dangerous, so a new guild always has something it can handle nearby.
-            slime.distanceBand = 0.05f;
-            stoneSlime.distanceBand = 0.2f;
+            // Habitat (P4-58, user decision 2026-09-22: species live by terrain only; how strong they
+            // are is the level, i.e. the distance from town). Every region has at least one kind.
+            slime.regions.AddRange(new[] { Region.Grassland, Region.Swamp });
+            stoneSlime.regions.AddRange(new[] { Region.Wasteland, Region.Grassland });
+            skull.regions.AddRange(new[] { Region.Wasteland, Region.Snow });
+            goblin.regions.Add(Region.Grassland);
+            goblin.habitatBiomes.Add(Biome.Forest); // "grassland and woods"
+            goblinWarrior.regions.AddRange(new[] { Region.Desert, Region.Wasteland });
+            slimeKing.regions.Add(Region.Swamp);
             // The near ring must be thick enough to live off: potions are slime jelly, and a new
             // guild has nothing else it can safely hunt (P5-1).
             slime.minNests = 3;
             stoneSlime.minNests = 2;
-            goblin.distanceBand = 0.35f;
-            skull.distanceBand = 0.5f;
-            goblinWarrior.distanceBand = 0.75f;
-            slimeKing.distanceBand = 1f;
 
             // Territories (base radius; the nest's fill scales it 0.6x..1.4x).
             slime.territoryRadius = 3.5f;
