@@ -162,6 +162,9 @@ namespace GuildMaster.Tests
             Assert.That(grid.TownSealed, Is.True, "every gate stands at the start");
 
             var member = Roster.Members.First(a => a.IsAlive);
+            // Resting members stay out of it: this test is about the gate (the town guard sallies
+            // against a gate breaker since P4-45, see GateBreaker_BringsTheTownOutToMeetIt).
+            foreach (var a in Roster.Members) a.ChangeState(a.RestState);
             member.Mover.Stop();
             member.transform.position = gate.InsidePoint - (Vector2)gate.Outward * 2f;
             ClearHomelessOf("goblin");
@@ -331,6 +334,55 @@ namespace GuildMaster.Tests
             goblin.transform.position = member.Position + new Vector2(0f, 1.5f);
             yield return WaitFor(() => !member.Looting.IsBusy, 3f);
             Assert.That(member.Looting.IsBusy, Is.False, "fighting comes before tidying up");
+        }
+
+        [UnityTest]
+        public IEnumerator GateBreaker_BringsTheTownOutToMeetIt()
+        {
+            // User report 2026-09-22: a monster that chased a member home bashed the gate while
+            // everyone inside stood about — the town guard only looked inside the walls.
+            yield return Boot();
+            var gate = Services.Get<Town.GateService>().Gates[0];
+            var guard = Roster.Members.First(a => a.IsAlive && a.Data.cls == AdventurerClass.Warrior);
+            foreach (var a in Roster.Members) if (a != guard) a.ChangeState(a.RestState);
+            guard.ChangeState(guard.IdleState);
+            guard.Mover.Stop();
+            guard.transform.position = gate.InsidePoint - (Vector2)gate.Outward * 3f;
+            ClearHomelessOf("goblin");
+            var goblin = SpawnMonster("goblin", gate.OutsidePoint + (Vector2)gate.Outward * 1.5f, meleeOnly: true);
+            goblin.ForceTarget(guard);
+            yield return WaitFor(() => goblin.IsBreakingGate, 5f);
+            Assume.That(goblin.IsBreakingGate, "the goblin went for the gate");
+
+            yield return WaitFor(() => goblin.LastAttacker == guard || !goblin.IsAlive, 10f);
+            Assert.That(guard.StateLabel == "마을 경비" || goblin.LastAttacker == guard || !goblin.IsAlive, Is.True,
+                        "someone in town went out to it");
+            Assert.That(goblin.LastAttacker == guard || !goblin.IsAlive, Is.True, "and hit it");
+        }
+
+        [UnityTest]
+        public IEnumerator DifferentSpecies_FightEachOther_OutsideAnyTerritory()
+        {
+            // User report 2026-09-22: "goblins and skulls do not fight each other". Neither prey nor
+            // rival of the other, they only clashed inside a nest's territory.
+            yield return Boot();
+            var master = MasterOnOpenGround();
+            Assert.That(master, Is.Not.Null, "open ground for the test");
+            Unit.GuildInvulnerable = true; // keep the master out of it
+            try
+            {
+                var p = master.Position + new Vector2(6f, 0f);
+                ClearHomelessOf("goblin");
+                ClearHomelessOf("skull");
+                var goblin = SpawnMonster("goblin", p, meleeOnly: true);
+                var skull = SpawnMonster("skull", p + new Vector2(2f, 0f), meleeOnly: true);
+                Assert.That(goblin.IsHostileTo(skull) && skull.IsHostileTo(goblin), Is.True);
+                Assert.That(goblin.IsHostileTo(SpawnMonster("goblin", p + new Vector2(0f, 2f))), Is.False,
+                            "the same kind away from any den is not an enemy");
+                yield return WaitFor(() => goblin.LastAttacker == skull || skull.LastAttacker == goblin, 8f);
+                Assert.That(goblin.LastAttacker == skull || skull.LastAttacker == goblin, Is.True, "they came to blows");
+            }
+            finally { Unit.GuildInvulnerable = false; }
         }
 
         [UnityTest]

@@ -184,6 +184,9 @@ namespace GuildMaster.Monsters
             return true;
         }
 
+        /// <summary>Bashing a town gate right now (a chaser or a raider, P4-39).</summary>
+        public bool IsBreakingGate => Fsm != null && Fsm.Current == GateBreakState;
+
         public override void ForceTarget(Unit target)
         {
             if (!IsAlive || target == null || !target.IsAlive || Fsm.Current == FleeState) return;
@@ -202,7 +205,10 @@ namespace GuildMaster.Monsters
             if (other == null || other == this || !other.IsAlive) return false;
             // Residents at home drive intruders (other species, guild units) out of their territory.
             if (IsDefendingTerritory && Home.IsIntruder(other)) return true;
-            if (other is Monster m) return Def.IsPredatorOf(m.Def) || Def.IsRivalOf(m.Def);
+            // Every other species is an enemy (P4-45, user decision 2026-09-22: goblins and skulls
+            // walked past each other). Same-species packs only clash over territory (above).
+            // Raiders on the march do not start fights on the way; hit, they still hit back.
+            if (other is Monster m) return m.Def != Def && DefaultStateOverride == null;
             return other.Faction == Faction.Guild && Def.aggressiveToHumans;
         }
 
