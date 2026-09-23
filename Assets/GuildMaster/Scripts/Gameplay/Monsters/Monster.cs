@@ -575,7 +575,7 @@ namespace GuildMaster.Monsters
             // Walking home after a fight: the spoils on the way are still worth a detour (P4-57).
             if (Fsm.Current == ReturnState)
             {
-                TryStartPickup();
+                TryStartPickup(goingHome: true);
                 return;
             }
             var target = FindTarget();
@@ -605,8 +605,14 @@ namespace GuildMaster.Monsters
         /// Walk to a visible item worth taking (P4-21): near home while idling (wander radius + 3, so
         /// monsters do not roam off after loot), or — for a while after a fight (P4-57, user report:
         /// "monsters leave the loot of their fights") — near where it stands. Raiders never stop for loot.
+        ///
+        /// <paramref name="goingHome"/> drops the home range: on the walk back, anything in sight that
+        /// it wants is on its way by definition. Without that a monster walked past the spoils of the
+        /// fight it had just won — they lay more than a wander radius from its den, and the after-fight
+        /// window had closed on the way — which is what left gear on the ground for 30-odd game hours
+        /// with a willing taker looking right at it (measured 2026-09-23).
         /// </summary>
-        void TryStartPickup()
+        void TryStartPickup(bool goingHome = false)
         {
             if (Def.pickupMode == MonsterPickupMode.None) return;
             if (DefaultStateOverride != null && !LootsOnTheWay) return;
@@ -624,6 +630,7 @@ namespace GuildMaster.Monsters
                 if (!g.IsFreeFor(this) || !WantsItem(g.Item) || !CanSee(g.Position)) return false;
                 // The spoils of its own fight are its to take; the leader's first pick is for drops at home.
                 if (afterFight && (g.Position - here).sqrMagnitude <= PostFightPickupRange * PostFightPickupRange) return true;
+                if (goingHome) return true; // on the way back, whatever it can see and wants is on its way
                 return (g.Position - home).sqrMagnitude <= range * range
                        && (leader == null || leader == this || g.Age >= LeaderFirstSeconds || !leader.WantsItem(g.Item));
             });
