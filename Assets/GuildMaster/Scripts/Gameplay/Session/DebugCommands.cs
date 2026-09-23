@@ -934,5 +934,32 @@ namespace GuildMaster.Session
             }
             return sb.ToString();
         }
+
+        /// <summary>
+        /// How the free hunts are finding their way (P4-64): each member out exploring, the spot it
+        /// is headed for, the leg it is walking now, and how often the ground it discovered made it
+        /// redraw the route.
+        /// </summary>
+        public static string ExploreReport()
+        {
+            var sb = new StringBuilder();
+            var fog = Services.TryGet<GuildMaster.Fog.FogOfWar>(out var f) ? f : null;
+            var world = Services.Get<GuildMaster.World.WorldService>();
+            if (fog != null)
+                sb.AppendLine($"탐색된 칸 {fog.ExploredCount} / {world.Map.Width * world.Map.Height} ({100f * fog.ExploredCount / (world.Map.Width * world.Map.Height):0.0}%)");
+            var bands = Services.TryGet<HuntBandService>(out var hb) ? hb : null;
+            int n = 0;
+            foreach (var a in Services.Get<GuildRoster>().Members)
+            {
+                if (a.Fsm.Current != a.FreeHuntState) continue;
+                n++;
+                var st = a.FreeHuntState;
+                var band = bands?.BandOf(a);
+                string spot = band is { HasSpot: true } ? $"({band.Spot.x:0},{band.Spot.y:0})" : "-";
+                sb.AppendLine($"  {a.Data.name} {(st.Scouting ? "정찰" : "둥지")} 목표={spot} 구간=({st.Leg.x:0},{st.Leg.y:0}) 구간수={st.LegsWalked} 놀람={st.Surprises} 경로수정={a.Mover.RouteCorrections} 주변탐색={(fog == null ? 0f : fog.ExploredFraction(a.Position, 12f)) * 100f:0}%");
+            }
+            if (n == 0) sb.AppendLine("  자율 사냥 중인 길드원이 없습니다");
+            return sb.ToString();
+        }
     }
 }

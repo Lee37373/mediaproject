@@ -238,10 +238,28 @@ namespace GuildMaster.Tests
             Assert.That(gate.Hp, Is.LessThan(gate.MaxHp), "it went for the gate instead");
             Assert.That(goblin.StateLabel, Is.EqualTo("성문 공격"));
 
+            // From here it is the gate alone: the town sallies against a gate breaker (P4-45, see
+            // GateBreaker_BringsTheTownOutToMeetIt) and a goblin that is being hit fights back
+            // instead of hitting the gate, so everyone goes to bed on the far side of town.
+            var awayFromGate = Services.Get<World.WorldService>().TownCenterWorld - (Vector2)gate.Outward * 6f;
+            foreach (var a in Roster.Members)
+            {
+                a.Mover.Stop();
+                a.transform.position = awayFromGate + GameRandom.Shared.InsideUnitCircle() * 1.5f;
+                a.Data.fatigue = 100f;
+                a.ChangeState(a.RestState);
+            }
+            yield return WaitFor(() => goblin.StateLabel == "성문 공격", 5f);
+            Assume.That(goblin.StateLabel, Is.EqualTo("성문 공격"), "back on the gate with nobody to fight");
+
             // Near its end: the goblin's next blows break it and the way in opens.
             gate.Damage(gate.Hp - 1f);
-            yield return WaitFor(() => gate.IsBroken, 5f);
-            Assert.That(gate.IsBroken, Is.True);
+            yield return WaitFor(() => gate.IsBroken, 8f);
+            Assert.That(gate.IsBroken, Is.True,
+                $"the last blow lands: state={goblin.StateLabel} hp={gate.Hp:0.0}/{gate.MaxHp:0} " +
+                $"dist={Vector2.Distance(goblin.Position, gate.ClosestPoint(goblin.Position)):0.0} " +
+                $"reach={goblin.Stats.AttackRange + goblin.Radius:0.0} cooldown={goblin.NextAttackTime - Time.time:0.0}s " +
+                $"target={(goblin.Engage.Target == null ? "-" : goblin.Engage.Target.name)}");
             Assert.That(grid.TownSealed, Is.False);
             Assert.That(grid.IsWalkable(gate.CenterCell, passesGates: false), Is.True, "a broken gate lets monsters through");
 
@@ -1956,6 +1974,87 @@ namespace GuildMaster.Tests
             yield return WaitFor(() => walker.Mover.IsMoving, 10f);
             Assert.That(walker.Mover.RouteCaution, Is.EqualTo(RouteChoice.Hurried).Within(0.001f),
                 "running home takes no detour");
+        }
+
+        /// <summary>
+        /// Walking country it has not seen (P4-64): a route drawn over unexplored ground goes
+        /// straight at an unseen lake, and the walk redraws itself the moment the lake is seen.
+        /// The same boot checks that a free hunt really walks in legs, not in one long plan.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Exploring_PlansThroughUnseenGround_AndFixesTheRouteOnSight()
+        {
+            yield return Boot();
+            var world = Services.Get<World.WorldService>();
+            var fog = Services.Get<GuildMaster.Fog.FogOfWar>();
+            Assume.That(FindUnseenLake(fog, out var lake, out var near, out var far), Is.True, "an unexplored lake with ground either side");
+
+            // A plain walker with the guild's eyes: it plans with what the guild has seen.
+            var walker = new GameObject("explorer").AddComponent<World.PathFollower>();
+            walker.transform.position = World.GridMap.CellToWorld(near);
+            walker.Speed = 10f;
+            walker.UnknownToMe = ExplorationRoute.KnowledgeOf(fog);
+
+            // The plan is guesswork over the lake: nobody has seen the water yet.
+            var cells = new System.Collections.Generic.List<Vector2Int>();
+            Assert.IsTrue(world.FindPath(World.GridMap.CellToWorld(near), World.GridMap.CellToWorld(far), cells,
+                true, null, 0f, walker.UnknownToMe), "a route is planned at all");
+            Assert.That(cells.Any(c => !world.Grid.IsWalkable(c)), Is.True, "the plan crosses ground it has not seen");
+
+            Assert.IsTrue(walker.SetDestination(World.GridMap.CellToWorld(far), 0.5f), "it sets out");
+            Clock.SetSpeed(2);
+            // The band lays eyes on the lake: the walk has to give up the plan and go round.
+            fog.Reveal(World.GridMap.CellToWorld(lake), 12f);
+            yield return WaitFor(() => walker.RouteCorrections > 0 || !walker.IsMoving, 8f);
+            Assert.That(walker.RouteCorrections, Is.GreaterThan(0), "seeing the water redrew the route");
+            yield return WaitFor(() => !walker.IsMoving, 30f);
+            Assert.That(Vector2.Distance(walker.transform.position, World.GridMap.CellToWorld(far)), Is.LessThan(2f),
+                "and it still got there, round the lake");
+            Assert.IsTrue(world.Grid.IsWalkable(World.GridMap.WorldToCell(walker.transform.position)), "never standing in water");
+            UnityEngine.Object.Destroy(walker.gameObject);
+
+            // A free hunt commits one leg at a time instead of the whole trip.
+            var hunter = Roster.Members.First(a => a.IsAlive);
+            hunter.CurrentQuest = null;
+            hunter.ChangeState(hunter.FreeHuntState);
+            yield return WaitFor(() => hunter.Mover.IsMoving && !hunter.FreeHuntState.Leg.Equals(Vector2.zero), 20f);
+            Assert.That(hunter.Mover.UnknownToMe, Is.Not.Null, "a hunt plans with what the guild knows");
+            if (hunter.Mover.IsMoving)
+                Assert.That(Vector2.Distance(hunter.Position, hunter.Mover.Destination),
+                    Is.LessThanOrEqualTo(ExplorationRoute.LegLength + 6f), "it walks a leg, not the whole way");
+        }
+
+        /// <summary>A stretch of water nobody has explored yet, with walkable ground either side of it.</summary>
+        static bool FindUnseenLake(GuildMaster.Fog.FogOfWar fog, out Vector2Int lake, out Vector2Int near, out Vector2Int far)
+        {
+            lake = near = far = default;
+            var world = Services.Get<World.WorldService>();
+            var grid = world.Grid;
+            var town = World.GridMap.WorldToCell(world.TownCenterWorld);
+            for (int y = 10; y < grid.Height - 10; y++)
+            for (int x = 10; x < grid.Width - 10; x++)
+            {
+                var c = new Vector2Int(x, y);
+                if ((c - town).magnitude < 40f) continue;
+                // Three cells of water across, unseen, with somewhere to stand on both sides.
+                bool water = true;
+                for (int dx = -1; dx <= 1 && water; dx++)
+                for (int dy = -1; dy <= 1 && water; dy++)
+                {
+                    var w = c + new Vector2Int(dx, dy);
+                    if (grid.IsWalkable(w) || fog.IsExploredRaw(w)) water = false;
+                }
+                if (!water) continue;
+                var a = c + new Vector2Int(-5, 0);
+                var b = c + new Vector2Int(5, 0);
+                if (!grid.IsWalkable(a) || !grid.IsWalkable(b)) continue;
+                if (fog.IsExploredRaw(a) || fog.IsExploredRaw(b)) continue;
+                lake = c;
+                near = a;
+                far = b;
+                return true;
+            }
+            return false;
         }
     }
 }

@@ -26,6 +26,9 @@ namespace GuildMaster.Adventurers
         /// <summary>A known den this close counts as "we are standing in their territory".</summary>
         const float NestNearRadius = 12f;
 
+        /// <summary>Surprises on the way to one spot before the band gives up on it and picks another.</summary>
+        const int ReconsiderAfterSurprises = 3;
+
         float _searchTimer;
         float _roamTimer;
         float _startHour;
@@ -41,6 +44,20 @@ namespace GuildMaster.Adventurers
         /// <summary>How far out this band roams (P4-38): grows with what it could take on.</summary>
         float _reach = FreeHunt.Radius;
 
+        // ---- Walking country it does not know (P4-64) ----
+        /// <summary>The spot came from scouting, not from a den the guild has seen: head into the fog.</summary>
+        bool _scouting;
+        /// <summary>Where this leg ends, and how many route corrections the walk had when it was aimed.</summary>
+        Vector2 _leg;
+        int _correctionsAtAim;
+        /// <summary>Times the ground turned out worse than the plan on the way to this spot.</summary>
+        int _surprises;
+        /// <summary>Legs walked this trip (debug: <see cref="Session.DebugCommands.ExploreReport"/>).</summary>
+        public int LegsWalked { get; private set; }
+        public Vector2 Leg => _leg;
+        public int Surprises => _surprises;
+        public bool Scouting => _scouting;
+
         public override string Label => _band != null && _band.Mustering ? "동료 기다리는 중" : "자율 사냥";
 
         public override void Enter()
@@ -52,6 +69,12 @@ namespace GuildMaster.Adventurers
             _nextBackOffLine = 0f;
             _enemies = 1;
             _nestNearby = 0;
+            _surprises = 0;
+            LegsWalked = 0;
+            _correctionsAtAim = Owner.Mover.RouteCorrections;
+            // Out here the band plans with what the guild has seen and fixes the route as it learns
+            // the ground (P4-64); in town and on quests the walkers keep the old omniscient plan.
+            Owner.Mover.UnknownToMe = ExplorationRoute.KnowledgeOf(Services.TryGet<Fog.FogOfWar>(out var fog) ? fog : null);
             CountBand(Owner);
             _band = Services.TryGet<HuntBandService>(out var bands) ? bands.Join(Owner) : null;
             // With invitations out the leader has already asked (P4-51).
@@ -62,6 +85,7 @@ namespace GuildMaster.Adventurers
         public override void Exit()
         {
             Owner.Mover.SpeedMultiplier = 1f;
+            Owner.Mover.UnknownToMe = null;
             if (_band != null && !_band.Mustering) _band.GoingHome = true;
             if (Services.TryGet<HuntBandService>(out var bands)) bands.Leave(Owner);
             _band = null;
@@ -138,14 +162,45 @@ namespace GuildMaster.Adventurers
                 if (party.PaceLeader(a)) return;
             }
 
+            // Exploring is walked a leg at a time (P4-64, user request 2026-09-23): the band commits
+            // about 18 cells towards its spot, reads the ground it can see, and aims again — and
+            // whenever the terrain it discovers forces the walk to redraw its route, it re-aims at
+            // once instead of trudging on along a plan made of guesses.
             var spot = Spot(a);
-            if (Vector2.Distance(a.Position, spot) < SpotReached) spot = PickSpot();
-            if (a.Mover.IsMoving) return;
+            if (Vector2.Distance(a.Position, spot) < SpotReached) { spot = PickSpot(); _surprises = 0; }
+            bool surprised = a.Mover.RouteCorrections != _correctionsAtAim;
+            if (a.Mover.IsMoving && !surprised) return;
             _roamTimer -= dt;
             if (_roamTimer > 0f) return;
             _roamTimer = GameRandom.Shared.Range(1f, 2.5f);
+            if (surprised && ++_surprises >= ReconsiderAfterSurprises)
+            {
+                // The way there keeps turning out worse than it looked: somewhere else, then.
+                spot = PickSpot();
+                _surprises = 0;
+            }
+            AimLeg(a, spot);
+        }
+
+        /// <summary>
+        /// Walks the next leg towards <paramref name="spot"/> (P4-64). A leg that cannot be reached
+        /// even by guesswork counts as a surprise, so the band tries another heading and eventually
+        /// another spot.
+        /// </summary>
+        void AimLeg(Adventurer a, Vector2 spot)
+        {
+            var world = Services.Get<WorldService>();
+            var fog = Services.TryGet<Fog.FogOfWar>(out var f) ? f : null;
+            float caution = RouteChoice.ForParty(a);
+            _leg = ExplorationRoute.NextLeg(world, fog, a.Position, spot, caution, _scouting);
+            _correctionsAtAim = a.Mover.RouteCorrections;
             // The band walks the leader's route (P4-63): its nerve decides how wide of the woods it goes.
-            if (!a.Mover.SetDestination(spot, 1f, RouteChoice.ForParty(a))) PickSpot();
+            if (a.Mover.SetDestination(_leg, 1f, caution)) { LegsWalked++; return; }
+            if (++_surprises >= ReconsiderAfterSurprises)
+            {
+                PickSpot();
+                _surprises = 0;
+            }
         }
 
         /// <summary>
@@ -209,7 +264,7 @@ namespace GuildMaster.Adventurers
             var threat = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
                 u => u is Monster m && m.IsAlive && !Huntable(m) && a.CanSee(u));
             if (threat == null || a.WasRecentlyAttackedBy(threat)) return false;
-            a.Mover.SetDestination(PickSpot(threat.Position), 1f, RouteChoice.ForParty(a));
+            AimLeg(a, PickSpot(threat.Position));
             if (Time.time >= _nextBackOffLine)
             {
                 _nextBackOffLine = Time.time + BackOffCooldown;
@@ -265,18 +320,32 @@ namespace GuildMaster.Adventurers
 
             if (!found)
             {
-                // Scouting: uniform in distance from town, so the near rings get walked too.
+                // Scouting: uniform in distance from town, so the near rings get walked too, and
+                // among the tries the one with the least explored ground around it (P4-64) — the
+                // point of a scouting leg is to put eyes on country nobody has seen.
+                var fog = Services.TryGet<Fog.FogOfWar>(out var f) ? f : null;
+                float bestUnseen = -1f;
                 for (int attempt = 0; attempt < 12; attempt++)
                 {
                     float angle = rng.Range(0f, Mathf.PI * 2f);
                     var p = town + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * FreeHunt.ScoutDistance(rng.Value, _reach);
-                    if (!world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(p), 3, out var cell) || world.Grid.IsInTown(cell)) continue;
-                    p = GridMap.CellToWorld(cell);
+                    var cell0 = GridMap.WorldToCell(p);
+                    // An unseen cell is a fine place to walk to; only known-blocked ground is moved off.
+                    if (!ExplorationRoute.Unseen(fog, cell0))
+                    {
+                        if (!world.Grid.TryFindNearestWalkable(cell0, 3, out cell0)) continue;
+                        p = GridMap.CellToWorld(cell0);
+                    }
+                    if (world.Grid.IsInTown(cell0)) continue;
                     if (avoid != null && Vector2.Distance(p, avoid.Value) < _reach * 0.3f) continue;
+                    float unseen = fog == null ? 0f : 1f - fog.ExploredFraction(p, 10f);
+                    if (unseen <= bestUnseen) continue;
+                    bestUnseen = unseen;
                     chosen = p;
-                    break;
+                    if (unseen >= 0.99f) break; // nothing there is known: no need to look further
                 }
             }
+            _scouting = !found;
 
             if (_band != null)
             {

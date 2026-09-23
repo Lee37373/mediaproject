@@ -55,7 +55,22 @@ namespace GuildMaster.World
         /// <summary>Heuristic scale for the search in progress (the cheapest a step can be for this walker).</summary>
         float _heuristicScale = HeuristicScale;
 
-        bool Walkable(int x, int y) => _grid.IsWalkable(x, y, _passesGates) && (_believedShut == null || !_believedShut(x, y));
+        /// <summary>
+        /// Cells the walker has never seen (P4-64). A plan cannot use terrain nobody looked at, so
+        /// they are taken to be open grass; the walker corrects its route when the ground turns out
+        /// otherwise (<see cref="PathFollower.UnknownToMe"/>).
+        /// </summary>
+        System.Func<int, int, bool> _unknown;
+
+        /// <summary>What an unseen cell is assumed to cost: plain grass.</summary>
+        const float UnknownCost = 1f;
+
+        bool Unknown(int x, int y) => _unknown != null && _unknown(x, y);
+
+        bool Walkable(int x, int y)
+            => Unknown(x, y)
+                ? _grid.Data.InBounds(x, y)
+                : _grid.IsWalkable(x, y, _passesGates) && (_believedShut == null || !_believedShut(x, y));
 
         /// <summary>Finds a path of cells from start to goal (inclusive). Returns false if unreachable.</summary>
         public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result) => FindPath(start, goal, result, true);
@@ -66,17 +81,21 @@ namespace GuildMaster.World
         /// above 0 walks round cover, below 0 prefers the forest, 0 takes the shortest way.
         /// </summary>
         public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result, bool passesGates,
-            System.Func<int, int, bool> believedShut = null, float caution = 0f)
+            System.Func<int, int, bool> believedShut = null, float caution = 0f,
+            System.Func<int, int, bool> unknown = null)
         {
             _passesGates = passesGates;
             _believedShut = believedShut;
             _caution = caution;
+            _unknown = unknown;
             _heuristicScale = HeuristicScale * RouteRisk.LowestMultiplier(caution);
             result.Clear();
             if (!_grid.InBounds(start) || !_grid.InBounds(goal)) return false;
             // Every gate shut: no way through the walls for a monster, so skip the whole-map search.
             if (!passesGates && _grid.IsInTown(start) != _grid.IsInTown(goal) && !AnyGateOpenTo(believedShut)) return false;
-            if (!_grid.IsWalkable(goal) && !_grid.TryFindNearestWalkable(goal, 6, out goal)) return false;
+            // The goal only has to be ground the walker could stand on — a shut gate it means to
+            // break is still a goal — or ground nobody has seen yet (P4-64).
+            if (!_grid.IsWalkable(goal) && !Unknown(goal.x, goal.y) && !_grid.TryFindNearestWalkable(goal, 6, out goal)) return false;
             if (!_grid.IsWalkable(start)) _grid.TryFindNearestWalkable(start, 3, out start);
             if (start == goal) { result.Add(goal); return true; }
 
@@ -110,7 +129,10 @@ namespace GuildMaster.World
                     int ni = ny * w + nx;
                     Touch(ni);
                     if (_closed[ni]) continue;
-                    float step = _grid.Cost(nx, ny) * (diagonal ? Diagonal : 1f) * _risk.Multiplier(nx, ny, _caution);
+                    // Unseen ground is planned as open grass, and nothing is feared there yet.
+                    float step = Unknown(nx, ny)
+                        ? UnknownCost * (diagonal ? Diagonal : 1f)
+                        : _grid.Cost(nx, ny) * (diagonal ? Diagonal : 1f) * _risk.Multiplier(nx, ny, _caution);
                     float g = _g[current] + step;
                     if (g >= _g[ni]) continue;
                     _g[ni] = g;
@@ -149,8 +171,9 @@ namespace GuildMaster.World
         }
 
         public bool FindPathWorld(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true,
-            System.Func<int, int, bool> believedShut = null, float caution = 0f)
-            => FindPath(GridMap.WorldToCell(from), GridMap.WorldToCell(to), result, passesGates, believedShut, caution);
+            System.Func<int, int, bool> believedShut = null, float caution = 0f,
+            System.Func<int, int, bool> unknown = null)
+            => FindPath(GridMap.WorldToCell(from), GridMap.WorldToCell(to), result, passesGates, believedShut, caution, unknown);
 
         /// <summary>Some gate is open and known to be (else a monster cannot cross the wall at all: skip the search).</summary>
         bool AnyGateOpenTo(System.Func<int, int, bool> believedShut)

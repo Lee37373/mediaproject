@@ -26,8 +26,9 @@ namespace GuildMaster.World
 
         /// <summary><paramref name="caution"/> weighs risky ground (P4-63, <see cref="RouteRisk"/>); 0 is the shortest way.</summary>
         public bool FindPath(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true,
-            System.Func<int, int, bool> believedShut = null, float caution = 0f)
-            => Pathfinder.FindPathWorld(from, to, result, passesGates, believedShut, caution);
+            System.Func<int, int, bool> believedShut = null, float caution = 0f,
+            System.Func<int, int, bool> unknown = null)
+            => Pathfinder.FindPathWorld(from, to, result, passesGates, believedShut, caution, unknown);
 
         /// <summary>
         /// Grid ray cast (Amanatides–Woo DDA) from a to b. Stops at the first hard-cover cell

@@ -34,6 +34,23 @@ namespace GuildMaster.World
         /// <summary>Cells this walker takes to be shut though they are open: a broken gate its kind has not seen (monsters).</summary>
         public Func<int, int, bool> BelievedShut { get; set; }
 
+        /// <summary>
+        /// Cells this walker has never seen (P4-64, free exploration). Set it and the route is drawn
+        /// from what is known — unseen ground is planned as open grass — and redrawn as soon as the
+        /// walker sees that the plan runs into water, a mountain or a wall. Null (the default) plans
+        /// with the whole map, as a walker that knows the country does.
+        /// </summary>
+        public Func<int, int, bool> UnknownToMe { get; set; }
+
+        /// <summary>How many times terrain it discovered made this walker redraw its route.</summary>
+        public int RouteCorrections { get; private set; }
+
+        /// <summary>Seconds between checks of the plan against what has been seen since.</summary>
+        const float RecheckSeconds = 0.25f;
+        /// <summary>How far along the plan a correction looks (further ahead is still guesswork).</summary>
+        const int RecheckWaypoints = 12;
+        float _recheck;
+
         bool Passable(Vector2Int c) => World.Grid.IsWalkable(c, PassesGates) && (BelievedShut == null || !BelievedShut(c.x, c.y));
 
         public event Action Arrived;
@@ -137,7 +154,7 @@ namespace GuildMaster.World
             _waypoints.Clear();
             _index = 0;
             Vector2 from = transform.position;
-            if (!World.FindPath(from, _destination, _cells, PassesGates, BelievedShut, RouteCaution)) return false;
+            if (!World.FindPath(from, _destination, _cells, PassesGates, BelievedShut, RouteCaution, UnknownToMe)) return false;
 
             for (int i = 1; i < _cells.Count; i++) _waypoints.Add(GridMap.CellToWorld(_cells[i]));
             // End exactly at the requested point if it is inside the last cell.
@@ -151,6 +168,21 @@ namespace GuildMaster.World
             return true;
         }
 
+        /// <summary>
+        /// True when a cell on the near part of the plan is one the walker has since seen, and it is
+        /// not walkable after all: the route crossed ground nobody had looked at (P4-64).
+        /// </summary>
+        bool SeenTerrainBlocksThePlan()
+        {
+            int last = Mathf.Min(_waypoints.Count - 1, _index + RecheckWaypoints);
+            for (int i = _index; i <= last; i++)
+            {
+                var c = GridMap.WorldToCell(_waypoints[i]);
+                if (!UnknownToMe(c.x, c.y) && !Passable(c)) return true;
+            }
+            return false;
+        }
+
         void Update()
         {
             if (!IsMoving) return;
@@ -161,6 +193,22 @@ namespace GuildMaster.World
                 if (_index < _waypoints.Count && !Passable(GridMap.WorldToCell(_waypoints[_index])))
                 {
                     if (!BuildPath()) { Stop(); PathFailed?.Invoke(); return; }
+                }
+            }
+
+            // Walking on a plan drawn over unseen ground (P4-64): the moment the walker sees that the
+            // way ahead is water, rock or wall, it draws a new route from where it stands.
+            if (UnknownToMe != null)
+            {
+                _recheck -= Time.deltaTime;
+                if (_recheck <= 0f)
+                {
+                    _recheck = RecheckSeconds;
+                    if (SeenTerrainBlocksThePlan())
+                    {
+                        RouteCorrections++;
+                        if (!BuildPath()) { Stop(); PathFailed?.Invoke(); return; }
+                    }
                 }
             }
 

@@ -594,6 +594,12 @@ namespace GuildMaster.Monsters
                 _pickupTimer = 0f; // look for the spoils as soon as the fight is over
                 return;
             }
+            // Breaking a gate is already its answer to "the one I want is behind the wall": seeing
+            // them through the gateway must not pull it off the gate (2026-09-23). It used to swap
+            // to a chase it could not finish, be blocked by the shut gate, go back to the gate, and
+            // swap again — the gate sometimes never gave. Whoever hits it on its own side still
+            // comes first (see MonsterGateBreakState).
+            if (Fsm.Current == GateBreakState) return;
             // Walking home after a fight: the spoils on the way are still worth a detour (P4-57).
             if (Fsm.Current == ReturnState)
             {
