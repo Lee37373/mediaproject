@@ -14,8 +14,15 @@ namespace GuildMaster.Monsters
         public const float PursuitFactor = 2f;
         /// <summary>Far from home, a monster hit this recently keeps fighting whoever hit it.</summary>
         public const float UnderAttackSeconds = 3f;
-        /// <summary>A monster-vs-monster fight counts as live while either side landed a blow this recently.</summary>
-        public const float MonsterFightGrace = 6f;
+        /// <summary>
+        /// A monster-vs-monster fight counts as live while either side landed a blow this recently.
+        /// Twelve seconds, not six: skilled monsters and up fight at arm's length — they side-step
+        /// between blows (P4-47), veterans give half a cell after each one, and archers shoot from the
+        /// edge — so a brawl that is plainly still going can run six seconds between landed hits. At
+        /// six, a lured monster with no target left would turn for home at nearly full health while a
+        /// den's worth of residents were on it, which is the very thing P4-46 set out to stop.
+        /// </summary>
+        public const float MonsterFightGrace = 12f;
 
         /// <summary>
         /// Should a fighting monster give up and go home? Pure, so the rule can be tested.

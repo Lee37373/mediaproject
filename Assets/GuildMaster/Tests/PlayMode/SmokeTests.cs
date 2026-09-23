@@ -1433,6 +1433,9 @@ namespace GuildMaster.Tests
             Assert.That(retreated, Is.True, "fighting on the way home, it retreats instead of fighting to the death");
         }
 
+        /// <summary>Unbroken seconds of 귀소 that count as having left the fight rather than blinked.</summary>
+        const float LeftTheFightSeconds = 3f;
+
         [UnityTest]
         public IEnumerator ALuredMonster_FightsItOut_InsteadOfWalkingHome()
         {
@@ -1458,15 +1461,25 @@ namespace GuildMaster.Tests
             Assume.That(there, Is.Not.Null, "two dens of different kinds a lure apart");
             ClearStrangersNear(there.WorldPosition, 30f, there, home);
             var lured = home.Members.First(m => m.IsAlive);
+            // Only the one being lured: its den is twenty cells away, well inside the residents' reach,
+            // so its pack mates would come along and the residents would fight one of them instead. That
+            // is what "the residents took it on" kept failing on — they were on a goblin warrior, just
+            // never this one.
+            foreach (var m in home.Members.ToList())
+                if (m != lured && m.IsAlive) m.Perish();
             var master = Services.Get<PlayerAvatar>();
             DebugCommands.Invulnerable(true, untargetable: false); // the bait takes no harm but stays bait
             try
             {
-                // The master walks through the other den's territory with the monster on its heels,
-                // and on out the far side, as a player luring it would.
+                // The lure is set up where it lands, not walked in. Making the master cross the ring on
+                // foot with the monster on its heels read well but measured badly: the master outran it
+                // and the monster skirted the ring, or the path went round the den and twenty-five
+                // seconds ran out mid-walk. Either way the residents never saw an intruder and the test
+                // failed for reasons that have nothing to do with the leash it is here to check.
+                // So: the monster starts inside the ring with the bait a step ahead and walking out.
                 var through = (there.WorldPosition - home.WorldPosition).normalized;
                 master.Mover.Stop();
-                master.transform.position = there.WorldPosition - through * (there.TerritoryRadius + 3f);
+                master.transform.position = there.WorldPosition + through * 1f;
                 lured.Mover.Stop();
                 lured.transform.position = master.Position - through * 2.5f;
                 lured.ForceTarget(master);
@@ -1474,24 +1487,21 @@ namespace GuildMaster.Tests
 
                 bool fought = false, walkedHome = false, baitGone = false;
                 string homeNote = null;
-                float closest = float.MaxValue;
+                float closest = float.MaxValue, homeRun = 0f;
                 var states = new System.Collections.Generic.HashSet<string>();
                 // 25s behind a bait at its own pace. Slowing the bait or watching for longer both make
                 // this fail, and not by flapping: the lured one turns for home at nearly full health
                 // while the den's monsters are on it, because MonsterLeash asks whether a blow landed
                 // in the last six seconds and veterans circle for longer than that between hits.
-                // Widening the rule to "someone is holding me as their target" did not settle it either
-                // - the residents split between the lured one and another of its kind nearby. So the
-                // window stays where it was and the gap is written down rather than papered over:
-                // P4-46 does not hold when a pack fights at arm's length. Needs its own sitting.
                 float until = Time.time + 25f;
                 while (Time.time < until && lured.IsAlive && there.Members.Any(m => m.IsAlive))
                 {
-                    // The lure has done its job once the bait is past the den with the monster at its
-                    // heels: the bait slips away (else the residents may go for it instead). Waiting any
-                    // longer than this leaves the lured one with no target at all when the bait goes, and
-                    // the leash then walks it home mid-fight - which is the very thing under test.
-                    if (!baitGone && Vector2.Dot(master.Position - there.WorldPosition, through) >= 1f)
+                    // The lure has done its job the moment a resident takes the lured one for its target.
+                    // Going by the bait's own position instead made the three of them a train: the lured
+                    // one chased a bait it could not hurt, the residents chased the lured one, and nobody
+                    // ever landed a blow. The bait has to leave for the fight to start, and the lured one
+                    // losing its target that way is survivable since MonsterFightGrace went to twelve.
+                    if (!baitGone && there.Members.Any(m => m.IsAlive && m.CurrentTarget == lured))
                     {
                         baitGone = true;
                         DebugCommands.Invulnerable(true, untargetable: true);
@@ -1499,7 +1509,13 @@ namespace GuildMaster.Tests
                         master.transform.position = Services.Get<World.WorldService>().TownCenterWorld;
                     }
                     if (lured.LastAttacker is Monster) fought = true;
-                    if (fought && lured.DebugState == "귀소" && homeNote == null)
+                    // Leaving the fight, not blinking. The reported bug is a monster that walks off while
+                    // the den is on it; a single frame of 귀소 between one exchange and the next is the
+                    // leash being asked at an awkward moment and answering again a moment later. Only a
+                    // spell of it on the trot means it actually left, so the clock has to run.
+                    if (fought && lured.DebugState == "귀소") homeRun += Time.deltaTime;
+                    else homeRun = 0f;
+                    if (homeRun >= LeftTheFightSeconds && homeNote == null)
                     {
                         walkedHome = true;
                         homeNote = $"lured Lv{lured.Level} hp {lured.HpRatio:P0} target {lured.CurrentTarget?.name} lastHit {lured.LastAttacker?.name}; residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => $"Lv{m.Level} {m.DebugState}>{m.CurrentTarget?.name}"))}";
