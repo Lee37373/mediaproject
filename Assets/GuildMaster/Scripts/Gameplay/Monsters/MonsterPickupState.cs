@@ -43,6 +43,7 @@ namespace GuildMaster.Monsters
                 ground.Take(_item, m, absorb);
                 _item = null;
                 m.UseItem(item);
+                m.LookForMoreSpoilsNow();
                 m.GoToDefaultState();
                 return;
             }

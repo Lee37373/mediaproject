@@ -627,6 +627,13 @@ namespace GuildMaster.Monsters
         /// <summary>How long after its last fight a monster still looks for spoils away from home.</summary>
         public const float PostFightPickupSeconds = 20f;
         float _pickupTimer;
+
+        /// <summary>
+        /// One item picked up, the rest of the spoils are looked for at once (2026-09-23). Waiting the
+        /// usual interval let it walk out of the post-fight range first: it ate the slime jelly and left
+        /// the gear lying two cells away.
+        /// </summary>
+        internal void LookForMoreSpoilsNow() => _pickupTimer = 0f;
         float _lastFightTime = float.NegativeInfinity;
 
         /// <summary>

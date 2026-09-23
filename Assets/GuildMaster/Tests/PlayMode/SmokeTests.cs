@@ -327,9 +327,26 @@ namespace GuildMaster.Tests
                 Assert.That(slime.IsAlive, Is.False,
                             $"the goblin killed the slime (goblin {fighter.StateLabel} hp {fighter.Hp:0} target {fighter.CurrentTarget?.DisplayName} d {Vector2.Distance(fighter.Position, slime.Position):0.0}; slime {slime.StateLabel} hp {slime.Hp:0}/{slime.Stats.MaxHp:0} target {slime.CurrentTarget?.DisplayName})");
                 // Whoever of the pack fought (mates in earshot join in) may take it; idlers at home cannot reach that far.
-                yield return WaitFor(() => nest.Members.Any(m => m.Equipment.Worn.Any(i => i.id == "gear_t3")), 10f);
+                // What the fighter did after the fight, for when this fails (it did, now and then, 2026-09-23).
+                var trace = new System.Text.StringBuilder();
+                string lastState = null;
+                float traceStart = Time.time;
+                yield return WaitFor(() =>
+                {
+                    if (fighter.StateLabel != lastState)
+                    {
+                        lastState = fighter.StateLabel;
+                        trace.Append($" {Time.time - traceStart:0.0}s:{lastState}@{Vector2.Distance(fighter.Position, spoils):0.0}");
+                    }
+                    return nest.Members.Any(m => m.Equipment.Worn.Any(i => i.id == "gear_t3"));
+                }, 10f);
+                var lying = Services.Get<GroundItemService>().Items
+                    .Where(g => Vector2.Distance(g.Position, spoils) < 8f)
+                    .Select(g => $"{g.Item.id}@{Vector2.Distance(g.Position, spoils):0.0}{(g.IsFreeFor(fighter) ? "" : "(잡힘)")}");
                 Assert.That(nest.Members.Any(m => m.Equipment.Worn.Any(i => i.id == "gear_t3")), Is.True,
-                            $"the spoils where they fought were picked up (fighter {fighter.StateLabel} at {Vector2.Distance(fighter.Position, spoils):0.0} from them)");
+                            $"the spoils where they fought were picked up (fighter {fighter.StateLabel} at {Vector2.Distance(fighter.Position, spoils):0.0} from them, " +
+                            $"sees {fighter.CanSee(spoils)}, wants {fighter.WantsItem(Services.Get<Data.GameDatabase>().Item("gear_t3"))}; " +
+                            $"trace{trace}; lying: {string.Join(" ", lying)})");
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
 
@@ -568,6 +585,57 @@ namespace GuildMaster.Tests
             yield return WaitFor(() => quest.Status is QuestStatus.Completed or QuestStatus.TurnedIn, 5f);
             Assert.That(quest.Status is QuestStatus.Completed or QuestStatus.TurnedIn, Is.True, $"an emptied nest finishes the hunt (was {quest.Status})");
             Assert.That(quest.Progress, Is.LessThan(quest.RequiredCount), "with kills to spare");
+
+            // 2026-09-23 (a 5-day balance run had its board blocked for four days): a den can be gone
+            // without that event reaching a claimed quest. Both cases are settled once the guild sees it.
+            var intel = Services.Get<GuildIntel>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var avatar = Services.Get<PlayerAvatar>();
+            var grid = Services.Get<World.WorldService>().Grid;
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                IEnumerator Watch(Nest n)
+                {
+                    avatar.Mover.Stop();
+                    // On the den itself: from beside it a forest (P4-48) or a rock can hide it.
+                    grid.TryFindNearestWalkable(n.Cell, 4, out var stand);
+                    avatar.transform.position = World.GridMap.CellToWorld(stand);
+                    yield return WaitFor(() => intel.KnownNests.Contains(n) && intel.Get(n).VisibleNow && intel.Get(n).LastCount > 0, 10f);
+                    var s = intel.Get(n);
+                    Assume.That(s.LastCount, Is.GreaterThan(0),
+                                $"the guild sees {n.DisplayName} occupied (known {intel.KnownNests.Contains(n)}, visible {s.VisibleNow}, pop {n.Population})");
+                }
+                bool Outside(Nest n) => n != nest && n.Population >= 2 && !grid.IsInTown(n.Cell);
+                Clock.SetSpeed(3);
+
+                // Killed off before anyone took it: taken down, the reward back in the treasury.
+                var open = eco.Nests.First(Outside);
+                yield return Watch(open);
+                MakeKnown(open.Species);
+                var unclaimed = board.FindById(DebugCommands.PostHunt(open.Species.id, 2, 40, 10, 1, open.WorldPosition.x, open.WorldPosition.y));
+                Assert.That(unclaimed.TargetNest, Is.EqualTo(open), "the den it was posted against");
+                int gold = treasury.Gold;
+                foreach (var m in open.Members.ToList()) if (m.IsAlive) m.Perish();
+                yield return WaitFor(() => unclaimed.Status == QuestStatus.Cancelled, 10f);
+                Assert.That(unclaimed.Status, Is.EqualTo(QuestStatus.Cancelled), "an open hunt on a den seen empty comes down");
+                Assert.That(treasury.Gold, Is.EqualTo(gold + unclaimed.RewardGold), "with a full refund");
+
+                // Moved out while a group is on it (no death, so no NestClearedEvent): done.
+                var moved = eco.Nests.First(n => Outside(n) && n != open && eco.Nests.Any(o => o != n && o.Species == n.Species));
+                var newHome = eco.Nests.First(o => o != moved && o.Species == moved.Species);
+                yield return Watch(moved);
+                MakeKnown(moved.Species);
+                var claimed = board.FindById(DebugCommands.PostHunt(moved.Species.id, 99, 40, 10, 1, moved.WorldPosition.x, moved.WorldPosition.y));
+                var hunter = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
+                Assert.That(board.TryAccept(claimed, hunter), Is.True);
+                hunter.CurrentQuest = claimed;
+                foreach (var m in moved.Members.ToList()) moved.TransferMember(m, newHome);
+                yield return WaitFor(() => claimed.Status is QuestStatus.Completed or QuestStatus.TurnedIn, 10f);
+                Assert.That(claimed.Status is QuestStatus.Completed or QuestStatus.TurnedIn, Is.True,
+                            $"a den seen deserted finishes the hunt (was {claimed.Status}, seen {intel.Get(moved).LastCount})");
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
 
         /// <summary>

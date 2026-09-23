@@ -56,6 +56,11 @@ namespace GuildMaster.Quests
         public float PostedAtHour { get; }
         public float CompletedAtHour { get; internal set; }
         public DangerLevel Danger { get; internal set; }
+        /// <summary>
+        /// Hunt: the den in the area the guild had seen occupied when this was posted, or null (a hunt
+        /// for strays). Once the guild sees it standing empty or held by others, the hunt is settled.
+        /// </summary>
+        public Nest TargetNest { get; internal set; }
 
         // ---- Escort (P3-4a) ----
         public int MaxHours { get; }

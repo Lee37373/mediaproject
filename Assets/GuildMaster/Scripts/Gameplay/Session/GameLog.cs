@@ -45,7 +45,8 @@ namespace GuildMaster.Session
             EventBus.Subscribe<QuestRewardPaidEvent>(e => Add($"{e.Taker.TakerName}에게 보상 지급: {e.Gold}G, {e.Exp}EXP", LogCategory.Quest));
             EventBus.Subscribe<QuestClosedEvent>(e =>
             {
-                if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
+                if (e.Status == QuestStatus.Cancelled && e.Reason != null) Add($"의뢰 철회: {e.Quest.Title} — {e.Reason} (보상 환불)", LogCategory.Quest);
+                else if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
                 else if (e.Status == QuestStatus.Failed) Add($"의뢰 실패: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
             });
             EventBus.Subscribe<PartyInviteAnsweredEvent>(e => Add(

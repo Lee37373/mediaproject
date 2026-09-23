@@ -17,7 +17,8 @@ namespace GuildMaster.Quests
     public struct QuestProgressEvent { public Quest Quest; }
     public struct QuestCompletedEvent { public Quest Quest; }
     public struct QuestRewardPaidEvent { public Quest Quest; public IQuestTaker Taker; public int Gold; public int Exp; }
-    public struct QuestClosedEvent { public Quest Quest; public QuestStatus Status; }
+    /// <summary><see cref="Reason"/> is set when the board closed it on its own (null: the player or the rules as usual).</summary>
+    public struct QuestClosedEvent { public Quest Quest; public QuestStatus Status; public string Reason; }
     public struct QuestRewardRaisedEvent { public Quest Quest; public int Gold; }
 
     /// <summary>
@@ -113,6 +114,7 @@ namespace GuildMaster.Quests
             if (!_treasury.TrySpend(draft.RewardGold, draft.RewardExp)) { error = "길드 자금이 부족합니다."; return false; }
             quest = new Quest($"Q_{_nextId++}", draft, _clock.TotalHours);
             quest.Danger = EvaluateDanger(quest);
+            if (quest.Type == QuestType.Hunt) quest.TargetNest = OccupiedNestInArea(quest);
             _quests.Add(quest);
             EventBus.Publish(new QuestPostedEvent { Quest = quest });
             return true;
@@ -334,6 +336,49 @@ namespace GuildMaster.Quests
                 if (q.Status == QuestStatus.Completed && _clock.TotalHours - q.CompletedAtHour > TurnInDeadlineHours && q.Assignees.Count == 0)
                     Close(q, QuestStatus.TurnedIn, refund: true);
             }
+            SettleHuntsWhoseNestIsGone();
+        }
+
+        // ---------------- A target den that is gone ----------------
+
+        /// <summary>Why the board took a hunt down by itself.</summary>
+        public const string NestGoneReason = "대상 둥지가 비었습니다";
+
+        /// <summary>
+        /// A hunt whose den the guild has since seen empty, or held by another kind, has nothing left
+        /// to do (2026-09-23 user decision). <see cref="OnNestCleared"/> only hears of dens wiped out by
+        /// killing while a group is on it: a den that was killed off before anyone took the quest, or
+        /// that moved away (migration, a pack gone roaming, driven off), left the quest open forever
+        /// and the board blocked for days. Unclaimed ones are taken down with a full refund; claimed
+        /// ones are done, as with a wiped-out den. Only what the guild saw counts (GuildIntel).
+        /// </summary>
+        void SettleHuntsWhoseNestIsGone()
+        {
+            if (!Services.TryGet<GuildIntel>(out var intel)) return;
+            foreach (var q in _quests.ToList())
+            {
+                if (!q.IsActive || q.Type != QuestType.Hunt || q.TargetNest == null) continue;
+                if (!SeenGone(q, intel)) continue;
+                if (q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, NestGoneReason);
+                else Complete(q);
+            }
+        }
+
+        /// <summary>Seen since the posting with nobody of the quest's kind living there.</summary>
+        public static bool SeenGone(Quest q, GuildIntel intel)
+        {
+            var seen = intel.Get(q.TargetNest);
+            if (!seen.Observed || seen.LastSeenHour <= q.PostedAtHour) return false;
+            return seen.LastCount <= 0 || intel.SpeciesOf(q.TargetNest) != q.Species;
+        }
+
+        /// <summary>The known den of the quest's species in its area that the guild last saw occupied.</summary>
+        static Nest OccupiedNestInArea(Quest q)
+        {
+            if (!Services.TryGet<GuildIntel>(out var intel)) return null;
+            foreach (var n in intel.KnownNests)
+                if (IsInArea(q, n, intel.SpeciesOf(n)) && intel.Get(n).LastCount > 0) return n;
+            return null;
         }
 
         // ---------------- Danger from observations only ----------------
@@ -420,7 +465,7 @@ namespace GuildMaster.Quests
             EventBus.Publish(new QuestCompletedEvent { Quest = q });
         }
 
-        void Close(Quest q, QuestStatus status, bool refund)
+        void Close(Quest q, QuestStatus status, bool refund, string reason = null)
         {
             if (refund)
             {
@@ -439,7 +484,7 @@ namespace GuildMaster.Quests
             q.Status = status;
             _quests.Remove(q);
             _history.Add(q);
-            EventBus.Publish(new QuestClosedEvent { Quest = q, Status = status });
+            EventBus.Publish(new QuestClosedEvent { Quest = q, Status = status, Reason = reason });
         }
     }
 }
