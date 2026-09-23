@@ -26,7 +26,16 @@ namespace GuildMaster.Recruitment
     public class RecruitmentSession
     {
         public const int StartAffinity = 40;
-        public const int MaxPlayerTurns = 6;
+        /// <summary>
+        /// At or below this affinity a formal recruitment proposal cannot be made (user request 2026-09-23,
+        /// replacing the old fixed 6-turn conversation limit: talk is now unlimited, but a visitor who has
+        /// soured on the guild master won't hear a formal offer until affinity recovers).
+        /// </summary>
+        public const int MinProposalAffinity = 10;
+        /// <summary>Affinity at which a visitor joins on their own, whatever the explicit decision. Also the
+        /// threshold ambient town small talk (BanterService) auto-joins at, so a visitor who is simply
+        /// well-liked by the guild can join without ever hearing a formal proposal (user request 2026-09-23).</summary>
+        public const int AutoJoinAffinity = 85;
         /// <summary>Minimum remaining stay (game hours) while talking.</summary>
         const float TalkStayHours = 3f;
 
@@ -70,18 +79,32 @@ namespace GuildMaster.Recruitment
         public static int InitialAffinity(TraitSet traits)
             => Mathf.Clamp(StartAffinity - Mathf.RoundToInt((traits?.RecruitDifficulty ?? 0f) * 50f), 10, 70);
 
-        /// <summary>Verdict after a visitor reply (pure; covered by tests).</summary>
-        public static RecruitOutcome Judge(int affinity, RecruitDecision decision, int playerTurns)
+        /// <summary>
+        /// Applies one small-talk affinity nudge to a visitor's persistent recruit affinity (used by ambient
+        /// town chat in <see cref="Adventurers.BanterService"/>, so a visitor can also warm to the guild
+        /// without ever opening a formal talk). Seeds from traits on first contact (current &lt; 0) exactly
+        /// like a freshly opened recruit dialogue would, so it makes no difference which happens first.
+        /// </summary>
+        public static int NextRecruitAffinity(int current, TraitSet traits, int delta)
         {
-            if ((decision == RecruitDecision.Join && affinity >= 50) || affinity >= 85) return RecruitOutcome.Joined;
+            int start = current < 0 ? InitialAffinity(traits) : current;
+            return Mathf.Clamp(start + delta, 0, 100);
+        }
+
+        /// <summary>Verdict after a visitor reply (pure; covered by tests). No turn limit: talk is unlimited,
+        /// so the conversation only ends on an explicit join/refuse or affinity reaching AutoJoinAffinity.</summary>
+        public static RecruitOutcome Judge(int affinity, RecruitDecision decision)
+        {
+            if ((decision == RecruitDecision.Join && affinity >= 50) || affinity >= AutoJoinAffinity) return RecruitOutcome.Joined;
             if (decision == RecruitDecision.Refuse && affinity < 35) return RecruitOutcome.Left;
-            if (playerTurns >= MaxPlayerTurns) return affinity >= 60 ? RecruitOutcome.Joined : RecruitOutcome.Left;
             return RecruitOutcome.Ongoing;
         }
 
         public async Task SendAsync(string playerText, bool proposal)
         {
             if (Busy || Outcome != RecruitOutcome.Ongoing || Visitor == null) return;
+            // Defense in depth: the UI already disables the propose button at low affinity (F-P3-3 rev.).
+            if (proposal && Affinity <= MinProposalAffinity) return;
             playerText = string.IsNullOrWhiteSpace(playerText) ? (proposal ? "우리 길드에 들어오지 않겠나?" : "...") : playerText.Trim();
             Busy = true;
             _busyStart = Time.realtimeSinceStartup;
@@ -98,7 +121,7 @@ namespace GuildMaster.Recruitment
             SaveState();
             Visitor.Say(reply.Text, toFeed: false);   // the recruit window shows the transcript
             Busy = false;
-            Finish(Judge(Affinity, reply.Decision, PlayerTurns));
+            Finish(Judge(Affinity, reply.Decision));
             Changed?.Invoke();
         }
 

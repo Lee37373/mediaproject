@@ -28,15 +28,25 @@ namespace GuildMaster.Recruitment
 
         static readonly string[] Praise = { "대단", "훌륭", "멋지", "최고", "실력", "강해", "믿음", "부탁" };
         static readonly string[] Rude = { "바보", "멍청", "꺼져", "닥쳐", "한심", "쓰레기", "약해 보", "시시" };
+        /// <summary>Ordinary disinterest/refusal, milder than outright rudeness but still a dislike signal.</summary>
+        static readonly string[] Dismissive = { "관심 없", "관심없", "별로", "싫어", "싫습니다", "필요 없", "필요없", "됐어", "됐습니다" };
 
         /// <summary>Affinity change for one player message (pure; used by tests).</summary>
         public static int Score(string message, string values)
         {
             if (string.IsNullOrWhiteSpace(message)) return -2;
-            int delta = message.Trim().Length >= 10 ? 1 : -1;
-            if (values != null && ValueKeywords.TryGetValue(values, out var keys) && ContainsAny(message, keys)) delta += 8;
-            if (ContainsAny(message, Praise)) delta += 4;
-            if (ContainsAny(message, Rude)) delta -= 10;
+            // Rebalanced again (user report 2026-09-23, same-day follow-up: "호감도 올리는 것도 생각보다
+            // 쉽지가 않네"). The previous pass fixed "decline never shows" but overshot: any topic other
+            // than the visitor's exact value got the same -4 as genuine rudeness-adjacent dismissal, so
+            // ordinary conversation trended down more often than up. Now a substantial, on-topic-or-not
+            // message defaults mildly positive (effort is rewarded on its own), an exact values match is
+            // a big bonus, and only a real mismatch, low effort, dismissiveness or rudeness costs affinity.
+            int delta = message.Trim().Length >= 10 ? 2 : -1;
+            if (values != null && ValueKeywords.TryGetValue(values, out var keys) && ContainsAny(message, keys)) delta += 10;
+            else if (Topic(message) != null) delta -= 2; // touched a value the visitor doesn't share; a mild nudge, not a real clash
+            if (ContainsAny(message, Praise)) delta += 5;
+            if (ContainsAny(message, Dismissive)) delta -= 6;
+            if (ContainsAny(message, Rude)) delta -= 12;
             return delta;
         }
 
@@ -109,8 +119,11 @@ namespace GuildMaster.Recruitment
         {
             bool empty = string.IsNullOrWhiteSpace(message);
             bool rude = !empty && ContainsAny(message, Rude);
+            // Used to zero out every non-rude negative delta, so affinity effectively never fell unless the
+            // player typed an outright insult (user report 2026-09-23: "호감도 하락이 잘 나타나지 않는다").
+            // Score() already keeps the ordinary-negative case mild (a short, low-effort reply is -1 to -2,
+            // not a cliff), so let it through instead of flattening it to 0.
             int delta = Score(message, values);
-            if (delta < 0 && !rude && !empty) delta = 0;
             int after = affinity + delta;
             RecruitDecision decision = RecruitDecision.Undecided;
             if (proposal) decision = after >= 55 ? RecruitDecision.Join : after < 35 ? RecruitDecision.Refuse : RecruitDecision.Undecided;

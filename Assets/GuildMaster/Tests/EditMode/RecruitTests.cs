@@ -15,13 +15,14 @@ namespace GuildMaster.Tests
         [Test]
         public void Judge_FollowsPlanRules()
         {
-            Assert.That(RecruitmentSession.Judge(50, RecruitDecision.Join, 1), Is.EqualTo(RecruitOutcome.Joined));
-            Assert.That(RecruitmentSession.Judge(49, RecruitDecision.Join, 1), Is.EqualTo(RecruitOutcome.Ongoing), "join needs affinity 50");
-            Assert.That(RecruitmentSession.Judge(85, RecruitDecision.Undecided, 1), Is.EqualTo(RecruitOutcome.Joined), "85 joins regardless");
-            Assert.That(RecruitmentSession.Judge(34, RecruitDecision.Refuse, 1), Is.EqualTo(RecruitOutcome.Left));
-            Assert.That(RecruitmentSession.Judge(40, RecruitDecision.Refuse, 1), Is.EqualTo(RecruitOutcome.Ongoing), "refuse above 35 keeps talking");
-            Assert.That(RecruitmentSession.Judge(60, RecruitDecision.Undecided, RecruitmentSession.MaxPlayerTurns), Is.EqualTo(RecruitOutcome.Joined));
-            Assert.That(RecruitmentSession.Judge(59, RecruitDecision.Undecided, RecruitmentSession.MaxPlayerTurns), Is.EqualTo(RecruitOutcome.Left));
+            // No more fixed turn limit (user request 2026-09-23): talk is unlimited, so Judge only concludes
+            // things on an explicit join/refuse or affinity reaching 85.
+            Assert.That(RecruitmentSession.Judge(50, RecruitDecision.Join), Is.EqualTo(RecruitOutcome.Joined));
+            Assert.That(RecruitmentSession.Judge(49, RecruitDecision.Join), Is.EqualTo(RecruitOutcome.Ongoing), "join needs affinity 50");
+            Assert.That(RecruitmentSession.Judge(85, RecruitDecision.Undecided), Is.EqualTo(RecruitOutcome.Joined), "85 joins regardless");
+            Assert.That(RecruitmentSession.Judge(34, RecruitDecision.Refuse), Is.EqualTo(RecruitOutcome.Left));
+            Assert.That(RecruitmentSession.Judge(40, RecruitDecision.Refuse), Is.EqualTo(RecruitOutcome.Ongoing), "refuse above 35 keeps talking");
+            Assert.That(RecruitmentSession.Judge(60, RecruitDecision.Undecided), Is.EqualTo(RecruitOutcome.Ongoing), "no turn cap: undecided just continues, however long the talk");
         }
 
         [Test]
@@ -33,6 +34,22 @@ namespace GuildMaster.Tests
             Assert.That(RecruitmentSession.InitialAffinity(TraitSet.FromIds(new[] { "loyal" }, db)), Is.EqualTo(55));
             Assert.That(RecruitmentSession.InitialAffinity(TraitSet.FromIds(new[] { "arrogant" }, db)), Is.EqualTo(25));
             Assert.That(RecruitmentSession.InitialAffinity(TraitSet.FromIds(new[] { "arrogant", "greedy" }, db)), Is.EqualTo(15));
+        }
+
+        [Test]
+        public void NextRecruitAffinity_SeedsOnFirstContactThenAccumulates()
+        {
+            // Ambient town small talk (BanterService) shares this same persistent affinity with the formal
+            // recruit dialogue (user request 2026-09-23): a visitor who has never talked to the guild
+            // master (-1) gets seeded exactly like a freshly opened RecruitmentSession would, then deltas
+            // accumulate and clamp to [0,100] the same way SendAsync does.
+            var db = DefaultContent.Build();
+            db.BuildIndex();
+            var loyal = TraitSet.FromIds(new[] { "loyal" }, db);
+            Assert.That(RecruitmentSession.NextRecruitAffinity(-1, loyal, 5), Is.EqualTo(RecruitmentSession.InitialAffinity(loyal) + 5));
+            Assert.That(RecruitmentSession.NextRecruitAffinity(80, null, 10), Is.EqualTo(90));
+            Assert.That(RecruitmentSession.NextRecruitAffinity(98, null, 10), Is.EqualTo(100), "clamped to 100");
+            Assert.That(RecruitmentSession.NextRecruitAffinity(2, null, -10), Is.EqualTo(0), "clamped to 0");
         }
 
         [Test]

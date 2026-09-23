@@ -3,7 +3,6 @@ using GuildMaster.Adventurers;
 using GuildMaster.Core;
 using GuildMaster.Player;
 using GuildMaster.Recruitment;
-using GuildMaster.Traits;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
@@ -197,23 +196,26 @@ namespace GuildMaster.UI
             {
                 var d = v.Data;
                 _name.text = d.name;
-                string traits = v.Traits != null ? TraitSet.Format(v.Traits.Traits, UITheme.Good, UITheme.Bad) : "-";
-                _profile.text = $"{AdventurerData.ClassLabel(d.cls)} Lv.{d.level}\n성격 {d.mbti}\n가치관 {UIBuilder.Colored(d.values, UITheme.Accent)}\n특성: {traits}\n" +
-                                UIBuilder.Colored("가치관에 맞는 이야기를 하면 호감이 오릅니다.", UITheme.TextMuted);
+                // Values, personality (MBTI) and traits are intentionally not shown here (user request
+                // 2026-09-23, extended same day): the player should read the visitor out through
+                // conversation rather than see the answer key.
+                _profile.text = $"{AdventurerData.ClassLabel(d.cls)} Lv.{d.level}\n" +
+                                UIBuilder.Colored("대화하며 알아가 보세요. 대화 내용에 따라 호감도가 오르내립니다.", UITheme.TextMuted);
             }
             _affinity.value = _session.Affinity;
-            _affinityLabel.text = $"호감도 {_session.Affinity}/100 · 대화 {_session.PlayerTurns}/{RecruitmentSession.MaxPlayerTurns}";
+            _affinityLabel.text = $"호감도 {_session.Affinity}/100 · 대화 {_session.PlayerTurns}회";
 
             bool ongoing = _session.Outcome == RecruitOutcome.Ongoing;
             _status.text = _session.Outcome switch
             {
                 RecruitOutcome.Joined => UIBuilder.Colored("영입 성공! 길드에 합류했습니다.", UITheme.Good),
                 RecruitOutcome.Left => UIBuilder.Colored("영입 실패. 방문자가 떠납니다.", UITheme.Bad),
-                _ => _session.Busy ? $"생각 중… ({_session.BusySeconds:0}초)" : (_session.PlayerTurns == 0 ? "먼저 말을 걸어 보세요." : (_session.LastReplyFromLlm ? ""
-                    : "(규칙 기반 응답" + (string.IsNullOrEmpty(_session.LastFallbackReason) ? "" : ": " + _session.LastFallbackReason) + ")")),
+                _ => _session.Busy ? $"생각 중… ({_session.BusySeconds:0}초)" : (_session.PlayerTurns == 0 ? "먼저 말을 걸어 보세요."
+                    : (_session.Affinity <= RecruitmentSession.MinProposalAffinity ? UIBuilder.Colored("호감도가 너무 낮아 정식 제안을 할 수 없습니다.", UITheme.Bad)
+                    : (_session.LastReplyFromLlm ? "" : "(규칙 기반 응답" + (string.IsNullOrEmpty(_session.LastFallbackReason) ? "" : ": " + _session.LastFallbackReason) + ")"))),
             };
             _send.interactable = ongoing && !_session.Busy;
-            _propose.interactable = ongoing && !_session.Busy && _session.PlayerTurns > 0;
+            _propose.interactable = ongoing && !_session.Busy && _session.PlayerTurns > 0 && _session.Affinity > RecruitmentSession.MinProposalAffinity;
             _input.interactable = ongoing;
 
             int count = _session.Turns.Count;

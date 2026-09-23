@@ -49,8 +49,13 @@ namespace GuildMaster.Recruitment
             sb.Append("말하는 법:\n");
             sb.Append("- 길드 마스터에게 존댓말(해요체)로, 실제 사람이 말하듯 한두 문장으로 짧게 답한다.\n");
             sb.Append("- 먼저 상대가 방금 한 말에 반응한다. 인사에는 인사로, 질문에는 네 사정을 섞어 답하고, 궁금한 게 있으면 짧게 되묻는다.\n");
-            sb.Append("- 성격과 가치관은 이야기가 그쪽으로 흐를 때만 자연스럽게 드러난다. 모든 말에 넣지 않는다.\n");
-            sb.Append("- 이미 한 말은 되풀이하지 않는다. 숫자나 게임 용어(호감도 등)는 말하지 않는다.\n");
+            // Added after user report 2026-09-23 #1: real play showed the same vague filler
+            // ("아직 특별히 정해둔 건 없어요") answering completely different questions (직업, 성격 x2)
+            // in a row, even though 성격/가치관 for this exact visitor are right above in the sheet.
+            sb.Append("- 성격, 직업, 좋아하는 것 등 너 자신에 대해 직접 물으면 위 '성격'/'특징'에 적힌 내용을 바탕으로 구체적으로 답한다. \"아직 특별히 정해둔 건 없어요\" 같은 회피성 대답으로 얼버무리지 않는다.\n");
+            sb.Append("- 성격과 가치관은 이야기가 그쪽으로 흐를 때만 자연스럽게 드러난다. 모든 말에 넣지는 않되, 직접 질문받으면 위 규칙대로 답한다.\n");
+            sb.Append("- 직전에 자신이 한 대답을 그대로, 또는 거의 그대로 반복하지 않는다. 질문이 다르면 다른 표현으로 답한다.\n");
+            sb.Append("- 숫자나 게임 용어(호감도 등)는 말하지 않는다.\n");
             sb.Append("- 길드 마스터가 정식으로 영입을 제안하면, 네 속마음에 따라 들어가겠다(join) 또는 정중히 거절(refuse)로 분명히 답한다.\n\n");
             sb.Append("대화 예시(다른 인물):\n");
             sb.Append("길드 마스터: 여기서 뭐 하세요?\n");
@@ -58,7 +63,18 @@ namespace GuildMaster.Recruitment
             sb.Append("JSON 항목:\n");
             sb.Append("- reply: 네가 하는 말. 대사만 쓴다(따옴표, 지문, 이름 없이).\n");
             sb.Append("- decision: undecided(아직 정하지 않음) / join / refuse. reply에서 한 말과 같은 결론이어야 한다. refuse는 대화를 끝내는 거절이라, 정식 제안을 거절할 때나 상대가 무례해서 더는 말하고 싶지 않을 때만 쓴다. 평범한 대화 중에는 undecided다.\n");
-            sb.Append("- affinity_delta: 길드 마스터의 방금 말이 마음에 들면 +1~+10, 평범하면 0, 무례하거나 안 맞으면 -1~-10.\n");
+            // Widened once already (2026-09-23 #3: "변동폭이 너무 작음"), but that pass lumped "다른 화제"
+            // in with genuine mismatch/보람없음, so ordinary conversation about anything but the visitor's
+            // exact value got punished — same-day follow-up report: "호감도 올리는 것도 생각보다 쉽지가
+            // 않네". Split "성의 있게 답했지만 무관한 말" (mildly positive, like real conversation) out
+            // from "가치관과 정면으로 안 맞는 말" (the only kind of mismatch that should cost much).
+            sb.Append("- affinity_delta: 방금 들은 말이 네 마음에 드는 정도를 정직하게 매긴다. 매번 0을 주지 말고 실제로 오르내리게 하되, 성의 있는 보통 대화까지 깎지는 않는다.\n");
+            sb.Append("  · 네 가치관/성격에 맞고 끌리는 말: +5~+15\n");
+            sb.Append("  · 성의 있게 답했지만 가치관과 특별히 관련은 없는 말: +2~+5\n");
+            sb.Append("  · 성의 없이 대충 대답하거나 짧게 얼버무리는 말: -1~-3\n");
+            sb.Append("  · 네 가치관과 정면으로 안 맞거나 그 가치를 무시하는 말: -2~-5\n");
+            sb.Append("  · 무례하거나 기분을 상하게 하는 말: -8~-15\n");
+            sb.Append("  단순히 다른 화제라는 이유만으로 깎지 않는다. 진지하게 답했다면 가치관과 달라도 두 번째 항목으로 취급한다.\n");
             sb.Append("반드시 JSON 한 개로만 답한다.");
             return sb.ToString();
         }
