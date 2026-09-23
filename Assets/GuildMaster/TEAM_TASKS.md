@@ -31,7 +31,7 @@
 | P4-61 | 머지 뒤 버그 5건: `N` 키 충돌(이름표를 **F5**로), 단축키 도움말 오표기(`B`는 건설·`L`이 정산), 둥지 종족 정보 은닉(칸만 봐도 종이 밝혀지던 것), 목줄 귀소(다른 무리에 맞는 중에 집에 가던 것), 귀갓길 전리품 무시. 속도 **x8**(`4` 키)과 테스트용 `SeeAtCamera` 추가 | 이재혁 | 완료 | UI/World/NameTagLayer·UIRoot·Views/KeyHelpView·InspectorView, Ecosystem/GuildIntel·Nest·TerritoryTactics, Quests/QuestBoard, Monsters/MonsterLeash·Monster, Core/GameClock, Session/GameHotkeys·CameraVision(신규)·DebugCommands, UI/Views/HudView | 0115642, 2154bd6, a2a424a, e924f17 |
 | P4-62 | 몬스터가 전장의 **재료를 먹고 등급 경험치**를 얻음(사용자 결정): 모든 줍는 종이 재료를 먹고, 재료당 값만큼 등급 경험치, 15마다 전투 등급 +1단계(최대 +2). 관측한 등급이 둥지 위험도를 올려 게시판 표시가 실제와 어긋나지 않게 함. 목줄 유예 6→12초(숙련 이상은 간격을 두고 싸움). 유인 스모크 테스트 안정화(엉뚱한 개체와 싸우던 것·귀소 한 프레임 латч) | 이재혁 | 완료 | Monsters/MonsterLevel·MonsterEquipment·Monster·MonsterLeash, Ecosystem/GuildIntel, Quests/QuestBoard, Tests/EditMode/MonsterItemTests, Tests/PlayMode/SmokeTests | 7920a44, d702f87, 18d2f35 |
 | P4-63 | **파티 단위 경로 선택**(사용자 요청): 위험 = 시야 나쁜 땅(숲 1/3 × 지대 배율)을 새 위험 층으로 만들고, 그 가중치를 파티가 정함. 모험가는 **리더 성격**(용감함↔겁많음), **급하면 최단**(후퇴·귀환·침공 방어), 몬스터는 무리 단위로 숲 서식 종만 숲 선호. 가중치는 `SetDestination(..., caution)`으로만 걸려 전투·줍기 경로는 그대로 | 이재혁 | 완료 | World/RouteRisk(신규)·Pathfinder·PathFollower·WorldService, Units/RouteChoice(신규), Adventurers/AdventurerStates·FreeHuntState, Monsters/MigrateState·RoamState·RaidState, Session/DebugCommands, Tests/EditMode/RouteTests(신규), Tests/PlayMode/SmokeTests | f5a8936 |
-| P4-64 | **자유탐험 실시간 경로 수정**(사용자 요청): 미탐색 지형은 열린 초원으로 가정해 계획하고, 본 뒤 막힌 곳이면 0.25초 안에 경로를 다시 그림. 목적지까지 한 번에 가지 않고 18칸 구간씩 부채꼴에서 고르며, 경로가 수정되면 구간을 다시 잡음. 정찰은 덜 탐색된 곳으로. 덤: 성문 공격 중 목표 재탐색으로 성문이 안 부서지던 버그 | 이재혁 | 진행 중(코드 완료, PlayMode 1건 확인 남음) | World/Pathfinder·PathFollower·WorldService, Adventurers/ExplorationRoute(신규)·FreeHuntState, Monsters/Monster, Session/DebugCommands, Tests/EditMode/ExplorationTests(신규), Tests/PlayMode/SmokeTests | - |
+| P4-64 | **자유탐험 실시간 경로 수정**(사용자 요청): 미탐색 지형은 열린 초원으로 가정해 계획하고, 본 뒤 막힌 곳이면 0.25초 안에 경로를 다시 그림. 목적지까지 한 번에 가지 않고 18칸 구간씩 부채꼴에서 고르며, 경로가 수정되면 구간을 다시 잡음. 정찰은 덜 탐색된 곳으로. 덤: 성문 공격 중 목표 재탐색으로 성문이 안 부서지던 버그 | 이재혁 | 완료 | World/Pathfinder·PathFollower·WorldService, Adventurers/ExplorationRoute(신규)·FreeHuntState, Monsters/Monster, Session/DebugCommands, Tests/EditMode/ExplorationTests(신규), Tests/PlayMode/SmokeTests | 921014d |
 | P4-26 | 전투 지능 등급 재정리(본능 단계 추가, 카이팅·엄폐·분산·재선택을 등급별로) | 이재혁 | 완료 | Units/CombatTier·Combat·TargetSelector, Data/MonsterDefinition·DefaultContent | 9f5ab3a |
 | P4-27 | 파티 역할과 대형(전열·후열, 이동 대형, 집중 공격 지정) | 이재혁 | 완료 | Adventurers/PartyTactics(신규), AdventurerStates, Units/TargetSelector·Combat·Unit, Visuals/TargetMarker(신규) | 1419d87 |
 | P4-28 | 몬스터 전술(숙련 이상: 포위, 후퇴 후 합류, 무리 목표 지정) | 이재혁 | 완료 | Monsters/PackTactics·MonsterRegroupState(신규)·Monster, Units/Combat | 757850a |
@@ -101,9 +101,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-64 자유탐험 실시간 경로 수정(코드 완료·커밋 전, PROGRESS.md 맨 앞 "이어서 할 일" 참고)
+- **진행 중**: (없음)
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-63, P5-1 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-64, P5-1 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
