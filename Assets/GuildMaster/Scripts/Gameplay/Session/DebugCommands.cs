@@ -652,6 +652,20 @@ namespace GuildMaster.Session
             return $"watchFights={(on ? "on" : "off")}";
         }
 
+        /// <summary>
+        /// Testing only (user request 2026-09-23): gives the camera itself sight, so whatever it is
+        /// pointed at is in view — monsters included — while the rest of the map keeps its fog. Use
+        /// this to watch the simulation where no guild member is standing; F3 lifts the fog everywhere
+        /// instead. Nothing registers it outside a debug session, so play is unaffected.
+        /// </summary>
+        public static string SeeAtCamera(bool on, float radius = 0f)
+        {
+            if (!on) { CameraVision.Stop(); return "seeAtCamera=off"; }
+            var v = CameraVision.Ensure();
+            v.Radius = radius;
+            return $"seeAtCamera=on (radius {v.SightRadius:0.0}{(radius > 0f ? "" : ", 화면에 맞춤")})";
+        }
+
         /// <summary>Melee footwork on/off (P4-47) for before/after comparisons with SkirmishReport.</summary>
         public static string Steering(bool on)
         {

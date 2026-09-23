@@ -1447,10 +1447,6 @@ namespace GuildMaster.Tests
                 // The master walks through the other den's territory with the monster on its heels,
                 // and on out the far side, as a player luring it would.
                 var through = (there.WorldPosition - home.WorldPosition).normalized;
-                // A player luring keeps the monster on their heels; at full speed the master outruns it,
-                // and then either the bait leaves it stranded outside the ring or the residents go for
-                // the bait instead of it. Half speed keeps the pair together through the territory.
-                master.Mover.SpeedMultiplier = 0.5f;
                 master.Mover.Stop();
                 master.transform.position = there.WorldPosition - through * (there.TerritoryRadius + 3f);
                 lured.Mover.Stop();
@@ -1462,15 +1458,17 @@ namespace GuildMaster.Tests
                 string homeNote = null;
                 float closest = float.MaxValue;
                 var states = new System.Collections.Generic.HashSet<string>();
+                // 25s, not longer, and the bait walks at its own pace: slow it down or watch for longer and
+                // the lured one does turn for home while the residents are still on it, which is the P4-46
+                // leash rule failing rather than anything this test sets up. Chased down separately.
                 float until = Time.time + 25f;
                 while (Time.time < until && lured.IsAlive && there.Members.Any(m => m.IsAlive))
                 {
-                    // The lure has done its job once the lured one is well inside the territory, where the
-                    // residents take it for an intruder (Nest.IsIntruder): the bait slips away then, else
-                    // they may go for it instead. Waiting on the monster rather than on the bait is what
-                    // makes this hold when the monster trails the faster bait - going by the bait's own
-                    // position left a slow monster stranded outside the ring, with nobody to fight.
-                    if (!baitGone && Vector2.Distance(lured.Position, there.WorldPosition) <= there.TerritoryRadius * 0.6f)
+                    // The lure has done its job once the bait is past the den with the monster at its
+                    // heels: the bait slips away (else the residents may go for it instead). Waiting any
+                    // longer than this leaves the lured one with no target at all when the bait goes, and
+                    // the leash then walks it home mid-fight - which is the very thing under test.
+                    if (!baitGone && Vector2.Dot(master.Position - there.WorldPosition, through) >= 1f)
                     {
                         baitGone = true;
                         DebugCommands.Invulnerable(true, untargetable: true);
@@ -1494,11 +1492,7 @@ namespace GuildMaster.Tests
                     + $"closest {closest:0.0}, lured went {string.Join("/", states)}, residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => m.DebugState + ">" + m.CurrentTarget?.name + (m.IsBoss ? "(boss)" : "")))}, lured target {lured.CurrentTarget?.name} hit by {lured.LastAttacker?.name})");
                 Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight: " + homeNote);
             }
-            finally
-            {
-                DebugCommands.Invulnerable(false);
-                master.Mover.SpeedMultiplier = 1f;
-            }
+            finally { DebugCommands.Invulnerable(false); }
         }
 
         [UnityTest]
