@@ -1455,9 +1455,12 @@ namespace GuildMaster.Tests
                 float until = Time.time + 25f;
                 while (Time.time < until && lured.IsAlive && there.Members.Any(m => m.IsAlive))
                 {
-                    // The lure has done its job once the bait is past the den with the monster at its
-                    // heels: the bait slips away (else the residents may go for it instead).
-                    if (!baitGone && Vector2.Dot(master.Position - there.WorldPosition, through) >= 1f)
+                    // The lure has done its job once the lured one is well inside the territory, where the
+                    // residents take it for an intruder (Nest.IsIntruder): the bait slips away then, else
+                    // they may go for it instead. Waiting on the monster rather than on the bait is what
+                    // makes this hold when the monster trails the faster bait - going by the bait's own
+                    // position left a slow monster stranded outside the ring, with nobody to fight.
+                    if (!baitGone && Vector2.Distance(lured.Position, there.WorldPosition) <= there.TerritoryRadius * 0.6f)
                     {
                         baitGone = true;
                         DebugCommands.Invulnerable(true, untargetable: true);
@@ -1477,6 +1480,7 @@ namespace GuildMaster.Tests
                 // The den goes for the lured monster, not the bait walking past (the master cannot fight).
                 Assert.That(fought, Is.True, $"the residents took it on ({home.Species.id} lured into {there.Species.id}, "
                     + $"dens {Vector2.Distance(home.WorldPosition, there.WorldPosition):0} apart, territory {there.TerritoryRadius:0}, "
+                    + $"bait gone {baitGone}, lured {Vector2.Distance(lured.Position, there.WorldPosition):0.0} from the den, "
                     + $"closest {closest:0.0}, lured went {string.Join("/", states)}, residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => m.DebugState + ">" + m.CurrentTarget?.name + (m.IsBoss ? "(boss)" : "")))}, lured target {lured.CurrentTarget?.name} hit by {lured.LastAttacker?.name})");
                 Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight: " + homeNote);
             }

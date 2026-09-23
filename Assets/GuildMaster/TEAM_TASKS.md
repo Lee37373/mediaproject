@@ -2,8 +2,9 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-09-22
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-59**).
+- 마지막 갱신: 2026-09-23
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-61**).
+- `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
 
@@ -20,6 +21,13 @@
 
 | ID | 작업 | 담당 | 상태 | 주요 파일·모듈 | 커밋 |
 | --- | --- | --- | --- | --- | --- |
+| F-1 | 알림 시스템(토스트·알림 목록·HUD 배지) | KMS | 완료 | Gameplay/Notifications(신규), UI/Views/NotificationView·ToastLayer·NotificationActions(신규) | 21a1e5d (머지 38d9838) |
+| F-2 | 스트레스·피로의 결과(불만·이탈·면담·휴가·보너스) | KMS | 완료 | Gameplay/Welfare(신규), UI/Views/MemberCareView(신규) | 21a1e5d (머지 38d9838) |
+| F-3 | 일일 정산 보고서 | KMS | 완료 | Gameplay/Reports(신규), UI/Views/DailyReportView(신규), Economy/GuildTreasury | 21a1e5d (머지 38d9838) |
+| F-6 | 죽음·부상의 결과(유품·구사일생·추모의 벽) | KMS | 완료 | Gameplay/Legacy(신규), UI/Views/MemorialView(신규), Adventurers/Adventurer·AdventurerData | 21a1e5d (머지 38d9838) |
+| F-8 | LLM 의뢰 제안(후보 카드에서 고르기) | KMS | 완료 | Gameplay/Proposals(신규), UI/Views/QuestProposalView(신규), Quests/QuestBoard | 21a1e5d (머지 38d9838) |
+| P4-59 | 의뢰 설득·협상(보상 인상 요구, 역제안) — KMS 문서에는 `P4-24·P4-25`로 적혀 있으나 그 번호는 아래 다른 작업이 이미 쓰고 있어 새로 부여했습니다 | KMS | 완료 | Gameplay/Persuasion(신규), Quests/QuestBoard·Quest, UI/Views/PersuadeDialogView(신규), Recruitment | 21a1e5d·90b314b (머지 38d9838) |
+| P4-60 | dev/KMS 머지: 충돌 2건 해결(ArtCatalog 몬스터 13종 유지, ProposalTests 난이도 눈금), `Assets/Arts`·`Claude outputs` 제외, flaky 스모크 테스트 1건 안정화 | 이재혁 | 완료 | 머지 전반, Tests/EditMode/ProposalTests, Tests/PlayMode/SmokeTests, .gitignore | 38d9838 |
 | P4-26 | 전투 지능 등급 재정리(본능 단계 추가, 카이팅·엄폐·분산·재선택을 등급별로) | 이재혁 | 완료 | Units/CombatTier·Combat·TargetSelector, Data/MonsterDefinition·DefaultContent | 9f5ab3a |
 | P4-27 | 파티 역할과 대형(전열·후열, 이동 대형, 집중 공격 지정) | 이재혁 | 완료 | Adventurers/PartyTactics(신규), AdventurerStates, Units/TargetSelector·Combat·Unit, Visuals/TargetMarker(신규) | 1419d87 |
 | P4-28 | 몬스터 전술(숙련 이상: 포위, 후퇴 후 합류, 무리 목표 지정) | 이재혁 | 완료 | Monsters/PackTactics·MonsterRegroupState(신규)·Monster, Units/Combat | 757850a |
@@ -91,12 +99,12 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P5-1 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60, P5-1 (위 표 참고)
 
-### 팀원 (이름을 적어 주세요)
-- **진행 중**:
-- **예정**:
-- **완료**:
+### KMS (이름을 적어 주세요)
+- **진행 중**: 없음
+- **예정**: F-4(명성·길드 등급·승리 목표), F-7(개발용 검증 명령). F-5(의뢰 종류·보상 확장)는 `QuestBoard.cs`를 건드려야 해서 P4-22와 조율이 필요합니다
+- **완료**: F-1, F-2, F-3, F-6, F-8, P4-59 (자세한 내용은 `WORK_SUMMARY.md`, `FEATURE_IDEAS.md`, `NEGOTIATION.md`)
 
 ## 공용 파일 (충돌 주의)
 
@@ -111,3 +119,13 @@
 | `Scripts/Gameplay/Units/Unit.cs`, `Units/Combat.cs` | 전투 공통 규칙 | 고치기 전에 알리기 |
 | `Scripts/Gameplay/Adventurers/AdventurerStates.cs` | 모험가 행동 상태 | 고치기 전에 알리기 |
 | `Assets/GuildMaster/Scenes/Main.unity` | 씬(병합이 매우 어려움) | 한 사람만 수정, 가능하면 코드로 처리 |
+
+## 아트는 git에 올리지 않습니다 (2026-09-23)
+
+캐릭터·몬스터 그림은 Asset Store의 LAYERLAB **2D Characters** 3종(Cute Adventurers, Casual Monsters, Minimal Characters)입니다. **EULA가 재배포를 금지하므로 git에서 제외**합니다(`.gitignore`의 `/Assets/Layer Lab/`, `/Assets/Arts/`).
+
+각자 PC에서 **Package Manager → My Assets**로 세 패키지를 import하면 끝입니다. 가져오기 설정(발 기준점, PPU)은 `Scripts/Editor/ArtImportSettings.cs`가 자동 적용하고, `Resources/ArtCatalog.asset`(git 추적, 그림 없이 GUID 참조만)이 자동으로 연결합니다. 필요하면 메뉴 `GuildMaster > 아트 카탈로그 다시 만들기`를 누르세요. 패키지가 없으면 `Visuals/PixelArt.cs`의 코드 생성 그림으로 대체되어 게임은 정상 동작합니다.
+
+- **폴더 이름을 바꾸지 마세요.** `Assets/Arts/`처럼 다른 위치에 같은 그림을 두면 GUID가 겹쳐 충돌합니다(dev/KMS 머지에서 실제로 걸렸던 문제).
+- **`ArtCatalog.asset`을 아트 없이 다시 만들지 마세요.** 몬스터 목록이 비어 버리고, 그대로 커밋하면 상대의 그림이 사라집니다.
+- 계정에 이 에셋이 없어서 import가 안 되면 먼저 알려 주세요. 배포 방법을 따로 정해야 합니다.
