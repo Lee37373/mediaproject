@@ -137,6 +137,7 @@ namespace GuildMaster.Monsters
             Level = Mathf.Min(MonsterLevel.MaxLevel, (home != null ? home.BirthLevel : 1) + (boss ? MonsterBoss.LevelBonus : 0));
             _lastFightTime = float.NegativeInfinity;
             Exp = 0;
+            TierExp = 0;
             ApplyLevel();
             Equipment.Clear();
             _crownAura = false;
@@ -204,13 +205,34 @@ namespace GuildMaster.Monsters
             }
         }
 
-        /// <summary>Fighting smarts set per species (P4-26): slimes on instinct up to veteran bosses.</summary>
-        public override CombatTier Tier => Def == null ? CombatTier.Novice : MonsterLevel.TierAt(MonsterBoss.SpeciesTier(Def.combatTier, IsBoss), Level);
+        /// <summary>
+        /// Fighting smarts set per species (P4-26): slimes on instinct up to veteran bosses, a step per
+        /// few levels, and a step or two more for a pack that has eaten its way over battlefields
+        /// nobody cleared (<see cref="TierExp"/>).
+        /// </summary>
+        public override CombatTier Tier => Def == null ? CombatTier.Novice
+            : MonsterLevel.TierAt(MonsterBoss.SpeciesTier(Def.combatTier, IsBoss), Level, TierExp);
 
         // ---------------- Level and EXP (user decision 2026-09-22) ----------------
 
         public int Level { get; private set; } = 1;
         public int Exp { get; private set; }
+
+        /// <summary>
+        /// What it has learned eating the leavings of fights (user decision 2026-09-23). Kept apart
+        /// from <see cref="Exp"/>: this buys smarts, not strength, so the numbers a member reads off a
+        /// monster stay true to its level.
+        /// </summary>
+        public int TierExp { get; private set; }
+
+        /// <summary>Steps of tier this one has scavenged, for the guild's own reckoning and the UI.</summary>
+        public int ScavengedTierSteps => MonsterLevel.ScavengedTierSteps(TierExp);
+
+        void GainTierExp(int amount)
+        {
+            if (amount <= 0 || !IsAlive) return;
+            TierExp += amount;
+        }
         public int ExpToNext => MonsterLevel.ExpToNext(Level);
         /// <summary>What killing this one is worth.</summary>
         public int ExpWorth => Def == null ? 0 : MonsterLevel.ExpWorth(Def.expValue, Level) * (IsBoss ? MonsterBoss.ExpMultiplier : 1);
@@ -703,11 +725,18 @@ namespace GuildMaster.Monsters
         public bool WantsItem(ItemDefinition item)
             => Def != null && MonsterEquipment.Wants(Def.pickupMode, item, item == null ? null : Equipment.InSlot(item.equipSlot), Equipment.AbsorbedHp, AbsorbCap);
 
-        /// <summary>Takes the item: wear it (dropping what it replaces) or swallow it for HP.</summary>
+        /// <summary>
+        /// Takes the item: wears it, or eats it. Gear with a slot goes on (the crown on any picker,
+        /// the rest on the humanoids); the leavings of a fight are eaten by everyone, which teaches a
+        /// step of smarts (<see cref="TierExp"/>) and, for a slime, still feeds it (P4-21).
+        /// </summary>
         public void UseItem(ItemDefinition item)
         {
             if (item == null) return;
-            if (item.IsUnique || Def.pickupMode == MonsterPickupMode.Equip)
+            bool wearable = item.equipSlot != EquipSlot.None
+                            && (item.IsUnique || Def.pickupMode == MonsterPickupMode.Equip);
+            bool absorbed = false;
+            if (wearable)
             {
                 var old = Equipment.Equip(item);
                 if (old != null && Services.TryGet<Items.GroundItemService>(out var ground))
@@ -716,11 +745,16 @@ namespace GuildMaster.Monsters
             }
             else
             {
-                float gain = Equipment.Absorb(item, AbsorbCap);
-                RefreshStats();
-                Heal(gain);
+                if (Def.pickupMode == MonsterPickupMode.Absorb)
+                {
+                    float gain = Equipment.Absorb(item, AbsorbCap);
+                    RefreshStats();
+                    Heal(gain);
+                    absorbed = true;
+                }
+                GainTierExp(MonsterEquipment.TierExpFor(item));
             }
-            EventBus.Publish(new MonsterItemUsedEvent { Monster = this, Item = item, Absorbed = !item.IsUnique && Def.pickupMode == MonsterPickupMode.Absorb });
+            EventBus.Publish(new MonsterItemUsedEvent { Monster = this, Item = item, Absorbed = absorbed });
         }
 
         /// <summary>Holders of the crown lead the pack; pack mates near it hit 10% harder.</summary>

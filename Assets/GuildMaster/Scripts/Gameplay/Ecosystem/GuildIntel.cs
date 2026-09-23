@@ -30,6 +30,12 @@ namespace GuildMaster.Ecosystem
             public bool VisibleNow;
             /// <summary>Species the guild last saw living here (owners can change out of sight).</summary>
             public MonsterDefinition Species;
+            /// <summary>
+            /// Most steps of scavenged smarts seen on one of its residents (2026-09-23). A pack that
+            /// has eaten its way over battlefields fights above its level, and the only way the guild
+            /// can know is by having watched one of them do it.
+            /// </summary>
+            public int ScavengedSteps;
         }
 
         /// <summary>
@@ -126,6 +132,12 @@ namespace GuildMaster.Ecosystem
                 visible++;
                 _known.Add(m.Def);
                 RecordGear(m);
+                // Smarts beyond its level show in how it fights, so seeing one is knowing it.
+                if (m.Home != null && m.ScavengedTierSteps > 0)
+                {
+                    var hi = Get(m.Home);
+                    if (m.ScavengedTierSteps > hi.ScavengedSteps) hi.ScavengedSteps = m.ScavengedTierSteps;
+                }
                 if (m.IsBoss && _bossesSeen.Add(m)) EventBus.Publish(new BossSightedEvent { Boss = m });
             }
             VisibleMonsters = visible;

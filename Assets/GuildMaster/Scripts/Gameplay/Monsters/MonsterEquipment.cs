@@ -76,17 +76,28 @@ namespace GuildMaster.Monsters
         public static float AbsorbHp(ItemDefinition i) => i == null ? 0f : Units.Combat.ScaledHp(Mathf.Max(1f, i.baseValue * 0.5f));
 
         /// <summary>
+        /// Tier EXP from eating one of the leavings of a fight (user decision 2026-09-23): worth what
+        /// the material is worth, so bones and ore teach more than jelly. Worn gear teaches nothing —
+        /// it is carried, not picked over.
+        /// </summary>
+        public static int TierExpFor(ItemDefinition i)
+            => i == null || i.equipSlot != EquipSlot.None ? 0 : Mathf.Max(1, Mathf.RoundToInt(i.baseValue * 0.5f));
+
+        /// <summary>
         /// Would a monster with this pickup mode want the item, given what it wears in that slot and
-        /// how much it has absorbed? Unique items are worn by any picker (never swallowed); Equip
-        /// takes strict upgrades for its slot; Absorb swallows anything else until the cap.
+        /// how much it has absorbed? Unique items are worn by any picker (never swallowed); the
+        /// leavings of a fight — anything with no slot to wear it in — are eaten by every picker for
+        /// the tier EXP, cap or no cap; otherwise Equip takes strict upgrades for its slot and Absorb
+        /// swallows until the cap.
         /// </summary>
         public static bool Wants(MonsterPickupMode mode, ItemDefinition item, ItemDefinition wornInSlot, float absorbed, float absorbCap)
         {
             if (item == null || mode == MonsterPickupMode.None) return false;
             if (item.IsUnique) return item.equipSlot != EquipSlot.None && (wornInSlot == null || !wornInSlot.IsUnique);
+            if (item.equipSlot == EquipSlot.None) return true;
             return mode switch
             {
-                MonsterPickupMode.Equip => item.equipSlot != EquipSlot.None && Score(item) > Score(wornInSlot),
+                MonsterPickupMode.Equip => Score(item) > Score(wornInSlot),
                 MonsterPickupMode.Absorb => absorbed < absorbCap,
                 _ => false,
             };

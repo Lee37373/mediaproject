@@ -51,9 +51,26 @@ namespace GuildMaster.Monsters
         /// <summary>EXP a monster gets for killing a guild member of this level.</summary>
         public static int ExpForAdventurer(int adventurerLevel) => 8 + 4 * Mathf.Max(1, adventurerLevel);
 
+        /// <summary>Tier EXP — picked over battlefields — for one step of smarts beyond the level's own.</summary>
+        public const int TierExpPerStep = 40;
+        /// <summary>Scavenging teaches at most this much: it sharpens a pack, it does not remake it.</summary>
+        public const int MaxScavengedTierSteps = 2;
+
+        /// <summary>Steps of combat tier a monster has eaten its way to (user decision 2026-09-23).</summary>
+        public static int ScavengedTierSteps(int tierExp)
+            => Mathf.Clamp(tierExp / TierExpPerStep, 0, MaxScavengedTierSteps);
+
         /// <summary>The species' own smarts, one step up per <see cref="LevelsPerTier"/> levels.</summary>
-        public static CombatTier TierAt(CombatTier species, int level)
-            => (CombatTier)Mathf.Min((int)CombatTier.Heroic, (int)species + (level - 1) / LevelsPerTier);
+        public static CombatTier TierAt(CombatTier species, int level) => TierAt(species, level, 0);
+
+        /// <summary>
+        /// As <see cref="TierAt(CombatTier,int)"/>, plus what it learned picking over the leavings of
+        /// other fights. A pack left to scavenge an untouched battlefield fights smarter for it, which
+        /// is what the guild pays for by not clearing the ground.
+        /// </summary>
+        public static CombatTier TierAt(CombatTier species, int level, int tierExp)
+            => (CombatTier)Mathf.Min((int)CombatTier.Heroic,
+                                     (int)species + (level - 1) / LevelsPerTier + ScavengedTierSteps(tierExp));
 
         /// <summary>How dangerous a monster (or a site's young) of this level is (P4-58: the level, not the species).</summary>
         public static DangerLevel DangerAt(int level)

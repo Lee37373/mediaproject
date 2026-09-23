@@ -387,7 +387,11 @@ namespace GuildMaster.Quests
             var d = MonsterLevel.DangerAt(nest.BirthLevel);
             int seen = hasIntel ? intel.Get(nest).LastCount : 0;
             bool geared = hasIntel && GuildIntel.RaisesDanger(intel.GearAt(nest));
-            return Raise(d, (seen >= 5 ? 1 : 0) + (geared ? 1 : 0));
+            // Residents seen fighting above their level (scavenged smarts, 2026-09-23) read as one
+            // step more dangerous, the same way seen gear does — otherwise the board would promise a
+            // fight easier than the one the members will walk into.
+            bool sharpened = hasIntel && intel.Get(nest).ScavengedSteps >= MonsterLevel.MaxScavengedTierSteps;
+            return Raise(d, (seen >= 5 ? 1 : 0) + (geared ? 1 : 0) + (sharpened ? 1 : 0));
         }
 
 
