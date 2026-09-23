@@ -135,13 +135,16 @@ namespace GuildMaster.Ecosystem
                 if (!n.Discovered) continue;
                 var ni = Get(n);
                 ni.VisibleNow = _fog.IsVisibleRaw(n.Cell);
-                // New owners are only noticed when the nest is in view (or on discovery).
-                if (ni.Species == null || (ni.VisibleNow && ni.Species != n.Species))
+                // Who lives here is learned by seeing them, not by having walked past the den: the den
+                // has to be in view with a resident in view alongside it. A nest whose cell was explored
+                // but whose owners were never seen stays unknown, and so does one standing empty.
+                if (ni.VisibleNow && ni.Species != n.Species
+                    && n.Members.Any(m => m != null && m.IsAlive && _fog.IsVisibleRaw(m.Position)))
                 {
                     ni.Species = n.Species;
                     n.ShowAs(n.Species);
                 }
-                _known.Add(ni.Species);
+                if (ni.Species != null) _known.Add(ni.Species);
                 if (!ni.VisibleNow) continue;
                 ni.Observed = true;
                 ni.LastCount = n.Population;
@@ -249,7 +252,9 @@ namespace GuildMaster.Ecosystem
             {
                 var gear = GearAt(n);
                 if (!gear.Any) continue;
-                notes.Add((Weight(gear), NoteFor(NameOf(n), SpeciesOf(n), gear)));
+                var owners = SpeciesOf(n);
+                if (owners == null) continue; // nobody has seen who lives there, so there is nothing to say about them
+                notes.Add((Weight(gear), NoteFor(NameOf(n), owners, gear)));
             }
             foreach (var species in KnownSpecies)
             {
@@ -290,8 +295,12 @@ namespace GuildMaster.Ecosystem
             return ni;
         }
 
-        /// <summary>Species the guild believes lives in the nest (last seen; the real one right at discovery).</summary>
-        public MonsterDefinition SpeciesOf(Nest n) => n == null ? null : Get(n).Species ?? n.Species;
+        /// <summary>
+        /// Species the guild believes lives in the nest, by the last sighting of its residents — null
+        /// while nobody has seen who lives there. Never falls back to the real owners: a den the guild
+        /// has only walked past tells it nothing.
+        /// </summary>
+        public MonsterDefinition SpeciesOf(Nest n) => n == null ? null : Get(n).Species;
 
         /// <summary>Guild-facing nest name, e.g. "고블린 둥지 #04", by the last seen owners.</summary>
         public string NameOf(Nest n) => n == null ? "" : n.NameFor(SpeciesOf(n));

@@ -253,7 +253,13 @@ namespace GuildMaster.Tests
             Clock.SetSpeed(3);
             yield return WaitFor(() => nest.Members.Any(m => m.Equipment.Worn.Any(i => i.id == "gear_t2")), 20f);
             var wearer = nest.Members.FirstOrDefault(m => m.Equipment.Worn.Any(i => i.id == "gear_t2"));
-            Assert.That(wearer, Is.Not.Null, $"a resident of {nest.DisplayName} wears the dropped gear");
+            // When this fails it is never obvious why, so say what the residents were doing: a pack that
+            // has gone migrating or roaming (P4-58) is no longer standing by the den to notice the drop.
+            var left = Services.Get<GroundItemService>().Items.Count;
+            string residents = string.Join(" / ", nest.Members.Where(m => m.IsAlive).Select(m =>
+                $"{m.DebugState}{(m.DefaultStateOverride != null ? "(무리 이동)" : "")} {Vector2.Distance(m.Position, at):0.0}칸 {(m.CanSee(at) ? "봄" : "못봄")}"));
+            Assert.That(wearer, Is.Not.Null,
+                $"a resident of {nest.DisplayName} wears the dropped gear (바닥 아이템 {left}개, 거주자 {residents})");
             Assert.That(wearer.Stats.Attack, Is.GreaterThan(wearer.Def.attack), "gear raises attack");
 
             // P4-57 (user report: "monsters leave the loot of their fights"): far from home, right
@@ -1441,6 +1447,10 @@ namespace GuildMaster.Tests
                 // The master walks through the other den's territory with the monster on its heels,
                 // and on out the far side, as a player luring it would.
                 var through = (there.WorldPosition - home.WorldPosition).normalized;
+                // A player luring keeps the monster on their heels; at full speed the master outruns it,
+                // and then either the bait leaves it stranded outside the ring or the residents go for
+                // the bait instead of it. Half speed keeps the pair together through the territory.
+                master.Mover.SpeedMultiplier = 0.5f;
                 master.Mover.Stop();
                 master.transform.position = there.WorldPosition - through * (there.TerritoryRadius + 3f);
                 lured.Mover.Stop();
@@ -1484,7 +1494,11 @@ namespace GuildMaster.Tests
                     + $"closest {closest:0.0}, lured went {string.Join("/", states)}, residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => m.DebugState + ">" + m.CurrentTarget?.name + (m.IsBoss ? "(boss)" : "")))}, lured target {lured.CurrentTarget?.name} hit by {lured.LastAttacker?.name})");
                 Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight: " + homeNote);
             }
-            finally { DebugCommands.Invulnerable(false); }
+            finally
+            {
+                DebugCommands.Invulnerable(false);
+                master.Mover.SpeedMultiplier = 1f;
+            }
         }
 
         [UnityTest]

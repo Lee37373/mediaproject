@@ -45,6 +45,9 @@ namespace GuildMaster.Ecosystem
                 bool byIntel = knownNestsOnly && intel != null;
                 if (knownNestsOnly && !n.Discovered) continue;
                 var species = byIntel ? intel.SpeciesOf(n) : n.Species;
+                // A den whose owners the guild has never seen is no use for a lure: it cannot judge
+                // whose territory it would be walking the pursuer into.
+                if (species == null) continue;
                 bool empty = byIntel ? intel.Get(n) is { Observed: true, LastCount: 0 } : n.IsEmpty;
                 if (empty) continue;
                 // Residents attack every other pack, same species included. Monsters know the packs;

@@ -47,7 +47,8 @@ namespace GuildMaster.Ecosystem
         /// <summary>Real name (simulation/debug). Guild-facing text uses GuildIntel.NameOf (last seen species).</summary>
         public string DisplayName => NameFor(Species);
 
-        public string NameFor(MonsterDefinition species) => $"{(species ?? Species).displayName} 둥지 #{NestId.Substring(2)}";
+        /// <summary>Name for a given owner; a null species means the guild has not seen who lives here.</summary>
+        public string NameFor(MonsterDefinition species) => $"{(species != null ? species.displayName : "정체불명")} 둥지 #{NestId.Substring(2)}";
 
         /// <summary>Draws the nest as the given species' den (GuildIntel calls this when it sees the nest).</summary>
         public void ShowAs(MonsterDefinition species)

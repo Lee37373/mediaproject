@@ -344,6 +344,14 @@ namespace GuildMaster.UI
             // Owners can change out of sight: name, capacity and totals follow the last seen species.
             var species = intel.SpeciesOf(n);
             _title.text = intel.NameOf(n);
+            if (species == null)
+            {
+                // The den was found but nobody living in it has been seen yet.
+                _body.text =
+                    $"개체 수: {intel.DescribeNest(n)} · 지형 {n.Biome}\n" +
+                    Muted("아직 주인을 보지 못했습니다. 둥지에 사는 개체가 시야에 들어와야 어떤 종인지 알 수 있습니다.");
+                return;
+            }
             _body.text =
                 $"개체 수: {intel.DescribeNest(n)} · 최대 {species.nestCapacity} · 지형 {n.Biome}\n" +
                 $"이 종의 발견한 둥지 {intel.KnownNestCount(species)}곳 · 관측 합계 {intel.ObservedPopulation(species)}마리\n" +

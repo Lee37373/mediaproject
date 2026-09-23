@@ -62,6 +62,8 @@ namespace GuildMaster.UI
             bool fogOff = Services.TryGet<FogOfWar>(out var fog) && fog.Disabled;
             Line(sb, "F3", "안개 끄기(전체 보기)", fogOff ? "켬" : "끔", fogOff, "디버그");
             if (Application.isEditor) Line(sb, "F4", "유닛 기즈모·둥지 영역", UnitGizmos.ShowAll ? "켬" : "끔", UnitGizmos.ShowAll, "에디터");
+            bool tags = Services.TryGet<NameTagLayer>(out var nameTags) && nameTags.Enabled;
+            Line(sb, "F5", "이름표", tags ? "켬" : "끔", tags, null);
             if (dev)
             {
                 bool god = Unit.GuildInvulnerable;
@@ -73,7 +75,8 @@ namespace GuildMaster.UI
             var clock = Services.Get<GameClock>();
             Line(sb, "M", "미니맵", minimap ? "켬" : "끔", minimap, null);
             Line(sb, "Space · 1~3", "일시정지 · 속도", clock.SpeedIndex == 0 ? "정지" : $"x{GameClock.SpeedScales[clock.SpeedIndex]:0}", false, null);
-            sb.Append(UIBuilder.Colored("Q 의뢰 · R 길드원 · I 창고 · E 생태계 · T 행상인 · B 정산 · H 추모 · N 알림 · ESC 창 닫기", UITheme.TextMuted));
+            // Keep this in step with the AddWindow hotkeys in UIRoot.
+            sb.Append(UIBuilder.Colored("Q 의뢰 · R 길드원 · I 창고 · E 생태계 · T 행상인 · B 건설 · L 정산 · H 추모 · N 알림 · ESC 창 닫기", UITheme.TextMuted));
             return sb.ToString();
         }
 

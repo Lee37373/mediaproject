@@ -245,24 +245,29 @@ namespace GuildMaster.Quests
         /// </summary>
         void OnNestCleared(NestClearedEvent e)
         {
+            // What lived there is no longer a guess once it has been wiped out, so this goes by the
+            // real owners, not by GuildIntel: the quest is settled by what happened, not by hearsay.
             foreach (var q in _quests.ToList())
-                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && IsInArea(q, e.Nest)) Complete(q);
+                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && IsInArea(q, e.Nest, e.Nest?.Species)) Complete(q);
         }
 
-        /// <summary>The nest of the quest's species inside its hunting area, or null.</summary>
+        /// <summary>
+        /// The nest of the quest's species inside its hunting area, or null. Guild-facing (UI, prompts),
+        /// so it goes by what the guild has seen — a den whose owners nobody has seen does not count.
+        /// </summary>
         public static Nest NestInArea(Quest q)
         {
             if (q == null || q.Type != QuestType.Hunt || !Services.TryGet<GuildIntel>(out var intel)) return null;
             foreach (var n in intel.KnownNests)
-                if (IsInArea(q, n)) return n;
+                if (IsInArea(q, n, intel.SpeciesOf(n))) return n;
             return null;
         }
 
-        static bool IsInArea(Quest q, Nest n)
+        /// <summary>Inside the quest's circle and held by its species; the caller says whose owners to go by.</summary>
+        static bool IsInArea(Quest q, Nest n, MonsterDefinition owners)
         {
-            if (n == null || q.Species == null) return false;
-            var species = Services.TryGet<GuildIntel>(out var intel) ? intel.SpeciesOf(n) : n.Species;
-            return species == q.Species && Vector2.Distance(n.WorldPosition, q.Point) <= q.Radius;
+            if (n == null || q.Species == null || owners == null) return false;
+            return owners == q.Species && Vector2.Distance(n.WorldPosition, q.Point) <= q.Radius;
         }
 
         // ---------------- Escort (P3-4a) ----------------

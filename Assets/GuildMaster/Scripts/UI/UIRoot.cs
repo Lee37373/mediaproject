@@ -59,6 +59,7 @@ namespace GuildMaster.UI
             skillBars.Build(UIBuilder.Rect(WorldLayer, "SkillBars").Stretch());
             Services.Register(floating);
             Services.Register(bubbles);
+            Services.Register(nameTags); // KeyHelpView reads its on/off state
 
             // HUD + windows.
             var canvas = UIBuilder.CreateCanvas("UICanvas", 10);

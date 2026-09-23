@@ -14,7 +14,8 @@ namespace GuildMaster.UI
 {
     /// <summary>
     /// Name labels above adventurers, monsters and the guild master. Hidden in fog and when the
-    /// camera is zoomed far out. N toggles them.
+    /// camera is zoomed far out. F5 toggles them, alongside the other display toggles (F3, F4);
+    /// N belongs to the notification window, with the rest of the window keys.
     /// </summary>
     public class NameTagLayer : MonoBehaviour
     {
@@ -72,7 +73,7 @@ namespace GuildMaster.UI
         void Update()
         {
             var kb = Keyboard.current;
-            if (kb == null || !kb.nKey.wasPressedThisFrame) return;
+            if (kb == null || !kb.f5Key.wasPressedThisFrame) return;
             var es = EventSystem.current;
             if (es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null) return;
             _enabled = !_enabled;
