@@ -41,10 +41,11 @@ namespace GuildMaster.Items
 
         void OnDestroy() => EventBus.Unsubscribe<HourPassedEvent>(OnHour);
 
-        /// <summary>Drops each stack as one item, scattered around the point.</summary>
-        public void Drop(Vector2 at, IReadOnlyList<ItemStack> stacks)
+        /// <summary>Drops each stack as one item, scattered around the point. Returns the items put on the ground.</summary>
+        public List<GroundItem> Drop(Vector2 at, IReadOnlyList<ItemStack> stacks)
         {
-            if (stacks == null) return;
+            var dropped = new List<GroundItem>();
+            if (stacks == null) return dropped;
             var world = Services.TryGet<World.WorldService>(out var w) ? w : null;
             foreach (var s in stacks)
             {
@@ -56,9 +57,11 @@ namespace GuildMaster.Items
                 var g = _pool.Spawn<GroundItem>(PoolKey, p);
                 g.Init(item, s.count, _clock.TotalHours);
                 _items.Add(g);
+                dropped.Add(g);
                 EventBus.Publish(new GroundItemDroppedEvent { Item = g });
             }
             while (_items.Count > MaxItems) Remove(_items[0]);
+            return dropped;
         }
 
         /// <summary>Nearest item within radius passing the filter, or null.</summary>

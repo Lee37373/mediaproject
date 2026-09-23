@@ -177,6 +177,12 @@ namespace GuildMaster.Session
             Services.Register(new MemoryRecorder(clock, roster));
             // Multi-person quests: the first taker invites idle members (LLM, rule fallback).
             Services.Register(new PartyService(llm, board, roster));
+            // Quests nobody takes for 6 game hours can be talked into by the guild master (P4-24).
+            Services.Register(new Persuasion.PersuasionService(board, roster, clock));
+            // Notifications (F-1): the list behind the toasts and the HUD badge, fed by gameplay events.
+            var notifications = new Notifications.NotificationCenter(() => clock.TotalHours, () => $"{clock.Day}일 {clock.Hour:00}:{clock.Minute:00}");
+            Services.Register(notifications);
+            Services.Register(new Notifications.NotificationSources(notifications, clock, board));
             // Bands that go out hunting without a quest (P4-37); PartyTactics formats them like a party.
             var bands = AddSystem<HuntBandService>();
             bands.Init(clock, Balance.rosterCapacity);
@@ -201,10 +207,20 @@ namespace GuildMaster.Session
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)
             {
+                // Starting lineup covers a fixed set of roles instead of whatever the RNG happens to roll.
                 var founder = AdventurerGenerator.Generate(GameRandom.Shared);
                 founder.cls = AdventurerGenerator.StartingLineup[i % AdventurerGenerator.StartingLineup.Length];
                 roster.Recruit(founder, guildDoor + GameRandom.Shared.InsideUnitCircle());
             }
+            // Daily accounts (F-3): income, spending and events per game day. Created after the starting members
+            // joined, so they do not count as the first day's recruits.
+            Services.Register(new Reports.DailyLedger(treasury, clock.Day, clock.HourOfDay));
+            // Stress and its consequences (F-2): demands, walking away from quests, quitting; interview, leave, bonus.
+            Services.Register(new Welfare.GuildWelfare(clock, roster, treasury, board, notifications));
+            // What death leaves behind (F-6): the wall of the fallen, relics to fetch, last stands and the wounds after them.
+            Services.Register(new Legacy.GuildLegacy(clock, roster, treasury, notifications));
+            // Quest proposals (F-8): the LLM (or the rules) offers a few quests to choose from instead of the posting form.
+            Services.Register(new Proposals.QuestProposalService(board, intel, roster, treasury, clock, notifications));
             // --- Recruitment: visitors who can be talked into joining ---
             var visitors = AddSystem<Recruitment.VisitorService>();
             visitors.Init(clock, roster, world);

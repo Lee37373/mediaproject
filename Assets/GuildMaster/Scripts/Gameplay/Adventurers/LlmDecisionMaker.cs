@@ -35,7 +35,8 @@ namespace GuildMaster.Adventurers
                 return Fallback(a, available, "offline");
             // Nothing to take: rest/shop/wait is a rules question. Keeps the model free for quest
             // choices, invitations and small talk (it was mostly busy saying "no quests, I'll wait").
-            if (available.Count == 0)
+            // F-2: on leave or at the breaking point the answer is "no quest" whatever the model would say.
+            if (available.Count == 0 || Welfare.GuildWelfare.AnyQuestRefusal(a) != null)
             {
                 RuleDecisions++;
                 return RuleBasedDecisionMaker.Decide(a, available);
@@ -64,6 +65,9 @@ namespace GuildMaster.Adventurers
                 if (quest != null && !RecklessAllowed(DecisionPrompt.RiskLabel(a, quest), a.Traits?.DangerAversion ?? 0f,
                         a.Data.values, quest.Assignees.Count > 0))
                     return Fallback(a, available, "reckless", result);
+                // F-2: too stressed for a quest this dangerous.
+                if (quest != null && Welfare.GuildWelfare.QuestRefusal(a, quest.Danger) != null)
+                    return Fallback(a, available, "stress", result);
             }
 
             LlmDecisions++;

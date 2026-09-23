@@ -102,7 +102,7 @@ namespace GuildMaster.Economy
             int gold = Quote(item, count);
             if (!_treasury.TryRemoveStock(itemId, count)) return 0;
             _sold[itemId] = Sold(itemId) + count;
-            _treasury.AddGold(gold);
+            _treasury.AddGold(gold, GoldReason.Merchant);
             EventBus.Publish(new MerchantSaleEvent { ItemId = itemId, Count = count, Gold = gold });
             return gold;
         }

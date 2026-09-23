@@ -25,7 +25,7 @@ namespace GuildMaster.UI
         {
             var bg = UIBuilder.Panel(canvas, "KeyHelp", new Color(0.08f, 0.07f, 0.11f, 0.94f), raycast: false);
             _root = bg.rectTransform;
-            _root.Anchor(new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -58), new Vector2(560, 214));
+            _root.Anchor(new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -58), new Vector2(620, 236));
             _text = UIBuilder.Label(_root, "", 16, TextAnchor.UpperLeft);
             _text.rectTransform.Stretch(16, 16, 12, 12);
             _text.verticalOverflow = VerticalWrapMode.Overflow;
@@ -73,7 +73,7 @@ namespace GuildMaster.UI
             var clock = Services.Get<GameClock>();
             Line(sb, "M", "미니맵", minimap ? "켬" : "끔", minimap, null);
             Line(sb, "Space · 1~3", "일시정지 · 속도", clock.SpeedIndex == 0 ? "정지" : $"x{GameClock.SpeedScales[clock.SpeedIndex]:0}", false, null);
-            sb.Append(UIBuilder.Colored("Q 의뢰 · R 길드원 · I 창고 · E 생태계 · T 행상인 · ESC 창 닫기", UITheme.TextMuted));
+            sb.Append(UIBuilder.Colored("Q 의뢰 · R 길드원 · I 창고 · E 생태계 · T 행상인 · B 정산 · H 추모 · N 알림 · ESC 창 닫기", UITheme.TextMuted));
             return sb.ToString();
         }
 

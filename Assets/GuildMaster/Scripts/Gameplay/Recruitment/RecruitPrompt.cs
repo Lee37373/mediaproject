@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using GuildMaster.Adventurers;
+using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Core;
 using GuildMaster.Economy;
 using GuildMaster.LLM;
@@ -11,10 +12,14 @@ using GuildMaster.Town;
 
 namespace GuildMaster.Recruitment
 {
-    /// <summary>Prompt, response DTO and grammar for the recruitment dialogue (P3-3).</summary>
+    /// <summary>
+    /// Prompt, response DTO and grammar for the recruitment dialogue (P3-3). The visitor is described as
+    /// a person (see <see cref="NpcVoice"/>), earlier turns go in as real chat turns, and in chat the model writes its
+    /// line first and then gives a decision that agrees with it; a formal offer is answered decision first.
+    /// </summary>
     public static class RecruitPrompt
     {
-        public const int ReplyMaxChars = 200;
+        public const int ReplyMaxChars = 110;
         public const int MaxDelta = 15;
         /// <summary>Exchanges (player line + visitor line) kept in the prompt.</summary>
         public const int HistoryTurns = 6;
@@ -25,32 +30,35 @@ namespace GuildMaster.Recruitment
         public class ResponseDto
         {
             public string reply;
-            public int affinity_delta;
             public string decision;
+            public int affinity_delta;
         }
 
-        public static string BuildSystem(Adventurer v, int affinity)
+        /// <summary>
+        /// Stable for a whole talk (the visitor's current feelings travel with the newest message, see
+        /// <see cref="BuildAside"/>), so the model can reuse what it already read.
+        /// </summary>
+        public static string BuildSystem(Adventurer v)
         {
             var d = v.Data;
             var sb = new StringBuilder();
-            sb.Append($"너는 '{d.name}'이라는 {AdventurerData.ClassLabel(d.cls)} 모험가(레벨 {d.level})다. ");
-            sb.Append($"MBTI는 {d.mbti}, 가장 중요하게 여기는 가치는 '{d.values}'다.");
-            var hints = v.Traits != null ? v.Traits.PromptHints.ToList() : new List<string>();
-            if (hints.Count > 0) sb.Append(" 특징: ").Append(string.Join(" ", hints));
-            sb.Append("\n지금 이 마을 광장에 잠시 들렀고, 모험가 길드의 길드 마스터가 너를 길드에 영입하려고 말을 걸고 있다.\n");
-            sb.Append(GuildInfo()).Append('\n');
-            sb.Append($"현재 길드 마스터에 대한 호감도는 {affinity}/100이다.\n");
-            sb.Append("규칙:\n");
-            sb.Append("- 성격과 가치관대로, 대화 상대에게 하듯 자연스러운 한국어로 짧게 대답한다(reply).\n");
-            // The 4B model's two habits: echoing the question back at itself ("나는 내 의뢰금을
-            // 얼마나 원할까...") and forgetting it is the outsider (user report 2026-09-20).
-            sb.Append("- 길드 마스터가 바로 앞에서 한 말에 대답한다. 그 말을 그대로 따라 쓰거나 질문을 되묻지 않는다.\n");
-            sb.Append("- 질문을 받으면 네 생각·조건·사정을 직접 말한다. 혼잣말로 되뇌지 않는다.\n");
-            sb.Append("- 너는 아직 이 길드의 길드원이 아니라 영입 제안을 받는 쪽이다. 네가 길드 마스터인 것처럼 말하지 않는다.\n");
-            sb.Append($"- 길드 마스터의 말이 네 가치관이나 성격에 맞으면 affinity_delta를 올리고, 무례하거나 안 맞으면 내린다(-{MaxDelta}~{MaxDelta}).\n");
-            sb.Append("- 아직 결정하지 않았으면 decision은 undecided, 길드에 들어가고 싶으면 join, 확실히 싫으면 refuse다.\n");
-            sb.Append("- 길드 마스터가 정식으로 영입을 제안하면 호감도에 따라 join 또는 refuse로 분명히 답하고, reply도 그 결정과 일치해야 한다.\n");
-            sb.Append("- 앞에서 한 말을 그대로 반복하지 않는다.\n");
+            sb.Append($"너는 판타지 세계의 모험가 '{d.name}'이다. {AdventurerData.ClassLabel(d.cls)}이고 레벨은 {d.level}이다.\n");
+            sb.Append(NpcVoice.Sheet(v)).Append('\n');
+            sb.Append("지금 너는 마을 광장에 잠시 들렀는데, 모험가 길드의 길드 마스터가 다가와 길드에 들어오라며 말을 걸고 있다.\n");
+            sb.Append(GuildInfo()).Append("\n\n");
+            sb.Append("말하는 법:\n");
+            sb.Append("- 길드 마스터에게 존댓말(해요체)로, 실제 사람이 말하듯 한두 문장으로 짧게 답한다.\n");
+            sb.Append("- 먼저 상대가 방금 한 말에 반응한다. 인사에는 인사로, 질문에는 네 사정을 섞어 답하고, 궁금한 게 있으면 짧게 되묻는다.\n");
+            sb.Append("- 성격과 가치관은 이야기가 그쪽으로 흐를 때만 자연스럽게 드러난다. 모든 말에 넣지 않는다.\n");
+            sb.Append("- 이미 한 말은 되풀이하지 않는다. 숫자나 게임 용어(호감도 등)는 말하지 않는다.\n");
+            sb.Append("- 길드 마스터가 정식으로 영입을 제안하면, 네 속마음에 따라 들어가겠다(join) 또는 정중히 거절(refuse)로 분명히 답한다.\n\n");
+            sb.Append("대화 예시(다른 인물):\n");
+            sb.Append("길드 마스터: 여기서 뭐 하세요?\n");
+            sb.Append("세린: 다음에 어디로 갈지 고민 중이었어요. 그쪽은 무슨 일이세요?\n\n");
+            sb.Append("JSON 항목:\n");
+            sb.Append("- reply: 네가 하는 말. 대사만 쓴다(따옴표, 지문, 이름 없이).\n");
+            sb.Append("- decision: undecided(아직 정하지 않음) / join / refuse. reply에서 한 말과 같은 결론이어야 한다. refuse는 대화를 끝내는 거절이라, 정식 제안을 거절할 때나 상대가 무례해서 더는 말하고 싶지 않을 때만 쓴다. 평범한 대화 중에는 undecided다.\n");
+            sb.Append("- affinity_delta: 길드 마스터의 방금 말이 마음에 들면 +1~+10, 평범하면 0, 무례하거나 안 맞으면 -1~-10.\n");
             sb.Append("반드시 JSON 한 개로만 답한다.");
             return sb.ToString();
         }
@@ -59,10 +67,13 @@ namespace GuildMaster.Recruitment
         {
             var parts = new List<string>();
             if (Services.TryGet<GuildRoster>(out var roster))
-                parts.Add($"길드원 {roster.Members.Count}명" + (roster.Members.Count > 0
-                    ? $"({string.Join(", ", roster.Members.Select(m => $"{m.Data.name} {AdventurerData.ClassLabel(m.Data.cls)} Lv.{m.Data.level}"))})"
-                    : ""));
+            {
+                int n = roster.Members.Count;
+                parts.Add($"길드원 {n}명" + (n > 0 ? $"({string.Join(", ", roster.Members.Take(4).Select(m => m.Data.name))}{(n > 4 ? " 등" : "")})" : ""));
+            }
             if (Services.TryGet<GuildTreasury>(out var t)) parts.Add($"길드 자금 {t.Gold}G");
+            // Facility levels and recent guild news give the model something concrete to answer with
+            // instead of vague generalities.
             if (Services.TryGet<TownService>(out var town))
                 parts.Add("시설 " + string.Join(", ", town.Buildings.Select(b => $"{b.DisplayName} Lv.{b.Level}")));
             if (Services.TryGet<GameLog>(out var log))
@@ -70,60 +81,62 @@ namespace GuildMaster.Recruitment
                 var recent = log.Recent(3).ToList();
                 if (recent.Count > 0) parts.Add("최근 소식: " + string.Join(" / ", recent));
             }
-            return "길드 정보: " + string.Join(". ", parts) + ".";
+            return "길드 정보: " + string.Join(", ", parts) + ".";
         }
 
-        /// <summary>Transcript of the last exchanges ending with the new player line.</summary>
-        public static string BuildUser(IReadOnlyList<RecruitTurn> turns, string visitorName, bool proposal)
+        /// <summary>
+        /// The visitor's inner state, attached to the newest message: how much they like the guild master now
+        /// (in words) and, for a formal offer, that it has to be answered. Kept out of the system prompt so that
+        /// stays the same for the whole talk.
+        /// </summary>
+        public static string BuildAside(int affinity, bool proposal)
         {
-            var sb = new StringBuilder();
-            int start = Math.Max(0, turns.Count - HistoryTurns * 2);
-            for (int i = start; i < turns.Count; i++)
-                sb.Append(turns[i].FromPlayer ? "길드 마스터: " : $"{visitorName}: ").Append(turns[i].Text).Append('\n');
-            if (proposal) sb.Append("(길드 마스터가 정식으로 영입을 제안했다. join 또는 refuse로 답한다.)\n");
-            // Pointing at the line to answer: with the bare transcript the model often replied to an
-            // older turn, or repeated the question to itself (user report 2026-09-20).
-            for (int i = turns.Count - 1; i >= 0; i--)
-            {
-                if (!turns[i].FromPlayer) continue;
-                sb.Append($"({visitorName}이(가) 대답할 말은 바로 위 \"{turns[i].Text}\"이다.)\n");
-                break;
-            }
-            sb.Append($"{visitorName}의 대답:");
-            return sb.ToString();
+            var parts = new List<string>();
+            if (affinity >= 0) parts.Add("네 속마음: " + NpcVoice.RecruitMood(affinity) + " 방금 들은 말에 따라 조금 달라질 수 있다.");
+            if (proposal)
+                parts.Add("길드 마스터가 정식으로 영입을 제안했다. 들어가고 싶은 마음이면 join, 아직 아니면 정중히 refuse로 답하고 무엇이 아쉬운지 말한다.");
+            return parts.Count == 0 ? null : "(" + string.Join(" ", parts) + ")";
         }
 
         static readonly string[] ProposalDecisions = { "join", "refuse" };
 
-        /// <summary>Decision first so the reply is written to match it (the model otherwise
-        /// says "yes" in the reply but answers "undecided").</summary>
-        public static string Grammar { get; } = BuildGrammar(Decisions);
+        /// <summary>Chat: the line comes first (it answers what was said), then the decision that follows from it.</summary>
+        public static string Grammar { get; } = BuildGrammar(Decisions, decisionFirst: false);
 
-        /// <summary>A formal offer must be answered: only join or refuse.</summary>
-        public static string ProposalGrammar { get; } = BuildGrammar(ProposalDecisions);
+        /// <summary>
+        /// A formal offer must be answered (only join or refuse), and here the answer IS the decision: it comes
+        /// first and the line is written to match it (a line written first drifted into "let me think about
+        /// it" while the decision said join).
+        /// </summary>
+        public static string ProposalGrammar { get; } = BuildGrammar(ProposalDecisions, decisionFirst: true);
 
-        static string BuildGrammar(string[] decisions) => new GbnfObject()
-            .Enum("decision", decisions)
-            .Int("affinity_delta", 2)
-            .String("reply", ReplyGrammarChars)
-            .Build();
+        static string BuildGrammar(string[] decisions, bool decisionFirst)
+        {
+            var g = new GbnfObject();
+            if (decisionFirst) g.Enum("decision", decisions).String("reply", ReplyGrammarChars);
+            else g.String("reply", ReplyGrammarChars).Enum("decision", decisions);
+            return g.Int("affinity_delta", 2).Build();
+        }
 
         /// <summary>Safety cap; a reply cut by it is trimmed to its last full sentence.</summary>
-        public const int ReplyGrammarChars = 200;
+        public const int ReplyGrammarChars = 130;
 
-        public static LlmRequest BuildRequest(Adventurer v, int affinity, IReadOnlyList<RecruitTurn> turns, bool proposal) => new()
+        public static LlmRequest BuildRequest(Adventurer v, int affinity, IReadOnlyList<RecruitTurn> turns, bool proposal)
         {
-            System = BuildSystem(v, affinity),
-            User = BuildUser(turns, v.Data.name, proposal),
-            Grammar = proposal ? ProposalGrammar : Grammar,
-            MaxTokens = 400,
-            // Lowered from 0.8 (2026-09-20): at 0.8 the 4B model drifted off the player's line.
-            Temperature = 0.65f,
-            Priority = LlmPriority.Dialogue,
-            DedupeKey = "recruit:" + v.Data.id,
-            TimeoutSeconds = 40f,
-            Tag = "recruit:" + v.Data.id,
-        };
+            var req = new LlmRequest
+            {
+                System = BuildSystem(v),
+                Grammar = proposal ? ProposalGrammar : Grammar,
+                MaxTokens = 240,
+                Temperature = 0.7f,
+                Priority = LlmPriority.Dialogue,
+                DedupeKey = "recruit:" + v.Data.id,
+                TimeoutSeconds = 25f,
+                Tag = "recruit:" + v.Data.id,
+            };
+            NpcVoice.SetChat(req, turns.Select(t => (t.FromPlayer, t.Text)), HistoryTurns * 2, BuildAside(affinity, proposal));
+            return req;
+        }
 
         public static RecruitDecision ParseDecision(string s) => s switch
         {

@@ -47,6 +47,7 @@ namespace GuildMaster.UI
             var buttons = UIBuilder.Row(left, 34);
             UIBuilder.Button(buttons, "추적", FocusCamera, 90, 32, null, 15);
             UIBuilder.Button(buttons, "대화 기록 전체", OpenDialogueLog, 140, 32, null, 15);
+            UIBuilder.Button(buttons, "관리", OpenCare, 90, 32, null, 15);
 
             // ---- Right: traits, skills, mind, social ----
             var right = UIBuilder.Panel(body, "Right", UITheme.PanelBgLight).rectTransform.Size(-1, -1, 1);
@@ -219,6 +220,11 @@ namespace GuildMaster.UI
         {
             if (_who == null || !_who.IsAlive || !Services.TryGet<CameraController>(out var cam)) return;
             cam.Focus(_who.transform);
+        }
+
+        void OpenCare()
+        {
+            if (_who != null && !_who.IsVisitor && Services.TryGet<MemberCareView>(out var view)) view.Show(_who);
         }
 
         void OpenDialogueLog()

@@ -60,6 +60,16 @@ namespace GuildMaster.Adventurers
             if (GearShopping.CanBuy(a))
                 return new AdventurerDecision { Action = AdventurerAction.Shop, Reason = "더 좋은 장비를 살 수 있다", Say = "모은 돈으로 장비를 바꿔야겠어." };
 
+            // F-2: on leave or at the breaking point nobody takes a quest, however good it looks.
+            string tired = Welfare.GuildWelfare.AnyQuestRefusal(a);
+            if (tired != null && available.Count > 0)
+                return new AdventurerDecision
+                {
+                    Action = AdventurerAction.Idle,
+                    Reason = tired,
+                    Say = Welfare.StressRules.LevelOf(d.stress) == Welfare.StressLevel.Breaking ? "지금은... 아무것도 하고 싶지 않아." : null,
+                };
+
             Quest best = null;
             float bestScore = 0f;
             foreach (var q in available)
@@ -101,6 +111,8 @@ namespace GuildMaster.Adventurers
         public static float Score(Adventurer a, Quest q)
         {
             var d = a.Data;
+            // F-2: stress (and leave) decide whether a quest is considered at all; a tense member is less keen.
+            if (Welfare.GuildWelfare.QuestRefusal(a, q.Danger) != null) return 0f;
             int partySize = q.Assignees.Count + 1;
             // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused.
             float margin = QuestRisk.Margin(AdventurerStats.Power(d), partySize, q.Danger);
@@ -115,7 +127,7 @@ namespace GuildMaster.Adventurers
             if (a.Traits != null) value = a.Traits.AdjustQuestValue(q, value);
 
             float distance = Vector2.Distance(a.Position, q.Point);
-            return value / (1f + (int)q.Danger * 0.5f) / (1f + distance / 80f) * Mathf.Min(margin, 2f);
+            return value / (1f + (int)q.Danger * 0.5f) / (1f + distance / 80f) * Mathf.Min(margin, 2f) * Welfare.StressRules.QuestScoreFactor(d.stress);
         }
     }
 }

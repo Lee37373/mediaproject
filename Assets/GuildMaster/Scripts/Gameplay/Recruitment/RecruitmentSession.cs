@@ -36,6 +36,11 @@ namespace GuildMaster.Recruitment
         public int Affinity { get; private set; }
         public int PlayerTurns { get; private set; }
         public bool Busy { get; private set; }
+        float _busyStart;
+        /// <summary>How long the visitor has been "thinking" (0 when idle).</summary>
+        public float BusySeconds => Busy ? Time.realtimeSinceStartup - _busyStart : 0f;
+        /// <summary>Why the last reply was rule-based instead of LLM (null when it came from the LLM).</summary>
+        public string LastFallbackReason { get; private set; }
         public RecruitOutcome Outcome { get; private set; } = RecruitOutcome.Ongoing;
         public bool LastReplyFromLlm { get; private set; }
         public IReadOnlyList<RecruitTurn> Turns => _turns;
@@ -79,6 +84,7 @@ namespace GuildMaster.Recruitment
             if (Busy || Outcome != RecruitOutcome.Ongoing || Visitor == null) return;
             playerText = string.IsNullOrWhiteSpace(playerText) ? (proposal ? "우리 길드에 들어오지 않겠나?" : "...") : playerText.Trim();
             Busy = true;
+            _busyStart = Time.realtimeSinceStartup;
             AddTurn(true, playerText);
             PlayerTurns++;
             SaveState();
@@ -90,16 +96,28 @@ namespace GuildMaster.Recruitment
             Affinity = Mathf.Clamp(Affinity + Mathf.Clamp(reply.AffinityDelta, -RecruitPrompt.MaxDelta, RecruitPrompt.MaxDelta), 0, 100);
             AddTurn(false, reply.Text);
             SaveState();
-            Visitor.Say(reply.Text);
+            Visitor.Say(reply.Text, toFeed: false);   // the recruit window shows the transcript
             Busy = false;
             Finish(Judge(Affinity, reply.Decision, PlayerTurns));
+            Changed?.Invoke();
+        }
+
+        /// <summary>The visitor's opening line: shown in the transcript, but not saved in the conversation history.</summary>
+        public void AddGreeting(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            _turns.Add(new RecruitTurn { FromPlayer = false, Text = text });
             Changed?.Invoke();
         }
 
         async Task<RuleBasedRecruiter.Reply> GetReplyAsync(string playerText, bool proposal)
         {
             LastReplyFromLlm = false;
-            if (Services.TryGet<LlmGateway>(out var gw) && gw.Enabled && gw.IsReady)
+            LastFallbackReason = null;
+            if (!Services.TryGet<LlmGateway>(out var gw)) LastFallbackReason = "LLM 없음";
+            else if (!gw.Enabled) LastFallbackReason = "LLM 꺼짐";
+            else if (!gw.IsReady) LastFallbackReason = "모델 준비 중";
+            else
             {
                 var result = await gw.RequestAsync(RecruitPrompt.BuildRequest(Visitor, Affinity, _turns, proposal));
                 if (result.Ok && LlmJson.TryParse<RecruitPrompt.ResponseDto>(result.Text, out var dto) && !string.IsNullOrWhiteSpace(dto.reply))
@@ -113,10 +131,22 @@ namespace GuildMaster.Recruitment
                         Decision = RecruitPrompt.ParseDecision(dto.decision),
                     };
                 }
+                LastFallbackReason = !result.Ok ? FailureLabel(result.Error) : "응답 형식 오류";
                 if (result.Exchange != null) result.Exchange.Note = "규칙 기반으로 대체: " + (result.Ok ? "parse" : result.Error);
             }
-            return RuleBasedRecruiter.Respond(playerText, Visitor.Data.values, Affinity, proposal, GameRandom.Shared);
+            return RuleBasedRecruiter.Respond(playerText, Visitor.Data.values, Affinity, proposal, GameRandom.Shared,
+                AdventurerData.ClassLabel(Visitor.Data.cls));
         }
+
+        static string FailureLabel(string error) => error switch
+        {
+            "timeout" => "시간 초과",
+            "busy" => "AI가 다른 작업 중",
+            "queue full" => "대기열 가득",
+            "offline" => "AI 꺼짐",
+            "empty" => "빈 응답",
+            _ => error,
+        };
 
         void AddTurn(bool fromPlayer, string text)
         {

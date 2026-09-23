@@ -42,7 +42,7 @@ namespace GuildMaster.UI
         /// <summary>NPC lines (speech bubbles) also go to the feed, like a chat window.</summary>
         void OnSpeech(AdventurerSpeechEvent e)
         {
-            if (e.Adventurer == null || string.IsNullOrWhiteSpace(e.Text)) return;
+            if (e.Adventurer == null || string.IsNullOrWhiteSpace(e.Text) || e.NoFeed) return;
             string time = Services.TryGet<GameClock>(out var clock) ? $"{clock.Day}일 {clock.Hour:00}:{clock.Minute:00}" : "";
             Enqueue($"<color=#{UITheme.Hex(UITheme.TextMuted)}>[{time}]</color> " +
                     $"<color=#{UITheme.Hex(UITheme.Accent)}>{e.Adventurer.Data.name}</color>: " +

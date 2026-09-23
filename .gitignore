@@ -89,6 +89,10 @@ InitTestScene*.unity*
 # Package Manager > My Assets; Resources/ArtCatalog (tracked) references them by GUID.
 /Assets/Layer Lab/
 /Assets/Layer Lab.meta
+# Same packages copied to another folder on a teammate's machine (dev/KMS, 2026-09-23):
+# same GUIDs as Assets/Layer Lab, so keeping both would collide.
+/Assets/Arts/
+/Assets/Arts.meta
 
 # Design / plan / progress notes stay local (user request 2026-09-19)
 /Assets/GuildMaster/Docs/

@@ -43,6 +43,10 @@ namespace GuildMaster.Adventurers
         public List<ItemStack> loot = new();
         public int kills;
         public int questsCompleted;
+        /// <summary>F-6: game hour until which the member is badly wounded and takes no quest (0 = not wounded).</summary>
+        public float woundedUntilHour;
+        /// <summary>F-6: game hour of the last lethal blow survived (the cooldown before the next one counts from here).</summary>
+        public float lastStandHour = -999f;
         public Color hairColor;
         public Color skinColor;
 

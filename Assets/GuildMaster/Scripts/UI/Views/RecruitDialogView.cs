@@ -161,7 +161,9 @@ namespace GuildMaster.UI
             _shownTurns = -1;
             _input.text = "";
             Open();
-            visitor.Say(_session.Resumed ? "아까 하던 이야기 마저 할까요?" : "무슨 일이시죠?");
+            string greeting = _session.Resumed ? "아까 하던 이야기 마저 할까요?" : "무슨 일이시죠?";
+            _session.AddGreeting(greeting);          // shown in this window...
+            visitor.Say(greeting, toFeed: false);    // ...and as a speech bubble, but not in the bottom-left feed
             _input.ActivateInputField();
         }
 
@@ -207,7 +209,8 @@ namespace GuildMaster.UI
             {
                 RecruitOutcome.Joined => UIBuilder.Colored("영입 성공! 길드에 합류했습니다.", UITheme.Good),
                 RecruitOutcome.Left => UIBuilder.Colored("영입 실패. 방문자가 떠납니다.", UITheme.Bad),
-                _ => _session.Busy ? "생각 중…" : (_session.PlayerTurns == 0 ? "먼저 말을 걸어 보세요." : (_session.LastReplyFromLlm ? "" : "(규칙 기반 응답)")),
+                _ => _session.Busy ? $"생각 중… ({_session.BusySeconds:0}초)" : (_session.PlayerTurns == 0 ? "먼저 말을 걸어 보세요." : (_session.LastReplyFromLlm ? ""
+                    : "(규칙 기반 응답" + (string.IsNullOrEmpty(_session.LastFallbackReason) ? "" : ": " + _session.LastFallbackReason) + ")")),
             };
             _send.interactable = ongoing && !_session.Busy;
             _propose.interactable = ongoing && !_session.Busy && _session.PlayerTurns > 0;

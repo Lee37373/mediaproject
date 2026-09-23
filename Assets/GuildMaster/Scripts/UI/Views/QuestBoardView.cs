@@ -5,6 +5,7 @@ using GuildMaster.Core;
 using GuildMaster.Data;
 using GuildMaster.Ecosystem;
 using GuildMaster.Economy;
+using GuildMaster.Persuasion;
 using GuildMaster.Player;
 using GuildMaster.Quests;
 using UnityEngine;
@@ -46,7 +47,10 @@ namespace GuildMaster.UI
             // ---- Left: active quests ----
             var left = UIBuilder.Rect(body, "List").Size(-1, -1, 1);
             UIBuilder.VLayout(left, 6, 0).childControlHeight = true;
-            UIBuilder.Label(left, "진행 중인 의뢰", 17, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 26);
+            var listHeader = UIBuilder.Row(left, 30, 8);
+            UIBuilder.Label(listHeader, "진행 중인 의뢰", 17, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 26, 1);
+            UIBuilder.Button(listHeader, "의뢰 제안 받기", OpenProposals, 150, 28, new Color(0.25f, 0.45f, 0.3f), 14)
+                .Tooltip(() => "길드가 아는 정보로 의뢰 후보를 몇 개 제안받고, 마음에 드는 것을 골라 등록합니다.");
             _listContent = UIBuilder.ScrollList(left, out var scroll);
             scroll.GetComponent<RectTransform>().Size(-1, -1, -1, 1);
             _emptyLabel = UIBuilder.Label(_listContent, "등록된 의뢰가 없습니다. 오른쪽에서 새 의뢰를 등록하세요.", 15, TextAnchor.MiddleCenter, UITheme.TextMuted).Size(-1, 40);
@@ -92,6 +96,13 @@ namespace GuildMaster.UI
             _danger.verticalOverflow = VerticalWrapMode.Overflow;
             UIBuilder.Button(form, "의뢰 등록 (보상 예치)", Submit, -1, 38, new Color(0.25f, 0.45f, 0.3f), 17);
             _message = UIBuilder.Label(form, "", 14, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 40);
+        }
+
+        void OpenProposals()
+        {
+            if (!Services.TryGet<QuestProposalView>(out var view)) return;
+            if (!view.Visible) view.Open();
+            else view.BringToFront();
         }
 
         static RectTransform FieldRow(Transform parent, string label)
@@ -285,6 +296,7 @@ namespace GuildMaster.UI
             Text _title;
             Text _detail;
             Button _cancel;
+            Button _persuade;
             Quest _quest;
 
             public static QuestRow Create(Transform parent)
@@ -299,6 +311,8 @@ namespace GuildMaster.UI
                 UIBuilder.VLayout(texts, 2, 0);
                 row._title = UIBuilder.Label(texts, "", 16).Size(-1, 24);
                 row._detail = UIBuilder.Label(texts, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 22);
+                row._persuade = UIBuilder.Button(bg.transform, "협상", row.OnPersuade, 120, 30, UITheme.Header, 14);
+                row._persuade.Tooltip(() => $"의뢰가 {PersuasionRules.OpenAfterHours:0}시간 동안 아무도 맡지 않으면, 길드원을 직접 찾아가 설득하거나 보상을 더 얹는 협상을 할 수 있습니다.");
                 row._cancel = UIBuilder.Button(bg.transform, "취소", row.OnCancel, 60, 30, UITheme.ButtonDanger, 14);
                 return row;
             }
@@ -307,9 +321,17 @@ namespace GuildMaster.UI
             {
                 _quest = q;
                 _bg.color = index % 2 == 0 ? UITheme.RowBg : UITheme.RowBgAlt;
+                // P4-24: an untaken quest can be persuaded onto someone once it has waited long enough.
+                Services.TryGet<PersuasionService>(out var persuasion);
+                bool canPersuade = persuasion != null && persuasion.IsOpen(q);
+                bool waiting = q.Status == QuestStatus.Open && q.Assignees.Count == 0;
+                _persuade.gameObject.SetActive(waiting);
+                _persuade.interactable = canPersuade;
+                if (waiting)
+                    _persuade.SetLabel(canPersuade ? "협상" : $"협상 {Mathf.CeilToInt(persuasion != null ? persuasion.HoursUntilOpen(q) : PersuasionRules.OpenAfterHours)}시간 후");
                 string status = q.Status switch
                 {
-                    QuestStatus.Open => UIBuilder.Colored("모집 중", UITheme.Accent),
+                    QuestStatus.Open => UIBuilder.Colored("모집 중", UITheme.Accent) + (canPersuade ? " " + UIBuilder.Colored("협상 가능", UITheme.Warn) : ""),
                     QuestStatus.InProgress => UIBuilder.Colored("진행 중", UITheme.Exp),
                     QuestStatus.Completed => UIBuilder.Colored("보고 대기", UITheme.Good),
                     _ => q.Status.ToString(),
@@ -318,6 +340,11 @@ namespace GuildMaster.UI
                 string members = q.Assignees.Count == 0 ? "없음" : string.Join(", ", q.Assignees.Select(a => a.TakerName));
                 _detail.text = $"진행 {q.ProgressText} · 보상 {q.RewardGold}G / {q.RewardExp}EXP · 인원 {q.Assignees.Count}/{q.MaxParty} ({members})";
                 _cancel.interactable = q.IsActive;
+            }
+
+            void OnPersuade()
+            {
+                if (_quest != null && Services.TryGet<PersuadeDialogView>(out var dialog)) dialog.Begin(_quest);
             }
 
             void OnCancel()

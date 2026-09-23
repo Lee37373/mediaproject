@@ -47,7 +47,9 @@ namespace GuildMaster.Quests
         public float Radius { get; }
         public int RequiredCount { get; }
         public int Progress { get; internal set; }
-        public int RewardGold { get; }
+        public int RewardGold { get; private set; }
+        /// <summary>Gold added to the posted reward through negotiation (P4-25); already part of <see cref="RewardGold"/>.</summary>
+        public int BonusGold { get; private set; }
         public int RewardExp { get; }
         public int MaxParty { get; }
         public QuestStatus Status { get; internal set; }
@@ -70,6 +72,15 @@ namespace GuildMaster.Quests
         {
             PayGold = Mathf.Clamp(gold, 0, RewardGold);
             PayExp = Mathf.Clamp(exp, 0, RewardExp);
+        }
+
+        /// <summary>Raises the escrowed gold reward. The board takes the gold from the treasury first (<see cref="QuestBoard.TryRaiseReward"/>).</summary>
+        internal void RaiseReward(int gold)
+        {
+            if (gold <= 0) return;
+            RewardGold += gold;
+            BonusGold += gold;
+            PayGold += gold;
         }
 
         public IReadOnlyList<IQuestTaker> Assignees => _assignees;

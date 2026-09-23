@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,10 +7,25 @@ namespace GuildMaster.LLM
     /// <summary>Lower value = served first.</summary>
     public enum LlmPriority { Dialogue = 0, Party = 1, Decision = 2, Banter = 3 }
 
+    /// <summary>One chat turn: what the user (FromUser) or the model (assistant) said.</summary>
+    public struct LlmMessage
+    {
+        public bool FromUser;
+        public string Text;
+
+        public LlmMessage(bool fromUser, string text) { FromUser = fromUser; Text = text; }
+    }
+
     public class LlmRequest
     {
         public string System;
+        /// <summary>The newest user message (the one being answered).</summary>
         public string User;
+        /// <summary>
+        /// Earlier turns of a conversation, oldest first, alternating user/assistant and starting with a
+        /// user turn (null/empty = single-shot request). Backends pass them as real chat turns.
+        /// </summary>
+        public List<LlmMessage> Messages;
         /// <summary>GBNF grammar constraining the output (usually a JSON object).</summary>
         public string Grammar;
         public int MaxTokens = 160;

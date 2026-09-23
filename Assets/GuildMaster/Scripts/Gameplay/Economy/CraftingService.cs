@@ -83,7 +83,7 @@ namespace GuildMaster.Economy
         {
             error = CannotCraftReason(r);
             if (error != null) return false;
-            if (r.goldCost > 0 && !_treasury.TrySpendGold(r.goldCost)) { error = "골드가 부족합니다."; return false; }
+            if (r.goldCost > 0 && !_treasury.TrySpendGold(r.goldCost, GoldReason.Craft)) { error = "골드가 부족합니다."; return false; }
             foreach (var c in r.inputs) _treasury.TryRemoveStock(c.itemId, c.count);
             if (!_queues.TryGetValue(r.station, out var q)) _queues[r.station] = q = new List<Job>();
             q.Add(new Job { Recipe = r });

@@ -18,6 +18,7 @@ namespace GuildMaster.Quests
     public struct QuestCompletedEvent { public Quest Quest; }
     public struct QuestRewardPaidEvent { public Quest Quest; public IQuestTaker Taker; public int Gold; public int Exp; }
     public struct QuestClosedEvent { public Quest Quest; public QuestStatus Status; }
+    public struct QuestRewardRaisedEvent { public Quest Quest; public int Gold; }
 
     /// <summary>
     /// The quest board: posts quests with escrowed rewards, lets adventurers accept/abandon them,
@@ -133,6 +134,18 @@ namespace GuildMaster.Quests
                     break;
             }
             return d;
+        }
+
+        /// <summary>
+        /// Adds gold to an active quest's reward (negotiation, P4-25): the gold leaves the treasury now and
+        /// is escrowed with the rest of the reward, so it is refunded if the quest is cancelled.
+        /// </summary>
+        public bool TryRaiseReward(Quest q, int gold)
+        {
+            if (q == null || !q.IsActive || gold <= 0 || !_treasury.TrySpendGold(gold)) return false;
+            q.RaiseReward(gold);
+            EventBus.Publish(new QuestRewardRaisedEvent { Quest = q, Gold = gold });
+            return true;
         }
 
         /// <summary>
