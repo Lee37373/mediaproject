@@ -12,7 +12,12 @@ namespace GuildMaster.Core
     /// </summary>
     public class GameClock : MonoBehaviour
     {
-        public static readonly float[] SpeedScales = { 0f, 1f, 2f, 4f };
+        /// <summary>
+        /// Pause, then the speeds the player can pick with 1..4 and the HUD buttons. Everything else
+        /// reads this array — the HUD labels its buttons from it and the key help counts it — so a new
+        /// speed is added here and nowhere else.
+        /// </summary>
+        public static readonly float[] SpeedScales = { 0f, 1f, 2f, 4f, 8f };
 
         [SerializeField] float realSecondsPerGameHour = 10f;
         [SerializeField] int startHour = 8;

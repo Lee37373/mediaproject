@@ -160,6 +160,24 @@ namespace GuildMaster.Tests
             Clock.SetSpeed(3);
             yield return WaitFor(() => Clock.TotalHours >= start + 4f, 30f);
             Assert.That(Clock.TotalHours, Is.GreaterThanOrEqualTo(start + 4f), "the game kept running");
+
+            // The top speed (user request 2026-09-23) moves everyone several times further per frame, so
+            // check the movement that is stepped by hand still lands on ground it may stand on: nobody
+            // walks through a wall, into the water or off the map. Console errors fail the test anyway.
+            int top = GameClock.SpeedScales.Length - 1;
+            Assert.That(GameClock.SpeedScales[top], Is.EqualTo(8f), "the top speed is x8");
+            Clock.SetSpeed(top);
+            start = Clock.TotalHours;
+            yield return WaitFor(() => Clock.TotalHours >= start + 4f, 30f);
+            Assert.That(Clock.TotalHours, Is.GreaterThanOrEqualTo(start + 4f), "the game kept running at x8");
+
+            var grid = Services.Get<World.WorldService>().Grid;
+            var stuck = UnitRegistry.All
+                .Where(u => u.IsAlive && !grid.IsWalkable(World.GridMap.WorldToCell(u.Position)))
+                .Select(u => $"{u.DisplayName} at {u.Position}")
+                .ToList();
+            Assert.That(stuck, Is.Empty, "at x8 nobody ends up somewhere it cannot walk: " + string.Join(", ", stuck));
+            Clock.SetSpeed(1);
         }
 
         [UnityTest]
@@ -1447,6 +1465,9 @@ namespace GuildMaster.Tests
                 // The master walks through the other den's territory with the monster on its heels,
                 // and on out the far side, as a player luring it would.
                 var through = (there.WorldPosition - home.WorldPosition).normalized;
+                // The bait walks at half pace, as a player luring would: at full speed the master outruns
+                // the monster, and the pair comes apart before the den ever notices the intruder.
+                master.Mover.SpeedMultiplier = 0.5f;
                 master.Mover.Stop();
                 master.transform.position = there.WorldPosition - through * (there.TerritoryRadius + 3f);
                 lured.Mover.Stop();
@@ -1458,10 +1479,11 @@ namespace GuildMaster.Tests
                 string homeNote = null;
                 float closest = float.MaxValue;
                 var states = new System.Collections.Generic.HashSet<string>();
-                // 25s, not longer, and the bait walks at its own pace: slow it down or watch for longer and
-                // the lured one does turn for home while the residents are still on it, which is the P4-46
-                // leash rule failing rather than anything this test sets up. Chased down separately.
-                float until = Time.time + 25f;
+                // 35s with the bait at half pace: at 25s behind a bait at full speed this used to end
+                // before the leash could go wrong. It went wrong the moment either was relaxed - the
+                // lured one walked home while three residents were hitting it, because MonsterLeash
+                // only counted a brawl it had a target in. Held here so that cannot come back.
+                float until = Time.time + 35f;
                 while (Time.time < until && lured.IsAlive && there.Members.Any(m => m.IsAlive))
                 {
                     // The lure has done its job once the bait is past the den with the monster at its
@@ -1492,7 +1514,11 @@ namespace GuildMaster.Tests
                     + $"closest {closest:0.0}, lured went {string.Join("/", states)}, residents {string.Join("/", there.Members.Where(m => m.IsAlive).Select(m => m.DebugState + ">" + m.CurrentTarget?.name + (m.IsBoss ? "(boss)" : "")))}, lured target {lured.CurrentTarget?.name} hit by {lured.LastAttacker?.name})");
                 Assert.That(walkedHome, Is.False, "it fought on instead of turning for home mid-fight: " + homeNote);
             }
-            finally { DebugCommands.Invulnerable(false); }
+            finally
+            {
+                DebugCommands.Invulnerable(false);
+                master.Mover.SpeedMultiplier = 1f;
+            }
         }
 
         [UnityTest]

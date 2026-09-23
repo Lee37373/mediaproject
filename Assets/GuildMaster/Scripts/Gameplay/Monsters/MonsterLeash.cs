@@ -24,8 +24,10 @@ namespace GuildMaster.Monsters
         /// <item>Within the leash — the species' radius, twice that while chasing a live target (so a
         /// pursuer can be lured into another pack's territory) — it fights on.</item>
         /// <item>Beyond it, it fights on while something hit it in the last <see cref="UnderAttackSeconds"/>,
-        /// or while it trades blows with another monster (<see cref="MonsterFightGrace"/>, P4-46:
-        /// a lured monster is far from home by definition and used to walk off mid-brawl).
+        /// or while a brawl with another monster is live (<see cref="MonsterFightGrace"/>, P4-46:
+        /// a lured monster is far from home by definition and used to walk off mid-brawl). The brawl
+        /// counts from either side - blows we landed on our target, or blows another monster landed on
+        /// us - so losing our own target mid-fight does not send us home while a pack is still on us.
         /// Fights with the guild keep the plain rule, so a retreating member is not hunted down.</item>
         /// </list>
         /// </summary>
@@ -43,8 +45,13 @@ namespace GuildMaster.Monsters
             var target = m.Engage.Target;
             var attacker = m.LastAttacker;
             bool underAttack = attacker != null && attacker.IsAlive && m.WasRecentlyAttackedBy(attacker, UnderAttackSeconds);
-            bool monsterFightLive = target is Monster foe && foe.IsAlive
-                                    && (foe.WasRecentlyAttackedBy(m, MonsterFightGrace) || m.WasRecentlyAttackedBy(foe, MonsterFightGrace));
+            // Either side of the brawl keeps it live. Going by our own target alone let a monster that
+            // had just lost its target - a lured one whose bait slipped away - walk home while another
+            // pack was still landing blows on it, which is exactly what P4-46 set out to stop.
+            bool monsterFightLive =
+                (target is Monster foe && foe.IsAlive
+                 && (foe.WasRecentlyAttackedBy(m, MonsterFightGrace) || m.WasRecentlyAttackedBy(foe, MonsterFightGrace)))
+                || (attacker is Monster hitter && hitter.IsAlive && m.WasRecentlyAttackedBy(hitter, MonsterFightGrace));
             return ShouldReturn(Vector2.Distance(m.Position, m.HomePosition), m.Def.leashRadius,
                                 m.DefaultStateOverride != null, target != null && target.IsAlive, underAttack, monsterFightLive);
         }

@@ -19,6 +19,7 @@ namespace GuildMaster.Session
             if (kb.digit1Key.wasPressedThisFrame) clock.SetSpeed(1);
             if (kb.digit2Key.wasPressedThisFrame) clock.SetSpeed(2);
             if (kb.digit3Key.wasPressedThisFrame) clock.SetSpeed(3);
+            if (kb.digit4Key.wasPressedThisFrame) clock.SetSpeed(4);
 
             if (kb.f3Key.wasPressedThisFrame && Services.TryGet<FogOfWar>(out var fog))
                 fog.Disabled = !fog.Disabled;

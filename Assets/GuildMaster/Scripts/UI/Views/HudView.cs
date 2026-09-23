@@ -33,12 +33,13 @@ namespace GuildMaster.UI
             h.padding = new RectOffset(14, 14, 6, 6);
 
             _time = UIBuilder.Label(bar.transform, "", 18, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(250);
-            string[] labels = { "II", "x1", "x2", "x4" };
-            _speedButtons = new Button[labels.Length];
-            for (int i = 0; i < labels.Length; i++)
+            // One button per GameClock.SpeedScales entry, so a new speed needs no change here.
+            _speedButtons = new Button[GameClock.SpeedScales.Length];
+            for (int i = 0; i < _speedButtons.Length; i++)
             {
                 int idx = i;
-                _speedButtons[i] = UIBuilder.Button(bar.transform, labels[i], () => Services.Get<GameClock>().SetSpeed(idx), 46, 32, null, 14);
+                string label = idx == 0 ? "II" : $"x{GameClock.SpeedScales[idx]:0}";
+                _speedButtons[i] = UIBuilder.Button(bar.transform, label, () => Services.Get<GameClock>().SetSpeed(idx), 46, 32, null, 14);
             }
             UIBuilder.Rect(bar.transform, "Spacer").Size(-1, -1, 1);
             _gold = UIBuilder.Label(bar.transform, "", 17).Size(150);
