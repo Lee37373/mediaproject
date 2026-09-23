@@ -51,8 +51,14 @@ namespace GuildMaster.Monsters
         /// <summary>EXP a monster gets for killing a guild member of this level.</summary>
         public static int ExpForAdventurer(int adventurerLevel) => 8 + 4 * Mathf.Max(1, adventurerLevel);
 
-        /// <summary>Tier EXP — picked over battlefields — for one step of smarts beyond the level's own.</summary>
-        public const int TierExpPerStep = 40;
+        /// <summary>
+        /// Tier EXP — picked over battlefields — for one step of smarts beyond the level's own.
+        /// Measured at 40 first: over 55 game hours with six dens at war, not one monster reached a
+        /// step. A fight leaves a handful of materials and the survivors share them, so one cleared
+        /// field is worth about ten to whoever picks it over. At 15 that field is most of a step and
+        /// two of them are one, which is the pace the rule was meant to have.
+        /// </summary>
+        public const int TierExpPerStep = 15;
         /// <summary>Scavenging teaches at most this much: it sharpens a pack, it does not remake it.</summary>
         public const int MaxScavengedTierSteps = 2;
 

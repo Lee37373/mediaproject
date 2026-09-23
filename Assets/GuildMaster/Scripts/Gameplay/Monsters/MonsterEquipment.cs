@@ -79,9 +79,14 @@ namespace GuildMaster.Monsters
         /// Tier EXP from eating one of the leavings of a fight (user decision 2026-09-23): worth what
         /// the material is worth, so bones and ore teach more than jelly. Worn gear teaches nothing —
         /// it is carried, not picked over.
+        ///
+        /// Full value, not half: measured over two runs, a monster gets about one material to itself
+        /// before the rest of the pack has the others, so half value left everyone short of a step no
+        /// matter where the step was set. At full value one material is a real bite and two or three
+        /// are a step (<see cref="Monsters.MonsterLevel.TierExpPerStep"/>).
         /// </summary>
         public static int TierExpFor(ItemDefinition i)
-            => i == null || i.equipSlot != EquipSlot.None ? 0 : Mathf.Max(1, Mathf.RoundToInt(i.baseValue * 0.5f));
+            => i == null || i.equipSlot != EquipSlot.None ? 0 : Mathf.Max(1, Mathf.RoundToInt(i.baseValue));
 
         /// <summary>
         /// Would a monster with this pickup mode want the item, given what it wears in that slot and
