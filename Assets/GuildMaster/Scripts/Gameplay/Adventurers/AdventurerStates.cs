@@ -213,7 +213,10 @@ namespace GuildMaster.Adventurers
             // Escorts walk to (and keep up with) the guild master themselves.
             if (a.CurrentQuest.Type == QuestType.Escort) { a.ChangeState(a.EscortState); return; }
             _destination = AdvCtx.QuestDestination(a, a.CurrentQuest);
-            if (!a.Mover.SetDestination(_destination, 1.5f))
+            // The party walks its leader's route (P4-63): how far round the woods it goes is the
+            // leader's nerve. Running home or answering a raid is a hurry, and takes no detour.
+            _caution = RouteChoice.ForParty(a);
+            if (!a.Mover.SetDestination(_destination, 1.5f, _caution))
             {
                 a.Say("거기엔 갈 수가 없어...");
                 AdvCtx.Board.Abandon(a.CurrentQuest, a);
@@ -244,10 +247,11 @@ namespace GuildMaster.Adventurers
                 }
                 if (party.PaceLeader(a)) return;
             }
-            if (!a.Mover.IsMoving) a.Mover.SetDestination(_destination, 1.5f);
+            if (!a.Mover.IsMoving) a.Mover.SetDestination(_destination, 1.5f, _caution);
         }
 
         float _formationRepath;
+        float _caution;
 
         public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
     }

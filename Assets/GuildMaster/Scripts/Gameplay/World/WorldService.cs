@@ -9,20 +9,25 @@ namespace GuildMaster.World
         public MapData Map { get; }
         public GridMap Grid { get; }
         public Pathfinder Pathfinder { get; }
+        /// <summary>Risk of the ground, shared with the pathfinder (P4-63).</summary>
+        public RouteRisk Risk { get; }
 
         public WorldService(MapData map)
         {
             Map = map;
             Grid = new GridMap(map);
-            Pathfinder = new Pathfinder(Grid);
+            Risk = new RouteRisk(map);
+            Pathfinder = new Pathfinder(Grid, Risk);
         }
 
         public Vector2 TownCenterWorld => GridMap.CellToWorld(Map.TownCenter);
 
         public Bounds WorldBounds => new(new Vector3(Map.Width / 2f, Map.Height / 2f), new Vector3(Map.Width, Map.Height));
 
-        public bool FindPath(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true, System.Func<int, int, bool> believedShut = null)
-            => Pathfinder.FindPathWorld(from, to, result, passesGates, believedShut);
+        /// <summary><paramref name="caution"/> weighs risky ground (P4-63, <see cref="RouteRisk"/>); 0 is the shortest way.</summary>
+        public bool FindPath(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true,
+            System.Func<int, int, bool> believedShut = null, float caution = 0f)
+            => Pathfinder.FindPathWorld(from, to, result, passesGates, believedShut, caution);
 
         /// <summary>
         /// Grid ray cast (Amanatides–Woo DDA) from a to b. Stops at the first hard-cover cell

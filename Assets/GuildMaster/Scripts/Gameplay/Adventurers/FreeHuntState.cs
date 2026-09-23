@@ -144,7 +144,8 @@ namespace GuildMaster.Adventurers
             _roamTimer -= dt;
             if (_roamTimer > 0f) return;
             _roamTimer = GameRandom.Shared.Range(1f, 2.5f);
-            if (!a.Mover.SetDestination(spot, 1f)) PickSpot();
+            // The band walks the leader's route (P4-63): its nerve decides how wide of the woods it goes.
+            if (!a.Mover.SetDestination(spot, 1f, RouteChoice.ForParty(a))) PickSpot();
         }
 
         /// <summary>
@@ -208,7 +209,7 @@ namespace GuildMaster.Adventurers
             var threat = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
                 u => u is Monster m && m.IsAlive && !Huntable(m) && a.CanSee(u));
             if (threat == null || a.WasRecentlyAttackedBy(threat)) return false;
-            a.Mover.SetDestination(PickSpot(threat.Position), 1f);
+            a.Mover.SetDestination(PickSpot(threat.Position), 1f, RouteChoice.ForParty(a));
             if (Time.time >= _nextBackOffLine)
             {
                 _nextBackOffLine = Time.time + BackOffCooldown;

@@ -1909,5 +1909,53 @@ namespace GuildMaster.Tests
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
+
+        /// <summary>
+        /// Choosing a route as a party (P4-63): a party walking to a quest weighs the woods by its
+        /// leader's nerve, the same trip planned by a cautious leader keeps out of cover more than a
+        /// hurried one, and a member running home hurt takes the short way whatever its nerve says.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Party_WalksItsLeadersRoute_AndARetreatTakesTheShortWay()
+        {
+            yield return Boot();
+            var world = Services.Get<GuildMaster.World.WorldService>();
+            var eco = Services.Get<EcosystemManager>();
+            var species = eco.Species.First(s => s.id == "slime");
+            MakeKnown(species);
+            string id = DebugCommands.PostHunt("slime", 4, 60, 20, 2);
+            var quest = Services.Get<QuestBoard>().FindById(id);
+            Assert.That(quest, Is.Not.Null, "hunt posted: " + id);
+            DebugCommands.ForceAccept(id, 2);
+            var goers = Roster.Members.Where(a => a.CurrentQuest == quest).ToList();
+            Assert.That(goers.Count, Is.GreaterThanOrEqualTo(2), "two took the quest");
+
+            Clock.SetSpeed(2);
+            yield return WaitFor(() => goers.All(a => !a.IsAlive) || goers.Any(a => a.Mover.IsMoving && a.Mover.RouteCaution > 0f), 25f);
+            var walker = goers.FirstOrDefault(a => a.IsAlive && a.Mover.RouteCaution > 0f);
+            Assert.That(walker, Is.Not.Null, "someone is on the road with a route decision");
+            Assert.That(walker.Mover.RouteCaution, Is.EqualTo(RouteChoice.ForParty(walker)).Within(0.001f),
+                "the walk uses the party's caution, which is its leader's nerve");
+
+            // The same trip, planned by nerve: caution keeps a party out of cover, and costs distance.
+            var cells = new System.Collections.Generic.List<Vector2Int>();
+            int ForestOf(float caution)
+            {
+                if (!world.FindPath(walker.Position, quest.Point, cells, true, null, caution)) return -1;
+                return cells.Count(c => world.Grid.IsForest(c));
+            }
+            int hurried = ForestOf(RouteChoice.Hurried);
+            int careful = ForestOf(RouteChoice.Careful);
+            Assert.That(careful, Is.LessThanOrEqualTo(hurried), "the cautious route never crosses more cover than the hurried one");
+
+            // Hurt enough to run: a retreat is a hurry, and a hurry takes the short way (caution 0).
+            int index = Roster.Members.ToList().IndexOf(walker);
+            DebugCommands.Hurt(index, walker.Stats.MaxHp * (1f - walker.RetreatThreshold * 0.5f));
+            yield return WaitFor(() => !walker.IsAlive || walker.StateLabel.Contains("후퇴") || walker.StateLabel.Contains("귀환"), 20f);
+            Assert.That(walker.IsAlive, Is.True, "still alive to run home");
+            yield return WaitFor(() => walker.Mover.IsMoving, 10f);
+            Assert.That(walker.Mover.RouteCaution, Is.EqualTo(RouteChoice.Hurried).Within(0.001f),
+                "running home takes no detour");
+        }
     }
 }

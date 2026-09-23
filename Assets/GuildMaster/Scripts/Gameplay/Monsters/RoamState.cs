@@ -43,7 +43,8 @@ namespace GuildMaster.Monsters
             _repath -= dt;
             if (_repath > 0f && m.Mover.IsMoving) return;
             _repath = RepathSeconds;
-            m.Mover.SetDestination(goal, 1f);
+            // The pack walks one route (P4-63): woodland kinds keep to the trees on the road.
+            m.Mover.SetDestination(goal, 1f, Units.RouteChoice.ForPack(m));
         }
 
         public override void Exit() => Owner.Mover.Stop();

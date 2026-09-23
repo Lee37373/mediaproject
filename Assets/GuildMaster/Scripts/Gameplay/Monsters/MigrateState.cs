@@ -44,7 +44,8 @@ namespace GuildMaster.Monsters
             // Each member aims at its own spot around the target (stable per monster).
             float angle = (Mathf.Abs(m.UnitId.GetHashCode()) % 360) * Mathf.Deg2Rad;
             var goal = band.Target.WorldPosition + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * Spread;
-            m.Mover.SetDestination(goal, 1f);
+            // The band walks one route (P4-63): a species that lives in the woods moves through them.
+            m.Mover.SetDestination(goal, 1f, Units.RouteChoice.ForPack(m));
         }
 
         public override void Exit() => Owner.Mover.Stop();

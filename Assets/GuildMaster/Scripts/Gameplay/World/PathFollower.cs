@@ -41,10 +41,22 @@ namespace GuildMaster.World
 
         WorldService World => _world ??= Services.Get<WorldService>();
 
-        public bool SetDestination(Vector2 target, float stopDistance = 0.05f)
+        /// <summary>
+        /// How this walk weighs risky ground (P4-63): set by travelling states from the party's
+        /// decision (<c>GuildMaster.Units.RouteChoice</c>) and kept for the repaths of this walk.
+        /// Every other call leaves it at 0 and takes the shortest way, as fighting and looting do.
+        /// </summary>
+        public float RouteCaution { get; private set; }
+
+        /// <summary>
+        /// Walks to <paramref name="target"/>. <paramref name="caution"/> (P4-63) makes the route
+        /// avoid cover (above 0) or seek it (below 0); the default 0 is the shortest path.
+        /// </summary>
+        public bool SetDestination(Vector2 target, float stopDistance = 0.05f, float caution = 0f)
         {
             _destination = target;
             _stopDistance = Mathf.Max(0.05f, stopDistance);
+            RouteCaution = caution;
             _steerFrame = -10;
             if (!BuildPath())
             {
@@ -125,7 +137,7 @@ namespace GuildMaster.World
             _waypoints.Clear();
             _index = 0;
             Vector2 from = transform.position;
-            if (!World.FindPath(from, _destination, _cells, PassesGates, BelievedShut)) return false;
+            if (!World.FindPath(from, _destination, _cells, PassesGates, BelievedShut, RouteCaution)) return false;
 
             for (int i = 1; i < _cells.Count; i++) _waypoints.Add(GridMap.CellToWorld(_cells[i]));
             // End exactly at the requested point if it is inside the last cell.

@@ -74,7 +74,8 @@ namespace GuildMaster.Monsters
             if (world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(edge), 3, out var cell))
             {
                 _spot = GridMap.CellToWorld(cell);
-                if (!m.Mover.SetDestination(_spot, 0.4f))
+                // The wave marches as one (P4-63): woodland kinds come at the town through the trees.
+                if (!m.Mover.SetDestination(_spot, 0.4f, RouteChoice.ForPack(m)))
                 {
                     // Behind a standing gate (P4-39): break it first, then come back to the building.
                     if (m.TryBreakGateToward(_spot, true)) return;

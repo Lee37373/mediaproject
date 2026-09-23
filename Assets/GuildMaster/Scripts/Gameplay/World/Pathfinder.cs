@@ -24,12 +24,14 @@ namespace GuildMaster.World
         readonly int[] _stamp;
         readonly bool[] _closed;
         readonly MinHeap _open;
+        readonly RouteRisk _risk;
         int _currentStamp;
 
         public int MaxExpandedNodes { get; set; } = 20000;
         public int LastExpanded { get; private set; }
 
-        public Pathfinder(GridMap grid)
+        /// <summary><paramref name="risk"/> is shared with the rest of the world (P4-63); alone it bakes its own.</summary>
+        public Pathfinder(GridMap grid, RouteRisk risk = null)
         {
             _grid = grid;
             int n = grid.Width * grid.Height;
@@ -38,6 +40,7 @@ namespace GuildMaster.World
             _stamp = new int[n];
             _closed = new bool[n];
             _open = new MinHeap(1024);
+            _risk = risk ?? new RouteRisk(grid.Data);
         }
 
         /// <summary>Whether the search in progress may pass intact town gates (P4-39).</summary>
@@ -46,16 +49,29 @@ namespace GuildMaster.World
         /// <summary>Cells the walker believes shut though they are not (a breach its kind has not seen).</summary>
         System.Func<int, int, bool> _believedShut;
 
+        /// <summary>How the search in progress weighs risky ground (P4-63, <see cref="RouteRisk"/>).</summary>
+        float _caution;
+
+        /// <summary>Heuristic scale for the search in progress (the cheapest a step can be for this walker).</summary>
+        float _heuristicScale = HeuristicScale;
+
         bool Walkable(int x, int y) => _grid.IsWalkable(x, y, _passesGates) && (_believedShut == null || !_believedShut(x, y));
 
         /// <summary>Finds a path of cells from start to goal (inclusive). Returns false if unreachable.</summary>
         public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result) => FindPath(start, goal, result, true);
 
-        /// <summary>As above; <paramref name="passesGates"/> false keeps the path out of intact gates (monsters).</summary>
-        public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result, bool passesGates, System.Func<int, int, bool> believedShut = null)
+        /// <summary>
+        /// As above; <paramref name="passesGates"/> false keeps the path out of intact gates (monsters),
+        /// and <paramref name="caution"/> weighs the risk of the ground (P4-63, <see cref="RouteRisk"/>):
+        /// above 0 walks round cover, below 0 prefers the forest, 0 takes the shortest way.
+        /// </summary>
+        public bool FindPath(Vector2Int start, Vector2Int goal, List<Vector2Int> result, bool passesGates,
+            System.Func<int, int, bool> believedShut = null, float caution = 0f)
         {
             _passesGates = passesGates;
             _believedShut = believedShut;
+            _caution = caution;
+            _heuristicScale = HeuristicScale * RouteRisk.LowestMultiplier(caution);
             result.Clear();
             if (!_grid.InBounds(start) || !_grid.InBounds(goal)) return false;
             // Every gate shut: no way through the walls for a monster, so skip the whole-map search.
@@ -94,7 +110,7 @@ namespace GuildMaster.World
                     int ni = ny * w + nx;
                     Touch(ni);
                     if (_closed[ni]) continue;
-                    float step = _grid.Cost(nx, ny) * (diagonal ? Diagonal : 1f);
+                    float step = _grid.Cost(nx, ny) * (diagonal ? Diagonal : 1f) * _risk.Multiplier(nx, ny, _caution);
                     float g = _g[current] + step;
                     if (g >= _g[ni]) continue;
                     _g[ni] = g;
@@ -114,12 +130,15 @@ namespace GuildMaster.World
             _closed[i] = false;
         }
 
-        static float Heuristic(Vector2Int a, Vector2Int b)
+        /// <summary>Cheapest terrain cost on the map (a road): the heuristic stays admissible.</summary>
+        const float HeuristicScale = 0.7f;
+
+        float Heuristic(Vector2Int a, Vector2Int b)
         {
-            // Octile distance scaled by the cheapest terrain cost (road) to stay admissible.
+            // Octile distance scaled by the cheapest a step can be for this walker.
             int dx = Mathf.Abs(a.x - b.x), dy = Mathf.Abs(a.y - b.y);
             float h = (dx + dy) + (Diagonal - 2f) * Mathf.Min(dx, dy);
-            return h * 0.7f;
+            return h * _heuristicScale;
         }
 
         void Reconstruct(int goalIdx, int w, List<Vector2Int> result)
@@ -129,8 +148,9 @@ namespace GuildMaster.World
             result.Reverse();
         }
 
-        public bool FindPathWorld(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true, System.Func<int, int, bool> believedShut = null)
-            => FindPath(GridMap.WorldToCell(from), GridMap.WorldToCell(to), result, passesGates, believedShut);
+        public bool FindPathWorld(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true,
+            System.Func<int, int, bool> believedShut = null, float caution = 0f)
+            => FindPath(GridMap.WorldToCell(from), GridMap.WorldToCell(to), result, passesGates, believedShut, caution);
 
         /// <summary>Some gate is open and known to be (else a monster cannot cross the wall at all: skip the search).</summary>
         bool AnyGateOpenTo(System.Func<int, int, bool> believedShut)

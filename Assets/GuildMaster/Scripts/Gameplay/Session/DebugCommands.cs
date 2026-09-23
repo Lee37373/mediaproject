@@ -8,6 +8,8 @@ using GuildMaster.Ecosystem;
 using GuildMaster.Economy;
 using GuildMaster.Monsters;
 using GuildMaster.Quests;
+using GuildMaster.Town;
+using GuildMaster.Units;
 using UnityEngine;
 
 namespace GuildMaster.Session
@@ -892,6 +894,44 @@ namespace GuildMaster.Session
             if (BalanceProbe.Instance == null) return "no run";
             var sb = new StringBuilder(BalanceProbe.Instance.Report());
             if (BalanceAutoPlayer.Instance != null) sb.AppendLine(BalanceAutoPlayer.Instance.Report());
+            return sb.ToString();
+        }
+
+        // ---------------- Routes (P4-63) ----------------
+
+        /// <summary>
+        /// Compares the walk from the guild door to a point at each nerve (P4-63): how long it is and
+        /// how much of it crosses cover. Use it to see a cautious party's detour against a hurried
+        /// one's shortcut on the map at hand.
+        /// </summary>
+        public static string RouteReport(float x, float y)
+        {
+            var world = Services.Get<GuildMaster.World.WorldService>();
+            var from = Services.TryGet<TownService>(out var town) && town.Get(BuildingType.GuildHall) is { } hall ? hall.DoorPosition : world.TownCenterWorld;
+            var to = new Vector2(x, y);
+            var sb = new StringBuilder($"route ({from.x:0},{from.y:0}) -> ({to.x:0},{to.y:0})\n");
+            var cells = new List<Vector2Int>();
+            foreach (var (name, caution) in new[]
+                     {
+                         ("급함/무시 ", RouteChoice.Hurried),
+                         ("용감함    ", RouteChoice.FromNerve(-0.5f)),
+                         ("보통      ", RouteChoice.Normal),
+                         ("겁많음    ", RouteChoice.FromNerve(1f)),
+                         ("숲 서식종 ", RouteChoice.FromCover),
+                     })
+            {
+                if (!world.FindPath(from, to, cells, true, null, caution)) { sb.AppendLine($"  {name} 경로 없음"); continue; }
+                float length = 0f, risk = 0f;
+                int forest = 0;
+                for (int i = 1; i < cells.Count; i++)
+                {
+                    var c = cells[i];
+                    length += (cells[i] - cells[i - 1]).sqrMagnitude > 1 ? 1.41f : 1f;
+                    risk += world.Risk.At(c.x, c.y);
+                    if (world.Grid.IsForest(c)) forest++;
+                }
+                sb.AppendLine($"  {name} caution={caution:0.00} 길이={length:0.0}칸 숲={forest}칸 위험합={risk:0.0}");
+            }
             return sb.ToString();
         }
     }
