@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-23
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-66**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-67**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -33,6 +33,7 @@
 | P4-63 | **파티 단위 경로 선택**(사용자 요청): 위험 = 시야 나쁜 땅(숲 1/3 × 지대 배율)을 새 위험 층으로 만들고, 그 가중치를 파티가 정함. 모험가는 **리더 성격**(용감함↔겁많음), **급하면 최단**(후퇴·귀환·침공 방어), 몬스터는 무리 단위로 숲 서식 종만 숲 선호. 가중치는 `SetDestination(..., caution)`으로만 걸려 전투·줍기 경로는 그대로 | 이재혁 | 완료 | World/RouteRisk(신규)·Pathfinder·PathFollower·WorldService, Units/RouteChoice(신규), Adventurers/AdventurerStates·FreeHuntState, Monsters/MigrateState·RoamState·RaidState, Session/DebugCommands, Tests/EditMode/RouteTests(신규), Tests/PlayMode/SmokeTests | f5a8936 |
 | P4-64 | **자유탐험 실시간 경로 수정**(사용자 요청): 미탐색 지형은 열린 초원으로 가정해 계획하고, 본 뒤 막힌 곳이면 0.25초 안에 경로를 다시 그림. 목적지까지 한 번에 가지 않고 18칸 구간씩 부채꼴에서 고르며, 경로가 수정되면 구간을 다시 잡음. 정찰은 덜 탐색된 곳으로. 덤: 성문 공격 중 목표 재탐색으로 성문이 안 부서지던 버그 | 이재혁 | 완료 | World/Pathfinder·PathFollower·WorldService, Adventurers/ExplorationRoute(신규)·FreeHuntState, Monsters/Monster, Session/DebugCommands, Tests/EditMode/ExplorationTests(신규), Tests/PlayMode/SmokeTests | 921014d |
 | P4-65 | **5일 밸런스 게임 오버 원인**: 게시 중에 대상 둥지가 전멸한 토벌 의뢰가 영원히 남아 게시판이 4일간 막힘(완료 1건, 수입·장비 0). 게시 때 대상 둥지를 기억하고, 길드가 그 둥지가 비었거나 다른 종 차지를 보면 아무도 안 받은 의뢰는 철회·환불, 받은 의뢰는 완료(사용자 결정, 이주·배회로 빈 경우 포함). 덤: 몬스터가 전리품 하나를 줍고 나머지를 두고 가던 버그(불안정 테스트 원인) | 이재혁 | 완료 | Quests/Quest·QuestBoard, Session/GameLog, Monsters/Monster·MonsterPickupState, Tests/PlayMode/SmokeTests | 6033f05 |
+| P4-66 | **모닥불 야영과 습격**(사용자 제안): 마을이 멀 때 다치거나 지치면, 또는 밤이면(리더 성격) 파티가 모닥불을 피우고 쉼. 불빛을 본 몬스터가 습격, 파티는 불침번 교대, 불가 LLM 잡담 | 이재혁 | 진행 중 | Adventurers/CampRules·CampService·CampState·Campfire(신규)·AdventurerStates·BanterService, Monsters/Monster, Visuals/CartoonArt·CharacterVisual | |
 | P4-26 | 전투 지능 등급 재정리(본능 단계 추가, 카이팅·엄폐·분산·재선택을 등급별로) | 이재혁 | 완료 | Units/CombatTier·Combat·TargetSelector, Data/MonsterDefinition·DefaultContent | 9f5ab3a |
 | P4-27 | 파티 역할과 대형(전열·후열, 이동 대형, 집중 공격 지정) | 이재혁 | 완료 | Adventurers/PartyTactics(신규), AdventurerStates, Units/TargetSelector·Combat·Unit, Visuals/TargetMarker(신규) | 1419d87 |
 | P4-28 | 몬스터 전술(숙련 이상: 포위, 후퇴 후 합류, 무리 목표 지정) | 이재혁 | 완료 | Monsters/PackTactics·MonsterRegroupState(신규)·Monster, Units/Combat | 757850a |
@@ -102,7 +103,7 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: (없음)
+- **진행 중**: P4-66 모닥불 야영과 습격
 - **예정**: (정해지면 적기)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-65, P5-1 (위 표 참고)
 
