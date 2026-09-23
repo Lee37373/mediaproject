@@ -65,19 +65,34 @@ namespace GuildMaster.Adventurers
             return true;
         }
 
-        async Task RunAsync(Adventurer a, Adventurer b)
+        /// <summary>
+        /// A talk somewhere other than town (P4-66: round a campfire). It happens once per camp, so a
+        /// busy model does not skip it: the fixed lines stand in. <paramref name="stillThere"/> says
+        /// whether a speaker is still at the scene when the lines come back.
+        /// </summary>
+        public bool TryStartAt(Adventurer a, Adventurer b, string scene, System.Func<Adventurer, bool> stillThere)
+        {
+            if (_inFlight || a == null || b == null || a == b) return false;
+            bool llmReady = _gateway != null && _gateway.Enabled && _gateway.IsReady;
+            Attempts++;
+            if (!llmReady || _gateway.IsBusy || _gateway.QueueCount > 0) return Play(a, b, FixedCampPair(), false, stillThere);
+            _ = RunAsync(a, b, scene, stillThere);
+            return true;
+        }
+
+        async Task RunAsync(Adventurer a, Adventurer b, string scene = null, System.Func<Adventurer, bool> stillThere = null)
         {
             _inFlight = true;
             try
             {
-                var result = await _gateway.RequestAsync(BanterPrompt.BuildRequest(a, b));
+                var result = await _gateway.RequestAsync(BanterPrompt.BuildRequest(a, b, scene));
                 if (this == null) return;
                 if (result.Ok && LlmJson.TryParse<BanterPrompt.ResponseDto>(result.Text, out var dto)
                     && BanterPrompt.TryInterpret(dto, out var lineA, out var lineB, a.Data.name, b.Data.name))
                 {
                     if (result.Exchange != null) result.Exchange.Note = "채택";
                     Debug.Log($"[LLM-BANTER] {a.Data.name}: \"{lineA}\" / {b.Data.name}: \"{lineB}\" ({dto.a_to_b:+0;-0;0}/{dto.b_to_a:+0;-0;0}, {result.Seconds:0.0}s)");
-                    if (Play(a, b, (lineA, lineB), true))
+                    if (Play(a, b, (lineA, lineB), true, stillThere))
                     {
                         Relationships.Add(a, b, BanterPrompt.ClampDelta(dto.a_to_b), "잡담");
                         Relationships.Add(b, a, BanterPrompt.ClampDelta(dto.b_to_a), "잡담");
@@ -91,7 +106,7 @@ namespace GuildMaster.Adventurers
                 else
                 {
                     if (result.Exchange != null) result.Exchange.Note = "고정 대사로 대체: " + (result.Ok ? "parse" : result.Error);
-                    Play(a, b, FixedPair(), false);
+                    Play(a, b, scene != null ? FixedCampPair() : FixedPair(), false, stillThere);
                 }
             }
             finally
@@ -101,10 +116,11 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>Shows the two lines; false when either left before the model finished.</summary>
-        bool Play(Adventurer a, Adventurer b, (string first, string second) lines, bool fromLlm)
+        bool Play(Adventurer a, Adventurer b, (string first, string second) lines, bool fromLlm, System.Func<Adventurer, bool> stillThere = null)
         {
             // They may have left for a quest while the model was writing.
-            if (!StillChatting(a) || !StillChatting(b)) return false;
+            stillThere ??= StillChatting;
+            if (!stillThere(a) || !stillThere(b)) return false;
             if (fromLlm) LlmBanters++; else FixedBanters++;
             float hour = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : 0f;
             DialogueLog.AddBanter(a.Data, b.Data, hour, lines.first, lines.second);
@@ -148,5 +164,6 @@ namespace GuildMaster.Adventurers
         }
 
         static (string, string) FixedPair() => BanterPrompt.FixedPairs[GameRandom.Shared.Range(0, BanterPrompt.FixedPairs.Length)];
+        static (string, string) FixedCampPair() => BanterPrompt.FixedCampPairs[GameRandom.Shared.Range(0, BanterPrompt.FixedCampPairs.Length)];
     }
 }

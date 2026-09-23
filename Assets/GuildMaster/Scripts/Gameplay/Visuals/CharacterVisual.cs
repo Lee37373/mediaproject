@@ -92,6 +92,9 @@ namespace GuildMaster.Visuals
             SetTint(Color.white);
         }
 
+        /// <summary>Asleep by a campfire (P4-66): the body lies on its side, head away from the fire.</summary>
+        public bool Lying { get; set; }
+
         /// <summary>Extra transparency on top of the tint (1 = solid). Used by stealth, P4-19.</summary>
         public float Fade { get; set; } = 1f;
 
@@ -125,7 +128,16 @@ namespace GuildMaster.Visuals
             // Animated art has its own motion; single sprites bob while walking.
             float bob = moving && _anim == null ? Mathf.Abs(Mathf.Sin(_bobPhase)) * 0.08f : 0f;
             if (_anim != null) TickAnimation(moving);
-            _bodyT.localPosition = new Vector3(0f, -0.3f + bob, 0f);
+            if (Lying)
+            {
+                _bodyT.localRotation = Quaternion.Euler(0f, 0f, left ? -80f : 80f);
+                _bodyT.localPosition = new Vector3(left ? 0.3f : -0.3f, -0.12f, 0f);
+            }
+            else
+            {
+                _bodyT.localRotation = Quaternion.identity;
+                _bodyT.localPosition = new Vector3(0f, -0.3f + bob, 0f);
+            }
 
             int order = BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f);
             _body.sortingOrder = order;

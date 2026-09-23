@@ -49,6 +49,17 @@ namespace GuildMaster.Session
                 else if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
                 else if (e.Status == QuestStatus.Failed) Add($"의뢰 실패: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
             });
+            // Camps out in the wild (P4-66). Guild members are always in the guild's sight.
+            EventBus.Subscribe<CampPitchedEvent>(e =>
+            {
+                var who = e.Camp.Leader?.Data.name ?? "길드원";
+                string party = e.Camp.Members.Count > 1 ? $"{who} 일행" : who;
+                string why = e.Camp.Reason == CampReason.Night ? "밤을 보내려고" : "지친 몸을 추스르려고";
+                Add($"[야영] {party}이(가) {QuestBoard.DescribeArea(e.Camp.Position)}에서 {why} 모닥불을 피웠습니다.", LogCategory.Info);
+            });
+            EventBus.Subscribe<CampRaidedEvent>(e => Add(
+                $"[야영] {QuestBoard.DescribeArea(e.Camp.Position)} 야영지에 {e.Raider?.DisplayName ?? "무언가"}이(가) 습격! " +
+                (!e.Warned ? "자다가 기습당했습니다." : e.Camp.Watcher != null ? "불침번이 먼저 알아챘습니다." : "불가에 깨어 있다가 알아챘습니다."), LogCategory.Danger));
             EventBus.Subscribe<PartyInviteAnsweredEvent>(e => Add(
                 $"{e.Invitee.Data.name}이(가) {e.Leader.Data.name}의 파티 제안을 {(e.Accepted ? "수락" : "거절")}했습니다.", LogCategory.Quest));
             EventBus.Subscribe<PartyFormedEvent>(e => Add(

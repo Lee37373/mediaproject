@@ -141,7 +141,9 @@ namespace GuildMaster.Units
                 if (Core.Services.TryGet<WorldService>(out var world) && world.Grid.IsWalkable(GridMap.WorldToCell(next), PassesGates))
                     transform.position = new Vector3(next.x, next.y, transform.position.z);
             }
-            foreach (var s in Skills) s.Tick(this, dt);
+            // By index: a skill's tick can end in a level-up that re-deals the skills (SkillFactory.Assign),
+            // which threw "collection was modified" in a 5-day run (2026-09-23).
+            for (int i = 0; i < Skills.Count; i++) Skills[i].Tick(this, dt);
             // Stealth runs out on its own; put the sprite back when it does (P4-19).
             if (!IsHidden && Visual != null && Visual.Fade < 1f) BreakStealth();
         }

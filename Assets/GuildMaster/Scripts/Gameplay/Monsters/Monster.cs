@@ -326,6 +326,25 @@ namespace GuildMaster.Monsters
             Fsm.ChangeState(EngageState);
         }
 
+        /// <summary>
+        /// A campfire in sight (P4-66): one idling about, picking something up, roaming or migrating
+        /// comes for the people at it — and cries for its pack as it goes. One on a raid, in a fight,
+        /// fleeing or walking home keeps doing that. The caller has checked that it sees the light.
+        /// </summary>
+        internal bool DrawnToFirelight(Unit camper)
+        {
+            if (!IsAlive || IsStunned || camper == null || !camper.IsAlive || !camper.IsTargetableBy(this)) return false;
+            var s = Fsm.Current;
+            bool free = s == WanderState || s == PickupState
+                        || s == DefaultStateOverride && (DefaultStateOverride == RoamState || DefaultStateOverride == MigrateState);
+            if (!free) return false;
+            Engage.SetTarget(camper);
+            Fsm.ChangeState(EngageState);
+            UnitRegistry.Collect(Position, PackAlarmRadius, u => u is Monster o && o != this && IsPackMate(o), s_alarmed);
+            foreach (var u in s_alarmed) ((Monster)u).HearPackMateHit(camper);
+            return true;
+        }
+
         /// <summary>Best target by <see cref="TargetSelector"/> (tier-dependent), or null.</summary>
         public Unit FindTarget() => TargetSelector.Pick(this, Stats.SightRadius, IsTargetCandidate, Engage);
 

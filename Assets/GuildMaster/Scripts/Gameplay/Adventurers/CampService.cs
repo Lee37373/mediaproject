@@ -1,0 +1,406 @@
+using System.Collections.Generic;
+using System.Linq;
+using GuildMaster.AI;
+using GuildMaster.Core;
+using GuildMaster.Ecosystem;
+using GuildMaster.Monsters;
+using GuildMaster.Quests;
+using GuildMaster.Units;
+using GuildMaster.World;
+using UnityEngine;
+
+namespace GuildMaster.Adventurers
+{
+    public struct CampPitchedEvent { public Camp Camp; }
+    /// <summary>Raiders at the fire. <see cref="Warned"/>: the watch saw them coming; false = someone was hit awake.</summary>
+    public struct CampRaidedEvent { public Camp Camp; public Unit Raider; public bool Warned; }
+    public struct CampBrokenEvent { public Camp Camp; }
+    /// <summary>A sleeper at a camp breathing out a "Zz" (for the floating text layer).</summary>
+    public struct CampSnoreEvent { public Adventurer Sleeper; }
+
+    /// <summary>One camp out in the wild (P4-66): who sits at it, who keeps watch, where each goes next.</summary>
+    public class Camp
+    {
+        public int Id;
+        public Vector2 Position;
+        public CampReason Reason;
+        public float PitchedAtHour;
+        /// <summary>Until this game hour everyone sits round the fire and talks; then the watches begin.</summary>
+        public float SitUntilHour;
+        /// <summary>Leader first. A member who leaves the camp state leaves the camp.</summary>
+        public readonly List<Adventurer> Members = new();
+        /// <summary>What each member goes back to when the fire is put out.</summary>
+        public readonly Dictionary<Adventurer, State<Adventurer>> ResumeTo = new();
+        /// <summary>The one awake while the others sleep; null while sitting, or when alone.</summary>
+        public Adventurer Watcher;
+        /// <summary>Raiders about: everyone up and fighting until it has been quiet for a while.</summary>
+        public bool Alarmed;
+        public float QuietSince;
+        public bool Talked;
+        public int Raids;
+        public Campfire Fire;
+
+        public Adventurer Leader => Members.Count > 0 ? Members[0] : null;
+        public bool Sitting(float hour) => hour < SitUntilHour;
+
+        /// <summary>Each member's place in the ring round the fire.</summary>
+        public Vector2 SeatOf(Adventurer a)
+        {
+            int i = Mathf.Max(0, Members.IndexOf(a));
+            int n = Mathf.Max(2, Members.Count);
+            float angle = i / (float)n * Mathf.PI * 2f + 0.4f;
+            return Position + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle) * 0.8f) * 1.15f;
+        }
+    }
+
+    /// <summary>
+    /// Camps out in the wild (P4-66, user proposal 2026-09-23: "a campfire when they are worn out —
+    /// the feel of an adventure — and raiders now and then"). Decides when a band far from town
+    /// stops to make a fire, gathers its comrades round it, rotates the watch, draws the monsters
+    /// that see the firelight, starts the talk at the fire and puts the fire out when everyone is
+    /// mended. The rules and numbers are in <see cref="CampRules"/>; the members' side in
+    /// <see cref="CampState"/>.
+    /// </summary>
+    public class CampService : MonoBehaviour
+    {
+        const float LightInterval = 0.5f;
+        /// <summary>A monster the light drew once leaves it be for a while after (seconds).</summary>
+        const float DrawnCooldown = 30f;
+
+        readonly List<Camp> _camps = new();
+        readonly Dictionary<Adventurer, float> _lastThreat = new();
+        readonly Dictionary<Adventurer, (int night, bool camp)> _nightChoice = new();
+        readonly Dictionary<Monster, float> _drawnUntil = new();
+        static readonly List<Unit> s_units = new();
+
+        GameClock _clock;
+        WorldService _world;
+        PoolService _pool;
+        GuildRoster _roster;
+        int _nextId;
+        float _lightTimer;
+
+        public IReadOnlyList<Camp> Camps => _camps;
+        /// <summary>Monsters the firelight has drawn so far (debug, tests).</summary>
+        public int MonstersDrawn { get; private set; }
+
+        public void Init(GameClock clock, WorldService world, PoolService pool, GuildRoster roster)
+        {
+            _clock = clock;
+            _world = world;
+            _pool = pool;
+            _roster = roster;
+            pool.Register(Campfire.PoolKey, Campfire.Create, 1, 16);
+        }
+
+        public Camp CampOf(Adventurer a)
+        {
+            foreach (var c in _camps) if (c.Members.Contains(a)) return c;
+            return null;
+        }
+
+        float DistanceToTown(Vector2 p) => Vector2.Distance(p, _world.TownCenterWorld);
+
+        // ---------------- Deciding ----------------
+
+        /// <summary>
+        /// On the way home (<see cref="ReturnToTownState"/>): far out and hurt or worn, or out in the
+        /// dark and the leader's nerve says so, the band stops and makes camp.
+        /// </summary>
+        public bool TryCampOnTheWay(Adventurer a)
+        {
+            if (!Quiet(a)) return false;
+            var group = Companions(a);
+            bool alone = group.Count == 1;
+            if (!CampRules.FarOut(DistanceToTown(a.Position), alone)) return false;
+            if (group.Any(m => CampRules.NeedsRest(m.HpRatio, m.Data.fatigue, alone))) return Pitch(group, CampReason.Recover);
+            if (_clock.IsNight && ChoosesNightCamp(group[0], alone)) return Pitch(group, CampReason.Night);
+            return false;
+        }
+
+        /// <summary>Out on a quest or a hunt when night falls: the leader decides for the band.</summary>
+        public bool TryNightCamp(Adventurer a)
+        {
+            if (!_clock.IsNight) return false;
+            if (Services.TryGet<PartyTactics>(out var tactics) && tactics.LeaderOf(a) is { } leader && leader != a) return false;
+            if (!Quiet(a)) return false;
+            var group = Companions(a);
+            bool alone = group.Count == 1;
+            if (!CampRules.FarOut(DistanceToTown(a.Position), alone)) return false;
+            return ChoosesNightCamp(group[0], alone) && Pitch(group, CampReason.Night);
+        }
+
+        /// <summary>No enemy in sight, nothing hit us, for <see cref="CampRules.QuietSeconds"/>.</summary>
+        bool Quiet(Adventurer a)
+        {
+            float now = Time.time;
+            if (a.Engage.Target != null || ThreatInSight(a) != null) _lastThreat[a] = now;
+            float last = Mathf.Max(a.LastAttackedTime, _lastThreat.TryGetValue(a, out var t) ? t : -999f);
+            return now - last >= CampRules.QuietSeconds;
+        }
+
+        /// <summary>A monster in sight that would come for us, or is fighting one of us.</summary>
+        static Unit ThreatInSight(Adventurer a)
+            => UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
+                u => u is Monster m && m.IsAlive && (m.IsHostileTo(a) || m.CombatEngagement?.Target is Adventurer) && a.CanSee(m));
+
+        /// <summary>Asked once a night per leader: its caution against the dark (<see cref="CampRules.NightCampChance"/>).</summary>
+        bool ChoosesNightCamp(Adventurer leader, bool alone)
+        {
+            int night = Mathf.FloorToInt((_clock.TotalHours + 24f - CampRules.DawnHour) / 24f);
+            if (_nightChoice.TryGetValue(leader, out var c) && c.night == night) return c.camp;
+            bool camp = GameRandom.Shared.Chance(CampRules.NightCampChance(RouteChoice.ForParty(leader), alone));
+            _nightChoice[leader] = (night, camp);
+            return camp;
+        }
+
+        /// <summary>Us first (the leader of our party when it is here), then comrades close by who are out too.</summary>
+        List<Adventurer> Companions(Adventurer a)
+        {
+            var group = new List<Adventurer> { a };
+            foreach (var m in _roster.Members)
+            {
+                if (m == a || !m.IsAlive || !m.IsGuildMember || CampOf(m) != null || !IsOut(m) || !Comrades(a, m)) continue;
+                if (Vector2.Distance(m.Position, a.Position) > CampRules.JoinRadius) continue;
+                group.Add(m);
+            }
+            var leader = Services.TryGet<PartyTactics>(out var tactics) ? tactics.LeaderOf(a) : null;
+            if (leader == null && Services.TryGet<GuildParties>(out var parties)) leader = parties.PartyOf(a)?.Leader;
+            int li = leader != null ? group.IndexOf(leader) : -1;
+            if (li > 0) { group.RemoveAt(li); group.Insert(0, leader); }
+            return group;
+        }
+
+        /// <summary>On the road: walking out, working a quest or a hunt, or heading home (not a lure run).</summary>
+        static bool IsOut(Adventurer m)
+        {
+            var s = m.Fsm.Current;
+            return s == m.TravelState || s == m.HuntState || s == m.FreeHuntState || s == m.ReturnState && !m.ReturnState.Luring;
+        }
+
+        static bool Comrades(Adventurer a, Adventurer b)
+        {
+            if (a.CurrentQuest != null && a.CurrentQuest == b.CurrentQuest) return true;
+            if (Services.TryGet<GuildParties>(out var parties) && parties.PartyOf(a) is { } p && p == parties.PartyOf(b)) return true;
+            return Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(a) is { } band && band == bands.BandOf(b);
+        }
+
+        // ---------------- Pitching ----------------
+
+        /// <summary>Makes camp for <paramref name="group"/> (leader first) near where the leader stands.</summary>
+        public bool Pitch(List<Adventurer> group, CampReason reason)
+        {
+            if (group == null || group.Count == 0) return false;
+            var leader = group[0];
+            if (!PickSpot(leader.Position, out var spot)) return false;
+            float hour = _clock.TotalHours;
+            var camp = new Camp
+            {
+                Id = ++_nextId,
+                Position = spot,
+                Reason = reason,
+                PitchedAtHour = hour,
+                SitUntilHour = hour + CampRules.SitHours,
+            };
+            camp.Fire = _pool.Spawn<Campfire>(Campfire.PoolKey, spot);
+            camp.Fire.Light();
+            foreach (var m in group)
+            {
+                camp.Members.Add(m);
+                camp.ResumeTo[m] = ResumeFor(m);
+            }
+            _camps.Add(camp);
+            foreach (var m in group)
+            {
+                m.Engage.Clear();
+                m.ChangeState(m.CampState);
+            }
+            leader.Say(PitchLine(reason, group.Count == 1));
+            EventBus.Publish(new CampPitchedEvent { Camp = camp });
+            return true;
+        }
+
+        static string PitchLine(CampReason reason, bool alone)
+        {
+            if (alone) return reason == CampReason.Night ? "밤길은 위험해. 혼자라도 불을 피우자." : "더는 못 걷겠어... 여기서 좀 쉬자.";
+            return reason == CampReason.Night ? "날이 저물었어. 여기서 밤을 보내자." : "여기서 불 피우고 좀 쉬었다 가자.";
+        }
+
+        /// <summary>A quest goes on after the night; everything else heads home.</summary>
+        static State<Adventurer> ResumeFor(Adventurer m)
+        {
+            var s = m.Fsm.Current;
+            bool onQuest = (s == m.TravelState || s == m.HuntState) && m.CurrentQuest != null && m.CurrentQuest.IsActive;
+            return onQuest ? m.TravelState : m.ReturnState;
+        }
+
+        /// <summary>
+        /// Somewhere close to sit down: open ground outside town, as far from the dens the guild knows
+        /// as it can find nearby (a fire next to a den is asking for it).
+        /// </summary>
+        bool PickSpot(Vector2 origin, out Vector2 spot)
+        {
+            spot = origin;
+            var rng = GameRandom.Shared;
+            Services.TryGet<GuildIntel>(out var intel);
+            float best = float.MinValue;
+            bool found = false;
+            for (int i = 0; i < 12; i++)
+            {
+                var p = i == 0 ? origin : origin + rng.InsideUnitCircle() * 5f;
+                if (!_world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(p), 2, out var cell) || _world.Grid.IsInTown(cell)) continue;
+                var at = GridMap.CellToWorld(cell);
+                float nest = 25f;
+                if (intel != null)
+                    foreach (var n in intel.KnownNests) nest = Mathf.Min(nest, Vector2.Distance(n.WorldPosition, at));
+                float score = nest - 0.3f * Vector2.Distance(at, origin);
+                if (score <= best) continue;
+                best = score;
+                spot = at;
+                found = true;
+            }
+            return found;
+        }
+
+        // ---------------- Running the camps ----------------
+
+        /// <summary>A member leaves the camp (its state changed): the fire goes out with the last one.</summary>
+        internal void Leave(Adventurer a)
+        {
+            var camp = CampOf(a);
+            if (camp == null) return;
+            camp.Members.Remove(a);
+            if (camp.Watcher == a) camp.Watcher = null;
+            if (camp.Members.Count == 0) End(camp);
+        }
+
+        /// <summary>Raiders at the fire: everyone up (once per raid).</summary>
+        internal void Alarm(Camp camp, Unit raider, bool warned)
+        {
+            camp.QuietSince = Time.time;
+            if (camp.Alarmed) return;
+            camp.Alarmed = true;
+            camp.Raids++;
+            EventBus.Publish(new CampRaidedEvent { Camp = camp, Raider = raider, Warned = warned });
+        }
+
+        void Update()
+        {
+            if (_clock == null) return;
+            float hour = _clock.TotalHours;
+            for (int i = _camps.Count - 1; i >= 0; i--)
+            {
+                var camp = _camps[i];
+                camp.Members.RemoveAll(m => m == null || !m.IsAlive || m.Fsm.Current != m.CampState);
+                if (camp.Members.Count == 0) { End(camp); continue; }
+
+                camp.Watcher = !camp.Sitting(hour) && camp.Members.Count >= 2
+                    ? camp.Members[CampRules.WatchIndex(hour - camp.SitUntilHour, camp.Members.Count)]
+                    : null;
+
+                if (camp.Alarmed)
+                {
+                    if (camp.Members.Any(m => m.Engage.Target != null || ThreatInSight(m) != null)) camp.QuietSince = Time.time;
+                    else if (Time.time - camp.QuietSince >= CampRules.QuietSeconds) camp.Alarmed = false;
+                    continue;
+                }
+                if (!camp.Talked && camp.Sitting(hour) && camp.Members.Count >= 2 && camp.Members.All(m => m.CampState.Seated)) StartTalk(camp);
+                if (Finished(camp, hour)) Break(camp);
+            }
+
+            _lightTimer -= Time.deltaTime;
+            if (_lightTimer > 0f) return;
+            _lightTimer = LightInterval;
+            foreach (var camp in _camps) DrawToTheLight(camp);
+        }
+
+        bool Finished(Camp camp, float hour)
+        {
+            float lowest = 1f, tiredest = 0f;
+            foreach (var m in camp.Members)
+            {
+                lowest = Mathf.Min(lowest, m.HpRatio);
+                tiredest = Mathf.Max(tiredest, m.Data.fatigue);
+            }
+            return CampRules.Done(camp.Reason, lowest, tiredest, _clock.IsNight, hour - camp.PitchedAtHour);
+        }
+
+        /// <summary>Everyone mended (or morning come): the fire is put out and each goes back to its road.</summary>
+        void Break(Camp camp)
+        {
+            var leader = camp.Leader;
+            var going = camp.Members.ToList();
+            foreach (var m in going)
+            {
+                var next = camp.ResumeTo.TryGetValue(m, out var s) && s != null ? s : m.ReturnState;
+                if (next == m.TravelState && (m.CurrentQuest == null || !m.CurrentQuest.IsActive)) next = m.ReturnState;
+                m.ChangeState(next);
+            }
+            if (leader != null && leader.IsAlive) leader.Say(camp.Reason == CampReason.Night ? "날이 밝았다. 가자!" : "이제 좀 살겠다. 출발하자!");
+            End(camp);
+        }
+
+        void End(Camp camp)
+        {
+            if (!_camps.Remove(camp)) return;
+            camp.Members.Clear();
+            if (camp.Fire != null) camp.Fire.PutOut();
+            EventBus.Publish(new CampBrokenEvent { Camp = camp });
+        }
+
+        // ---------------- The firelight ----------------
+
+        /// <summary>
+        /// Monsters that see the fire come for it (user decision: only those that actually see the
+        /// light). It shows further at night; a forest in between hides it like it hides anything.
+        /// </summary>
+        void DrawToTheLight(Camp camp)
+        {
+            if (camp.Fire == null || !camp.Fire.Burning) return;
+            float radius = CampRules.LightRadius(_clock.IsNight);
+            UnitRegistry.Collect(camp.Position, radius, u => u is Monster m && m.IsAlive, s_units);
+            float now = Time.time;
+            foreach (var u in s_units)
+            {
+                var m = (Monster)u;
+                if (_drawnUntil.TryGetValue(m, out var until) && now < until) continue;
+                var camper = NearestCamper(camp, m);
+                if (camper == null || !m.IsHostileTo(camper)) continue;
+                if (!_world.CanSee(m.Position, camp.Position, radius)) continue;
+                if (!m.DrawnToFirelight(camper)) continue;
+                _drawnUntil[m] = now + DrawnCooldown;
+                MonstersDrawn++;
+            }
+            if (_drawnUntil.Count > 64)
+                foreach (var dead in _drawnUntil.Keys.Where(k => k == null || !k.IsAlive || now >= _drawnUntil[k]).ToList()) _drawnUntil.Remove(dead);
+        }
+
+        static Adventurer NearestCamper(Camp camp, Monster m)
+        {
+            Adventurer best = null;
+            float bestD = float.MaxValue;
+            foreach (var c in camp.Members)
+            {
+                if (!c.IsAlive || !c.IsTargetableBy(m)) continue;
+                float d = (c.Position - m.Position).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = c; }
+            }
+            return best;
+        }
+
+        // ---------------- Talk at the fire ----------------
+
+        void StartTalk(Camp camp)
+        {
+            camp.Talked = true;
+            if (!Services.TryGet<BanterService>(out var banter)) return;
+            var a = camp.Members[GameRandom.Shared.Range(0, camp.Members.Count)];
+            var others = camp.Members.Where(m => m != a).ToList();
+            var b = others[GameRandom.Shared.Range(0, others.Count)];
+            string scene = $"{QuestBoard.DescribeArea(camp.Position)}의 들판에서 모닥불을 피우고 둘러앉아 있다. " +
+                           (_clock.IsNight ? "밤이 깊었다. " : "해가 아직 떠 있다. ") +
+                           (camp.Reason == CampReason.Night ? "밤을 여기서 보내기로 했다." : "싸움으로 지친 몸을 추스르는 중이다.");
+            banter.TryStartAt(a, b, scene, x => x != null && x.IsAlive && CampOf(x) == camp);
+        }
+    }
+}

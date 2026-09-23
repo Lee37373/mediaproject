@@ -34,6 +34,7 @@ namespace GuildMaster.Adventurers
         float _startHour;
         float _nextBackOffLine;
         float _formationRepath;
+        float _campCheck;
         int _enemies;
         int _nestNearby;
         HuntBand _band;
@@ -135,6 +136,8 @@ namespace GuildMaster.Adventurers
 
             if (a.HandleCombat(dt, Huntable, Allowed)) return;
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
+            // Night out on a hunt: the band may make camp, then head home in the morning (P4-66).
+            if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;
 
             _searchTimer -= dt;
             if (_searchTimer <= 0f)

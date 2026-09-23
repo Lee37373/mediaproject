@@ -50,6 +50,18 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public static Vector2 QuestDestination(Adventurer a, Quest q) => q.Point;
 
+        /// <summary>Seconds between the checks for making camp (P4-66).</summary>
+        public const float CampCheckInterval = 0.5f;
+
+        /// <summary>Out on the road at night: the band may stop and make camp (P4-66, the leader decides).</summary>
+        public static bool TryNightCamp(Adventurer a, ref float timer, float dt)
+        {
+            timer -= dt;
+            if (timer > 0f) return false;
+            timer = CampCheckInterval;
+            return Services.TryGet<CampService>(out var camps) && camps.TryNightCamp(a);
+        }
+
         public static void Wander(Adventurer a, ref float timer, float dt)
         {
             if (a.Mover.IsMoving) return;
@@ -231,6 +243,7 @@ namespace GuildMaster.Adventurers
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
             if (a.HandleCombat(dt)) return;
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
+            if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;
 
             if (Vector2.Distance(a.Position, _destination) < 3f)
             {
@@ -252,6 +265,7 @@ namespace GuildMaster.Adventurers
 
         float _formationRepath;
         float _caution;
+        float _campCheck;
 
         public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
     }
@@ -271,6 +285,7 @@ namespace GuildMaster.Adventurers
         float _searchTimer;
         float _roamTimer;
         float _formationRepath;
+        float _campCheck;
 
         public override string Label => "사냥 중";
 
@@ -328,6 +343,7 @@ namespace GuildMaster.Adventurers
             if (a.HandleCombat(dt, IsAreaTarget)) return;
             // Loot left by the kills (P4-21) before searching on.
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
+            if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;
 
             _searchTimer -= dt;
             bool searched = _searchTimer <= 0f;
@@ -433,6 +449,10 @@ namespace GuildMaster.Adventurers
         Vector2 _retreatFrom;
         bool _luring;
         Vector2 _lurePoint;
+        float _campCheck;
+
+        /// <summary>Dragging a pursuer past another den (P4-18): not a walk home anyone can stop.</summary>
+        public bool Luring => _luring;
 
         public override string Label => _luring ? "유인 후퇴" : Retreating ? "후퇴 중" : "귀환 중";
 
@@ -492,6 +512,14 @@ namespace GuildMaster.Adventurers
             // The fight is over but they are badly hurt (user report 2026-09-22: the loot was left
             // lying): gather what fell close by — looting stops by itself when an enemy shows.
             if (Retreating && a.Looting.Tick(dt, p => Vector2.Distance(p, _retreatFrom) <= RetreatLootRadius)) return;
+            // Far from town and hurt or worn, or out in the dark: make camp rather than walk the
+            // whole way (P4-66, user proposal 2026-09-23). Once the fight is well behind.
+            _campCheck -= dt;
+            if (_campCheck <= 0f)
+            {
+                _campCheck = AdvCtx.CampCheckInterval;
+                if (Services.TryGet<CampService>(out var camps) && camps.TryCampOnTheWay(a)) return;
+            }
             if (Vector2.Distance(a.Position, AdvCtx.GuildDoor) < 1.2f)
             {
                 a.ChangeState(a.VisitState);

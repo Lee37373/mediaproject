@@ -28,6 +28,12 @@ namespace GuildMaster.Adventurers.Prompts
             "형식 예(다른 인물이고 분위기만 참고): {\"a\":\"밥은 먹었어? 오늘 안색이 안 좋아 보여.\",\"b\":\"어젯밤에 잠을 설쳤어. 괜찮아, 고마워.\",\"a_to_b\":1,\"b_to_a\":1}\n" +
             "반드시 JSON 한 개로만 답한다.";
 
+        /// <summary>The same talk by a campfire out in the wild (P4-66): the night, the fire, the day's fight.</summary>
+        public static readonly string CampSystemPrompt = SystemPrompt
+            .Replace("마을에서 쉬며", "마을 밖 들판에서 모닥불을 피우고 야영하며")
+            .Replace("소재는 길드의 최근 소식, 각자의 일, 서로에 대한 감정 중 하나만 가볍게 고른다.",
+                     "소재는 [지금 있는 곳]의 분위기(모닥불, 어둠, 들려오는 소리), 오늘 겪은 싸움이나 다친 몸, 서로에 대한 감정 중 하나만 가볍게 고른다. 마을에서 쉬는 듯이 말하지 않는다.");
+
         [Serializable]
         public class ResponseDto
         {
@@ -50,14 +56,18 @@ namespace GuildMaster.Adventurers.Prompts
         }
 
         /// <summary>The scene as readable text: two people (character sheets, feelings, tone), the guild's news, the last talk.</summary>
-        public static string BuildUserText(Adventurer a, Adventurer b)
+        public static string BuildUserText(Adventurer a, Adventurer b, string scene = null)
         {
             var sb = new StringBuilder();
+            // Away from town (P4-66, a campfire): the place comes first and sets the talk; the
+            // guild's news is left out, or the model chats as if they were idling in town.
+            bool away = !string.IsNullOrEmpty(scene);
+            if (away) sb.Append("[지금 있는 곳]\n").Append(scene).Append("\n\n");
             AppendPerson(sb, "a", a, b);
             sb.Append('\n');
             AppendPerson(sb, "b", b, a);
             // Visitor arrivals/departures flood the log and would become the only topic.
-            var events = Services.TryGet<GameLog>(out var log)
+            var events = !away && Services.TryGet<GameLog>(out var log)
                 ? log.Recent(12).Where(l => !l.StartsWith("방문자")).TakeLast(RecentEventCount).ToList()
                 : new System.Collections.Generic.List<string>();
             if (events.Count > 0)
@@ -83,13 +93,15 @@ namespace GuildMaster.Adventurers.Prompts
             .Build();
 
         /// <summary>Names who says what: without it the model mixes up speaker and listener.</summary>
-        public static string SystemFor(Adventurer a, Adventurer b)
-            => SystemPrompt + $"\na는 {a.Data.name}이(가) {b.Data.name}에게 하는 말, b는 {b.Data.name}이(가) {a.Data.name}에게 하는 대답이다.";
+        public static string SystemFor(Adventurer a, Adventurer b, string scene = null)
+            => (string.IsNullOrEmpty(scene) ? SystemPrompt : CampSystemPrompt)
+               + $"\na는 {a.Data.name}이(가) {b.Data.name}에게 하는 말, b는 {b.Data.name}이(가) {a.Data.name}에게 하는 대답이다.";
 
-        public static LlmRequest BuildRequest(Adventurer a, Adventurer b) => new()
+        /// <param name="scene">Where they talk when it is not town (P4-66: a campfire), or null.</param>
+        public static LlmRequest BuildRequest(Adventurer a, Adventurer b, string scene = null) => new()
         {
-            System = SystemFor(a, b),
-            User = BuildUserText(a, b),
+            System = SystemFor(a, b, scene),
+            User = BuildUserText(a, b, scene),
             Grammar = Grammar,
             // Short on purpose: banter must not hold up decisions for long.
             MaxTokens = 220,
@@ -167,6 +179,17 @@ namespace GuildMaster.Adventurers.Prompts
             ("어제 숲에서 이상한 소리 들었어.", "고블린이겠지. 조심해서 나쁠 건 없어."),
             ("배고프다. 여관 스튜 먹으러 갈까?", "또 스튜야? 뭐, 싫진 않아."),
             ("길드 마스터가 요즘 바빠 보여.", "우리가 일을 잘하면 좀 편해지겠지."),
+        };
+
+        /// <summary>Lines by a campfire out in the wild (P4-66), when there is no model to write them.</summary>
+        public static readonly (string a, string b)[] FixedCampPairs =
+        {
+            ("불 좀 더 지필까? 오늘 밤은 꽤 춥네.", "그래, 대신 연기가 멀리 안 가게 조심하고."),
+            ("아까 그 싸움, 네 덕에 살았어.", "서로 등 맡긴 사이잖아. 푹 자 둬."),
+            ("별이 이렇게 많은 건 마을에선 못 보지.", "그러게. 이 맛에 밖으로 나오는 건가 봐."),
+            ("저 어둠 속에 뭐가 있을지 모르겠어.", "그러니까 번갈아 불침번 서는 거야."),
+            ("돌아가면 제일 먼저 뭐 할 거야?", "따뜻한 여관 침대에 눕는 거지. 당연히."),
+            ("발이 퉁퉁 부었어. 내일 걸을 수 있을까?", "쉬면 나아. 불 옆에 발 대고 있어."),
         };
     }
 }

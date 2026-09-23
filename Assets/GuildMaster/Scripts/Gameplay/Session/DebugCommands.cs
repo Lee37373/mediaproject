@@ -386,6 +386,55 @@ namespace GuildMaster.Session
             return $"spawned {spawned}";
         }
 
+        // ---------------- Camps (P4-66) ----------------
+
+        /// <summary>Every camp: where, why, how long, who sits at it (state, HP, fatigue), the watch, raids.</summary>
+        public static string Camps()
+        {
+            var service = Services.Get<Adventurers.CampService>();
+            var clock = Services.Get<GameClock>();
+            var sb = new StringBuilder($"[{clock.FormatTime()}] camps={service.Camps.Count} drawn={service.MonstersDrawn} night={clock.IsNight}\n");
+            foreach (var c in service.Camps)
+            {
+                sb.AppendLine($"  #{c.Id} {c.Reason} {Quests.QuestBoard.DescribeArea(c.Position)} {clock.TotalHours - c.PitchedAtHour:0.0}h " +
+                              $"sitting={c.Sitting(clock.TotalHours)} watch={c.Watcher?.Data.name ?? "-"} alarmed={c.Alarmed} raids={c.Raids} talked={c.Talked}");
+                foreach (var m in c.Members)
+                    sb.AppendLine($"    {m.Data.name} {m.StateLabel} hp={m.HpRatio:P0} fat={m.Data.fatigue:0} → {c.ResumeTo[m]?.Label}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Makes camp right away where roster member <paramref name="index"/> stands, with the members within 4 cells.</summary>
+        public static string CampNow(int index = 0, bool night = false)
+        {
+            var roster = Services.Get<GuildRoster>().Members;
+            if (index < 0 || index >= roster.Count) return "no such member";
+            var first = roster[index];
+            var group = new List<Adventurer> { first };
+            group.AddRange(roster.Where(m => m != first && m.IsAlive && Vector2.Distance(m.Position, first.Position) <= 4f));
+            bool ok = Services.Get<Adventurers.CampService>().Pitch(group, night ? Adventurers.CampReason.Night : Adventurers.CampReason.Recover);
+            return ok ? Camps() : "no spot to camp";
+        }
+
+        /// <summary>Nest-less monsters <paramref name="distance"/> cells from the first camp, left to notice the fire themselves.</summary>
+        public static string SpawnNearCamp(string speciesId, int count, float distance = 9f)
+        {
+            var camp = Services.Get<Adventurers.CampService>().Camps.FirstOrDefault();
+            if (camp == null) return "no camp";
+            var species = Services.Get<EcosystemManager>().Species.FirstOrDefault(s => s.id == speciesId);
+            if (species == null) return "unknown species: " + speciesId;
+            var world = Services.Get<World.WorldService>();
+            int spawned = 0;
+            for (int i = 0; i < count; i++)
+            {
+                var p = camp.Position + GameRandom.Shared.InsideUnitCircle().normalized * distance;
+                if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(p), 3, out var c)) continue;
+                Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(c)).Setup(species, null);
+                spawned++;
+            }
+            return $"spawned {spawned}";
+        }
+
         // ---------------- Banter (P3-5) ----------------
 
         /// <summary>Gathers the first two idle members at the plaza and starts a banter right away.</summary>

@@ -204,6 +204,10 @@ namespace GuildMaster.Session
             banter.Init(llm, roster, world);
             Services.Register(new RelationshipRecorder());
             Services.Register(banter);
+            // Camps out in the wild (P4-66): campfires, the watch, raiders drawn by the light, talk at the fire.
+            var camps = AddSystem<CampService>();
+            camps.Init(clock, world, pool, roster);
+            Services.Register(camps);
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             for (int i = 0; i < Balance.startingAdventurers; i++)
             {

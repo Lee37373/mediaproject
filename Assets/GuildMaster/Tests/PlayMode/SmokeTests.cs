@@ -1275,6 +1275,114 @@ namespace GuildMaster.Tests
         /// migrations, P4-58 roaming packs) drew the residents into a fight of its own and the test
         /// measured that one instead.
         /// </summary>
+        /// <summary>
+        /// P4-66 (user proposal 2026-09-23): a party far from town and hurt makes camp instead of
+        /// walking home, talks by the fire, then one keeps watch while the other sleeps. At night the
+        /// firelight draws a monster none of them could see; everyone gets up; in the morning, mended,
+        /// they put the fire out and head home.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FarOutAndHurt_APartyMakesCamp_KeepsWatch_AndTheFirelightDrawsARaider()
+        {
+            yield return Boot();
+            var camps = Services.Get<CampService>();
+            var world = Services.Get<World.WorldService>();
+            var grid = world.Grid;
+            var eco = Services.Get<EcosystemManager>();
+
+            // Open ground about 40 cells out, well away from any den.
+            Vector2 spot = default;
+            bool found = false;
+            for (int k = 0; k < 16 && !found; k++)
+            {
+                var d = new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f));
+                if (!grid.TryFindNearestWalkable(World.GridMap.WorldToCell(world.TownCenterWorld + d * 40f), 3, out var c)) continue;
+                var p = World.GridMap.CellToWorld(c);
+                if (eco.Nests.Any(n => Vector2.Distance(n.WorldPosition, p) < 20f)) continue;
+                spot = p;
+                found = true;
+            }
+            Assume.That(found, "open ground 40 cells out");
+            ClearStrangersNear(spot, 30f);
+            // Evening: the camp is made in daylight and the night comes while they sit at it (a clock
+            // jumped past the night would also run past the camp's longest stay).
+            var clockField = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+            clockField.SetValue(Clock, Mathf.Floor(Clock.TotalHours / 24f) * 24f + 18.5f);
+
+            var pair = Roster.Members.Where(a => a.IsAlive).Take(2).ToList();
+            Services.Get<GuildParties>().SetOut(pair);
+            for (int i = 0; i < pair.Count; i++)
+            {
+                var a = pair[i];
+                a.Mover.Stop();
+                a.transform.position = spot + new Vector2(i * 1.2f, 0f);
+                DebugCommands.Hurt(Roster.Members.ToList().IndexOf(a), a.Stats.MaxHp * 0.5f);
+                a.Data.fatigue = 40f;
+                a.ChangeState(a.ReturnState);
+            }
+            Unit.GuildInvulnerable = true; // hurt but not killed: what is measured is the camp, not the fight
+            try
+            {
+                yield return WaitFor(() => camps.Camps.Count > 0, 15f);
+                Assert.That(camps.Camps.Count, Is.EqualTo(1), $"far out and hurt, they make camp ({string.Join(", ", pair.Select(a => a.StateLabel))})");
+                var camp = camps.Camps[0];
+                Assert.That(camp.Reason, Is.EqualTo(CampReason.Recover));
+                Assert.That(camp.Members, Is.EquivalentTo(pair), "the whole party sits at the one fire");
+                Assert.That(grid.IsInTown(World.GridMap.WorldToCell(camp.Position)), Is.False);
+
+                // Talk by the fire, then the watches: one awake, one asleep and all but blind.
+                Clock.SetSpeed(3);
+                int talks = Services.Get<BanterService>().FixedBanters;
+                yield return WaitFor(() => camp.Talked, 15f);
+                Assert.That(camp.Talked, Is.True, "they sat down together and talked");
+                Assert.That(Services.Get<BanterService>().FixedBanters, Is.GreaterThan(talks), "a line was spoken (no model here: fixed lines)");
+                yield return WaitFor(() => camp.Watcher != null && camp.Members.Any(m => m.Visual.Lying), 20f);
+                var watcher = camp.Watcher;
+                Assert.That(watcher, Is.Not.Null, "someone keeps watch");
+                var sleeper = camp.Members.First(m => m != watcher);
+                Assert.That(sleeper.Visual.Lying, Is.True, "the other lies down");
+                Assert.That(watcher.Visual.Lying, Is.False);
+                Assert.That(sleeper.GetComponent<Fog.VisionSource>().SightRadius, Is.EqualTo(CampRules.SleeperSight));
+
+                // Night: a goblin past everyone's sight but inside the firelight comes for them.
+                yield return WaitFor(() => Clock.IsNight, 30f);
+                Assume.That(Clock.IsNight, Is.True);
+                Assume.That(camps.Camps.Contains(camp), Is.True, "still camped when night falls");
+                float dist = Mathf.Min(CampRules.LightRadiusNight - 1f, Mathf.Max(watcher.Stats.SightRadius, sleeper.Stats.SightRadius) + 1.5f);
+                Monster goblin = null;
+                for (int k = 0; k < 16 && goblin == null; k++)
+                {
+                    var d = new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f));
+                    var p = camp.Position + d * dist;
+                    if (!grid.IsWalkable(World.GridMap.WorldToCell(p)) || !world.CanSee(p, camp.Position, CampRules.LightRadiusNight)) continue;
+                    goblin = SpawnMonster("goblin", p, meleeOnly: true);
+                }
+                Assume.That(goblin, Is.Not.Null, "a spot in the firelight");
+                Assume.That(camp.Members.Any(m => m.CanSee(goblin)), Is.False, "nobody at the fire sees it");
+                int drawn = camps.MonstersDrawn;
+                yield return WaitFor(() => camps.MonstersDrawn > drawn, 3f);
+                Assert.That(camps.MonstersDrawn, Is.GreaterThan(drawn), "the light drew it");
+                Assert.That(pair.Contains(goblin.CurrentTarget as Adventurer), Is.True, "it comes for one of them");
+                yield return WaitFor(() => camp.Raids > 0, 10f);
+                Assert.That(camp.Raids, Is.GreaterThan(0), "the raid gets them up");
+                Assert.That(camp.Members.Any(m => m.Visual.Lying), Is.False, "nobody sleeps through a raid");
+
+                // Morning, the goblin gone, everyone mended: the fire goes out and they go home.
+                goblin.Perish();
+                foreach (var a in pair)
+                {
+                    a.Heal(a.Stats.MaxHp);
+                    a.Data.fatigue = 0f;
+                }
+                clockField.SetValue(Clock, Mathf.Floor(Clock.TotalHours / 24f) * 24f + 24f + 8f);
+                yield return WaitFor(() => !camps.Camps.Contains(camp), 15f);
+                Assert.That(camps.Camps.Contains(camp), Is.False, $"the camp breaks up (alarmed {camp.Alarmed})");
+                Assert.That(camp.Fire.Burning, Is.False, "the fire is put out");
+                foreach (var a in pair) Assert.That(a.Fsm.Current, Is.Not.EqualTo(a.CampState), $"{a.Data.name} is on the road again");
+            }
+            finally { Unit.GuildInvulnerable = false; }
+        }
+
         static void ClearStrangersNear(Vector2 at, float radius, params Ecosystem.Nest[] keep)
         {
             foreach (var u in UnitRegistry.All.ToList())

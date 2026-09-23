@@ -61,6 +61,8 @@ namespace GuildMaster.Adventurers
         internal ReturnToTownState ReturnState;
         internal GuildVisitState VisitState;
         internal RestState RestState;
+        /// <summary>At a campfire out in the wild (P4-66).</summary>
+        internal CampState CampState;
         internal DeadState DeadState;
         internal VisitorWanderState VisitorWanderState;
         internal VisitorLeaveState VisitorLeaveState;
@@ -130,6 +132,7 @@ namespace GuildMaster.Adventurers
             ReturnState = new ReturnToTownState();
             VisitState = new GuildVisitState();
             RestState = new RestState();
+            CampState = new CampState();
             DeadState = new DeadState();
             VisitorWanderState = new VisitorWanderState();
             VisitorLeaveState = new VisitorLeaveState();
@@ -286,7 +289,8 @@ namespace GuildMaster.Adventurers
             if (IsAlive)
             {
                 float fatigueRate = inTown ? 0.5f : 3f * (Traits?.FatigueMultiplier ?? 1f);
-                if (Fsm.Current != RestState) Data.fatigue = Mathf.Min(100f, Data.fatigue + fatigueRate * hours);
+                // Resting in town or by a campfire (P4-66) wears nobody out.
+                if (Fsm.Current != RestState && Fsm.Current != CampState) Data.fatigue = Mathf.Min(100f, Data.fatigue + fatigueRate * hours);
                 if (inTown && Fsm.Current != RestState) Heal(Stats.MaxHp * 0.04f * hours);
                 Data.stress = Mathf.Max(0f, Data.stress - (inTown ? 4f : 0.5f) * hours);
                 TickStatus(dt);

@@ -231,6 +231,54 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.1f));
         }
 
+        /// <summary>A campfire's ring of stones and crossed logs (P4-66); the flame is drawn on top.</summary>
+        public static Sprite CampfireLogs(bool burntOut = false)
+        {
+            string key = "c_campfire:" + burntOut;
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(40, 24);
+            var woodInk = Hex(0x4A2E17);
+            c.Shape(Ellipse(20, 7, 18, 5f), new Color(0f, 0f, 0f, 0.22f), new Color(0f, 0f, 0f, 0.22f), 0f);
+            // Ashes in the middle, then the logs crossed over them.
+            c.Shape(Ellipse(20, 9, 10, 4f), burntOut ? Hex(0x55504C) : Hex(0x3A2A22), Hex(0x2A2220), 1f);
+            var wood = burntOut ? Hex(0x3E3632) : Hex(0x9A6436);
+            c.Shape((x, y) => RoundRect(-11, -2.2f, 11, 2.2f, 2f)(0.9f * (x - 20) + 0.44f * (y - 11), -0.44f * (x - 20) + 0.9f * (y - 11)), wood, woodInk, 1.5f);
+            c.Shape((x, y) => RoundRect(-11, -2.2f, 11, 2.2f, 2f)(0.9f * (x - 20) - 0.44f * (y - 11), 0.44f * (x - 20) + 0.9f * (y - 11)), Darker(wood, 0.9f), woodInk, 1.5f);
+            // Stones around the pit.
+            for (int i = 0; i < 7; i++)
+            {
+                float t = i / 7f * Mathf.PI * 2f + 0.3f;
+                float sx = 20 + Mathf.Cos(t) * 14f, sy = 9 + Mathf.Sin(t) * 5.5f;
+                c.Shape(Ellipse(sx, sy, 3.4f, 2.6f), Hex(0x8E8C94), Hex(0x3C3B45), 1.5f);
+            }
+            return c.ToSprite(key, new Vector2(0.5f, 0.3f));
+        }
+
+        /// <summary>One frame of a campfire flame (P4-66): a teardrop of orange with a yellow heart.</summary>
+        public static Sprite Flame(int frame)
+        {
+            frame = Mathf.Abs(frame) % 3;
+            string key = "c_flame:" + frame;
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(24, 32);
+            float lean = (frame - 1) * 1.5f;
+            Func<float, float, float> Tongue(float cx, float baseY, float w, float h, float tip)
+                => (x, y) =>
+                {
+                    // A drop: round at the bottom, drawn to a point that leans with the frame.
+                    float t = Mathf.Clamp01((y - baseY) / h);
+                    float half = w * Mathf.Sqrt(Mathf.Max(0f, 1f - t)) * (1f - 0.35f * t);
+                    float centre = cx + tip * t * t;
+                    float dx = Mathf.Abs(x - centre) - half;
+                    float dy = Mathf.Max(baseY - y - 2f, y - (baseY + h));
+                    return Mathf.Max(dx, dy);
+                };
+            c.Shape(Tongue(12, 3, 9f, 26f - frame, lean), Hex(0xF2762E), Hex(0xB23A1C), 1.5f);
+            c.Shape(Tongue(12, 3, 5.5f, 17f + frame, -lean * 0.6f), Hex(0xFFC93C), Hex(0xFFC93C), 0f);
+            c.Shape(Tongue(12, 3, 2.5f, 9f, lean * 0.3f), Hex(0xFFF3B8), Hex(0xFFF3B8), 0f);
+            return c.ToSprite(key, new Vector2(0.5f, 0.05f));
+        }
+
         /// <summary>
         /// A town gate spanning <paramref name="cells"/> cells (P4-39): a wooden double door seen
         /// from the front when it runs along x (north/south gates), a plank strip seen from above

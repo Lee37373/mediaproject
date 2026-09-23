@@ -38,6 +38,7 @@ namespace GuildMaster.UI
             EventBus.Subscribe<SkillUsedEvent>(OnSkill);
             EventBus.Subscribe<ProjectileBlockedEvent>(OnBlocked);
             EventBus.Subscribe<UnitHealedEvent>(OnHealed);
+            EventBus.Subscribe<CampSnoreEvent>(OnSnore);
         }
 
         void OnDestroy()
@@ -48,6 +49,7 @@ namespace GuildMaster.UI
             EventBus.Unsubscribe<SkillUsedEvent>(OnSkill);
             EventBus.Unsubscribe<ProjectileBlockedEvent>(OnBlocked);
             EventBus.Unsubscribe<UnitHealedEvent>(OnHealed);
+            EventBus.Unsubscribe<CampSnoreEvent>(OnSnore);
         }
 
         static bool IsVisible(Vector2 p) => !Services.TryGet<FogOfWar>(out var fog) || fog.IsVisible(p);
@@ -56,6 +58,13 @@ namespace GuildMaster.UI
         {
             if (e.User == null || !IsVisible(e.User.Position)) return;
             Spawn(e.User.transform.position + new Vector3(0, 1f), e.Name + "!", e.Color, 15);
+        }
+
+        /// <summary>A sleeper by a campfire (P4-66).</summary>
+        void OnSnore(CampSnoreEvent e)
+        {
+            if (e.Sleeper == null || !IsVisible(e.Sleeper.Position)) return;
+            Spawn(e.Sleeper.transform.position + new Vector3(0.25f, 0.45f), "Zz", new Color(0.75f, 0.85f, 1f), 13);
         }
 
         void OnBlocked(ProjectileBlockedEvent e)
