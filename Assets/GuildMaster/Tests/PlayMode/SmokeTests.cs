@@ -196,12 +196,53 @@ namespace GuildMaster.Tests
             Assert.That(treasury.Gold, Is.EqualTo(gold - Recruitment.VisitorService.NoticeCost));
             Assert.That(visitors.PostNotice(), Is.False, "one notice at a time");
 
+            // Members' keep (P4-68) runs while we wait: everyone rests at the guild, so every hour is
+            // an hour of lodging. One member is nearly broke and runs up a slate; one is flush.
+            var keep = Services.Get<LivingCosts>();
+            foreach (var a in Roster.Members) { a.Data.fatigue = 100f; a.ChangeState(a.RestState); }
+            var broke = Roster.Members[0];
+            var flush = Roster.Members[1];
+            broke.Data.gold = 1; broke.Data.debt = 0;
+            flush.Data.gold = 200; flush.Data.debt = 0;
+            int keepIncome = 0;
+            Action<Economy.GoldFlowEvent> onGold = e => { if (e.Reason == Economy.GoldReason.Living) keepIncome += e.Amount; };
+            EventBus.Subscribe(onGold);
+            Assert.That(keep.IsLodging(flush), Is.True, $"resting in town is lodging ({flush.StateLabel})");
+
             float start = Clock.TotalHours;
             Clock.SetSpeed(3);
             yield return WaitFor(() => !visitors.NoticePosted, 30f);
             Assert.That(visitors.NoticePosted, Is.False, "the applicant turned up");
             Assert.That(Clock.TotalHours - start, Is.LessThanOrEqualTo(Recruitment.VisitorService.NoticeMaxHours + 0.5f));
             Assert.That(visitors.Visitors.Count, Is.GreaterThan(before));
+
+            int lodged = 200 - flush.Data.gold;
+            Assert.That(lodged, Is.GreaterThan(0), "a flush member pays lodging by the hour");
+            Assert.That(lodged % keep.LodgingGoldPerHour, Is.EqualTo(0), $"whole hours of lodging ({lodged}G)");
+            Assert.That(broke.Data.gold, Is.EqualTo(0), "the broke member paid what it had");
+            Assert.That(broke.Data.debt, Is.GreaterThan(0), "and the rest went on the slate");
+            Assert.That(keepIncome, Is.GreaterThan(0), "the guild received the keep");
+
+            // Earning clears the slate before anything else.
+            int owed = broke.Data.debt;
+            broke.Data.gold = 50;
+            Assert.That(keep.Settle(broke), Is.EqualTo(owed));
+            Assert.That((broke.Data.gold, broke.Data.debt), Is.EqualTo((50 - owed, 0)));
+
+            // Midnight: meals for everyone, wherever they are, and a day's summary.
+            int flushBefore = flush.Data.gold, received = keepIncome;
+            LivingCostsDayEvent? day = null;
+            Action<LivingCostsDayEvent> onDay = e => day = e;
+            EventBus.Subscribe(onDay);
+            typeof(LivingCosts).GetMethod("OnDay", BindingFlags.NonPublic | BindingFlags.Instance)
+                .Invoke(keep, new object[] { new DayPassedEvent { Day = 2 } });
+            EventBus.Unsubscribe(onDay);
+            EventBus.Unsubscribe(onGold);
+            Assert.That(flush.Data.gold, Is.EqualTo(flushBefore - keep.MealGold), "meals once a day");
+            int alive = Roster.Members.Count(a => a.IsAlive);
+            Assert.That(keepIncome - received, Is.EqualTo(alive * keep.MealGold), "every member ate and could pay");
+            Assert.That(day.HasValue && day.Value.Meals == alive * keep.MealGold && day.Value.Lodging > 0 && day.Value.Repaid == owed, Is.True,
+                        $"the day's summary: meals={day?.Meals} lodging={day?.Lodging} repaid={day?.Repaid}");
         }
 
         [UnityTest]

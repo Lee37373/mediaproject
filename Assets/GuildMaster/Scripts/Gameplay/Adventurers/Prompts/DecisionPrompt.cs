@@ -127,7 +127,7 @@ namespace GuildMaster.Adventurers.Prompts
                     can_buy_potion = PotionUseful(a),
                     can_buy_gear = GearShopping.CanBuy(a),
                     gear_tier = d.gearTier,
-                    money_status = MoneyLabel(d.gold),
+                    money_status = MoneyLabel(LivingCostRules.NetWorth(d.gold, d.debt)), // debt counts against it (P4-68)
                 },
                 available_quests = available.Select(q => new QuestDto
                 {

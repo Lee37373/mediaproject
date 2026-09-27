@@ -80,6 +80,15 @@ namespace GuildMaster.Session
                 if (e.Pool <= 0) return;
                 Add($"{e.Party.Name} 정산 {e.Pool}G{(e.FromLlm ? "" : " (규칙 분배)")}: {string.Join(", ", e.Shares.Select(s => $"{s.member.Data.name} {s.share}G"))}", LogCategory.Economy);
             });
+            EventBus.Subscribe<LivingCostsDayEvent>(e =>
+            {
+                if (e.Received <= 0 && e.Outstanding <= 0) return;
+                var parts = new List<string> { $"식비 {e.Meals}G" };
+                if (e.Lodging > 0) parts.Add($"숙박비 {e.Lodging}G");
+                if (e.Repaid > 0) parts.Add($"외상 상환 {e.Repaid}G");
+                string owed = e.Outstanding > 0 ? $" 길드원 외상이 {e.Outstanding}G 남았습니다." : "";
+                Add($"{e.Day}일차 길드원 생활비 +{e.Received}G ({string.Join(" · ", parts)}).{owed}", LogCategory.Economy);
+            });
             // Only when the relationship grade changes (friendly → close, etc.), not every point.
             EventBus.Subscribe<RelationChangedEvent>(e =>
             {

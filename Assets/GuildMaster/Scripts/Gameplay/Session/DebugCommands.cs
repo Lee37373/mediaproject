@@ -306,6 +306,18 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        // ---------------- Members' keep (P4-68) ----------------
+
+        /// <summary>Each member's gold and debt, whether they are paying for a bed, and what the guild has received.</summary>
+        public static string Keep()
+        {
+            var keep = Services.Get<LivingCosts>();
+            var sb = new StringBuilder($"received={keep.TotalReceived}G owed={keep.Outstanding}G (meal {keep.MealGold}G/day, lodging {keep.LodgingGoldPerHour}G/h)\n");
+            foreach (var a in Services.Get<GuildRoster>().Members)
+                sb.AppendLine($"  {a.Data.name}: gold={a.Data.gold} debt={a.Data.debt} {(keep.IsLodging(a) ? "lodging" : a.StateLabel)}");
+            return sb.ToString();
+        }
+
         // ---------------- Guild master & escort (P3-4a) ----------------
 
         public static string PostEscort(int goldPerHour, int expPerHour, int hours, int party)

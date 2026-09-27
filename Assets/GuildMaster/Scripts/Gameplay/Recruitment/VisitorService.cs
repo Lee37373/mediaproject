@@ -9,7 +9,7 @@ namespace GuildMaster.Recruitment
     public struct VisitorArrivedEvent { public Adventurer Visitor; }
 
     /// <summary>
-    /// Spawns recruitable visitors at a town gate every 8–12 game hours. They stay on the plaza
+    /// Spawns recruitable visitors at a town gate every 6–8 game hours. They stay on the plaza
     /// for 12 hours (longer while talking) and then leave (see VisitorStates). The player can also
     /// pay for a recruitment notice to bring the next one sooner.
     /// </summary>
@@ -17,9 +17,10 @@ namespace GuildMaster.Recruitment
     {
         public const float StayHours = 12f;
         // P4-38 (was 12–20): hunting in parties needs a bigger roster, and deaths have to be
-        // replaceable; this brings roughly two candidates a day.
-        const float MinIntervalHours = 8f;
-        const float MaxIntervalHours = 12f;
+        // replaceable; this brings roughly two candidates a day. P4-68 (was 8–12, user decision
+        // 2026-09-27): the 5-day run lost two of four members and recruited none; about three a day.
+        const float MinIntervalHours = 6f;
+        const float MaxIntervalHours = 8f;
         const int MaxConcurrent = 2;
 
         /// <summary>Gold a recruitment notice costs (P4-38, user decision 2026-09-21).</summary>

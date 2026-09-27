@@ -595,6 +595,9 @@ namespace GuildMaster.Adventurers
                 }
                 else if (!q.IsActive) a.CurrentQuest = null;
             }
+            // Meals and lodging owed come off the top, before anything is bought (P4-68).
+            if (Services.TryGet<LivingCosts>(out var keep) && keep.Settle(a) is int repaid and > 0)
+                a.Say($"밀린 생활비 {repaid}G를 갚았다.");
 
             if (pooled && parties.Arrive(a)) return; // shop once the share is paid
             Shop();

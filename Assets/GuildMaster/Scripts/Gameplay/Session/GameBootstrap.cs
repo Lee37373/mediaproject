@@ -221,6 +221,8 @@ namespace GuildMaster.Session
             Services.Register(new Reports.DailyLedger(treasury, clock.Day, clock.HourOfDay));
             // Stress and its consequences (F-2): demands, walking away from quests, quitting; interview, leave, bonus.
             Services.Register(new Welfare.GuildWelfare(clock, roster, treasury, board, notifications));
+            // Members' keep (P4-68): meals at midnight, lodging while resting in town, unpaid goes on the slate.
+            Services.Register(new LivingCosts(roster, treasury, world, Balance.dailyMealGold, Balance.lodgingGoldPerHour));
             // What death leaves behind (F-6): the wall of the fallen, relics to fetch, last stands and the wounds after them.
             Services.Register(new Legacy.GuildLegacy(clock, roster, treasury, notifications));
             // Quest proposals (F-8): the LLM (or the rules) offers a few quests to choose from instead of the posting form.

@@ -28,6 +28,8 @@ namespace GuildMaster.Economy
         public const string Memorial = "memorial";
         /// <summary>Treating a badly wounded member (F-6).</summary>
         public const string Medical = "medical";
+        /// <summary>Members' meals and lodging, and debts for them repaid (P4-68).</summary>
+        public const string Living = "living";
     }
 
     /// <summary>

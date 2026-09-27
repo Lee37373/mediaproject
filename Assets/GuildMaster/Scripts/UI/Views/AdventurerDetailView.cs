@@ -171,7 +171,7 @@ namespace GuildMaster.UI
             string loot = d.loot.Count == 0 ? "없음" : string.Join(", ", d.loot.Select(l => $"{db.Item(l.itemId)?.displayName ?? l.itemId} x{l.count}"));
             _gear.text =
                 $"장비 {(d.gearTier == 0 ? "없음" : $"{d.gearTier}등급")} {UIBuilder.Colored($"(공격 +{3 * d.gearTier}, 방어 +{2 * d.gearTier}) · {nextText}", UITheme.TextMuted)}\n" +
-                $"골드 {d.gold} · 물약 {d.potions}\n" +
+                $"{LivingCostRules.Purse(d.gold, d.debt)} · 물약 {d.potions}\n" +
                 UIBuilder.Colored("전리품: " + loot, UITheme.TextMuted);
 
             _record.text =

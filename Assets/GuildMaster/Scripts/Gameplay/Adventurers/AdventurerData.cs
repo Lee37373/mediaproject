@@ -23,6 +23,8 @@ namespace GuildMaster.Adventurers
         public int level = 1;
         public int exp;
         public int gold;
+        /// <summary>Meals and lodging not yet paid for (P4-68); the next gold earned clears it first.</summary>
+        public int debt;
         [Range(0, 100)] public float fatigue;
         [Range(0, 100)] public float stress;
         public string mbti;

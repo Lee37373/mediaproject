@@ -181,10 +181,12 @@ namespace GuildMaster.Adventurers
             var splitter = members.Count > 0 ? members[0] : null;
             if (splitter != null && !string.IsNullOrEmpty(say) && p.Pool > 0) splitter.Say(say);
             var paid = new List<(Adventurer, int)>();
+            Services.TryGet<LivingCosts>(out var keep);
             for (int i = 0; i < members.Count; i++)
             {
                 members[i].Data.gold += shares[i];
                 paid.Add((members[i], shares[i]));
+                keep?.Settle(members[i]); // a share pays off the slate first (P4-68)
             }
             int pool = p.Pool;
             EventBus.Publish(new PartySettledEvent { Party = p, Pool = pool, Shares = paid, FromLlm = fromLlm, Say = say });

@@ -61,6 +61,15 @@ namespace GuildMaster.Session
         public int startingPotions = 6;
         [Range(0.3f, 2f)] public float lootBuyRate = 1f;
         [Range(1f, 2f)] public float goodsSellRate = 1.2f;
+        /// <summary>
+        /// P4-68 (user decision 2026-09-27): members pay their keep to the guild. In the 5-day run the
+        /// guild fell from 800 to 36G while each member sat on 350–411G (about 70G earned a day).
+        /// Meals are charged per member at midnight wherever they are, lodging per game hour of rest in
+        /// town; a camp is free. What they cannot pay becomes debt. Measured over 5 days: about 10–12G
+        /// a day each, nearly all meals (members rest in town only an hour or so a day).
+        /// </summary>
+        public int dailyMealGold = 10;
+        public int lodgingGoldPerHour = 2;
 
         [Header("Guild")]
         /// <summary>P4-38 (was 3): one full party from the start, one of each class (see StartingLineup).</summary>

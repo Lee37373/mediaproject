@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
@@ -6,6 +7,7 @@ using GuildMaster.Ecosystem;
 using GuildMaster.Economy;
 using GuildMaster.Player;
 using GuildMaster.Quests;
+using GuildMaster.Recruitment;
 using GuildMaster.Units;
 using GuildMaster.World;
 using UnityEngine;
@@ -18,6 +20,8 @@ namespace GuildMaster.Session
     /// the guild has not seen), and it keeps a couple of hunt quests on the board, sized so the
     /// roster reads them as "적당", paying the going rate. It is a measuring instrument, not an AI
     /// player — it never upgrades buildings or builds towers, so a run measures the bare loop.
+    /// P4-68: it also talks visitors into joining, and posts against the nests threatening a raid
+    /// first — the 5-day run recruited no one and let the goblins by the town fill up.
     /// Created on demand by <see cref="DebugCommands"/>.
     /// </summary>
     public class BalanceAutoPlayer : MonoBehaviour
@@ -44,6 +48,11 @@ namespace GuildMaster.Session
         public int ScoutLegs { get; private set; }
         public int ScoutRetreats { get; private set; }
         public int ShieldSaves { get; private set; }
+        /// <summary>Visitors talked to, and how many of them joined (P4-68).</summary>
+        public int RecruitTalks { get; private set; }
+        public int Recruited { get; private set; }
+        /// <summary>Hunts posted on a nest threatening a raid (P4-68).</summary>
+        public int ThreatPosts { get; private set; }
 
         /// <summary>Scouting ring the master walks, in cells beyond the wall; it grows each lap.</summary>
         public const float FirstRing = 12f;
@@ -85,6 +94,9 @@ namespace GuildMaster.Session
             _master = Services.Get<PlayerAvatar>();
             _world = Services.Get<WorldService>();
             Posted = Skipped = ScoutLegs = ScoutRetreats = ShieldSaves = 0;
+            RecruitTalks = Recruited = ThreatPosts = 0;
+            _talk = null;
+            _talkedTo.Clear();
             _leg = 0;
             _thinkTimer = 0f;
             _ring = FirstRing;
@@ -142,6 +154,68 @@ namespace GuildMaster.Session
             if (_thinkTimer > 0f) return;
             _thinkTimer = ThinkInterval;
             Scout();
+            Recruit();
+        }
+
+        // ---------------- Recruitment (P4-68) ----------------
+
+        /// <summary>Talk visitors into joining. Off measures a guild that never recruits.</summary>
+        public bool Recruits { get; set; } = true;
+        /// <summary>
+        /// Propose once affinity is here: the rule-based reply says yes from 55 after the proposal line
+        /// (which itself adds a little), and the verdict needs 50.
+        /// </summary>
+        public const int ProposeAt = 55;
+        /// <summary>Pitches before giving up on a visitor (the opening question is not counted).</summary>
+        public const int MaxPitches = 4;
+        const string Opening = "안녕하세요, 어떤 일을 찾고 계신가요?";
+
+        RecruitmentSession _talk;
+        readonly HashSet<Adventurer> _talkedTo = new();
+
+        /// <summary>
+        /// What a player would say once the opening question told them what the visitor is after: a
+        /// line on that and a compliment. The visitor's answer to the opening names what it wants, so
+        /// reading its values here is what the player learns from the talk, not hidden information.
+        /// </summary>
+        public static string PitchFor(string values) => values switch
+        {
+            "돈" => "우리 길드는 보상이 두둑해서 골드를 제대로 벌 수 있어요. 실력이 대단해 보이네요!",
+            "명예" => "우리 길드에서라면 이름을 떨치고 영웅이 될 수 있어요. 실력이 대단해 보이네요!",
+            "동료" => "우리 길드엔 함께 싸울 동료들이 있어요. 실력이 대단해 보이네요!",
+            "모험" => "우리 길드와 미지의 땅을 탐험하는 모험을 떠나 봐요. 실력이 대단해 보이네요!",
+            "안전" => "우리 길드는 서로를 지켜 주니 안전하게 일할 수 있어요. 실력이 대단해 보이네요!",
+            "지식" => "우리 길드에서는 매일 지식을 배울 수 있어요. 실력이 대단해 보이네요!",
+            _ => "우리 길드에 오면 좋은 일이 많을 거예요. 실력이 대단해 보이네요!",
+        };
+
+        /// <summary>One step of a talk per think tick: ask, pitch until warm enough, then propose.</summary>
+        void Recruit()
+        {
+            if (!Recruits) return;
+            if (_talk != null)
+            {
+                if (_talk.Busy) return;
+                if (_talk.Outcome != RecruitOutcome.Ongoing || _talk.Visitor == null || !_talk.Visitor.IsVisitor)
+                {
+                    if (_talk.Outcome == RecruitOutcome.Joined) Recruited++;
+                    _talk = null;
+                    return;
+                }
+                if (_talk.Affinity >= ProposeAt) { _ = _talk.SendAsync(null, true); return; }
+                if (_talk.PlayerTurns > MaxPitches) { _talk.Abort(); _talk = null; return; }
+                _ = _talk.SendAsync(_talk.PlayerTurns == 0 ? Opening : PitchFor(_talk.Visitor.Data.values), false);
+                return;
+            }
+            if (_roster.IsFull || !Services.TryGet<VisitorService>(out var visitors)) return;
+            foreach (var v in visitors.Visitors)
+            {
+                if (v == null || !v.IsAlive || !v.IsVisitor || v.InConversation || _talkedTo.Contains(v)) continue;
+                _talkedTo.Add(v);
+                _talk = new RecruitmentSession(v, _master.transform);
+                RecruitTalks++;
+                return;
+            }
         }
 
         /// <summary>Keeps the master above the floor so a run ends on its day count, not a game over.</summary>
@@ -247,6 +321,7 @@ namespace GuildMaster.Session
             };
             if (!_board.TryPost(draft, out _, out _)) { Skipped++; return false; }
             Posted++;
+            if (RaidThreat(nest) > 0f) ThreatPosts++;
             return true;
         }
 
@@ -257,6 +332,8 @@ namespace GuildMaster.Session
         /// The nest a sensible player would send this roster to: one it can handle, nearest first.
         /// Picking the fullest nest instead sent Lv1 parties across the map into goblin warriors and
         /// wiped the guild by day 4, which measured the auto player's judgement, not the balance.
+        /// P4-68: among the ones it can handle, a nest threatening a raid comes first (fullest first),
+        /// since a player watching the walls would not leave those to swell.
         /// </summary>
         Nest PickNest()
         {
@@ -265,7 +342,7 @@ namespace GuildMaster.Session
             var town = _world.TownCenterWorld;
 
             Nest best = null;
-            float bestDistance = float.MaxValue;
+            float bestThreat = -1f, bestDistance = float.MaxValue;
             foreach (var n in _intel.KnownNests)
             {
                 var species = _intel.SpeciesOf(n);
@@ -279,13 +356,33 @@ namespace GuildMaster.Session
                 if (QuestRisk.Margin(power, maxParty, danger) < SafeMargin) continue;
 
                 float distance = Vector2.Distance(n.WorldPosition, town);
-                if (distance < bestDistance) { bestDistance = distance; best = n; }
+                float threat = RaidThreat(n);
+                if (threat > bestThreat || (threat == bestThreat && distance < bestDistance))
+                {
+                    bestThreat = threat;
+                    bestDistance = distance;
+                    best = n;
+                }
             }
             return best;
         }
 
+        /// <summary>
+        /// How close a nest is to raiding the town, as far as the guild can tell: a raiding species'
+        /// nest by the town (<see cref="Town.WaveManager.RaidRadius"/>), by its last observed count
+        /// against the species' raid threshold. 0 for a nest that cannot raid the town.
+        /// </summary>
+        float RaidThreat(Nest n)
+        {
+            var species = _intel.SpeciesOf(n);
+            if (species == null || !species.canRaid) return 0f;
+            if (Vector2.Distance(n.WorldPosition, _world.TownCenterWorld) > Town.WaveManager.RaidRadius) return 0f;
+            return _intel.Get(n).LastCount / (float)Mathf.Max(1, species.raidThreshold);
+        }
+
         public string Report()
             => $"[autoplayer] running={Running} posted={Posted} skipped={Skipped} scoutLegs={ScoutLegs} retreats={ScoutRetreats} "
-             + $"shieldSaves={ShieldSaves}{(ShieldMaster ? "" : " (shield off)")} ring={_ring:0} openTarget={OpenQuestTarget} spareBelow={SpareBelow}";
+             + $"shieldSaves={ShieldSaves}{(ShieldMaster ? "" : " (shield off)")} ring={_ring:0} openTarget={OpenQuestTarget} spareBelow={SpareBelow} "
+             + $"threatPosts={ThreatPosts} recruitTalks={RecruitTalks} recruited={Recruited}";
     }
 }

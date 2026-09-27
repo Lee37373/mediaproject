@@ -8,14 +8,14 @@ namespace GuildMaster.Reports
     /// <summary>Where the guild's gold came from or went (F-3). Income kinds first, then expense kinds.</summary>
     public enum GoldCategory
     {
-        Tax, GoodsSold, MerchantSales, QuestRefund, OtherIncome,
+        Tax, GoodsSold, MerchantSales, LivingCosts, QuestRefund, OtherIncome,
         QuestEscrow, Negotiation, LootBought, Crafting, Upgrade, Bonus, OtherExpense,
     }
 
     public static class GoldCategories
     {
         public static readonly GoldCategory[] Income =
-            { GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.QuestRefund, GoldCategory.OtherIncome };
+            { GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.LivingCosts, GoldCategory.QuestRefund, GoldCategory.OtherIncome };
 
         public static readonly GoldCategory[] Expense =
             { GoldCategory.QuestEscrow, GoldCategory.Negotiation, GoldCategory.LootBought, GoldCategory.Crafting, GoldCategory.Upgrade, GoldCategory.Bonus, GoldCategory.OtherExpense };
@@ -35,6 +35,7 @@ namespace GuildMaster.Reports
                 GoldReason.Tax => GoldCategory.Tax,
                 GoldReason.Goods => GoldCategory.GoodsSold,
                 GoldReason.Merchant => GoldCategory.MerchantSales,
+                GoldReason.Living => GoldCategory.LivingCosts,
                 GoldReason.Loot => GoldCategory.LootBought,
                 GoldReason.Craft => GoldCategory.Crafting,
                 GoldReason.Upgrade => GoldCategory.Upgrade,
@@ -51,6 +52,7 @@ namespace GuildMaster.Reports
             GoldCategory.Tax => "일일 세금",
             GoldCategory.GoodsSold => "상품 판매(길드원 구매)",
             GoldCategory.MerchantSales => "행상인 판매",
+            GoldCategory.LivingCosts => "길드원 생활비",
             GoldCategory.QuestRefund => "의뢰 보상 환급",
             GoldCategory.OtherIncome => "기타 수입",
             GoldCategory.QuestEscrow => "의뢰 보상 예치",
