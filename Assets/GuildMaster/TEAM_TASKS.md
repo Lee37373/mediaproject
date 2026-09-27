@@ -36,7 +36,7 @@
 | P4-66 | **모닥불 야영과 습격**(사용자 제안): 마을이 멀 때 다치거나 지치면, 또는 밤이면(리더 성격) 파티가 모닥불을 피우고 쉼. 불빛을 본 몬스터가 습격, 파티는 불침번 교대, 불가 LLM 잡담 | 이재혁 | 완료 | Adventurers/CampRules·CampService·CampState·Campfire(신규)·AdventurerStates·BanterService, Monsters/Monster, Visuals/CartoonArt·CharacterVisual |  4caa223 |
 | P4-67 | dev/KMS 머지(bc9cc2d "UI 특성 가림"): 방문자가 마을 잡담으로 길드원과 친해지면 호감도 85에서 스스로 가입, 영입 대화 6턴 제한 없앰·호감도 10 이하면 제안 불가, 잡담 1시간마다 50%·6칸. 충돌 없음 | 이재혁 | 완료 | 머지 전반(Adventurers/BanterService·Prompts/BanterPrompt, Recruitment/*, UI/Views/InspectorView·RecruitDialogView) | c9fde9c |
 | P4-68 | **남은 밸런스 문제**(사용자 결정): 길드원 생활비(매일 자정 식비 10G + 마을 휴식 시간당 숙박비 2G, 못 내면 빚으로 쌓여 다음 수입에서 먼저 갚음, 야영은 무료), 방문 간격 8~12 → 6~8시간, 자동 플레이어가 영입 대화·침공 위험 종 우선 토벌. 5일 재측정: 길드 골드 800→495(무작위 맵)·800→1245(시드 20260920), 인원 6 유지, 침공 1회 방어 | 이재혁 | 완료 | Adventurers/LivingCosts·LivingCostRules(신규)·AdventurerData·AdventurerStates·PartySettlement·Prompts/DecisionPrompt, Economy/GuildTreasury, Recruitment/VisitorService, Reports/DailyReport, Session/BalanceAutoPlayer·BalanceProbe·GameBootstrap·GameLog, UI/Views/InspectorView·RosterView·AdventurerDetailView | 72526c2 |
-| P4-69 | **전체 코드 점검 2차**(사용자 요청): 구현된 모든 기능의 버그 찾기·수정과 리팩터링(P4-25 이후 추가된 기능과 KMS 기능 포함) | 이재혁 | 진행 중 | 전반 | |
+| P4-69 | **전체 코드 점검 2차**(사용자 요청): 버그 7건 — 떠돌이가 된 침공 개체의 배회 예외·복귀, 휴가·중상 길드원의 자율 사냥·초대, 안개 속 유품 소식 누설, 의뢰 제안 위험도(P4-58 이전 방식), 정산 대기 중 죽은 멤버에게 몫, 정식 빌드의 F3, 마을회관 업그레이드 세금 무변화(1레벨 값 단일화: 세금 90→120→160, EXP 5→11→19, 사용자 결정). 리팩터링: 마을 상태 판정·전투 중 판정·"N시간 전" 중복 통합 | 이재혁 | 완료 | Monsters/Monster·MonsterStates·MigrateState, Ecosystem/*, Town/WaveManager, Adventurers/Adventurer·Decisions·PartyService·HuntBandService·PartySettlement, Welfare/GuildWelfare, Legacy/*, Proposals/QuestProposalService, Persuasion/PersuasionService, Data/DefaultContent, Session/GameBalance·GameBootstrap·GameHotkeys, Core/GameClock, Units/Unit, UI/Views/KeyHelpView | b8885f7, fc18f5e |
 | P4-26 | 전투 지능 등급 재정리(본능 단계 추가, 카이팅·엄폐·분산·재선택을 등급별로) | 이재혁 | 완료 | Units/CombatTier·Combat·TargetSelector, Data/MonsterDefinition·DefaultContent | 9f5ab3a |
 | P4-27 | 파티 역할과 대형(전열·후열, 이동 대형, 집중 공격 지정) | 이재혁 | 완료 | Adventurers/PartyTactics(신규), AdventurerStates, Units/TargetSelector·Combat·Unit, Visuals/TargetMarker(신규) | 1419d87 |
 | P4-28 | 몬스터 전술(숙련 이상: 포위, 후퇴 후 합류, 무리 목표 지정) | 이재혁 | 완료 | Monsters/PackTactics·MonsterRegroupState(신규)·Monster, Units/Combat | 757850a |
@@ -106,9 +106,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-69 전체 코드 점검 2차
+- **진행 중**: (없음)
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-68, P5-1 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-69, P5-1 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
