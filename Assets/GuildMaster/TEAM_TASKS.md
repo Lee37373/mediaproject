@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-09-27
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-69**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-70**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -36,6 +36,7 @@
 | P4-66 | **모닥불 야영과 습격**(사용자 제안): 마을이 멀 때 다치거나 지치면, 또는 밤이면(리더 성격) 파티가 모닥불을 피우고 쉼. 불빛을 본 몬스터가 습격, 파티는 불침번 교대, 불가 LLM 잡담 | 이재혁 | 완료 | Adventurers/CampRules·CampService·CampState·Campfire(신규)·AdventurerStates·BanterService, Monsters/Monster, Visuals/CartoonArt·CharacterVisual |  4caa223 |
 | P4-67 | dev/KMS 머지(bc9cc2d "UI 특성 가림"): 방문자가 마을 잡담으로 길드원과 친해지면 호감도 85에서 스스로 가입, 영입 대화 6턴 제한 없앰·호감도 10 이하면 제안 불가, 잡담 1시간마다 50%·6칸. 충돌 없음 | 이재혁 | 완료 | 머지 전반(Adventurers/BanterService·Prompts/BanterPrompt, Recruitment/*, UI/Views/InspectorView·RecruitDialogView) | c9fde9c |
 | P4-68 | **남은 밸런스 문제**(사용자 결정): 길드원 생활비(매일 자정 식비 10G + 마을 휴식 시간당 숙박비 2G, 못 내면 빚으로 쌓여 다음 수입에서 먼저 갚음, 야영은 무료), 방문 간격 8~12 → 6~8시간, 자동 플레이어가 영입 대화·침공 위험 종 우선 토벌. 5일 재측정: 길드 골드 800→495(무작위 맵)·800→1245(시드 20260920), 인원 6 유지, 침공 1회 방어 | 이재혁 | 완료 | Adventurers/LivingCosts·LivingCostRules(신규)·AdventurerData·AdventurerStates·PartySettlement·Prompts/DecisionPrompt, Economy/GuildTreasury, Recruitment/VisitorService, Reports/DailyReport, Session/BalanceAutoPlayer·BalanceProbe·GameBootstrap·GameLog, UI/Views/InspectorView·RosterView·AdventurerDetailView | 72526c2 |
+| P4-69 | **전체 코드 점검 2차**(사용자 요청): 구현된 모든 기능의 버그 찾기·수정과 리팩터링(P4-25 이후 추가된 기능과 KMS 기능 포함) | 이재혁 | 진행 중 | 전반 | |
 | P4-26 | 전투 지능 등급 재정리(본능 단계 추가, 카이팅·엄폐·분산·재선택을 등급별로) | 이재혁 | 완료 | Units/CombatTier·Combat·TargetSelector, Data/MonsterDefinition·DefaultContent | 9f5ab3a |
 | P4-27 | 파티 역할과 대형(전열·후열, 이동 대형, 집중 공격 지정) | 이재혁 | 완료 | Adventurers/PartyTactics(신규), AdventurerStates, Units/TargetSelector·Combat·Unit, Visuals/TargetMarker(신규) | 1419d87 |
 | P4-28 | 몬스터 전술(숙련 이상: 포위, 후퇴 후 합류, 무리 목표 지정) | 이재혁 | 완료 | Monsters/PackTactics·MonsterRegroupState(신규)·Monster, Units/Combat | 757850a |
@@ -105,7 +106,7 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: (없음)
+- **진행 중**: P4-69 전체 코드 점검 2차
 - **예정**: (정해지면 적기)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-68, P5-1 (위 표 참고)
 
