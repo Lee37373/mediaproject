@@ -8,8 +8,10 @@ using GuildMaster.Session;
 namespace GuildMaster.Adventurers.Prompts
 {
     /// <summary>
-    /// Idle small talk between two guild members in town (P3-5). Topic: recent events and each
-    /// other's traits. Two short lines: A speaks, B answers. DTO field names are the JSON keys.
+    /// Idle small talk between two guild members in town (P3-5), or a member and a visitor still
+    /// deciding whether to join (user request 2026-09-23; see BanterService.ApplyVisitorAffinity).
+    /// Topic: recent events and each other's traits. Two short lines: A speaks, B answers. DTO field
+    /// names are the JSON keys.
     /// </summary>
     public static class BanterPrompt
     {
@@ -22,6 +24,7 @@ namespace GuildMaster.Adventurers.Prompts
             "- 딱 두 줄이다. a가 먼저 말을 걸고, b가 그 말에 직접 반응해 대답한다(맞장구, 반박, 되묻기 등).\n" +
             "- 각 줄은 한두 문장의 자연스러운 한국어 구어체다. 말투는 아래에 적힌, 서로에 대한 감정에 맞춘다.\n" +
             "- 소재는 길드의 최근 소식, 각자의 일, 서로에 대한 감정 중 하나만 가볍게 고른다. 가진 정보를 다 늘어놓지 않는다.\n" +
+            "- 둘 중 하나가 아직 길드에 들어오지 않은 방문자라면, 그 사실이 자연스럽게 대화에 묻어나도 된다(적응, 텃세 없이 궁금해하는 정도).\n" +
             "- 지난 대화(있으면)와 같은 말은 반복하지 않는다. 이어지는 이야기나 그 뒤의 일을 말해도 좋다.\n" +
             "- 자기 이름은 부르지 않는다. 영어, 숫자, 지문(괄호 속 행동 묘사)은 쓰지 않는다.\n" +
             "- a_to_b, b_to_a: 이 대화 뒤 상대에 대한 감정 변화(-5~5). 즐겁거나 공감되면 +, 서운하거나 부딪치면 -, 별일 없으면 0.\n" +
@@ -46,7 +49,9 @@ namespace GuildMaster.Adventurers.Prompts
         static void AppendPerson(StringBuilder sb, string tag, Adventurer x, Adventurer other)
         {
             var d = x.Data;
-            sb.Append($"[{tag}] {d.name} ({AdventurerData.ClassLabel(d.cls)}, 레벨 {d.level})\n");
+            sb.Append($"[{tag}] {d.name} ({AdventurerData.ClassLabel(d.cls)}, 레벨 {d.level})");
+            if (x.IsVisitor) sb.Append(" — 아직 길드에 들어오지 않은 방문자");
+            sb.Append('\n');
             sb.Append(NpcVoice.Sheet(x)).Append('\n');
             sb.Append("상태: ").Append(NpcVoice.Condition(x)).Append('\n');
             var memories = AdventurerMemory.SelectForPrompt(d.memories, 3).Select(m => m.Format()).ToList();

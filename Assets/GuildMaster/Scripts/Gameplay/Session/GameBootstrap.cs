@@ -229,6 +229,9 @@ namespace GuildMaster.Session
             var visitors = AddSystem<Recruitment.VisitorService>();
             visitors.Init(clock, roster, world);
             Services.Register(visitors);
+            // Lets ambient town small talk pair a visitor with a member too (user request 2026-09-23);
+            // wired here (after VisitorService is created) rather than in BanterService.Init above.
+            banter.SetVisitorService(visitors);
             // Building upgrades (P4-1).
             Services.Register(new UpgradeService(town, treasury, db, roster));
             // Crafting at the apothecary / blacksmith (P4-2).

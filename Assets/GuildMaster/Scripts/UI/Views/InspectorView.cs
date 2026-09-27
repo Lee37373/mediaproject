@@ -277,17 +277,30 @@ namespace GuildMaster.UI
             string quest = a.CurrentQuest != null ? $"{a.CurrentQuest.Title} ({a.CurrentQuest.ProgressText})" : "없음";
             var db = Services.Get<GameDatabase>();
             string loot = d.loot.Count == 0 ? "없음" : string.Join(", ", d.loot.Select(l => $"{db.Item(l.itemId)?.displayName ?? l.itemId} x{l.count}"));
-            _body.text =
-                $"상태: {UIBuilder.Colored(a.StateLabel, UITheme.Accent)} · 의뢰: {quest}\n" +
-                $"HP {a.Hp:0}/{s.MaxHp:0} · 공격 {s.Attack:0.#} · 방어 {s.Defense:0.#} · 사거리 {s.AttackRange:0.#}\n" +
-                $"EXP {d.exp}/{d.ExpToNextLevel} · 골드 {d.gold} · 물약 {d.potions} · 장비 {d.gearTier}등급\n" +
-                $"피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 처치 {d.kills} · 완료 의뢰 {d.questsCompleted}\n" +
-                $"성격 {d.mbti} · 가치관 {d.values} · 전투 {CombatTiers.Label(a.Tier)}\n" +
-                $"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}\n" +
-                $"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}\n" +
-                $"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}\n" +
-                $"{Muted("관계:")} {RelationsText(a)}\n" +
-                $"{Muted("전리품: " + loot)}";
+
+            var lines = new System.Collections.Generic.List<string>
+            {
+                $"상태: {UIBuilder.Colored(a.StateLabel, UITheme.Accent)} · 의뢰: {quest}",
+                $"HP {a.Hp:0}/{s.MaxHp:0} · 공격 {s.Attack:0.#} · 방어 {s.Defense:0.#} · 사거리 {s.AttackRange:0.#}",
+                $"EXP {d.exp}/{d.ExpToNextLevel} · 골드 {d.gold} · 물약 {d.potions} · 장비 {d.gearTier}등급",
+                $"피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 처치 {d.kills} · 완료 의뢰 {d.questsCompleted}",
+            };
+            // Values/personality/traits are the recruitment "answer key" (see RecruitDialogView, hidden there
+            // 2026-09-23): this inspector card was still showing them for any visitor just from a map click,
+            // which defeated the point of hiding them in the recruit dialogue (user report 2026-09-23).
+            // Once recruited (not IsVisitor) they're shown normally; there's no more mystery to protect.
+            if (a.IsVisitor)
+                lines.Add(Muted("성격·가치관·특성: 대화로 알아가 보세요.") + $" · 전투 {CombatTiers.Label(a.Tier)}");
+            else
+            {
+                lines.Add($"성격 {d.mbti} · 가치관 {d.values} · 전투 {CombatTiers.Label(a.Tier)}");
+                lines.Add($"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}");
+            }
+            lines.Add($"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}");
+            lines.Add($"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}");
+            lines.Add($"{Muted("관계:")} {RelationsText(a)}");
+            lines.Add(Muted("전리품: " + loot));
+            _body.text = string.Join("\n", lines);
         }
 
         /// <summary>Strongest feelings towards current members, e.g. "테오 친함(+42), 리아 껄끄러움(-18)".</summary>
