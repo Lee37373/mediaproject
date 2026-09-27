@@ -92,7 +92,10 @@ namespace GuildMaster.Session
             // --- Content & economy ---
             var db = GameDatabase.Load();
             Services.Register(db);
-            var treasury = new GuildTreasury(Balance.startingGold, Balance.startingExp, Balance.expPerHour, Balance.dailyTax);
+            // Hourly EXP and daily tax start at the halls' level 1; upgrades raise them (UpgradeService).
+            var guildHall = db.Building(BuildingType.GuildHall)?.Level(1);
+            var townHall = db.Building(BuildingType.TownHall)?.Level(1);
+            var treasury = new GuildTreasury(Balance.startingGold, Balance.startingExp, guildHall?.expPerHour ?? 0f, townHall?.dailyTax ?? 0);
             treasury.AddStock(DefaultContent.Potion, Balance.startingPotions);
             Services.Register(treasury);
             Services.Register(new TradeService(treasury, db) { LootBuyRate = Balance.lootBuyRate, GoodsSellRate = Balance.goodsSellRate });

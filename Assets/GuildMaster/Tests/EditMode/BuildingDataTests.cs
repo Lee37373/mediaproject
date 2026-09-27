@@ -55,10 +55,10 @@ namespace GuildMaster.Tests
             var hall = db.Building(BuildingType.TownHall);
             // P5-1 raised these from 600/900/1300: the hall fell to the first raid in seconds.
             Assert.That(new[] { hall.Level(1).maxHp, hall.Level(2).maxHp, hall.Level(3).maxHp }, Is.EqualTo(new[] { 1000f, 1500f, 2100f }));
-            Assert.That(new[] { hall.Level(1).dailyTax, hall.Level(2).dailyTax, hall.Level(3).dailyTax }, Is.EqualTo(new[] { 60, 90, 130 }));
+            Assert.That(new[] { hall.Level(1).dailyTax, hall.Level(2).dailyTax, hall.Level(3).dailyTax }, Is.EqualTo(new[] { 90, 120, 160 }), "level 1 is the tax the game starts with (P4-69)");
             var guild = db.Building(BuildingType.GuildHall);
             Assert.That(new[] { guild.Level(1).rosterCapacity, guild.Level(2).rosterCapacity, guild.Level(3).rosterCapacity }, Is.EqualTo(new[] { 6, 9, 12 }));
-            Assert.That(new[] { guild.Level(1).expPerHour, guild.Level(2).expPerHour, guild.Level(3).expPerHour }, Is.EqualTo(new[] { 8f, 14f, 22f }));
+            Assert.That(new[] { guild.Level(1).expPerHour, guild.Level(2).expPerHour, guild.Level(3).expPerHour }, Is.EqualTo(new[] { 5f, 11f, 19f }), "level 1 is the EXP the game starts with (P4-69)");
         }
     }
 }

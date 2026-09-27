@@ -246,10 +246,13 @@ namespace GuildMaster.Data
                 return b;
             }
 
+            // P4-69: level 1 is what the game actually starts with (P5-1 set 5 EXP an hour, 90G tax); the old
+            // 8 / 60 here never applied, so the town hall's level 2 (90G) was an upgrade that paid nothing.
+            // Levels 2 and 3 keep their old steps (user decision 2026-09-27).
             B(Town.BuildingType.GuildHall,
-                new BuildingLevel { expPerHour = 8, rosterCapacity = 6, visitorLevelBonus = 0, effectText = "EXP 시간당 8 · 정원 6명" },
-                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, expPerHour = 14, rosterCapacity = 9, visitorLevelBonus = 1, effectText = "EXP 시간당 14 · 정원 9명 · 방문자 레벨 +1" },
-                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, expPerHour = 22, rosterCapacity = 12, visitorLevelBonus = 2, effectText = "EXP 시간당 22 · 정원 12명 · 방문자 레벨 +2" });
+                new BuildingLevel { expPerHour = 5, rosterCapacity = 6, visitorLevelBonus = 0, effectText = "EXP 시간당 5 · 정원 6명" },
+                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, expPerHour = 11, rosterCapacity = 9, visitorLevelBonus = 1, effectText = "EXP 시간당 11 · 정원 9명 · 방문자 레벨 +1" },
+                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, expPerHour = 19, rosterCapacity = 12, visitorLevelBonus = 2, effectText = "EXP 시간당 19 · 정원 12명 · 방문자 레벨 +2" });
 
             B(Town.BuildingType.Blacksmith,
                 new BuildingLevel { craftTier = 1, effectText = "1등급 장비 제작" },
@@ -269,9 +272,9 @@ namespace GuildMaster.Data
             // P5-1: the hall fell in seconds to the first raid, so it is much sturdier now and
             // raiders only land a fraction of their attack on it (GameBalance.monsterBuildingDamageMul).
             B(Town.BuildingType.TownHall,
-                new BuildingLevel { maxHp = 1000, dailyTax = 60, effectText = "내구도 1000 · 세금 하루 60G" },
-                new BuildingLevel { goldCost = 400, itemCosts = { I("stone_shard", 10), I("iron_ore", 6) }, maxHp = 1500, dailyTax = 90, effectText = "내구도 1500 · 세금 하루 90G" },
-                new BuildingLevel { goldCost = 1000, itemCosts = { I("crown_shard", 1), I("iron_ore", 15) }, maxHp = 2100, dailyTax = 130, effectText = "내구도 2100 · 세금 하루 130G" });
+                new BuildingLevel { maxHp = 1000, dailyTax = 90, effectText = "내구도 1000 · 세금 하루 90G" },
+                new BuildingLevel { goldCost = 400, itemCosts = { I("stone_shard", 10), I("iron_ore", 6) }, maxHp = 1500, dailyTax = 120, effectText = "내구도 1500 · 세금 하루 120G" },
+                new BuildingLevel { goldCost = 1000, itemCosts = { I("crown_shard", 1), I("iron_ore", 15) }, maxHp = 2100, dailyTax = 160, effectText = "내구도 2100 · 세금 하루 160G" });
 
             // The watchtower is placed by the player (P4-13), so its one level is the build cost.
             // Fixed price however many are already standing (user decision, 2026-09-20).
