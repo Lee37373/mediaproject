@@ -247,11 +247,7 @@ namespace GuildMaster.Ecosystem
         }
 
         /// <summary>"3시간 전" / "방금" for an observation time in total game hours.</summary>
-        public string AgoText(float hour)
-        {
-            int ago = Mathf.FloorToInt(_clock.TotalHours - hour);
-            return ago <= 0 ? "방금" : ago < 24 ? $"{ago}시간 전" : $"{ago / 24}일 전";
-        }
+        public string AgoText(float hour) => _clock.AgoText(hour);
 
         /// <summary>
         /// Short sentences about armed monsters the guild has actually seen, worst first, for the

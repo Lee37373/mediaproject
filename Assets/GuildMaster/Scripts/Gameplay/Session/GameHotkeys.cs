@@ -21,7 +21,8 @@ namespace GuildMaster.Session
             if (kb.digit3Key.wasPressedThisFrame) clock.SetSpeed(3);
             if (kb.digit4Key.wasPressedThisFrame) clock.SetSpeed(4);
 
-            if (kb.f3Key.wasPressedThisFrame && Services.TryGet<FogOfWar>(out var fog))
+            // F3: fog off (debug): it shows the whole map, so never in a player build (P4-69).
+            if (Debug.isDebugBuild && kb.f3Key.wasPressedThisFrame && Services.TryGet<FogOfWar>(out var fog))
                 fog.Disabled = !fog.Disabled;
             // F6: guild invulnerable for testing (editor / development builds only).
             if (Debug.isDebugBuild && kb.f6Key.wasPressedThisFrame) DebugCommands.Invulnerable(!Units.Unit.GuildInvulnerable);

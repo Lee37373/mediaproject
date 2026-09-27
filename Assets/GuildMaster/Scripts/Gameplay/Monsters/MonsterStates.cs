@@ -32,11 +32,14 @@ namespace GuildMaster.Monsters
             var world = Services.Get<WorldService>();
 
             // Pack flocking: followers keep a formation slot around the leader.
+            // The leader comes from the pack, which may be a roaming one with no nest (P4-58), so the
+            // slots are counted over the pack too: going by m.Home here threw for such a monster.
             var leader = m.PackLeader;
-            if (leader != null && leader != m)
+            var pack = m.PackMembers;
+            if (leader != null && leader != m && pack != null)
             {
                 int index = 0, count = 0;
-                foreach (var member in m.Home.Members)
+                foreach (var member in pack)
                 {
                     if (!member.IsAlive) continue;
                     if (member == m) index = count;
@@ -202,7 +205,8 @@ namespace GuildMaster.Monsters
         {
             var m = Owner;
             m.Heal(m.Stats.MaxHp * 0.05f * dt);
-            if (!m.Mover.IsMoving) Machine.ChangeState(m.WanderState);
+            // Home: its default life (wandering, or the pack's road if it roams), not always wandering.
+            if (!m.Mover.IsMoving) m.GoToDefaultState();
         }
     }
 }

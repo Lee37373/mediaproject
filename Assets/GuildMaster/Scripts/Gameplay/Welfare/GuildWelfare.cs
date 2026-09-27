@@ -113,12 +113,12 @@ namespace GuildMaster.Welfare
 
         public int BonusCost(Adventurer a) => CareRules.BonusCost(a.Data.level);
 
-        /// <summary>Waiting, deciding, resting or at the guild — in town and not busy with a quest or a fight.</summary>
-        internal static bool IsFreeInTown(Adventurer a)
-        {
-            var s = a.Fsm.Current;
-            return s == a.IdleState || s == a.DecidingState || s == a.RestState || s == a.VisitState;
-        }
+        /// <summary>
+        /// Fit to go out at all — a quest, a hunt, a party's outing: not on leave, not badly wounded,
+        /// not at the breaking point (P4-69). A hunt is the same risk as a quest; the refusal used to
+        /// be checked for quests only, so members sent home to rest walked out to hunt instead.
+        /// </summary>
+        public static bool MayGoOut(Adventurer a) => AnyQuestRefusal(a) == null;
 
         static string NotAMember(Adventurer a)
             => a == null || a.Data == null || !a.IsAlive || a.IsVisitor || !a.IsGuildMember ? "길드원이 아닙니다." : null;
@@ -128,7 +128,7 @@ namespace GuildMaster.Welfare
 
         public CareCheck CanGrantLeave(Adventurer a)
             => NotAMember(a) is { } no ? CareCheck.No(no)
-             : Care(a).CanGrantLeave(_clock.TotalHours, IsFreeInTown(a) && a.CurrentQuest == null);
+             : Care(a).CanGrantLeave(_clock.TotalHours, a.IsAtLeisureInTown && a.CurrentQuest == null);
 
         public CareCheck CanGiveBonus(Adventurer a)
         {
@@ -302,7 +302,7 @@ namespace GuildMaster.Welfare
                     Fatigue = d.fatigue,
                     Values = d.values,
                     OnQuest = q != null && q.IsActive,
-                    InTownFree = q == null && IsFreeInTown(a),
+                    InTownFree = q == null && a.IsAtLeisureInTown,
                 }, _roll);
                 if (step != CareStep.None) Apply(a, c, step, asked);
             }

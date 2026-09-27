@@ -245,6 +245,52 @@ namespace GuildMaster.Tests
                         $"the day's summary: meals={day?.Meals} lodging={day?.Lodging} repaid={day?.Repaid}");
         }
 
+        /// <summary>
+        /// P4-69: a member on leave or badly wounded takes no quest (F-2, F-6) — and does not go out
+        /// hunting either, nor get asked along on a hunt. With an empty board the refusal was skipped
+        /// and such a member walked out to hunt.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator OnLeaveOrWounded_AMemberStaysHome_EvenWithNothingPosted()
+        {
+            yield return Boot();
+            var members = Roster.Members.Where(a => a.IsAlive).ToList();
+            var wounded = members[0];
+            var resting = members[1];
+            var leader = members[2];
+            Assert.That(Services.Get<QuestBoard>().Quests.Count, Is.EqualTo(0), "nothing posted");
+
+            wounded.Data.woundedUntilHour = Clock.TotalHours + 12f;
+            Assert.That(Services.Get<Welfare.GuildWelfare>().GrantLeave(resting).Ok, Is.True);
+            foreach (var a in new[] { wounded, resting })
+            {
+                a.Data.fatigue = 0f;
+                a.Data.potions = 2;
+                var d = RuleBasedDecisionMaker.Decide(a, Array.Empty<Quest>());
+                Assert.That(d.Action, Is.Not.EqualTo(AdventurerAction.Hunt), $"{a.Data.name} stays home ({d.Reason})");
+                Assert.That(Welfare.GuildWelfare.MayGoOut(a), Is.False);
+            }
+
+            // A hunt leader's invitations pass them over.
+            wounded.ChangeState(wounded.IdleState);
+            resting.ChangeState(resting.IdleState);
+            leader.ChangeState(leader.IdleState);
+            var band = new HuntBand();
+            band.Members.Add(leader);
+            var invites = Services.Get<PartyService>();
+            // Without the model the answers come at once, so who was asked shows in the answers.
+            var asked = new System.Collections.Generic.List<Adventurer>();
+            Action<PartyInviteAnsweredEvent> onAnswer = e => asked.Add(e.Invitee);
+            EventBus.Subscribe(onAnswer);
+            invites.InviteToHunt(leader, band, 3);
+            yield return null;
+            EventBus.Unsubscribe(onAnswer);
+            var fit = members[3];
+            Assert.That(asked.Contains(fit) || invites.IsInvited(fit), Is.True, "the fit member was asked");
+            Assert.That(asked, Has.No.Member(wounded).And.No.Member(resting), "nobody on leave or wounded is asked along");
+            Assert.That(invites.IsInvited(wounded) || invites.IsInvited(resting), Is.False);
+        }
+
         [UnityTest]
         public IEnumerator Gate_ShutsAChaserOut_ItBreaksTheGate_AndRepairCostsGold()
         {
@@ -2118,6 +2164,24 @@ namespace GuildMaster.Tests
                 var map = Services.Get<World.WorldService>().Map;
                 Assert.That(species.LivesAt(map.RegionOf(goalCell.x, goalCell.y), World.Biome.Plains)
                             || Services.Get<World.WorldService>().Grid.IsForest(goalCell), Is.True, "the stop is in its habitat");
+
+                // P4-69: one that was away on a raid when the pack took to the road finishes the raid,
+                // then falls back in with its pack instead of wandering with no nest; and a roamer that
+                // does end up wandering keeps its slot round the pack's leader (going by its nest threw).
+                var crown = Services.Get<Data.GameDatabase>().items.First(i => i.uniqueEffect == MonsterEquipment.PackLeaderEffect);
+                members[0].Equipment.Equip(crown);
+                members[0].RefreshStats();
+                var raider = members[1];
+                raider.DefaultStateOverride = raider.RaidState;
+                raider.GoToDefaultState();
+                raider.EndMarch();
+                Assert.That(raider.DefaultStateOverride, Is.EqualTo(raider.RoamState), "back on the road with its pack");
+                Assert.That(raider.StateLabel, Is.EqualTo("떠돌이"));
+                Assert.That(raider.PackLeader, Is.EqualTo(members[0]), "the crown leads the roaming pack");
+                raider.Fsm.ChangeState(raider.WanderState);
+                yield return null;
+                yield return null;
+                raider.GoToDefaultState();
 
                 // They walk together.
                 Clock.SetSpeed(2);

@@ -32,6 +32,8 @@ namespace GuildMaster.Legacy
             => $"{dead}의 유품({item})이 {taker}에게 넘어갔습니다.";
 
         public static string LostRotted(string dead, string item) => $"{dead}의 유품({item})이 시간이 지나 사라졌습니다.";
+        /// <summary>Found gone when someone looked (P4-69): the guild did not see who took it.</summary>
+        public static string LostVanished(string dead, string item) => $"{dead}의 유품({item})이 현장에서 보이지 않습니다. 누군가 가져간 듯합니다.";
 
         public const string LastStandTitle = "구사일생";
 

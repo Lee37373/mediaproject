@@ -28,8 +28,7 @@ namespace GuildMaster.Monsters
             if (!Services.TryGet<MigrationService>(out var svc) || !svc.TryGetBand(m, out var band) || band.Target == null)
             {
                 // The band is gone (settled, gave up): back to ordinary life.
-                m.DefaultStateOverride = null;
-                m.GoToReturn();
+                m.EndMarch();
                 return;
             }
             if (band.Resting)

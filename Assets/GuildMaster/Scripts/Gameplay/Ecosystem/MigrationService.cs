@@ -236,7 +236,7 @@ namespace GuildMaster.Ecosystem
             if (band.Members.Count == 0) { _bands.Remove(band); return; }
             if (band.Target == null) { GoHome(band); return; }
 
-            bool fighting = band.Members.Any(InFight);
+            bool fighting = band.Members.Any(m => m.IsInFight());
             float hp = band.Members.Average(m => m.HpRatio);
             // Rest where they stand once the fighting is over (user decision: regroup in place).
             if (!fighting && hp < RestBelow) band.Resting = true;
@@ -252,10 +252,6 @@ namespace GuildMaster.Ecosystem
             if (band.Target.Members.Any(m => m.IsAlive && !band.Members.Contains(m))) return;
             Settle(band);
         }
-
-        static bool InFight(Monster m)
-            => m.CurrentTarget != null && m.CurrentTarget.IsAlive
-               || m.LastAttacker != null && m.WasRecentlyAttackedBy(m.LastAttacker, 3f);
 
         void Settle(Band band)
         {
@@ -284,8 +280,7 @@ namespace GuildMaster.Ecosystem
                 m.Died -= OnMemberDied;
                 _of.Remove(m);
                 if (!m.IsAlive) continue;
-                m.DefaultStateOverride = null;
-                m.GoToReturn();
+                m.EndMarch();
             }
             _bands.Remove(band);
         }

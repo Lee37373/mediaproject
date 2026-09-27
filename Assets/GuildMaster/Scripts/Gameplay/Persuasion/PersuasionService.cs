@@ -59,7 +59,7 @@ namespace GuildMaster.Persuasion
             Services.TryGet<PartyService>(out var party);
             foreach (var a in _roster.Members)
             {
-                if (a == null || !a.IsAlive || a.IsVisitor || !a.IsAvailableForQuest || !IsInTownAndFree(a)) continue;
+                if (a == null || !a.IsAlive || a.IsVisitor || !a.IsAvailableForQuest || !a.IsAtLeisureInTown) continue;
                 if (party != null && party.IsInvited(a)) continue;
                 list.Add(a);
             }
@@ -67,13 +67,6 @@ namespace GuildMaster.Persuasion
                 .OrderByDescending(a => QuestRisk.Margin(AdventurerStats.Power(a.Data), 1, q.Danger))
                 .ThenBy(a => a.Data.name, StringComparer.Ordinal)
                 .ToList();
-        }
-
-        /// <summary>Waiting, deciding or resting in town — not guarding, travelling or hunting.</summary>
-        static bool IsInTownAndFree(Adventurer a)
-        {
-            var s = a.Fsm.Current;
-            return s == a.IdleState || s == a.DecidingState || s == a.RestState || s == a.VisitState;
         }
 
         /// <summary>The talk with this adventurer about this quest (created on first use, resumed afterwards).</summary>

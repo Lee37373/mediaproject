@@ -381,6 +381,25 @@ namespace GuildMaster.Monsters
         /// <summary>Walks back to the home position (nest, or spawn point for nest-less monsters).</summary>
         public void GoToReturn() { Engage.Clear(); Fsm.ChangeState(ReturnState); }
 
+        /// <summary>
+        /// A raid or a migration is over (given up, or the band is gone): back to ordinary life — its
+        /// nest, or its roaming pack when the nest was lost meanwhile (P4-58). Raiders keep their raid
+        /// when their pack takes to the road (<see cref="StartRoaming"/>), so the raid's end has to
+        /// hand them back to the pack; clearing the override alone left one wandering with no nest.
+        /// </summary>
+        internal void EndMarch()
+        {
+            if (Roaming != null)
+            {
+                DefaultStateOverride = RoamState;
+                Engage.Clear();
+                GoToDefaultState();
+                return;
+            }
+            DefaultStateOverride = null;
+            GoToReturn();
+        }
+
         public override bool IsHostileTo(Unit other)
         {
             if (other == null || other == this || !other.IsAlive) return false;

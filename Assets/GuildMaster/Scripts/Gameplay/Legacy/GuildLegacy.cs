@@ -147,6 +147,9 @@ namespace GuildMaster.Legacy
                     if ((relic.Position - e.Position).sqrMagnitude > 0.0004f) continue;
                     var by = e.Taker as Adventurer;
                     if (!e.Absorbed && by != null && by.IsGuildMember && !by.IsVisitor) Recovered(rec, relic, by);
+                    // Taken where nobody of the guild can see (P4-69): the guild does not know yet, let
+                    // alone who took it. It stays "lying" until someone looks (CheckRelicsInSight).
+                    else if (!SeenByGuild(e.Position)) relic.Ground = null;
                     else Lost(rec, relic, e.Absorbed ? "슬라임에게 삼켜졌다" : e.Taker != null ? $"{e.Taker.DisplayName}에게 넘어갔다" : "누군가 가져갔다", e.Taker != null ? e.Taker.DisplayName : null);
                     return;
                 }
@@ -172,20 +175,33 @@ namespace GuildMaster.Legacy
                 LegacyTexts.Recovered(by.Data.name, rec.Name, LegacyTexts.ItemLabel(relic.Name, relic.Count)), "relic-back:" + rec.Id, NotificationLink.Memorial(rec.Id));
         }
 
-        void Lost(FallenRecord rec, RelicItem relic, string why, string taker)
+        void Lost(FallenRecord rec, RelicItem relic, string why, string taker, bool rotted = false)
         {
             rec.MarkLost(relic, why);
             if (!rec.HasLying) _center?.Resolve(RelicKey(rec));
-            string text = taker != null
-                ? LegacyTexts.LostTo(rec.Name, LegacyTexts.ItemLabel(relic.Name, relic.Count), taker)
-                : LegacyTexts.LostRotted(rec.Name, LegacyTexts.ItemLabel(relic.Name, relic.Count));
+            string item = LegacyTexts.ItemLabel(relic.Name, relic.Count);
+            string text = taker != null ? LegacyTexts.LostTo(rec.Name, item, taker)
+                : rotted ? LegacyTexts.LostRotted(rec.Name, item)
+                : LegacyTexts.LostVanished(rec.Name, item);
             _center?.Post(NotificationKind.Info, LegacyTexts.LostTitle, text, "relic-lost:" + rec.Id, NotificationLink.Memorial(rec.Id));
         }
 
-        /// <summary>Relics nobody took and that rotted (or were pushed off the map's item cap) are gone.</summary>
-        void OnHour(HourPassedEvent e)
+        /// <summary>The spot is in the guild's sight right now (town watch, members, the guild master).</summary>
+        static bool SeenByGuild(Vector2 p) => !Services.TryGet<Fog.FogOfWar>(out var fog) || fog.IsVisibleRaw(p);
+
+        void OnHour(HourPassedEvent e) => CheckRelicsInSight();
+
+        /// <summary>
+        /// Relics no longer on the ground become known as lost only when the guild could know it
+        /// (P4-69): once they would have rotted anyway (<see cref="GroundItemService.LifetimeHours"/>, a
+        /// rule everyone knows), or once someone looks at the spot and finds nothing. Before, a relic a
+        /// monster picked up far out in the fog was announced at once, with the taker's name.
+        /// Also called by a retriever that reaches the spot (<see cref="RelicRetrievalState"/>).
+        /// </summary>
+        internal void CheckRelicsInSight()
         {
             if (!Services.TryGet<GroundItemService>(out var ground)) return;
+            float now = _clock.TotalHours;
             foreach (var rec in _fallen)
             {
                 if (!rec.HasLying) continue;
@@ -194,7 +210,9 @@ namespace GuildMaster.Legacy
                     if (relic.State != RelicState.Lying) continue;
                     var g = relic.Ground;
                     if (g != null && ground.Contains(g) && Mathf.Approximately(g.DroppedAtHour, relic.DroppedAtHour)) continue;
-                    Lost(rec, relic, "시간이 지나 사라졌다", null);
+                    bool rotted = now - relic.DroppedAtHour >= GroundItemService.LifetimeHours;
+                    if (!rotted && !SeenByGuild(relic.Position)) continue; // gone, but nobody has looked since
+                    Lost(rec, relic, rotted ? "시간이 지나 사라졌다" : "현장에서 사라졌다", null, rotted);
                 }
             }
         }
@@ -223,7 +241,7 @@ namespace GuildMaster.Legacy
 
         static bool CanFetch(Adventurer m)
             => m != null && m.IsAlive && m.IsGuildMember && !m.IsVisitor && m.CurrentQuest == null
-               && GuildWelfare.IsFreeInTown(m) && m.HpRatio >= LegacyRules.RetrieverMinHp
+               && m.IsAtLeisureInTown && m.HpRatio >= LegacyRules.RetrieverMinHp
                && GuildWelfare.AnyQuestRefusal(m) == null;
 
         public CareCheck CanSendRetriever(FallenRecord rec)

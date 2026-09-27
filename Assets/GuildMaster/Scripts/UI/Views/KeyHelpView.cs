@@ -59,8 +59,11 @@ namespace GuildMaster.UI
                 bool llm = Services.TryGet<LlmDebugView>(out var llmView) && llmView.Visible;
                 Line(sb, "F2", "LLM 디버그 창", llm ? "열림" : "닫힘", llm, "개발");
             }
-            bool fogOff = Services.TryGet<FogOfWar>(out var fog) && fog.Disabled;
-            Line(sb, "F3", "안개 끄기(전체 보기)", fogOff ? "켬" : "끔", fogOff, "디버그");
+            if (dev)
+            {
+                bool fogOff = Services.TryGet<FogOfWar>(out var fog) && fog.Disabled;
+                Line(sb, "F3", "안개 끄기(전체 보기)", fogOff ? "켬" : "끔", fogOff, "개발");
+            }
             if (Application.isEditor) Line(sb, "F4", "유닛 기즈모·둥지 영역", UnitGizmos.ShowAll ? "켬" : "끔", UnitGizmos.ShowAll, "에디터");
             bool tags = Services.TryGet<NameTagLayer>(out var nameTags) && nameTags.Enabled;
             Line(sb, "F5", "이름표", tags ? "켬" : "끔", tags, null);

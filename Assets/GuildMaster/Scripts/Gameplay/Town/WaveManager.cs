@@ -209,8 +209,7 @@ namespace GuildMaster.Town
                 _seenRaiders.Remove(m);
                 if (!m.IsAlive) continue;
                 withdrawn++;
-                m.DefaultStateOverride = null;
-                m.GoToReturn();
+                m.EndMarch();
             }
             End(raid, withdrawn);
         }

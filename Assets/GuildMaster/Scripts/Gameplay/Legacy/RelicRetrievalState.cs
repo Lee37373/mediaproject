@@ -62,9 +62,12 @@ namespace GuildMaster.Legacy
                 return;
             }
 
-            // At the spot with nothing left to pick up: whatever remains is out of reach.
+            // At the spot with nothing left to pick up: whatever remains is out of reach — or gone,
+            // which the guild learns now that someone is standing here (P4-69).
             _linger += dt;
-            if (_linger >= LingerSeconds) Finish();
+            if (_linger < LingerSeconds) return;
+            if (Core.Services.TryGet<GuildLegacy>(out var legacy)) legacy.CheckRelicsInSight();
+            Finish();
         }
 
         void Finish() => Owner.ChangeState(Owner.ReturnState);

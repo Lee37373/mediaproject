@@ -229,6 +229,11 @@ namespace GuildMaster.Units
         public bool WasRecentlyAttackedBy(Unit other, float seconds = 8f)
             => other != null && LastAttacker == other && Time.time - LastAttackedTime < seconds;
 
+        /// <summary>Fighting right now: a live target, or hit within the last <paramref name="grace"/> seconds.</summary>
+        public bool IsInFight(float grace = 3f)
+            => CurrentTarget != null && CurrentTarget.IsAlive
+               || LastAttacker != null && WasRecentlyAttackedBy(LastAttacker, grace);
+
         /// <summary>Directly sets HP (e.g. keeping the ratio after a max-HP change). Does not kill.</summary>
         protected void SetHp(float hp)
         {

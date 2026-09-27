@@ -75,10 +75,7 @@ namespace GuildMaster.Ecosystem
         }
 
         /// <summary>Already swinging: has a live target, or was hit in the last few seconds.</summary>
-        static bool InCombat(Unit u)
-            => u != null && u.IsAlive
-               && ((u.CurrentTarget != null && u.CurrentTarget.IsAlive)
-                   || (u.LastAttacker != null && u.WasRecentlyAttackedBy(u.LastAttacker, CombatGrace)));
+        static bool InCombat(Unit u) => u != null && u.IsAlive && u.IsInFight(CombatGrace);
 
         /// <summary>True while either side is already in a fight (see the Outcome overload).</summary>
         static bool AnyFighting(List<Monster> a, List<Monster> b)

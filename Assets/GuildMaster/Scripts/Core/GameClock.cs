@@ -138,6 +138,15 @@ namespace GuildMaster.Core
 
         public string FormatTime() => $"{Day}일차 {Hour:00}:{Minute:00}";
 
+        /// <summary>"방금" / "3시간 전" / "2일 전" for a moment in total game hours.</summary>
+        public string AgoText(float hour) => AgoText(_totalHours, hour);
+
+        public static string AgoText(float now, float hour)
+        {
+            int ago = Mathf.FloorToInt(now - hour);
+            return ago <= 0 ? "방금" : ago < 24 ? $"{ago}시간 전" : $"{ago / 24}일 전";
+        }
+
         void OnDestroy() => Time.timeScale = 1f;
     }
 }

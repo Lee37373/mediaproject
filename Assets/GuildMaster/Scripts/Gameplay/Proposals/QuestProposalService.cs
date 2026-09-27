@@ -107,15 +107,20 @@ namespace GuildMaster.Proposals
                 if (nest == null) continue;
                 var point = nest.WorldPosition;
                 if (QuestBoard.HuntPointError(point) != null) continue;
+                var seen = _intel.Get(nest);
                 list.Add(new ProposalTarget
                 {
                     Key = "hunt:" + species.id,
                     Type = QuestType.Hunt,
-                    Danger = species.danger,
+                    // Rated as the board rates the posted hunt (P4-58: the level the spot breeds, plus
+                    // seen gear), not by the species' old danger field, which now only sets how rare
+                    // it is when nests are handed out — a slime den far out read "낮음" (P4-69).
+                    Danger = QuestBoard.HuntDanger(species, 1, point, QuestBoard.HuntRadius),
                     Label = species.displayName,
                     Area = QuestBoard.DescribeArea(point),
                     Distance = Vector2.Distance(center, point),
-                    Observed = _intel.ObservedPopulation(species),
+                    // What was seen at this den, where the hunt goes — not the species' total elsewhere.
+                    Observed = seen.Observed ? seen.LastCount : 0,
                     Point = point,
                     Source = species,
                 });

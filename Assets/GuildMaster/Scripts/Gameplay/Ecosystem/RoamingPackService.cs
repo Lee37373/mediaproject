@@ -153,12 +153,9 @@ namespace GuildMaster.Ecosystem
                 if (Vector2.Distance(pack.Center, pack.Goal) < 3f || now - pack.MovingSinceHour > GiveUpWalkHours) Rest(pack);
                 return;
             }
-            if (now < pack.RestUntilHour || pack.Members.Any(InFight) || pack.Members.Average(m => m.HpRatio) < WalkOnHp) return;
+            if (now < pack.RestUntilHour || pack.Members.Any(m => m.IsInFight()) || pack.Members.Average(m => m.HpRatio) < WalkOnHp) return;
             if (!PickGoal(pack, null)) Rest(pack);
         }
-
-        static bool InFight(Monster m)
-            => m.CurrentTarget != null && m.CurrentTarget.IsAlive || m.LastAttacker != null && m.WasRecentlyAttackedBy(m.LastAttacker, 3f);
 
         void Rest(RoamingPack pack)
         {

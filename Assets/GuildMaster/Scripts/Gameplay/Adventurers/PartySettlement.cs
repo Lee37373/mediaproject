@@ -176,14 +176,39 @@ namespace GuildMaster.Adventurers
             };
         }
 
+        /// <summary>
+        /// Shares of members who died while the split was being worked out (the LLM takes seconds)
+        /// go to the living, evenly (the first ones take the remainder); they used to be paid into
+        /// the purse of a corpse and vanish. Pure bookkeeping on <paramref name="shares"/>.
+        /// </summary>
+        public static void GiveTheFallensShares(IReadOnlyList<bool> alive, int[] shares)
+        {
+            int orphaned = 0, living = 0;
+            for (int i = 0; i < alive.Count; i++)
+            {
+                if (alive[i]) { living++; continue; }
+                orphaned += shares[i];
+                shares[i] = 0;
+            }
+            if (orphaned <= 0 || living == 0) return;
+            int each = orphaned / living, extra = orphaned % living;
+            for (int i = 0; i < alive.Count; i++)
+            {
+                if (!alive[i]) continue;
+                shares[i] += each + (extra-- > 0 ? 1 : 0);
+            }
+        }
+
         void Conclude(Party p, GuildParties parties, List<Adventurer> members, int[] shares, string say, bool fromLlm)
         {
             var splitter = members.Count > 0 ? members[0] : null;
             if (splitter != null && !string.IsNullOrEmpty(say) && p.Pool > 0) splitter.Say(say);
+            GiveTheFallensShares(members.Select(m => m.IsAlive).ToList(), shares);
             var paid = new List<(Adventurer, int)>();
             Services.TryGet<LivingCosts>(out var keep);
             for (int i = 0; i < members.Count; i++)
             {
+                if (!members[i].IsAlive) continue;
                 members[i].Data.gold += shares[i];
                 paid.Add((members[i], shares[i]));
                 keep?.Settle(members[i]); // a share pays off the slate first (P4-68)
@@ -197,7 +222,7 @@ namespace GuildMaster.Adventurers
             for (int i = 0; i < members.Count; i++)
             {
                 var m = members[i];
-                if (m == splitter) continue;
+                if (m == splitter || !m.IsAlive) continue;
                 int feeling = Relationships.Get(m, splitter);
                 float overShare = LeaveChanceOverShare(shares[i], pool, members.Count, feeling);
                 if (overShare > 0f)

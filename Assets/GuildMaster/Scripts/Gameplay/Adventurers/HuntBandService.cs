@@ -94,7 +94,7 @@ namespace GuildMaster.Adventurers
                 foreach (var m in party.Members)
                 {
                     if (m == a || band.Members.Count >= _capacity || !m.IsAlive || m.CurrentQuest != null) continue;
-                    if (m.Fsm.Current != m.IdleState && m.Fsm.Current != m.DecidingState) continue;
+                    if (!m.IsIdleInTown || !Welfare.GuildWelfare.MayGoOut(m)) continue; // on leave, wounded or breaking: stays home
                     band.Members.Add(m); // before the state change, so its Enter finds this band
                     m.Say("같이 가자!");
                     m.ChangeState(m.FreeHuntState);

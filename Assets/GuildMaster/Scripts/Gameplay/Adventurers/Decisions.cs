@@ -60,9 +60,11 @@ namespace GuildMaster.Adventurers
             if (GearShopping.CanBuy(a))
                 return new AdventurerDecision { Action = AdventurerAction.Shop, Reason = "더 좋은 장비를 살 수 있다", Say = "모은 돈으로 장비를 바꿔야겠어." };
 
-            // F-2: on leave or at the breaking point nobody takes a quest, however good it looks.
+            // F-2: on leave, badly wounded or at the breaking point nobody takes a quest, however good
+            // it looks — and nobody goes out hunting either (P4-69: with an empty board this check was
+            // skipped and the member walked out to hunt on its leave, or with its wound).
             string tired = Welfare.GuildWelfare.AnyQuestRefusal(a);
-            if (tired != null && available.Count > 0)
+            if (tired != null)
                 return new AdventurerDecision
                 {
                     Action = AdventurerAction.Idle,

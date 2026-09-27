@@ -97,6 +97,12 @@ namespace GuildMaster.Adventurers
             _ => new Color(0.95f, 0.85f, 0.55f),
         };
 
+        /// <summary>Idling on the plaza or making up its mind: free to be asked along on something.</summary>
+        public bool IsIdleInTown => Fsm != null && (Fsm.Current == IdleState || Fsm.Current == DecidingState);
+
+        /// <summary>In town with nothing on: idling, resting, or at the guild counter.</summary>
+        public bool IsAtLeisureInTown => IsIdleInTown || Fsm != null && (Fsm.Current == RestState || Fsm.Current == VisitState);
+
         public string StateLabel => Fsm?.Current?.Label ?? "-";
         public override string DebugState => StateLabel;
         public override Engagement CombatEngagement => Engage;

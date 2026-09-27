@@ -249,8 +249,12 @@ namespace GuildMaster.Adventurers
             }
         }
 
+        /// <summary>
+        /// Idle in town and fit to go out: the only members asked along, and the only ones an answer
+        /// can still take (P4-69: on leave, wounded or breaking, a member stays home whatever it says).
+        /// </summary>
         static bool FreeInTown(Adventurer a)
-            => a.IsAlive && !a.IsVisitor && a.CurrentQuest == null && (a.Fsm.Current == a.IdleState || a.Fsm.Current == a.DecidingState);
+            => a.IsAlive && !a.IsVisitor && a.CurrentQuest == null && a.IsIdleInTown && Welfare.GuildWelfare.MayGoOut(a);
 
         /// <summary>The leader's party members free in town, in party order, as many as the quest takes (they accept it here).</summary>
         List<Adventurer> PartyComrades(Quest q, Adventurer leader)
@@ -342,7 +346,9 @@ namespace GuildMaster.Adventurers
             var q = g.Quest;
             // The member may have taken another quest while thinking; the slot may be gone.
             bool alreadyOnQuest = c.CurrentQuest == q && q.IsAssigned(c);
-            if (accept && !alreadyOnQuest && (c.CurrentQuest != null || !_board.TryAccept(q, c, invited: true))) accept = false;
+            // Still free (P4-69, as a hunt answer already checks): a member that went to rest, to the
+            // guild counter or out to meet an intruder meanwhile is not pulled out of it by a late yes.
+            if (accept && !alreadyOnQuest && (c.CurrentQuest != null || !FreeInTown(c) || !_board.TryAccept(q, c, invited: true))) accept = false;
             if (!string.IsNullOrEmpty(say)) c.Say(say);
             // Before the state change: the last answer ends the gathering (PartyFormedEvent).
             EventBus.Publish(new PartyInviteAnsweredEvent { Quest = q, Leader = g.Leader, Invitee = c, Accepted = accept, FromLlm = fromLlm });

@@ -63,6 +63,24 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void TheFallensShares_GoToTheLiving()
+        {
+            // P4-69: a member who died while the split was being worked out used to be paid anyway.
+            var shares = new[] { 50, 31, 21 };
+            PartySettlement.GiveTheFallensShares(new[] { true, false, true }, shares);
+            Assert.That(shares, Is.EqualTo(new[] { 66, 0, 36 }), "31 shared out, the odd one to the first");
+            Assert.That(shares.Sum(), Is.EqualTo(102), "nothing lost");
+
+            var all = new[] { 10, 20 };
+            PartySettlement.GiveTheFallensShares(new[] { true, true }, all);
+            Assert.That(all, Is.EqualTo(new[] { 10, 20 }), "nobody died: unchanged");
+
+            var none = new[] { 10, 20 };
+            PartySettlement.GiveTheFallensShares(new[] { false, false }, none);
+            Assert.That(none, Is.EqualTo(new[] { 0, 0 }), "nobody left to pay");
+        }
+
+        [Test]
         public void LeaderAnswer_IsScaledToThePool_AndRejectedWhenEmpty()
         {
             var dto = new SplitPrompt.ResponseDto { m1 = 60, m2 = 30, m3 = 30, say = "고생했어." };
