@@ -2,8 +2,8 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-09-27
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-70**).
+- 마지막 갱신: 2026-10-03
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-74**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -37,6 +37,10 @@
 | P4-67 | dev/KMS 머지(bc9cc2d "UI 특성 가림"): 방문자가 마을 잡담으로 길드원과 친해지면 호감도 85에서 스스로 가입, 영입 대화 6턴 제한 없앰·호감도 10 이하면 제안 불가, 잡담 1시간마다 50%·6칸. 충돌 없음 | 이재혁 | 완료 | 머지 전반(Adventurers/BanterService·Prompts/BanterPrompt, Recruitment/*, UI/Views/InspectorView·RecruitDialogView) | c9fde9c |
 | P4-68 | **남은 밸런스 문제**(사용자 결정): 길드원 생활비(매일 자정 식비 10G + 마을 휴식 시간당 숙박비 2G, 못 내면 빚으로 쌓여 다음 수입에서 먼저 갚음, 야영은 무료), 방문 간격 8~12 → 6~8시간, 자동 플레이어가 영입 대화·침공 위험 종 우선 토벌. 5일 재측정: 길드 골드 800→495(무작위 맵)·800→1245(시드 20260920), 인원 6 유지, 침공 1회 방어 | 이재혁 | 완료 | Adventurers/LivingCosts·LivingCostRules(신규)·AdventurerData·AdventurerStates·PartySettlement·Prompts/DecisionPrompt, Economy/GuildTreasury, Recruitment/VisitorService, Reports/DailyReport, Session/BalanceAutoPlayer·BalanceProbe·GameBootstrap·GameLog, UI/Views/InspectorView·RosterView·AdventurerDetailView | 72526c2 |
 | P4-69 | **전체 코드 점검 2차**(사용자 요청): 버그 7건 — 떠돌이가 된 침공 개체의 배회 예외·복귀, 휴가·중상 길드원의 자율 사냥·초대, 안개 속 유품 소식 누설, 의뢰 제안 위험도(P4-58 이전 방식), 정산 대기 중 죽은 멤버에게 몫, 정식 빌드의 F3, 마을회관 업그레이드 세금 무변화(1레벨 값 단일화: 세금 90→120→160, EXP 5→11→19, 사용자 결정). 리팩터링: 마을 상태 판정·전투 중 판정·"N시간 전" 중복 통합 | 이재혁 | 완료 | Monsters/Monster·MonsterStates·MigrateState, Ecosystem/*, Town/WaveManager, Adventurers/Adventurer·Decisions·PartyService·HuntBandService·PartySettlement, Welfare/GuildWelfare, Legacy/*, Proposals/QuestProposalService, Persuasion/PersuasionService, Data/DefaultContent, Session/GameBalance·GameBootstrap·GameHotkeys, Core/GameClock, Units/Unit, UI/Views/KeyHelpView | b8885f7, fc18f5e |
+| P4-70 | 사용자 보고: 교전 중 숲으로 숨은 상대를 계속 봄(마지막 본 곳 수색 후 포기) | 이재혁 | 진행 중 | Units/Combat | |
+| P4-71 | 사용자 보고: 파티원 혼자 후퇴(파티가 멈춰 회복·전체 후퇴), 마을에서 6시간 뒤 상설 파티 해산 | 이재혁 | 진행 중 | Adventurers/Party·PartyTactics·Adventurer·AdventurerStates·CampService | |
+| P4-72 | 사용자 요청: 자연재해 5종(산불·독안개·눈사태·모래폭풍·지진)과 재해 몬스터 5종, 마을 자동 게시 해결 의뢰 | 이재혁 | 진행 중 | Disasters(신규), Data/DefaultContent, Quests, World, Monsters | |
+| P4-73 | 사용자 요청: 전체 검증·리팩터링 3차(기획서 대조) | 이재혁 | 예정 | 전반 | |
 | P4-26 | 전투 지능 등급 재정리(본능 단계 추가, 카이팅·엄폐·분산·재선택을 등급별로) | 이재혁 | 완료 | Units/CombatTier·Combat·TargetSelector, Data/MonsterDefinition·DefaultContent | 9f5ab3a |
 | P4-27 | 파티 역할과 대형(전열·후열, 이동 대형, 집중 공격 지정) | 이재혁 | 완료 | Adventurers/PartyTactics(신규), AdventurerStates, Units/TargetSelector·Combat·Unit, Visuals/TargetMarker(신규) | 1419d87 |
 | P4-28 | 몬스터 전술(숙련 이상: 포위, 후퇴 후 합류, 무리 목표 지정) | 이재혁 | 완료 | Monsters/PackTactics·MonsterRegroupState(신규)·Monster, Units/Combat | 757850a |
