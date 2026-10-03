@@ -53,6 +53,10 @@ namespace GuildMaster.Disasters
 
         public HazardKind Hazard => DisasterRules.HazardOf(Kind);
         public string Name => DisasterRules.NameOf(Kind);
+        /// <summary>The name with its particle: "산불이", "독안개가".</summary>
+        public string NameI => Name + Adventurers.MemoryRecorder.Josa(Name, "이", "가");
+        /// <summary>"산불을", "독안개를".</summary>
+        public string NameEul => Name + Adventurers.MemoryRecorder.Josa(Name, "을", "를");
         public bool HasCore => DisasterRules.HasCore(Kind);
         public Vector2 WorldOrigin => GridMap.CellToWorld(Origin);
 

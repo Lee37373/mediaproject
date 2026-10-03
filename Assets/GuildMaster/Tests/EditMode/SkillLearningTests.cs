@@ -69,6 +69,23 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void RuleChoice_SwapsOnlyForABetterFit_SoItNeverFlipFlops()
+        {
+            // P4-73 (long run): a full mage dropped blink for slam, then slam for blink, every level.
+            var mage = new List<string> { "fireball", "warp", "blink" };
+            var pick = SkillCatalog.RuleChoice(AdventurerClass.Mage, mage, SkillCatalog.Candidates(AdventurerClass.Mage, mage));
+            Assert.That(pick.learn, Is.Null, "slam fits a mage no better than blink: nothing changes");
+
+            var odd = new List<string> { "fireball", "slam", "charge" };
+            pick = SkillCatalog.RuleChoice(AdventurerClass.Mage, odd, SkillCatalog.Candidates(AdventurerClass.Mage, odd));
+            Assert.That(pick, Is.EqualTo(("warp", "charge")), "a better fit replaces the worst one");
+
+            var room = new List<string> { "fireball", "blink" };
+            Assert.That(SkillCatalog.RuleChoice(AdventurerClass.Mage, room, SkillCatalog.Candidates(AdventurerClass.Mage, room)),
+                        Is.EqualTo(("warp", (string)null)), "below the cap nothing has to go");
+        }
+
+        [Test]
         public void Interpret_TakesOnlyWhatWasOffered()
         {
             var candidates = new List<string> { "charge", "slam" };

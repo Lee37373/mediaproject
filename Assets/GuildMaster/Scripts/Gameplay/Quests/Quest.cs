@@ -138,7 +138,7 @@ namespace GuildMaster.Quests
             QuestType.Hunt => HuntProgressText,
             QuestType.Escort => $"{EscortHours:0.0}/{MaxHours}시간",
             // Only the guild's own work: how much is left out there is not known (P4-72 information rule).
-            QuestType.Disaster => Worked > 0 ? $"{Worked}곳 처리" : "",
+            QuestType.Disaster => Worked > 0 ? $"{Worked}곳 처리" : "작업 전",
             _ => "",
         };
 

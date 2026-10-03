@@ -69,12 +69,8 @@ namespace GuildMaster.Adventurers
                     }
                 }
                 if (a == null || !a.IsAlive) return;
-                if (learn == null)
-                {
-                    learn = candidates[0];
-                    forget = SkillCatalog.MustForget(a.Data.skillIds) ? SkillCatalog.RuleForget(a.Data.cls, a.Data.skillIds) : null;
-                }
-                Apply(a, learn, forget, fromLlm, say);
+                if (learn == null) (learn, forget) = SkillCatalog.RuleChoice(a.Data.cls, a.Data.skillIds, candidates);
+                if (learn != null) Apply(a, learn, forget, fromLlm, say);
             }
             finally
             {

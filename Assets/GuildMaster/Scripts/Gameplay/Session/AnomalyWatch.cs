@@ -4,7 +4,9 @@ using System.Text;
 using GuildMaster.Adventurers;
 using GuildMaster.AI;
 using GuildMaster.Core;
+using GuildMaster.Monsters;
 using GuildMaster.Quests;
+using GuildMaster.Units;
 using UnityEngine;
 
 namespace GuildMaster.Session
@@ -81,7 +83,20 @@ namespace GuildMaster.Session
 
                 if (!_lastMove.TryGetValue(a, out var last) || (a.Position - last.pos).sqrMagnitude > 1f) _lastMove[a] = (a.Position, now);
                 else if (Walking(a, s) && now - last.hour >= 2f)
-                    Report($"{a.Data.name}: '{s.Label}' but has not moved for {now - last.hour:0.0}h at {a.Position}", $"still:{a.Data.name}:{s.Label}:{Mathf.RoundToInt(last.hour)}");
+                    Report($"{a.Data.name}: '{s.Label}' but has not moved for {now - last.hour:0.0}h at {a.Position}{Context(a)}", $"still:{a.Data.name}:{s.Label}:{Mathf.RoundToInt(last.hour)}");
+            }
+
+            // Monsters: a fight, a walk home, a flight or a pickup should not last for hours.
+            foreach (var u in UnitRegistry.All)
+            {
+                if (u is not Monster m || !m.IsAlive || m.Fsm.Current == null) continue;
+                var ms = m.Fsm.Current;
+                float hours = ms.Elapsed * hoursPerSecond;
+                // A game hour is ten simulated seconds: these are minutes of fighting, not hours.
+                float limit = ms == m.EngageState ? 10f : ms == m.ReturnState ? 4f : ms == m.FleeState || ms == m.PickupState || ms == m.RegroupState || ms == m.LureState ? 2f
+                            : ms == m.GateBreakState ? 8f : float.PositiveInfinity;
+                if (hours > limit) Report($"monster {m.DisplayName}#{m.GetInstanceID()} '{ms.Label}' {hours:0.0}h at {m.Position} (target {m.Engage.Target?.DisplayName ?? "-"})",
+                    $"mlong:{m.GetInstanceID()}:{ms.Label}");
             }
 
             // A party out together that has come apart (user report 2026-10-03: "they act separately").
@@ -109,6 +124,19 @@ namespace GuildMaster.Session
                     if (!_unworkedSince.TryGetValue(q, out var since)) _unworkedSince[q] = since = now;
                     if (now - since >= 6f) Report($"quest {q.Id} '{q.Title}' in progress, nobody on it for {now - since:0}h", "quest:" + q.Id);
                 }
+        }
+
+        /// <summary>What a stalled member is waiting on: its band or quest, its leader, where it is headed.</summary>
+        static string Context(Adventurer a)
+        {
+            var sb = new StringBuilder();
+            sb.Append($" moving={a.Mover.IsMoving} dest={a.Mover.Destination} target={a.Engage.Target?.DisplayName ?? "-"}");
+            if (Services.TryGet<PartyTactics>(out var tactics) && tactics.LeaderOf(a) is { } leader)
+                sb.Append($" leader={leader.Data.name}('{leader.StateLabel}' {leader.Position})");
+            if (Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(a) is { } band)
+                sb.Append($" band[{string.Join("/", band.Members.Select(m => $"{m.Data.name}:{m.StateLabel}"))}] mustering={band.Mustering} paused={band.Paused} spot={(band.HasSpot ? band.Spot.ToString() : "-")}");
+            if (a.CurrentQuest is { } q) sb.Append($" quest={q.Id}:{q.Status} point={q.Point}");
+            return sb.ToString();
         }
 
         void Report(string text, string key)

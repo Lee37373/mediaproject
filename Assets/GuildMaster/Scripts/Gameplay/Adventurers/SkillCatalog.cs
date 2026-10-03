@@ -59,6 +59,23 @@ namespace GuildMaster.Adventurers
             return worst;
         }
 
+        /// <summary>
+        /// The whole rule-based choice: the most fitting candidate, giving up the least fitting known
+        /// skill when full — but only when the new one fits better than what it replaces. Otherwise
+        /// nothing changes (P4-73: a mage dropped blink for slam, then slam for blink, every level).
+        /// </summary>
+        public static (string learn, string forget) RuleChoice(AdventurerClass cls, IReadOnlyList<string> known, IReadOnlyList<string> candidates)
+        {
+            if (candidates == null || candidates.Count == 0) return (null, null);
+            string learn = candidates[0];
+            if (!MustForget(known)) return (learn, null);
+            string forget = RuleForget(cls, known);
+            var pool = LearnPool(cls);
+            int forgetRank = IndexOf(pool, forget);
+            if (forgetRank >= 0 && IndexOf(pool, learn) >= forgetRank) return (null, null);
+            return (learn, forget);
+        }
+
         /// <summary>Position of an id in a list, or -1 (IReadOnlyList has no IndexOf).</summary>
         public static int IndexOf(IReadOnlyList<string> list, string id)
         {

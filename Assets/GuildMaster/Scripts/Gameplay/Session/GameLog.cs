@@ -106,13 +106,13 @@ namespace GuildMaster.Session
             EventBus.Subscribe<Town.RaidSightedEvent>(e => Add($"[침공] {e.Direction}쪽에서 적 무리가 관측되었습니다! 길드원들이 방어에 나섭니다.", LogCategory.Danger));
             // Natural disasters (P4-72): only the ones the guild has seen.
             EventBus.Subscribe<Disasters.DisasterSightedEvent>(e => Add(
-                $"[재해] {Quests.QuestBoard.DescribeArea(e.Disaster.WorldOrigin)}에서 {e.Disaster.Name}이(가) 관측되었습니다. 마을이 {Disasters.DisasterRules.WorkName(e.Disaster.Kind)} 의뢰를 냈습니다.", LogCategory.Danger));
+                $"[재해] {Quests.QuestBoard.DescribeArea(e.Disaster.WorldOrigin)}에서 {e.Disaster.NameI} 관측되었습니다. 마을이 {Disasters.DisasterRules.WorkName(e.Disaster.Kind)} 의뢰를 냈습니다.", LogCategory.Danger));
             EventBus.Subscribe<Disasters.DisasterReachedTownEvent>(e => Add(
-                $"[재해] {e.Disaster.Name}이(가) 마을에 닿았습니다! 성문과 건물이 피해를 입고 오늘 세금이 줄어듭니다.", LogCategory.Danger));
+                $"[재해] {e.Disaster.NameI} 마을에 닿았습니다! 성문과 건물이 피해를 입고 오늘 세금이 줄어듭니다.", LogCategory.Danger));
             EventBus.Subscribe<Disasters.DisasterEndedEvent>(e =>
             {
                 if (!e.Known) return;
-                Add(e.DealtWith ? $"[재해] {e.Disaster.Name}을(를) 수습했습니다." : $"[재해] {e.Disaster.Name}이(가) 저절로 사그라들었습니다.", LogCategory.Ecosystem);
+                Add(e.DealtWith ? $"[재해] {e.Disaster.NameEul} 수습했습니다." : $"[재해] {e.Disaster.NameI} 저절로 사그라들었습니다.", LogCategory.Ecosystem);
             });
             // A raid the guild never saw stays unknown.
             EventBus.Subscribe<Town.RaidEndedEvent>(e => { if (e.Sighted) Add(e.Withdrawn > 0
@@ -146,7 +146,7 @@ namespace GuildMaster.Session
                     Add($"[생태계] 먼 곳에서 온 {e.Nest.Species.displayName} 무리가 {e.Nest.DisplayName}에 자리잡았습니다.", LogCategory.Ecosystem);
             });
             // Territorial routs, only when the guild saw them (GuildIntel rule).
-            EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == null ? $"{e.Cause}을(를) 피해 " : $"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 ")}{e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다{(e.To == null ? ". 갈 곳 없이 떠돌기 시작합니다" : "")}.", LogCategory.Ecosystem); });
+            EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == null ? $"{e.Cause}{Adventurers.MemoryRecorder.Josa(e.Cause ?? "", "을", "를")} 피해 " : $"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 ")}{e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다{(e.To == null ? ". 갈 곳 없이 떠돌기 시작합니다" : "")}.", LogCategory.Ecosystem); });
             // Roaming packs (P4-58): seen for the first time, and settling where the guild could see it.
             EventBus.Subscribe<RoamingPackSightedEvent>(e => Add($"둥지 없이 떠도는 {e.Pack.Species.displayName} 무리({e.Pack.Members.Count}마리)를 발견했습니다.", LogCategory.Ecosystem));
             EventBus.Subscribe<RoamingPackSettledEvent>(e => { if (e.Observed) Add($"떠돌던 {e.Pack.Species.displayName} 무리가 {e.Nest.DisplayName}에 자리 잡았습니다.", LogCategory.Ecosystem); });

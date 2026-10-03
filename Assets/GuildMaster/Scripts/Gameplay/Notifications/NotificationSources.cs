@@ -101,7 +101,7 @@ namespace GuildMaster.Notifications
         {
             var d = e.Disaster;
             _center.Post(NotificationKind.Danger, $"{d.Name} 발생!",
-                $"{QuestBoard.DescribeArea(d.WorldOrigin)}에서 {d.Name}이(가) 번지고 있습니다. 마을이 {Disasters.DisasterRules.WorkName(d.Kind)} 의뢰를 냈습니다.",
+                $"{QuestBoard.DescribeArea(d.WorldOrigin)}에서 {d.NameI} 번지고 있습니다. 마을이 {Disasters.DisasterRules.WorkName(d.Kind)} 의뢰를 냈습니다.",
                 "disaster:" + d.Id, NotificationLink.Location(d.WorldOrigin));
         }
 
@@ -111,7 +111,7 @@ namespace GuildMaster.Notifications
             _center.Resolve("disaster:" + e.Disaster.Id);
             if (e.DealtWith)
                 _center.Post(NotificationKind.Success, $"{e.Disaster.Name} 수습",
-                    $"길드가 {e.Disaster.Name}을(를) 수습했습니다.", "disaster-end:" + e.Disaster.Id);
+                    $"길드가 {e.Disaster.NameEul} 수습했습니다.", "disaster-end:" + e.Disaster.Id);
         }
 
         static string NegotiableKey(Quest q) => "negotiable:" + q.Id;
