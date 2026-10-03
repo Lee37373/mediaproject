@@ -110,7 +110,7 @@ namespace GuildMaster.Town
         {
             if (CannotRepairReason(g) != null) return false;
             int cost = RepairCost(g);
-            if (_treasury != null && !_treasury.TrySpendGold(cost)) return false;
+            if (_treasury != null && !_treasury.TrySpendGold(cost, GoldReason.Repair)) return false;
             g.RepairFull();
             if (Services.TryGet<Session.GameLog>(out var log))
                 log.Add($"{g.DisplayName}을 수리했습니다(-{cost}G).", Session.LogCategory.Economy);

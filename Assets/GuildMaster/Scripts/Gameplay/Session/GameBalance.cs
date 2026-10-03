@@ -103,6 +103,8 @@ namespace GuildMaster.Session
         public float gateMaxHp = 300f;
         /// <summary>Gold per point of damage to repair a gate (a broken one: 150G at 300 HP).</summary>
         public float gateRepairGoldPerHp = 0.5f;
+        /// <summary>Gold per point of damage to repair a building (P4-74, as for gates; a fallen 500-HP hall: 250G).</summary>
+        public float buildingRepairGoldPerHp = 0.5f;
 
         public static GameBalance Load()
         {

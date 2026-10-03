@@ -228,7 +228,8 @@ namespace GuildMaster.Data
 
             // Disaster monsters (P4-72, user decision 2026-10-03): one kind for each sort of ground, whose
             // skill may set off that ground's natural disaster in a fight (Disasters/DisasterService).
-            // Rarer than the common kinds (danger Medium); they borrow a related kind's art, tinted,
+            // Rare (danger High, P4-75 user decision 2026-10-04: at Medium sand goblins took 17 dens on a
+            // desert-heavy map and squeezed the goblins out); they borrow a related kind's art, tinted,
             // until they get their own.
             MonsterDefinition Elemental(MonsterDefinition m, string art, Color tint, string skill, CombatTier tier, MonsterPickupMode pickup)
             {
@@ -241,32 +242,32 @@ namespace GuildMaster.Data
                 return m;
             }
             var fireSlime = Elemental(Mon("fire_slime", "불꽃 슬라임", MonsterShape.Slime, new Color(1f, 0.5f, 0.25f), new Color(1f, 0.85f, 0.4f), 0.8f,
-                    26, 6, 1, 1.0f, 1.2f, 1.8f, 5, DangerLevel.Medium, true, 6, 0.2f, 3, 14, Biome.Forest, Biome.Plains),
+                    26, 6, 1, 1.0f, 1.2f, 1.8f, 5, DangerLevel.High, true, 6, 0.2f, 3, 14, Biome.Forest, Biome.Plains),
                 "slime", new Color(1f, 0.55f, 0.35f), "ember", CombatTier.Instinct, MonsterPickupMode.Absorb);
             fireSlime.regions.Add(Region.Grassland);
             fireSlime.habitatBiomes.Add(Biome.Forest); // wherever there are woods to burn
             Loot(fireSlime, jelly, 0.8f, 1, 2);
 
             var bogSlime = Elemental(Mon("bog_slime", "독늪 슬라임", MonsterShape.Slime, new Color(0.6f, 0.4f, 0.8f), new Color(0.85f, 0.7f, 1f), 0.85f,
-                    30, 6, 2, 1.0f, 1.3f, 1.6f, 5, DangerLevel.Medium, true, 6, 0.18f, 3, 15, Biome.Shore, Biome.Plains),
+                    30, 6, 2, 1.0f, 1.3f, 1.6f, 5, DangerLevel.High, true, 6, 0.18f, 3, 15, Biome.Shore, Biome.Plains),
                 "slime", new Color(0.7f, 0.5f, 0.95f), "toxic_spit", CombatTier.Instinct, MonsterPickupMode.Absorb);
             bogSlime.regions.Add(Region.Swamp);
             Loot(bogSlime, denseJelly, 0.7f, 1, 2);
 
             var frostSkull = Elemental(Mon("frost_skull", "서리 해골", MonsterShape.Humanoid, new Color(0.75f, 0.85f, 1f), new Color(0.35f, 0.45f, 0.6f), 0.85f,
-                    28, 7, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.Medium, true, 6, 0.15f, 3, 16, Biome.Mountain, Biome.Plains),
+                    28, 7, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.High, true, 6, 0.15f, 3, 16, Biome.Mountain, Biome.Plains),
                 "skull", new Color(0.65f, 0.85f, 1f), "frost_roar", CombatTier.Novice, MonsterPickupMode.Equip);
             frostSkull.regions.Add(Region.Snow);
             Loot(frostSkull, boneShard, 0.7f);
 
             var sandGoblin = Elemental(Mon("sand_goblin", "모래 고블린", MonsterShape.Humanoid, new Color(0.85f, 0.7f, 0.4f), new Color(0.6f, 0.45f, 0.25f), 0.85f,
-                    28, 6.5f, 2, 1.1f, 1.1f, 3.1f, 7, DangerLevel.Medium, true, 8, 0.15f, 3, 15, Biome.Plains),
+                    28, 6.5f, 2, 1.1f, 1.1f, 3.1f, 7, DangerLevel.High, true, 8, 0.15f, 3, 15, Biome.Plains),
                 "goblin", new Color(1f, 0.85f, 0.55f), "sand_whirl", CombatTier.Novice, MonsterPickupMode.Equip);
             sandGoblin.regions.Add(Region.Desert);
             Loot(sandGoblin, goblinEar, 0.7f);
 
             var ashSkull = Elemental(Mon("ash_skull", "잿빛 해골 전사", MonsterShape.Humanoid, new Color(0.5f, 0.45f, 0.45f), new Color(0.3f, 0.25f, 0.25f), 0.95f,
-                    34, 7.5f, 3, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 6, 0.12f, 2, 17, Biome.Mountain, Biome.Plains),
+                    34, 7.5f, 3, 1.2f, 1.2f, 2.8f, 7, DangerLevel.High, true, 6, 0.12f, 2, 17, Biome.Mountain, Biome.Plains),
                 "skull", new Color(0.55f, 0.5f, 0.5f), "quake_stomp", CombatTier.Novice, MonsterPickupMode.Equip);
             ashSkull.regions.Add(Region.Wasteland);
             Loot(ashSkull, boneShard, 0.6f);

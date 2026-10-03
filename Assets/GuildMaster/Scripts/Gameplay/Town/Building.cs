@@ -24,6 +24,8 @@ namespace GuildMaster.Town
 
     public struct BuildingDamagedEvent { public Building Building; public float Amount; }
     public struct BuildingDestroyedEvent { public Building Building; }
+    /// <summary>Repaired for gold (P4-74); <see cref="WasDestroyed"/>: it stands again and works again.</summary>
+    public struct BuildingRepairedEvent { public Building Building; public bool WasDestroyed; }
     public struct BuildingLevelChangedEvent { public Building Building; public int Level; }
 
     /// <summary>A town structure occupying a rectangular footprint, entered via a door cell.</summary>
@@ -92,7 +94,12 @@ namespace GuildMaster.Town
             Hp = heal ? maxHp : maxHp * ratio;
         }
 
-        public void Repair(float amount) => Hp = Mathf.Min(MaxHp, Hp + amount);
+        public void Repair(float amount)
+        {
+            Hp = Mathf.Min(MaxHp, Hp + amount);
+            _tint = Color.Lerp(new Color(0.45f, 0.3f, 0.3f), Color.white, Hp / MaxHp);
+            ApplyColor();
+        }
 
         /// <summary>Debug (ecosystem runs without a guild): blows land and are heard, but nothing falls.</summary>
         public static bool DebugIndestructible { get; set; }

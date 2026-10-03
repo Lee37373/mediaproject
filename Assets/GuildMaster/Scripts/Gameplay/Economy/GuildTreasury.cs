@@ -30,6 +30,12 @@ namespace GuildMaster.Economy
         public const string Medical = "medical";
         /// <summary>Members' meals and lodging, and debts for them repaid (P4-68).</summary>
         public const string Living = "living";
+        /// <summary>Placing a building, and the half refunded on demolishing it (P4-13).</summary>
+        public const string Build = "build";
+        /// <summary>Repairing a gate (P4-39) or a building (P4-74).</summary>
+        public const string Repair = "repair";
+        /// <summary>The recruitment notice (P4-38), and its refund.</summary>
+        public const string Recruit = "recruit";
     }
 
     /// <summary>

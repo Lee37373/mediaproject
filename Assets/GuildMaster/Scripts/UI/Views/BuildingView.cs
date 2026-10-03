@@ -18,7 +18,7 @@ namespace GuildMaster.UI
 
         Building _building;
         Text _header, _current, _next, _cost, _message;
-        Button _upgrade, _demolish;
+        Button _upgrade, _repair, _demolish;
 
         protected override void Build(RectTransform body)
         {
@@ -29,6 +29,8 @@ namespace GuildMaster.UI
             _cost = UIBuilder.Label(body, "", 15).Size(-1, 84);
             _cost.verticalOverflow = VerticalWrapMode.Overflow;
             _upgrade = UIBuilder.Button(body, "업그레이드", OnUpgrade, -1, 42, new Color(0.25f, 0.45f, 0.3f), 17);
+            _repair = UIBuilder.Button(body, "수리", OnRepair, -1, 36, new Color(0.3f, 0.38f, 0.5f), 15);
+            _repair.Tooltip(() => _building == null ? "" : Services.Get<TownService>().CannotRepairReason(_building) ?? "골드를 들여 내구도를 모두 채웁니다. 무너진 건물은 다시 세워져 제 기능을 되찾습니다.");
             _demolish = UIBuilder.Button(body, "철거", OnDemolish, -1, 36, new Color(0.45f, 0.26f, 0.26f), 15);
             _message = UIBuilder.Label(body, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 30);
         }
@@ -46,7 +48,16 @@ namespace GuildMaster.UI
             if (_building == null) return;
             var upgrades = Services.Get<UpgradeService>();
             var def = upgrades.Definition(_building);
-            _header.text = $"{_building.DisplayName}  Lv.{_building.Level}";
+            _header.text = $"{_building.DisplayName}  Lv.{_building.Level}" + (_building.IsDestroyed ? "  " + UIBuilder.Colored("무너짐", UITheme.Bad) : "");
+            // Repairs (P4-74): any damaged building, a fallen one included.
+            var town = Services.Get<TownService>();
+            bool damaged = _building.Hp < _building.MaxHp;
+            _repair.gameObject.SetActive(damaged);
+            if (damaged)
+            {
+                _repair.SetLabel($"{(_building.IsDestroyed ? "다시 세우기" : "수리")} ({town.RepairCost(_building)}G) · 내구도 {_building.Hp:0}/{_building.MaxHp:0}");
+                _repair.interactable = town.CannotRepairReason(_building) == null;
+            }
             // Player-placed buildings can be taken down again for half the price (P4-13).
             var construction = Services.TryGet<ConstructionService>(out var cs) ? cs : null;
             bool canDemolish = construction != null && construction.CanDemolish(_building);
@@ -65,7 +76,7 @@ namespace GuildMaster.UI
             {
                 _current.text = def.Level(1).effectText;
                 _next.text = _building.IsDestroyed
-                    ? UIBuilder.Colored("무너졌습니다. 더 이상 감시하지 않습니다.", UITheme.Bad)
+                    ? UIBuilder.Colored("무너졌습니다. 다시 세우기 전까지 감시하지 않습니다.", UITheme.Bad)
                     : $"내구도 {_building.Hp:0}/{_building.MaxHp:0}";
                 _cost.text = "";
                 _upgrade.gameObject.SetActive(false);
@@ -107,6 +118,19 @@ namespace GuildMaster.UI
                 Close();
             }
             else _message.text = UIBuilder.Colored(error, UITheme.Bad);
+        }
+
+        void OnRepair()
+        {
+            if (_building == null) return;
+            var town = Services.Get<TownService>();
+            string why = town.CannotRepairReason(_building);
+            bool wasDown = _building.IsDestroyed;
+            if (why == null && town.TryRepair(_building))
+                _message.text = UIBuilder.Colored($"{_building.DisplayName} {(wasDown ? "다시 세웠습니다" : "수리 완료")}!", UITheme.Good);
+            else
+                _message.text = UIBuilder.Colored(why ?? "수리할 수 없습니다.", UITheme.Bad);
+            Refresh();
         }
 
         void OnUpgrade()

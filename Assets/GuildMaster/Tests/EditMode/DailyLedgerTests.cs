@@ -66,6 +66,11 @@ namespace GuildMaster.Tests
             Assert.That(GoldCategories.Classify(GoldReason.Goods, 12), Is.EqualTo(GoldCategory.GoodsSold));
             Assert.That(GoldCategories.Classify(GoldReason.Merchant, 40), Is.EqualTo(GoldCategory.MerchantSales));
             Assert.That(GoldCategories.Classify(GoldReason.Loot, -30), Is.EqualTo(GoldCategory.LootBought));
+            // P4-74: building, repairs and the recruit notice are not quest escrow (they used to land there).
+            Assert.That(GoldCategories.Classify(GoldReason.Build, -120), Is.EqualTo(GoldCategory.Building));
+            Assert.That(GoldCategories.Classify(GoldReason.Repair, -150), Is.EqualTo(GoldCategory.Building));
+            Assert.That(GoldCategories.Classify(GoldReason.Build, 60), Is.EqualTo(GoldCategory.OtherIncome), "a demolition refund");
+            Assert.That(GoldCategories.Classify(GoldReason.Recruit, -30), Is.EqualTo(GoldCategory.OtherExpense));
             Assert.That(GoldCategories.Classify(GoldReason.Craft, -10), Is.EqualTo(GoldCategory.Crafting));
             Assert.That(GoldCategories.Classify(GoldReason.Upgrade, -100), Is.EqualTo(GoldCategory.Upgrade));
             Assert.That(GoldCategories.Classify(null, -60), Is.EqualTo(GoldCategory.QuestEscrow));

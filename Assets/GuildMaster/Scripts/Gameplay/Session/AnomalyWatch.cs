@@ -130,9 +130,14 @@ namespace GuildMaster.Session
         static string Context(Adventurer a)
         {
             var sb = new StringBuilder();
-            sb.Append($" moving={a.Mover.IsMoving} dest={a.Mover.Destination} target={a.Engage.Target?.DisplayName ?? "-"}");
+            sb.Append($" moving={a.Mover.IsMoving} steering={a.Mover.IsSteering} speed={a.Mover.Speed:0.0}x{a.Mover.SpeedMultiplier:0.00} stunned={a.IsStunned} " +
+                      $"dest={a.Mover.Destination} target={a.Engage.Target?.DisplayName ?? "-"} searching={a.Engage.IsSearching}");
             if (Services.TryGet<PartyTactics>(out var tactics) && tactics.LeaderOf(a) is { } leader)
+            {
                 sb.Append($" leader={leader.Data.name}('{leader.StateLabel}' {leader.Position})");
+                var party = tactics.Party(a, new List<Adventurer>());
+                sb.Append(" party[" + string.Join("/", party.Select(m => $"{m.Data.name}:{m.StateLabel}@{Vector2.Distance(m.Position, a.Position):0}{(m.Engage.Target != null ? "*" : "")}")) + "]");
+            }
             if (Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(a) is { } band)
                 sb.Append($" band[{string.Join("/", band.Members.Select(m => $"{m.Data.name}:{m.StateLabel}"))}] mustering={band.Mustering} paused={band.Paused} spot={(band.HasSpot ? band.Spot.ToString() : "-")}");
             if (a.CurrentQuest is { } q) sb.Append($" quest={q.Id}:{q.Status} point={q.Point}");

@@ -174,10 +174,19 @@ namespace GuildMaster.Ecosystem
             if (!target.IsEmpty) return false;
             if (species == null)
             {
-                // A kind that lives there (P4-58: habitat by terrain).
+                // A kind that lives there (P4-58: habitat by terrain), drawn by the same weights as the
+                // map's first dens — rarity included (P4-75: an even draw let the rare sand goblins,
+                // one of two desert kinds, take half the desert's new packs).
                 var kinds = _eco.AllSpecies.Where(target.Suits).ToList();
                 if (kinds.Count == 0) return false;
-                species = kinds[GameRandom.Shared.Range(0, kinds.Count)];
+                float total = kinds.Sum(k => EcosystemManager.Fit(k, target.Region, target.Biome));
+                float roll = GameRandom.Shared.Range(0f, total);
+                species = kinds[^1];
+                foreach (var k in kinds)
+                {
+                    roll -= EcosystemManager.Fit(k, target.Region, target.Biome);
+                    if (roll <= 0f) { species = k; break; }
+                }
             }
             target.ChangeSpecies(species);
             var edge = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).First();

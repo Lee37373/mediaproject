@@ -367,6 +367,23 @@ namespace GuildMaster.Tests
             Assert.That(gate.IsBroken, Is.False);
             Assert.That(grid.TownSealed, Is.True);
             Assert.That(grid.IsWalkable(gate.CenterCell, passesGates: false), Is.False);
+
+            // P4-74 (user decision 2026-10-04): a fallen building is stood up again for gold, and works again.
+            var town = Services.Get<Town.TownService>();
+            var apothecary = town.Get(Town.BuildingType.Apothecary);
+            var potion = Services.Get<GameDatabase>().recipes.First(r => r.station == Town.BuildingType.Apothecary);
+            apothecary.Damage(apothecary.MaxHp);
+            Assert.That(apothecary.IsDestroyed, Is.True);
+            Assert.That(Services.Get<Economy.CraftingService>().CannotCraftReason(potion), Is.EqualTo("제작 건물이 없습니다."), "nothing is made in a fallen apothecary");
+            gold = treasury.Gold;
+            int rebuild = town.RepairCost(apothecary);
+            Assert.That(rebuild, Is.GreaterThan(0));
+            Assert.That(town.TryRepair(apothecary), Is.True, town.CannotRepairReason(apothecary));
+            Assert.That(apothecary.IsDestroyed, Is.False);
+            Assert.That(apothecary.Hp, Is.EqualTo(apothecary.MaxHp));
+            Assert.That(treasury.Gold, Is.EqualTo(gold - rebuild));
+            Assert.That(Services.Get<Economy.CraftingService>().CannotCraftReason(potion), Is.Not.EqualTo("제작 건물이 없습니다."), "and works again");
+            Assert.That(town.CannotRepairReason(apothecary), Is.EqualTo("손상이 없습니다"));
         }
 
         [UnityTest]

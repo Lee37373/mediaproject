@@ -46,11 +46,24 @@ namespace GuildMaster.Town
             _treasury = treasury;
             _db = db;
             EventBus.Subscribe<BuildingDestroyedEvent>(OnBuildingDestroyed);
+            EventBus.Subscribe<BuildingRepairedEvent>(OnBuildingRepaired);
         }
 
-        void OnDestroy() => EventBus.Unsubscribe<BuildingDestroyedEvent>(OnBuildingDestroyed);
+        void OnDestroy()
+        {
+            EventBus.Unsubscribe<BuildingDestroyedEvent>(OnBuildingDestroyed);
+            EventBus.Unsubscribe<BuildingRepairedEvent>(OnBuildingRepaired);
+        }
 
-        /// <summary>A toppled tower stops watching; the rubble has to be cleared and rebuilt.</summary>
+        /// <summary>A tower stood up again (P4-74) watches again.</summary>
+        void OnBuildingRepaired(BuildingRepairedEvent e)
+        {
+            if (e.Building == null || !e.WasDestroyed) return;
+            var vision = e.Building.GetComponent<VisionSource>();
+            if (vision != null) vision.enabled = true;
+        }
+
+        /// <summary>A toppled tower stops watching until it is repaired (P4-74) or its rubble cleared.</summary>
         void OnBuildingDestroyed(BuildingDestroyedEvent e)
         {
             if (e.Building == null) return;
@@ -112,7 +125,7 @@ namespace GuildMaster.Town
             error = CannotAffordReason(type) ?? CannotPlaceAt(type, point);
             if (error != null) return false;
             var cost = CostOf(type);
-            if (!_treasury.TrySpendGold(cost.goldCost)) { error = "골드가 부족합니다."; return false; }
+            if (!_treasury.TrySpendGold(cost.goldCost, GoldReason.Build)) { error = "골드가 부족합니다."; return false; }
             foreach (var c in cost.itemCosts) _treasury.TryRemoveStock(c.itemId, c.count);
 
             var foot = ConstructionRules.FootprintAt(point, FootprintOf(type));
@@ -142,7 +155,7 @@ namespace GuildMaster.Town
             var cost = b.IsDestroyed ? null : CostOf(b.Type);
             if (cost != null)
             {
-                _treasury.AddGold(ConstructionRules.Refund(cost.goldCost));
+                _treasury.AddGold(ConstructionRules.Refund(cost.goldCost), GoldReason.Build);
                 foreach (var c in cost.itemCosts)
                 {
                     int back = ConstructionRules.Refund(c.count);

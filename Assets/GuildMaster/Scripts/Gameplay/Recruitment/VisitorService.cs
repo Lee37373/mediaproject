@@ -53,7 +53,7 @@ namespace GuildMaster.Recruitment
         public bool PostNotice()
         {
             if (CannotPostNoticeReason() != null) return false;
-            if (!Services.TryGet<Economy.GuildTreasury>(out var t) || !t.TrySpendGold(NoticeCost)) return false;
+            if (!Services.TryGet<Economy.GuildTreasury>(out var t) || !t.TrySpendGold(NoticeCost, Economy.GoldReason.Recruit)) return false;
             _noticeHour = _clock.TotalHours + GameRandom.Shared.Range(NoticeMinHours, NoticeMaxHours);
             if (Services.TryGet<Session.GameLog>(out var log))
                 log.Add($"모집 공고를 붙였습니다(-{NoticeCost}G). 곧 지원자가 찾아옵니다.", Session.LogCategory.Economy);
@@ -89,7 +89,7 @@ namespace GuildMaster.Recruitment
             {
                 _noticeHour = -1f;
                 if (!_roster.IsFull) SpawnVisitor();
-                else if (Services.TryGet<Economy.GuildTreasury>(out var t)) t.AddGold(NoticeCost);
+                else if (Services.TryGet<Economy.GuildTreasury>(out var t)) t.AddGold(NoticeCost, Economy.GoldReason.Recruit);
             }
             if (_clock.TotalHours < _nextVisitHour) return;
             _nextVisitHour = _clock.TotalHours + GameRandom.Shared.Range(MinIntervalHours, MaxIntervalHours);

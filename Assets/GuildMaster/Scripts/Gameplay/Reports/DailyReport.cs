@@ -9,7 +9,7 @@ namespace GuildMaster.Reports
     public enum GoldCategory
     {
         Tax, GoodsSold, MerchantSales, LivingCosts, QuestRefund, OtherIncome,
-        QuestEscrow, Negotiation, LootBought, Crafting, Upgrade, Bonus, OtherExpense,
+        QuestEscrow, Negotiation, LootBought, Crafting, Upgrade, Building, Bonus, OtherExpense,
     }
 
     public static class GoldCategories
@@ -18,7 +18,7 @@ namespace GuildMaster.Reports
             { GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.LivingCosts, GoldCategory.QuestRefund, GoldCategory.OtherIncome };
 
         public static readonly GoldCategory[] Expense =
-            { GoldCategory.QuestEscrow, GoldCategory.Negotiation, GoldCategory.LootBought, GoldCategory.Crafting, GoldCategory.Upgrade, GoldCategory.Bonus, GoldCategory.OtherExpense };
+            { GoldCategory.QuestEscrow, GoldCategory.Negotiation, GoldCategory.LootBought, GoldCategory.Crafting, GoldCategory.Upgrade, GoldCategory.Building, GoldCategory.Bonus, GoldCategory.OtherExpense };
 
         public static bool IsIncome(GoldCategory c) => c <= GoldCategory.OtherIncome;
 
@@ -39,6 +39,7 @@ namespace GuildMaster.Reports
                 GoldReason.Loot => GoldCategory.LootBought,
                 GoldReason.Craft => GoldCategory.Crafting,
                 GoldReason.Upgrade => GoldCategory.Upgrade,
+                GoldReason.Build or GoldReason.Repair => GoldCategory.Building,
                 GoldReason.Bonus => GoldCategory.Bonus,
                 null => amount > 0 ? GoldCategory.QuestRefund : GoldCategory.QuestEscrow,
                 _ => amount > 0 ? GoldCategory.OtherIncome : GoldCategory.OtherExpense,
@@ -60,6 +61,7 @@ namespace GuildMaster.Reports
             GoldCategory.LootBought => "전리품 매입",
             GoldCategory.Crafting => "제작 비용",
             GoldCategory.Upgrade => "건물 업그레이드",
+            GoldCategory.Building => "건설·수리",
             GoldCategory.Bonus => "길드원 보너스",
             _ => "기타 지출",
         };

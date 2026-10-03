@@ -87,6 +87,46 @@ namespace GuildMaster.Town
             return toTown.sqrMagnitude <= reach * reach || IsInTown(pos + toTown.normalized * reach);
         }
 
+        // ---------------- Repairs (P4-74) ----------------
+
+        /// <summary>
+        /// Gold for putting a building back to full durability (P4-74, user decision 2026-10-04: like
+        /// the gates, P4-39). A fallen one is repaired the same way and works again: crafting,
+        /// upgrades, a watchtower's sight.
+        /// </summary>
+        public int RepairCost(Building b)
+        {
+            float perHp = Core.Services.TryGet<Session.GameBalance>(out var balance) ? balance.buildingRepairGoldPerHp : 0.5f;
+            return b == null ? 0 : Mathf.CeilToInt((b.MaxHp - b.Hp) * perHp);
+        }
+
+        /// <summary>Why this building cannot be repaired now (shown on the button), or null.</summary>
+        public string CannotRepairReason(Building b)
+        {
+            if (b == null) return "건물이 없습니다";
+            if (b.Hp >= b.MaxHp) return "손상이 없습니다";
+            float reach = Mathf.Max(b.Footprint.width, b.Footprint.height) * 0.5f + GateService.RepairSafeDistance;
+            if (Units.UnitRegistry.FindNearest(b.Center, reach, u => u.Faction == Units.Faction.Monster) != null)
+                return "적이 가까이 있어 수리할 수 없습니다";
+            if (Core.Services.TryGet<Economy.GuildTreasury>(out var treasury) && !treasury.CanAfford(RepairCost(b)))
+                return $"골드가 부족합니다 ({treasury.Gold}/{RepairCost(b)}G)";
+            return null;
+        }
+
+        public bool TryRepair(Building b)
+        {
+            if (CannotRepairReason(b) != null) return false;
+            int cost = RepairCost(b);
+            if (Core.Services.TryGet<Economy.GuildTreasury>(out var treasury) && !treasury.TrySpendGold(cost, Economy.GoldReason.Repair)) return false;
+            bool wasDown = b.IsDestroyed;
+            b.Repair(b.MaxHp);
+            Core.EventBus.Publish(new BuildingRepairedEvent { Building = b, WasDestroyed = wasDown });
+            if (Core.Services.TryGet<Session.GameLog>(out var log))
+                log.Add($"{b.DisplayName}{Adventurers.MemoryRecorder.Josa(b.DisplayName, "을", "를")} {(wasDown ? "다시 세웠습니다" : "수리했습니다")}(-{cost}G).",
+                        Session.LogCategory.Economy);
+            return true;
+        }
+
         /// <summary>Random walkable spot around the plaza for idling NPCs.</summary>
         public Vector2 RandomPlazaSpot(Core.GameRandom rng, int radius = 5)
         {
