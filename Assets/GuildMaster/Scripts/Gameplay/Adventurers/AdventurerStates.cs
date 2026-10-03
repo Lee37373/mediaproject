@@ -45,10 +45,17 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>
-        /// Where to go for a quest: the hunting point the player marked, or the nest to clear.
-        /// Adventurers never head for monsters nobody has seen (user bug report).
+        /// Where to go for a quest: the hunting point the player marked (or the disaster's spot), on
+        /// ground one can stand on. Adventurers never head for monsters nobody has seen (user bug report).
+        /// A point in a pond, on a rock or under snow is moved to the nearest walkable cell, as the path
+        /// search does (P4-73: the walker stopped up to six cells short and never "arrived" within three).
         /// </summary>
-        public static Vector2 QuestDestination(Adventurer a, Quest q) => q.Point;
+        public static Vector2 QuestDestination(Adventurer a, Quest q)
+        {
+            var grid = Services.Get<WorldService>().Grid;
+            var cell = GridMap.WorldToCell(q.Point);
+            return !grid.IsWalkable(cell) && grid.TryFindNearestWalkable(cell, 6, out var near) ? GridMap.CellToWorld(near) : q.Point;
+        }
 
         /// <summary>Seconds between the checks for making camp (P4-66).</summary>
         public const float CampCheckInterval = 0.5f;

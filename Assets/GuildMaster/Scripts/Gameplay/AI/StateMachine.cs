@@ -8,6 +8,8 @@ namespace GuildMaster.AI
 
         /// <summary>Time spent in this state (scaled seconds).</summary>
         protected float TimeInState { get; private set; }
+        /// <summary>The same, for watchers outside the state (debug: <c>Session.AnomalyWatch</c>).</summary>
+        public float Elapsed => TimeInState;
 
         internal void Bind(TOwner owner, StateMachine<TOwner> machine)
         {

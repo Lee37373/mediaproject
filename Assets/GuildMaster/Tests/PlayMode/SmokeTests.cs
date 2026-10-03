@@ -1368,6 +1368,46 @@ namespace GuildMaster.Tests
                                        || quest.Status != QuestStatus.InProgress, 20f);
             Assert.That(quest.Status != QuestStatus.InProgress || Vector2.Distance(hunter.Position, quest.Point) < before - 3f, Is.True,
                 "the hunter heads for the marked point (or already finished)");
+
+            // P4-73 (long run: a member stood "이동 중" for hours): a point marked in a pond, whose
+            // nearest dry cell is more than three away, is still reached — the walk ends on the shore.
+            var grid = Services.Get<World.WorldService>().Grid;
+            Vector2Int wet = default;
+            bool found = false;
+            for (int y = 6; y < grid.Height - 6 && !found; y++)
+            for (int x = 6; x < grid.Width - 6 && !found; x++)
+            {
+                var c = new Vector2Int(x, y);
+                if (grid.IsWalkable(c) || grid.IsInTown(c) || !grid.TryFindNearestWalkable(c, 3, out var shore)) continue;
+                if ((shore - c).magnitude > 3.2f && HuntPointErrorFree(c)) { wet = c; found = true; }
+            }
+            Assume.That(found, "a pond whose shore is more than three cells off");
+            var board = Services.Get<QuestBoard>();
+            var draft = new QuestDraft
+            {
+                Type = QuestType.Hunt, Species = species, Count = 1, RewardGold = 10, RewardExp = 5, MaxParty = 1,
+                Point = World.GridMap.CellToWorld(wet), HasPoint = true, Radius = QuestBoard.HuntRadius,
+            };
+            Assert.That(board.TryPost(draft, out var pond, out var error), Is.True, error);
+            var walker = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
+            Assert.That(board.TryAccept(pond, walker), Is.True);
+            walker.CurrentQuest = pond;
+            walker.Mover.Stop();
+            walker.transform.position = World.GridMap.CellToWorld(wet) + new Vector2(10f, 0f);
+            if (!grid.TryFindNearestWalkable(World.GridMap.WorldToCell(walker.Position), 6, out var startCell)) Assume.That(false, "dry ground near the pond");
+            walker.transform.position = World.GridMap.CellToWorld(startCell);
+            // Midday and nothing to fight: only arriving ends the walk (no night camp, no detour).
+            typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(Clock, Mathf.Floor(Clock.TotalHours / 24f) * 24f + 11f);
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                walker.ChangeState(walker.TravelState);
+                yield return WaitFor(() => walker.Fsm.Current != walker.TravelState, 15f);
+                Assert.That(walker.Fsm.Current, Is.EqualTo(walker.HuntState), $"it arrives at the shore instead of walking on the spot (now {walker.StateLabel})");
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+
+            static bool HuntPointErrorFree(Vector2Int c) => QuestBoard.HuntPointError(World.GridMap.CellToWorld(c)) == null;
         }
 
         [UnityTest]

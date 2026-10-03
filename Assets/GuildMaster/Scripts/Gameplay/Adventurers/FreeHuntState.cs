@@ -178,7 +178,7 @@ namespace GuildMaster.Adventurers
             // whenever the terrain it discovers forces the walk to redraw its route, it re-aims at
             // once instead of trudging on along a plan made of guesses.
             var spot = Spot(a);
-            if (Vector2.Distance(a.Position, spot) < SpotReached) { spot = PickSpot(); _surprises = 0; }
+            if (Reached(a, spot)) { spot = PickSpot(); _surprises = 0; }
             bool surprised = a.Mover.RouteCorrections != _correctionsAtAim;
             if (a.Mover.IsMoving && !surprised) return;
             _roamTimer -= dt;
@@ -191,6 +191,18 @@ namespace GuildMaster.Adventurers
                 _surprises = 0;
             }
             AimLeg(a, spot);
+        }
+
+        /// <summary>
+        /// At the spot, or as close as the ground lets: a scouting spot picked in the fog may turn out
+        /// to be water or rock, and the walk then ends at the nearest walkable cell up to six away
+        /// (P4-73: the band stood there re-aiming at it for hours).
+        /// </summary>
+        static bool Reached(Adventurer a, Vector2 spot)
+        {
+            float d = Vector2.Distance(a.Position, spot);
+            if (d < SpotReached) return true;
+            return !a.Mover.IsMoving && d < 7f && !Services.Get<WorldService>().Grid.IsWalkable(GridMap.WorldToCell(spot));
         }
 
         /// <summary>

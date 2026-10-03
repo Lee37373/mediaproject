@@ -252,6 +252,9 @@ namespace GuildMaster.Disasters
         /// <summary>A den in the way is abandoned: its pack moves out or takes to the road (P4-72, the wild changes).</summary>
         void DriveOffDens(Disaster d, Vector2Int c)
         {
+            // Only what harms or walls them in: a passing sandstorm does neither (P4-73: one drifting storm
+            // emptied every den on its way).
+            if (d.Kind == DisasterKind.Sandstorm) return;
             if (!Services.TryGet<EcosystemManager>(out var eco) || !Services.TryGet<TerritoryService>(out var territory)) return;
             var p = GridMap.CellToWorld(c);
             foreach (var nest in eco.Nests)
@@ -301,7 +304,8 @@ namespace GuildMaster.Disasters
                 default: StepGrowth(d, dh); break;
             }
             if (d.Ending && d.Kind != DisasterKind.Wildfire) Recede(d, dh);
-            if (d.Cells.Count == 0) Finish(d);
+            // A storm over a lake or a range covers nothing for a while but is not over (P4-73).
+            if (d.Cells.Count == 0 && (d.Ending || d.Kind != DisasterKind.Sandstorm)) Finish(d);
         }
 
         /// <summary>Burning cells set their forest neighbours alight, and burn out after a while.</summary>

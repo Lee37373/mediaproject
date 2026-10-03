@@ -109,6 +109,8 @@ namespace GuildMaster.Adventurers
         /// with (P4-37, also while it walks back from a party retreat, P4-71), or on the way home its
         /// standing party (P4-50). Null when it is on its own.
         /// </summary>
+        static bool Homeward(Adventurer a) => a.Fsm.Current == a.ReturnState;
+
         static object GroupOf(Adventurer a)
         {
             if (IsPartyQuest(a.CurrentQuest)) return a.CurrentQuest;
@@ -119,22 +121,27 @@ namespace GuildMaster.Adventurers
             return null;
         }
 
-        /// <summary>Members of the adventurer's party who are out, leader first (joining order).</summary>
+        /// <summary>
+        /// Members of the adventurer's party who are out, leader first (joining order) — only those going
+        /// the same way: one walking home is no formation for one setting out (P4-73: a quest leader in town
+        /// stood waiting hours for a member still on its way back).
+        /// </summary>
         public List<Adventurer> Party(Adventurer a, List<Adventurer> into)
         {
             into.Clear();
             var group = GroupOf(a);
+            bool home = Homeward(a);
             switch (group)
             {
                 case Quest q:
                     foreach (var t in q.Assignees)
-                        if (t is Adventurer m && m.CurrentQuest == q && IsOut(m)) into.Add(m);
+                        if (t is Adventurer m && m.CurrentQuest == q && IsOut(m) && Homeward(m) == home) into.Add(m);
                     break;
                 case HuntBand band:
-                    foreach (var m in band.Members) if (IsOut(m) && GroupOf(m) == group) into.Add(m);
+                    foreach (var m in band.Members) if (IsOut(m) && Homeward(m) == home && GroupOf(m) == group) into.Add(m);
                     break;
                 case Party party:
-                    foreach (var m in party.Members) if (IsOut(m) && GroupOf(m) == group) into.Add(m);
+                    foreach (var m in party.Members) if (IsOut(m) && Homeward(m) == home && GroupOf(m) == group) into.Add(m);
                     break;
             }
             if (into.Count < 2) into.Clear();

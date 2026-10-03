@@ -27,6 +27,9 @@ namespace GuildMaster.Units
         /// </summary>
         public static float ScaledHp(float listed) => listed * HpScale;
 
+        /// <summary>The other way: a real amount of health (damage, healing) in listed points, for rules written per listed point.</summary>
+        public static float ListedHp(float real) => real / HpScale;
+
         /// <summary>
         /// Defence that halves a hit. Armour divides damage instead of subtracting from it (P4-38,
         /// user report 2026-09-21: "one member clears a whole pack alone"): with subtraction a few

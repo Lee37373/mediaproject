@@ -487,7 +487,9 @@ namespace GuildMaster.Adventurers
                 Hp = Mathf.Min(Stats.MaxHp, Hp + amount);
                 return;
             }
-            Data.stress = Mathf.Min(100f, Data.stress + amount * 0.3f);
+            // 0.3 per point of the listed (unscaled) health: P4-42 tripled health and fights, and the
+            // raw damage tripled the stress of losing a health bar with it (P4-73: members sat at 100).
+            Data.stress = Mathf.Min(100f, Data.stress + Combat.ListedHp(amount) * 0.3f);
             // F-6: a lethal blow may leave a guild member alive at 1 HP; they are then wounded and flee (see GuildLegacy.TryLastStand).
             if (Hp <= 0f && IsGuildMember && !IsVisitor && Services.TryGet<Legacy.GuildLegacy>(out var legacy) && legacy.TryLastStand(this, source))
             {

@@ -52,6 +52,9 @@ namespace GuildMaster.Adventurers
                 return s_group;
             }
             if (Services.TryGet<PartyTactics>(out var tactics)) tactics.Party(hurt, s_group);
+            // The hurt one is not walking with them (a lure run, P4-18): it pulls out on its own as before
+            // (P4-73: the rest were sent home and it kept luring, gaining stress every frame).
+            if (!s_group.Contains(hurt)) s_group.Clear();
             return s_group;
         }
 

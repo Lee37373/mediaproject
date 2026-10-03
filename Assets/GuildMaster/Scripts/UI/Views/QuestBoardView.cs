@@ -339,6 +339,8 @@ namespace GuildMaster.UI
                 _title.text = $"[{q.Id}] {q.Title}  {status}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(q.Danger), UITheme.Danger(q.Danger))}";
                 string members = q.Assignees.Count == 0 ? "없음" : string.Join(", ", q.Assignees.Select(a => a.TakerName));
                 _detail.text = $"진행 {q.ProgressText} · 보상 {q.RewardGold}G / {q.RewardExp}EXP · 인원 {q.Assignees.Count}/{q.MaxParty} ({members})";
+                // The town's own quests (P4-72 disasters) are not the guild's to take down.
+                _cancel.gameObject.SetActive(!q.TownFunded);
                 _cancel.interactable = q.IsActive;
             }
 

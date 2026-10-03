@@ -966,6 +966,7 @@ namespace GuildMaster.Session
             path = System.IO.Path.GetFullPath(path);
             probe.Begin(days, path);
             if (autoPost) BalanceAutoPlayer.Ensure().Begin();
+            AnomalyWatch.Ensure();
             Services.Get<GameClock>().SetSpeed(speed);
             return $"balance run '{name}' started: {days} game days, autoPost={autoPost}, speed=x{GameClock.SpeedScales[Mathf.Clamp(speed, 0, GameClock.SpeedScales.Length - 1)]:0}\n  csv: {path}";
         }
@@ -980,6 +981,9 @@ namespace GuildMaster.Session
         }
 
         /// <summary>Where the run stands right now (it keeps sampling).</summary>
+        /// <summary>What <see cref="AnomalyWatch"/> found (stuck members, unworked quests); starts watching if it was not.</summary>
+        public static string Anomalies() => AnomalyWatch.Ensure().Summary();
+
         public static string BalanceReport()
         {
             if (BalanceProbe.Instance == null) return "no run";
