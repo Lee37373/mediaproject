@@ -11,6 +11,7 @@ namespace GuildMaster.World
         public readonly MapData Data;
         readonly bool[] _blocked;
         readonly bool[] _gateClosed;
+        readonly HazardKind[] _hazard;
 
         public int Width => Data.Width;
         public int Height => Data.Height;
@@ -23,6 +24,7 @@ namespace GuildMaster.World
             Data = data;
             _blocked = new bool[data.Width * data.Height];
             _gateClosed = new bool[data.Width * data.Height];
+            _hazard = new HazardKind[data.Width * data.Height];
         }
 
         public bool InBounds(Vector2Int c) => Data.InBounds(c);
@@ -33,7 +35,7 @@ namespace GuildMaster.World
         {
             if (!Data.InBounds(x, y)) return false;
             int i = y * Width + x;
-            return !_blocked[i] && MapData.IsWalkable(Data.Tiles[i]);
+            return !_blocked[i] && MapData.IsWalkable(Data.Tiles[i]) && !Hazards.Blocks(_hazard[i]);
         }
 
         /// <summary>
@@ -66,7 +68,7 @@ namespace GuildMaster.World
         {
             int i = y * Width + x;
             var t = Data.Tiles[i];
-            float cost = MapData.MoveCost(t);
+            float cost = MapData.MoveCost(t) * Hazards.CostFactor(_hazard[i]);
             return t is TileType.Road or TileType.TownFloor or TileType.Gate ? cost : cost * TerrainRegions.MoveMultiplier(Data.Regions[i]);
         }
 
@@ -78,13 +80,30 @@ namespace GuildMaster.World
             return _blocked[i] || MapData.IsHardCover(Data.Tiles[i]);
         }
 
-        public bool HasTree(int x, int y) => Data.HasTree(x, y);
+        public bool HasTree(int x, int y) => Data.HasTree(x, y) && !Hazards.ClearsForest(_hazard[y * Width + x]);
 
         /// <summary>Forest floor (P4-48: blocks the view from outside, shortens it inside).</summary>
-        public bool IsForest(int x, int y) => Data.InBounds(x, y) && Data.Tiles[y * Width + x] == TileType.Forest;
+        public bool IsForest(int x, int y)
+            => Data.InBounds(x, y) && Data.Tiles[y * Width + x] == TileType.Forest && !Hazards.ClearsForest(_hazard[y * Width + x]);
         public bool IsForest(Vector2Int c) => IsForest(c.x, c.y);
 
         public float Cost(Vector2Int c) => Cost(c.x, c.y);
+
+        // ---------------- Hazards (P4-72) ----------------
+
+        public HazardKind HazardAt(int x, int y) => Data.InBounds(x, y) ? _hazard[y * Width + x] : HazardKind.None;
+        public HazardKind HazardAt(Vector2Int c) => HazardAt(c.x, c.y);
+
+        /// <summary>Lays a hazard on a cell (or clears it with <see cref="HazardKind.None"/>). Paths are re-checked when walkability changes.</summary>
+        public void SetHazard(Vector2Int c, HazardKind kind)
+        {
+            if (!Data.InBounds(c)) return;
+            int i = c.y * Width + c.x;
+            var old = _hazard[i];
+            if (old == kind) return;
+            _hazard[i] = kind;
+            if (Hazards.Blocks(old) != Hazards.Blocks(kind)) Version++;
+        }
 
         public void SetBlocked(RectInt area, bool blocked)
         {

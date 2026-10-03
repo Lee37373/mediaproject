@@ -153,7 +153,7 @@ namespace GuildMaster.Monsters
             Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
             // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
             var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
-            Visual.SetTint(baseTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
+            Visual.SetTint(baseTint * def.artTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
             GetComponent<HealthBar>().Init(this, 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
             GetComponent<FogHideable>().Refresh();
             Engage.Clear();

@@ -120,6 +120,30 @@ namespace GuildMaster.Quests
             return true;
         }
 
+        /// <summary>
+        /// The town posts a quest to deal with a natural disaster the guild has seen (P4-72, user
+        /// decision 2026-10-03): the town pays, so nothing leaves the treasury.
+        /// </summary>
+        public Quest PostTownQuest(QuestDraft draft, Disasters.Disaster disaster)
+        {
+            var quest = new Quest($"Q_{_nextId++}", draft, _clock.TotalHours) { TownFunded = true, Disaster = disaster };
+            quest.Danger = EvaluateDanger(quest);
+            _quests.Add(quest);
+            EventBus.Publish(new QuestPostedEvent { Quest = quest });
+            return quest;
+        }
+
+        /// <summary>
+        /// The disaster is over: claimed, the quest is done (dealt with, or died down while they were
+        /// on it, as with a den that is gone); unclaimed, the town takes it down.
+        /// </summary>
+        public void SettleTownQuest(Quest q, string reasonIfUnclaimed)
+        {
+            if (q == null || !q.IsActive) return;
+            if (q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, reasonIfUnclaimed ?? "재해가 수습되었습니다");
+            else Complete(q);
+        }
+
         public DangerLevel EvaluateDanger(Quest q)
         {
             DangerLevel d = DangerLevel.Low;
@@ -133,6 +157,9 @@ namespace GuildMaster.Quests
                     break;
                 case QuestType.Defend:
                     d = DangerLevel.Medium;
+                    break;
+                case QuestType.Disaster:
+                    d = q.Disaster != null ? Disasters.DisasterRules.DangerOf(q.Disaster.Kind) : DangerLevel.Medium;
                     break;
             }
             return d;
@@ -158,7 +185,7 @@ namespace GuildMaster.Quests
         /// </summary>
         public bool Cancel(Quest q)
         {
-            if (!q.IsActive) return false;
+            if (!q.IsActive || q.TownFunded) return false; // the town's quest is not the guild's to take down
             if (q.Assignees.Count == 0)
             {
                 Close(q, QuestStatus.Cancelled, refund: true);
@@ -449,7 +476,8 @@ namespace GuildMaster.Quests
                 if (q.Status == QuestStatus.Completed)
                 {
                     q.RemoveAssignee(t);
-                    if (q.TryTakePayout(t, out var g, out var x)) { _treasury.AddGold(g); _treasury.AddExp(x); }
+                    // A share nobody will collect goes back to whoever paid it (the town keeps its own).
+                    if (q.TryTakePayout(t, out var g, out var x) && !q.TownFunded) { _treasury.AddGold(g); _treasury.AddExp(x); }
                     if (q.PendingPayouts == 0) Close(q, QuestStatus.TurnedIn, refund: false);
                 }
                 else Abandon(q, t);
@@ -467,7 +495,14 @@ namespace GuildMaster.Quests
 
         void Close(Quest q, QuestStatus status, bool refund, string reason = null)
         {
-            if (refund)
+            if (refund && q.TownFunded)
+            {
+                // Only what the guild itself added (negotiation) was guild gold.
+                int left = q.RewardGold;
+                if (q.Status == QuestStatus.Completed) (left, _) = q.DrainRemainingPayouts();
+                _treasury.AddGold(Mathf.Min(left, q.BonusGold));
+            }
+            else if (refund)
             {
                 if (q.Status == QuestStatus.Completed)
                 {

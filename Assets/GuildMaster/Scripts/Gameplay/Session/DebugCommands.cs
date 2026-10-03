@@ -398,6 +398,36 @@ namespace GuildMaster.Session
             return $"spawned {spawned}";
         }
 
+        // ---------------- Natural disasters (P4-72) ----------------
+
+        /// <summary>Every disaster: kind, where, cells, core work left, known, quest, ending.</summary>
+        public static string Disasters()
+        {
+            var service = Services.Get<GuildMaster.Disasters.DisasterService>();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"재해 {service.Active.Count}건 진행, {service.History.Count}건 끝남, 탄 숲 {service.BurntCells}칸");
+            foreach (var d in service.Active)
+                sb.AppendLine($"  #{d.Id} {d.Name} {Quests.QuestBoard.DescribeArea(d.WorldOrigin)} cells={d.Cells.Count} " +
+                              $"{(d.HasCore ? $"core={d.CoreWorkLeft:0.00}h " : "")}known={d.Known} quest={d.Quest?.Id ?? "-"}({d.Quest?.Status}) " +
+                              $"ending={d.Ending} town={d.ReachedTown} age={Services.Get<GameClock>().TotalHours - d.StartedHour:0.0}h");
+            return sb.ToString();
+        }
+
+        /// <summary>Starts a disaster (kind 0 산불, 1 독안개, 2 눈사태, 3 모래폭풍, 4 지진) at a cell, or near the camera when x &lt; 0.</summary>
+        public static string StartDisaster(int kind, int x = -1, int y = -1)
+        {
+            var at = x >= 0 ? new Vector2Int(x, y) : World.GridMap.WorldToCell(Camera.main.transform.position);
+            var d = Services.Get<GuildMaster.Disasters.DisasterService>().Begin((GuildMaster.Disasters.DisasterKind)kind, at);
+            return d == null ? $"{at}: 이 재해에 맞는 땅이 아닙니다" : $"#{d.Id} {d.Name} at {d.Origin} cells={d.Cells.Count}";
+        }
+
+        /// <summary>Chance that a hazard skill on the right ground starts a disaster (-1: back to the rule).</summary>
+        public static string DisasterChance(float chance)
+        {
+            GuildMaster.Disasters.DisasterService.ChanceOverride = chance;
+            return $"disaster chance = {(chance >= 0f ? chance : GuildMaster.Disasters.DisasterRules.TriggerChance):0.00}";
+        }
+
         // ---------------- Camps (P4-66) ----------------
 
         /// <summary>Every camp: where, why, how long, who sits at it (state, HP, fatigue), the watch, raids.</summary>

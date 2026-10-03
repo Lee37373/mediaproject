@@ -5,7 +5,8 @@ using UnityEngine;
 
 namespace GuildMaster.Quests
 {
-    public enum QuestType { Hunt, Escort, Defend }
+    /// <summary><see cref="Disaster"/>: dealing with a natural disaster, posted by the town (P4-72).</summary>
+    public enum QuestType { Hunt, Escort, Defend, Disaster }
     public enum QuestStatus { Open, InProgress, Completed, TurnedIn, Cancelled, Failed }
 
     /// <summary>Anyone who can take quests (adventurers).</summary>
@@ -62,6 +63,17 @@ namespace GuildMaster.Quests
         /// </summary>
         public Nest TargetNest { get; internal set; }
 
+        // ---- Natural disasters (P4-72) ----
+        /// <summary>
+        /// Posted and paid for by the town: no guild gold was escrowed, so nothing of the reward goes
+        /// back to the treasury (only gold the guild itself added in a negotiation).
+        /// </summary>
+        public bool TownFunded { get; internal set; }
+        /// <summary>The disaster to deal with.</summary>
+        public Disasters.Disaster Disaster { get; internal set; }
+        /// <summary>Cells (or cores) the workers have dealt with so far.</summary>
+        public int Worked { get; internal set; }
+
         // ---- Escort (P3-4a) ----
         public int MaxHours { get; }
         /// <summary>Paid escort time so far (game hours outside town with an escort nearby).</summary>
@@ -116,6 +128,8 @@ namespace GuildMaster.Quests
             QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
             QuestType.Escort => $"길드 마스터 호위 (최대 {MaxHours}시간)",
             QuestType.Defend => "마을 방어",
+            QuestType.Disaster when Disaster != null
+                => $"{Disaster.Name} {Disasters.DisasterRules.WorkName(Disaster.Kind)} ({QuestBoard.DescribeArea(Point)}, 마을 의뢰)",
             _ => Id,
         };
 
@@ -123,6 +137,8 @@ namespace GuildMaster.Quests
         {
             QuestType.Hunt => HuntProgressText,
             QuestType.Escort => $"{EscortHours:0.0}/{MaxHours}시간",
+            // Only the guild's own work: how much is left out there is not known (P4-72 information rule).
+            QuestType.Disaster => Worked > 0 ? $"{Worked}곳 처리" : "",
             _ => "",
         };
 

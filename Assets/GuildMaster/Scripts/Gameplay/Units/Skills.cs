@@ -11,6 +11,8 @@ namespace GuildMaster.Units
     public struct SkillUsedEvent { public Unit User; public string Name; public Color Color; }
     /// <summary>A support skill restored HP (P4-29): floating "+N" and effects.</summary>
     public struct UnitHealedEvent { public Unit Target; public Unit Healer; public float Amount; }
+    /// <summary>A disaster monster's skill struck the ground (P4-72): on the right ground it may start a natural disaster.</summary>
+    public struct HazardStrikeEvent { public Unit User; public Vector2 Point; public Disasters.DisasterKind Kind; }
 
     /// <summary>
     /// Active ability with its own trigger condition. Units try their ready skills before basic
@@ -511,6 +513,64 @@ namespace GuildMaster.Units
             => target != null && WarpTowards(self, target.Position);
     }
 
+    /// <summary>
+    /// The disaster monsters' skill (P4-72): a strike of their element — sparks, poison, a frost
+    /// roar, a sand whirl, a stomp — that hurts what stands around the spot and may, on the right
+    /// ground, set off a natural disaster there (<c>Disasters.DisasterService</c> decides).
+    /// Spit and whirls land at the target, roars and stomps around the user.
+    /// </summary>
+    public class HazardStrikeSkill : Skill
+    {
+        const float Radius = 1.4f;
+        const float SpitRange = 4f;
+        readonly Disasters.DisasterKind _kind;
+
+        public HazardStrikeSkill(Disasters.DisasterKind kind)
+        {
+            _kind = kind;
+            Cooldown = 9f;
+        }
+
+        bool OnSelf => _kind is Disasters.DisasterKind.Avalanche or Disasters.DisasterKind.Quake;
+        public override float AreaRadius => Radius;
+        public override bool AreaOnSelf => OnSelf;
+
+        public override string Name => _kind switch
+        {
+            Disasters.DisasterKind.Wildfire => "불씨 뿜기",
+            Disasters.DisasterKind.PoisonFog => "독 뱉기",
+            Disasters.DisasterKind.Avalanche => "서리 포효",
+            Disasters.DisasterKind.Sandstorm => "모래 회오리",
+            _ => "땅 울리기",
+        };
+
+        public override string Description
+            => $"주변(반경 {Radius})에 공격력 120% 피해. 맞는 땅이면 낮은 확률로 {Disasters.DisasterRules.NameOf(_kind)}이(가) 일어납니다.";
+
+        public override Color Color => _kind switch
+        {
+            Disasters.DisasterKind.Wildfire => new Color(1f, 0.45f, 0.15f),
+            Disasters.DisasterKind.PoisonFog => new Color(0.65f, 0.35f, 0.9f),
+            Disasters.DisasterKind.Avalanche => new Color(0.7f, 0.9f, 1f),
+            Disasters.DisasterKind.Sandstorm => new Color(0.95f, 0.8f, 0.45f),
+            _ => new Color(0.55f, 0.45f, 0.4f),
+        };
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (target == null || Combat.Distance(self, target) > (OnSelf ? 2f : SpitRange)) return false;
+            if (!OnSelf && !World.HasLineOfSight(self.Position, target.Position, 1)) return false;
+            var point = OnSelf ? self.Position : target.Position;
+            foreach (var u in HostilesAround(self, point, Radius).ToArray()) Damage(self, u, 1.2f);
+            Fx?.Ring(point, Radius, Color, 0.4f);
+            Fx?.Spark(point, Color, 1.2f, 0.3f);
+            if (OnSelf) ShakeIfVisible(point, 0.2f);
+            Announce(self);
+            EventBus.Publish(new HazardStrikeEvent { User = self, Point = point, Kind = _kind });
+            return true;
+        }
+    }
+
     public static class SkillFactory
     {
         public static Skill Create(string id) => id switch
@@ -527,6 +587,12 @@ namespace GuildMaster.Units
             "charge" => new ChargeSkill(),
             "slam" => new GroundSlamSkill(),
             "howl" => new PackHowlSkill(),
+            // Disaster monsters (P4-72).
+            "ember" => new HazardStrikeSkill(Disasters.DisasterKind.Wildfire),
+            "toxic_spit" => new HazardStrikeSkill(Disasters.DisasterKind.PoisonFog),
+            "frost_roar" => new HazardStrikeSkill(Disasters.DisasterKind.Avalanche),
+            "sand_whirl" => new HazardStrikeSkill(Disasters.DisasterKind.Sandstorm),
+            "quake_stomp" => new HazardStrikeSkill(Disasters.DisasterKind.Quake),
             _ => null,
         };
 

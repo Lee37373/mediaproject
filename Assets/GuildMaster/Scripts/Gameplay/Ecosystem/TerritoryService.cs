@@ -10,7 +10,8 @@ using UnityEngine;
 namespace GuildMaster.Ecosystem
 {
     /// <summary>Residents were outmatched and moved to another nest. Observed = the guild saw the old nest then.</summary>
-    public struct NestAbandonedEvent { public Nest From; public Nest To; public MonsterDefinition Species; public MonsterDefinition DrivenBy; public int Count; public bool Observed; }
+    /// <summary>A pack left its den: driven out by <see cref="DrivenBy"/>, or fleeing a disaster (<see cref="Cause"/>, P4-72; DrivenBy null).</summary>
+    public struct NestAbandonedEvent { public Nest From; public Nest To; public MonsterDefinition Species; public MonsterDefinition DrivenBy; public string Cause; public int Count; public bool Observed; }
     /// <summary>Intruding monsters from <see cref="IntruderHome"/> were outmatched by a nest's residents and turn back.</summary>
     public struct IntrudersRoutedEvent { public Nest Territory; public Nest IntruderHome; public int Count; public bool Observed; }
 
@@ -136,7 +137,18 @@ namespace GuildMaster.Ecosystem
         /// the pack takes to the road (<see cref="RoamingPackService"/>); it never moves in with
         /// another pack, of its own kind or not.
         /// </summary>
-        void Abandon(Nest nest, List<Monster> residents, MonsterDefinition drivenBy, Vector2 threat, Nest drivenFrom)
+        /// <summary>
+        /// A natural disaster is upon the den (P4-72): the whole pack leaves, like one driven out by
+        /// a stronger pack — to an empty den of its habitat away from it, or onto the road.
+        /// </summary>
+        public void FleeDisaster(Nest nest, Vector2 threat, string cause)
+        {
+            if (nest == null || nest.IsEmpty) return;
+            var residents = nest.Members.Where(m => m != null && m.IsAlive).ToList();
+            Abandon(nest, residents, null, threat, null, cause);
+        }
+
+        void Abandon(Nest nest, List<Monster> residents, MonsterDefinition drivenBy, Vector2 threat, Nest drivenFrom, string cause = null)
         {
             if (residents.Count == 0) return;
             Services.TryGet<MigrationService>(out var migration);
@@ -149,12 +161,12 @@ namespace GuildMaster.Ecosystem
             {
                 if (dest.Species != species) dest.ChangeSpecies(species);
                 foreach (var m in pack) nest.TransferMember(m, dest);
-                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy.displayName} → {dest.DisplayName}");
+                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy?.displayName ?? cause} → {dest.DisplayName}");
             }
             else if (Services.TryGet<RoamingPackService>(out var roaming))
             {
                 roaming.SendOnTheRoad(nest, threat);
-                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy.displayName} → roaming");
+                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy?.displayName ?? cause} → roaming");
             }
             else
             {
@@ -163,7 +175,7 @@ namespace GuildMaster.Ecosystem
             }
             EventBus.Publish(new NestAbandonedEvent
             {
-                From = nest, To = dest, Species = species, DrivenBy = drivenBy, Count = pack.Count, Observed = observed,
+                From = nest, To = dest, Species = species, DrivenBy = drivenBy, Cause = cause, Count = pack.Count, Observed = observed,
             });
         }
 

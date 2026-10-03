@@ -72,6 +72,12 @@ namespace GuildMaster.Ecosystem
 
         public IReadOnlyList<Band> Bands => _bands;
 
+        /// <summary>Tests: no newcomers from the map edge (they would take an empty site a test is about).</summary>
+        public static bool NoNewcomers;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => NoNewcomers = false;
+
         public void Init(EcosystemManager eco, WorldService world, GameClock clock)
         {
             _eco = eco;
@@ -196,7 +202,7 @@ namespace GuildMaster.Ecosystem
         {
             foreach (var band in _bands.ToList())
                 if (_clock.TotalHours - band.StartedAtHour >= MaxHours) GoHome(band);
-            if (GameRandom.Shared.Value < ArrivalChancePerHour) TryArrive();
+            if (!NoNewcomers && GameRandom.Shared.Value < ArrivalChancePerHour) TryArrive();
         }
 
         /// <summary>Beaten back on the way or at the target: rest, then try elsewhere (or go home).</summary>

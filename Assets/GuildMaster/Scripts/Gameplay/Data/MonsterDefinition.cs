@@ -73,6 +73,8 @@ namespace GuildMaster.Data
         [Header("Art (Resources/Art/Monsters)")]
         public string artKey;
         public string rangedArtKey;
+        [Tooltip("Tint over the art: a kind that borrows another's image until it has its own (P4-72 disaster monsters).")]
+        public Color artTint = Color.white;
 
         [Header("Boss (P4-57)")]
         [Tooltip("Name of the species' pack boss (Monsters/MonsterBoss).")]

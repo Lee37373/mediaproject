@@ -166,6 +166,12 @@ namespace GuildMaster.Session
             Services.Register(board);
             AddSystem<QuestAreaMarkers>().Init();
 
+            // Natural disasters (P4-72): set off by monsters' skills, dealt with through town quests.
+            var disasters = AddSystem<Disasters.DisasterService>();
+            disasters.Init(clock, world, mapRenderer, board, treasury);
+            Services.Register(disasters);
+            AddSystem<Disasters.HazardOverlay>().Init(world, fog);
+
             // --- AI: LLM gateway (falls back to rules when no model is available) ---
             var llm = AddSystem<LlmGateway>();
             llm.SetBackend(LlmBackends.CreateDefault(_systems));

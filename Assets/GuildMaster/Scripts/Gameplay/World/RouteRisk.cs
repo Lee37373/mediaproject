@@ -17,20 +17,22 @@ namespace GuildMaster.World
     {
         readonly MapData _map;
         float[] _risk;
+        /// <summary>Forest cells burnt down (P4-72): open ground until they grow back.</summary>
+        bool[] _cleared;
 
         public RouteRisk(MapData map) => _map = map;
 
         /// <summary>Risk of one cell, 0 (open) to almost 1 (forest in the mist): the view lost there.</summary>
-        public static float Of(MapData map, int x, int y)
+        public static float Of(MapData map, int x, int y, bool cleared = false)
         {
             if (map == null || !map.InBounds(x, y)) return 0f;
             int i = map.Index(x, y);
             float sight = TerrainRegions.SightMultiplier(map.Regions[i]);
-            if (map.Tiles[i] == TileType.Forest) sight *= ForestSight.InForestFactor;
+            if (map.Tiles[i] == TileType.Forest && !cleared) sight *= ForestSight.InForestFactor;
             return Mathf.Clamp01(1f - sight);
         }
 
-        /// <summary>Baked on first use (the terrain never changes at runtime), then a plain lookup.</summary>
+        /// <summary>Baked on first use, then a plain lookup (a burnt forest updates its cells, <see cref="SetForestCleared"/>).</summary>
         public float At(int x, int y)
         {
             if (!_map.InBounds(x, y)) return 0f;
@@ -43,8 +45,20 @@ namespace GuildMaster.World
             var risk = new float[_map.Width * _map.Height];
             for (int y = 0; y < _map.Height; y++)
             for (int x = 0; x < _map.Width; x++)
-                risk[_map.Index(x, y)] = Of(_map, x, y);
+                risk[_map.Index(x, y)] = Of(_map, x, y, Cleared(_map.Index(x, y)));
             _risk = risk;
+        }
+
+        bool Cleared(int i) => _cleared != null && _cleared[i];
+
+        /// <summary>A forest cell burnt down, or grown back (P4-72).</summary>
+        public void SetForestCleared(int x, int y, bool cleared)
+        {
+            if (!_map.InBounds(x, y)) return;
+            int i = _map.Index(x, y);
+            _cleared ??= new bool[_map.Width * _map.Height];
+            _cleared[i] = cleared;
+            if (_risk != null) _risk[i] = Of(_map, x, y, cleared);
         }
 
         /// <summary>
@@ -55,7 +69,7 @@ namespace GuildMaster.World
         public float Multiplier(int x, int y, float caution)
         {
             if (Mathf.Approximately(caution, 0f)) return 1f;
-            if (caution < 0f && (!_map.InBounds(x, y) || _map.Tiles[_map.Index(x, y)] != TileType.Forest)) return 1f;
+            if (caution < 0f && (!_map.InBounds(x, y) || _map.Tiles[_map.Index(x, y)] != TileType.Forest || Cleared(_map.Index(x, y)))) return 1f;
             return Mathf.Max(0.05f, 1f + caution * At(x, y));
         }
 

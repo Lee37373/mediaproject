@@ -20,6 +20,7 @@ namespace GuildMaster.World
         const int GroundPixelsPerCell = 32;
 
         Tilemap _decor;
+        MapData _map;
         readonly List<Tile> _trees = new();
         readonly List<Tile> _rocks = new();
         /// <summary>Textures, sprites and tiles made here: runtime assets outlive the scene unless destroyed
@@ -28,6 +29,7 @@ namespace GuildMaster.World
 
         public void Build(MapData map)
         {
+            _map = map;
             if (!TryGetComponent<Grid>(out var grid)) grid = gameObject.AddComponent<Grid>();
             grid.cellSize = Vector3.one;
             if (Session.GameSettings.PaintGround) BuildGround(map);
@@ -112,6 +114,19 @@ namespace GuildMaster.World
         {
             foreach (var o in _owned) if (o != null) Destroy(o);
             _owned.Clear();
+        }
+
+        /// <summary>
+        /// A forest cell burnt down (P4-72): its tree becomes a charred stump (the wasteland's), and
+        /// grows back when the forest does.
+        /// </summary>
+        public void SetTreeBurnt(Vector2Int cell, bool burnt)
+        {
+            if (_decor == null || _map == null || !_map.HasTree(cell.x, cell.y)) return;
+            int i = _map.Index(cell.x, cell.y);
+            int variant = (Hash(cell.x, cell.y) / 7) % Variants;
+            var region = burnt ? (int)Region.Wasteland : (int)_map.Regions[i];
+            _decor.SetTile(new Vector3Int(cell.x, cell.y, 0), _trees[region * Variants + variant]);
         }
 
         public void ClearDecor(RectInt area)

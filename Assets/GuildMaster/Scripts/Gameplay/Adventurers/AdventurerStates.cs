@@ -287,12 +287,13 @@ namespace GuildMaster.Adventurers
         float _formationRepath;
         float _campCheck;
 
-        public override string Label => "사냥 중";
+        public override string Label => Owner != null && Owner.CurrentQuest is { Type: QuestType.Disaster } ? "재해 대응" : "사냥 중";
 
         public override void Enter()
         {
             _searchTimer = 0f;
             _roamTimer = 0f;
+            _workTimer = 0f;
         }
 
         public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
@@ -344,6 +345,11 @@ namespace GuildMaster.Adventurers
             // Loot left by the kills (P4-21) before searching on.
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
             if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;
+            if (a.CurrentQuest.Type == QuestType.Disaster)
+            {
+                WorkTheDisaster(a, dt);
+                return;
+            }
 
             _searchTimer -= dt;
             bool searched = _searchTimer <= 0f;
@@ -386,6 +392,87 @@ namespace GuildMaster.Adventurers
             if (world.Grid.TryRandomWalkableNear(GridMap.WorldToCell(Area), Mathf.RoundToInt(AreaRadius), GameRandom.Shared, out var cell))
                 a.Mover.SetDestination(GridMap.CellToWorld(cell));
         }
+
+        // ---------------- Natural disasters (P4-72) ----------------
+
+        float _workTimer;
+        Vector2Int _workCell;
+        Vector2 _workSpot;
+        bool _hasWork;
+
+        /// <summary>
+        /// Deals with the quest's disaster: walks up to the nearest burning, poisoned, buried or split
+        /// cell (or the core) and works it until it is gone, then the next. Whatever attacks meanwhile
+        /// is fought first (above). The quest ends when the disaster does.
+        /// </summary>
+        void WorkTheDisaster(Adventurer a, float dt)
+        {
+            if (!Services.TryGet<Disasters.DisasterService>(out var disasters)) return;
+            var d = a.CurrentQuest.Disaster;
+            _workTimer -= dt;
+            if (_workTimer <= 0f || !_hasWork)
+            {
+                _workTimer = 0.5f;
+                _hasWork = disasters.NextWork(d, a.Position, out _workCell, out var target) && WorkSpot(a, _workCell, target, out _workSpot);
+            }
+            if (!_hasWork)
+            {
+                // Nothing left to do here (it is ending): wait by the spot for the town to call it done.
+                if (!a.Mover.IsMoving && Vector2.Distance(a.Position, Area) > 3f) a.Mover.SetDestination(Area, 2f);
+                return;
+            }
+            float reach = Vector2.Distance(a.Position, GridMap.CellToWorld(_workCell));
+            if (reach > Disasters.DisasterRules.WorkReach)
+            {
+                if (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, _workSpot) > 0.5f)
+                    if (!a.Mover.SetDestination(_workSpot, 0.2f)) _hasWork = false;
+                return;
+            }
+            if (a.Mover.IsMoving) a.Mover.Stop();
+            a.Visual?.FaceTowards(GridMap.CellToWorld(_workCell));
+            float hours = dt / Mathf.Max(0.01f, AdvCtx.Clock.RealSecondsPerGameHour);
+            if (disasters.Work(d, _workCell, hours, a))
+            {
+                _hasWork = false;
+                if (GameRandom.Shared.Chance(0.25f)) a.Say(WorkLine(d.Kind));
+            }
+        }
+
+        /// <summary>
+        /// Where to stand to work a cell: next to it on ground that is walkable and not burning or
+        /// poisoned when there is such a place, else the nearest walkable cell (a core in the poison
+        /// has to be worked from inside it).
+        /// </summary>
+        static bool WorkSpot(Adventurer a, Vector2Int cell, Vector2 target, out Vector2 spot)
+        {
+            var grid = Services.Get<WorldService>().Grid;
+            spot = target;
+            float best = float.MaxValue;
+            bool found = false;
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                var c = new Vector2Int(cell.x + dx, cell.y + dy);
+                if (!grid.IsWalkable(c) || Hazards.Hurts(grid.HazardAt(c))) continue;
+                float dist = (GridMap.CellToWorld(c) - a.Position).sqrMagnitude;
+                if (dist >= best) continue;
+                best = dist;
+                spot = GridMap.CellToWorld(c);
+                found = true;
+            }
+            if (found) return true;
+            if (!grid.TryFindNearestWalkable(cell, 2, out var near)) return false;
+            spot = GridMap.CellToWorld(near);
+            return true;
+        }
+
+        static string WorkLine(Disasters.DisasterKind k) => k switch
+        {
+            Disasters.DisasterKind.Wildfire => "불길 하나 잡았다!",
+            Disasters.DisasterKind.Avalanche => "여기 눈은 다 치웠어.",
+            Disasters.DisasterKind.Quake => "이쪽 틈은 메웠다!",
+            _ => "거의 다 됐어!",
+        };
     }
 
     // ------------------------------------------------------------------ Returning & guild services

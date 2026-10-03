@@ -5,6 +5,7 @@ using System.Reflection;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
 using GuildMaster.Data;
+using GuildMaster.Disasters;
 using GuildMaster.Ecosystem;
 using GuildMaster.Items;
 using GuildMaster.Monsters;
@@ -78,6 +79,10 @@ namespace GuildMaster.Tests
             GameSettings.ShowTitle = showTitle;
             GameSettings.PendingSeed = TestSeed;
             GameSettings.PaintGround = false; // ~9 s a boot; no test looks at the ground
+            // No natural disasters (P4-72) unless a test asks: one set off by a chance fight drives dens
+            // off and changes the world under tests that measure something else.
+            DisasterService.ChanceOverride = 0f;
+            DisasterService.SpreadScale = 1f;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -688,10 +693,12 @@ namespace GuildMaster.Tests
                     // On the den itself: from beside it a forest (P4-48) or a rock can hide it.
                     grid.TryFindNearestWalkable(n.Cell, 4, out var stand);
                     avatar.transform.position = World.GridMap.CellToWorld(stand);
-                    yield return WaitFor(() => intel.KnownNests.Contains(n) && intel.Get(n).VisibleNow && intel.Get(n).LastCount > 0, 10f);
+                    // Its owners in view too: a den is only known by the residents seen at it.
+                    yield return WaitFor(() => intel.KnownNests.Contains(n) && intel.Get(n).VisibleNow && intel.Get(n).LastCount > 0 && intel.SpeciesOf(n) == n.Species, 10f);
                     var s = intel.Get(n);
-                    Assume.That(s.LastCount, Is.GreaterThan(0),
-                                $"the guild sees {n.DisplayName} occupied (known {intel.KnownNests.Contains(n)}, visible {s.VisibleNow}, pop {n.Population})");
+                    Assume.That(s.LastCount > 0 && intel.SpeciesOf(n) == n.Species, Is.True,
+                                $"the guild sees {n.DisplayName} occupied (known {intel.KnownNests.Contains(n)}, visible {s.VisibleNow}, pop {n.Population}, owners seen {intel.SpeciesOf(n)?.id}, " +
+                                $"members {string.Join(" ", n.Members.Where(m => m != null && m.IsAlive).Select(m => $"{m.DebugState}@{Vector2.Distance(m.Position, n.WorldPosition):0}"))})");
                 }
                 bool Outside(Nest n) => n != nest && n.Population >= 2 && !grid.IsInTown(n.Cell);
                 Clock.SetSpeed(3);
@@ -701,12 +708,18 @@ namespace GuildMaster.Tests
                 yield return Watch(open);
                 MakeKnown(open.Species);
                 var unclaimed = board.FindById(DebugCommands.PostHunt(open.Species.id, 2, 40, 10, 1, open.WorldPosition.x, open.WorldPosition.y));
-                Assert.That(unclaimed.TargetNest, Is.EqualTo(open), "the den it was posted against");
+                Assert.That(unclaimed.TargetNest, Is.EqualTo(open),
+                    $"the den it was posted against (seen as {intel.SpeciesOf(open)?.id}, count {intel.Get(open).LastCount}, visible {intel.Get(open).VisibleNow}, real {open.Species.id}x{open.Population})");
                 int gold = treasury.Gold;
+                // Tax, meals and lodging may come in meanwhile (the clock runs fast): the refund is the rest.
+                int otherIncome = 0;
+                Action<Economy.GoldFlowEvent> onFlow = e => { if (e.Reason != null) otherIncome += e.Amount; };
+                EventBus.Subscribe(onFlow);
                 foreach (var m in open.Members.ToList()) if (m.IsAlive) m.Perish();
                 yield return WaitFor(() => unclaimed.Status == QuestStatus.Cancelled, 10f);
+                EventBus.Unsubscribe(onFlow);
                 Assert.That(unclaimed.Status, Is.EqualTo(QuestStatus.Cancelled), "an open hunt on a den seen empty comes down");
-                Assert.That(treasury.Gold, Is.EqualTo(gold + unclaimed.RewardGold), "with a full refund");
+                Assert.That(treasury.Gold - otherIncome, Is.EqualTo(gold + unclaimed.RewardGold), "with a full refund");
 
                 // Moved out while a group is on it (no death, so no NestClearedEvent): done.
                 var moved = eco.Nests.First(n => Outside(n) && n != open && eco.Nests.Any(o => o != n && o.Species == n.Species));
@@ -717,10 +730,13 @@ namespace GuildMaster.Tests
                 var hunter = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
                 Assert.That(board.TryAccept(claimed, hunter), Is.True);
                 hunter.CurrentQuest = claimed;
+                // A roaming pack near by would move straight into the den left empty (P4-58): none about.
+                foreach (var pack in Services.Get<RoamingPackService>().Packs.ToList())
+                    foreach (var m in pack.Members.ToList()) if (m.IsAlive) m.Perish();
                 foreach (var m in moved.Members.ToList()) moved.TransferMember(m, newHome);
                 yield return WaitFor(() => claimed.Status is QuestStatus.Completed or QuestStatus.TurnedIn, 10f);
                 Assert.That(claimed.Status is QuestStatus.Completed or QuestStatus.TurnedIn, Is.True,
-                            $"a den seen deserted finishes the hunt (was {claimed.Status}, seen {intel.Get(moved).LastCount})");
+                            $"a den seen deserted finishes the hunt (was {claimed.Status}, seen {intel.Get(moved).LastCount}, now {moved.Species.id}x{moved.Population})");
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
@@ -1087,6 +1103,160 @@ namespace GuildMaster.Tests
                 goblin.Perish();
             }
             finally { Unit.GuildInvulnerable = false; }
+        }
+
+        [UnityTest]
+        public IEnumerator Wildfire_Hurts_IsPostedOnceSeen_WorkersPutItOut_LeftAloneBurnsTheWoodsOpen_AndAFireSlimeStartsOne()
+        {
+            // P4-72 (user request 2026-10-03): natural disasters set off in monster fights, dealt
+            // with through the town's quests, known only once seen.
+            yield return Boot();
+            var service = Services.Get<DisasterService>();
+            var board = Services.Get<QuestBoard>();
+            var world = Services.Get<World.WorldService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            Assume.That(FindForestBlock(out var deep, out var outside), Is.True, "a forest block with open ground beside it");
+            var deepPos = World.GridMap.CellToWorld(deep);
+            EmptyNestsNear(deepPos, 24f);
+            ClearStrangersNear(deepPos, 20f);
+            DisasterService.SpreadScale = 0f; // one burning cell: the rules are measured, not the luck of the spread
+            Unit.GuildInvulnerable = true;   // damage only
+            try
+            {
+                // 1. A fire nobody sees: it hurts, but the town knows nothing of it.
+                var fire = service.Begin(DisasterKind.Wildfire, deep);
+                Assert.That(fire, Is.Not.Null);
+                Assert.That(world.Grid.HazardAt(fire.Origin), Is.EqualTo(World.HazardKind.Fire));
+                var firePos = World.GridMap.CellToWorld(fire.Origin);
+                var goblin = SpawnMonster("goblin", firePos);
+                float hp = goblin.Hp;
+                for (float t = 0f; t < 0.7f; t += Time.deltaTime)
+                {
+                    goblin.transform.position = firePos; // held in the flames
+                    yield return null;
+                }
+                Assert.That(goblin.Hp, Is.LessThan(hp), "standing in the fire hurts");
+                goblin.Perish();
+                Assert.That(fire.Known, Is.False, "nobody has seen it");
+                Assert.That(board.Quests.Any(q => q.Type == QuestType.Disaster), Is.False, "so nothing is posted");
+
+                // 2. Seen: the town posts a quest and pays for it.
+                int gold = treasury.Gold;
+                var master = Services.Get<PlayerAvatar>();
+                master.Mover.Stop();
+                master.transform.position = World.GridMap.CellToWorld(fire.Origin + new Vector2Int(-1, 0));
+                yield return WaitFor(() => fire.Known, 3f);
+                Assert.That(fire.Known, Is.True, "the master standing by it sees it");
+                var quest = fire.Quest;
+                Assert.That(quest, Is.Not.Null);
+                Assert.That(quest.Type, Is.EqualTo(QuestType.Disaster));
+                Assert.That(quest.TownFunded, Is.True);
+                Assert.That(treasury.Gold, Is.EqualTo(gold), "the town pays, not the guild");
+                Assert.That(board.Cancel(quest), Is.False, "and the guild cannot take the town's quest down");
+
+                // 3. Workers put it out: the quest is done and the woods are still there.
+                var workers = Roster.Members.Where(a => a.IsAlive).Take(2).ToList();
+                foreach (var a in workers)
+                {
+                    Assert.That(board.TryAccept(quest, a, invited: true), Is.True);
+                    a.CurrentQuest = quest;
+                    a.Mover.Stop();
+                    a.transform.position = World.GridMap.CellToWorld(outside);
+                    a.ChangeState(a.HuntState);
+                }
+                yield return WaitFor(() => fire.Over, 12f);
+                Assert.That(fire.Over && fire.DealtWith, Is.True, $"they put it out ({string.Join(", ", workers.Select(a => a.StateLabel))})");
+                Assert.That(quest.Status, Is.EqualTo(QuestStatus.Completed));
+                Assert.That(quest.Worked, Is.GreaterThanOrEqualTo(1));
+                Assert.That(world.Grid.IsForest(fire.Origin), Is.True, "put out in time, the forest stands");
+
+                // 4. Left to burn: the cell burns out, open to view, and the fire dies down by itself.
+                var second = service.Begin(DisasterKind.Wildfire, deep);
+                Assert.That(second, Is.Not.Null);
+                var clockField = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+                for (int i = 0; i < 10 && !second.Over; i++)
+                {
+                    clockField.SetValue(Clock, Clock.TotalHours + 0.5f);
+                    yield return null;
+                }
+                Assert.That(second.Over && !second.DealtWith, Is.True, "nobody fought it: it burnt out");
+                Assert.That(world.Grid.HazardAt(second.Origin), Is.EqualTo(World.HazardKind.Burnt));
+                Assert.That(world.Grid.IsForest(second.Origin) || world.Grid.HasTree(second.Origin.x, second.Origin.y), Is.False,
+                    "burnt forest hides nothing and gives no cover");
+                Assert.That(second.Quest == null || second.Quest.Status == QuestStatus.Cancelled, Is.True,
+                    "a quest nobody took is taken down when the fire dies out");
+
+                // 5. A fire slime's sparks in a fight set the woods alight.
+                DisasterService.ChanceOverride = 1f;
+                var edge = deep + new Vector2Int(-2, 0);
+                var prey = SpawnMonster("goblin", World.GridMap.CellToWorld(edge), meleeOnly: true);
+                var slime = SpawnMonster("fire_slime", World.GridMap.CellToWorld(deep + new Vector2Int(-4, 0)));
+                Assert.That(slime.Skills.Any(s => s is HazardStrikeSkill), Is.True, "a fire slime has its sparks");
+                slime.ForceTarget(prey);
+                yield return WaitFor(() => service.Active.Any(d => d.Kind == DisasterKind.Wildfire), 12f);
+                Assert.That(service.Active.Any(d => d.Kind == DisasterKind.Wildfire), Is.True, "its sparks caught the forest");
+            }
+            finally
+            {
+                DisasterService.SpreadScale = 1f;
+                DisasterService.ChanceOverride = 0f;
+                Unit.GuildInvulnerable = false;
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator EveryRegionsDisaster_TakesItsGround_BlocksOrClouds_AndClearsWhenDoneOrDiedDown()
+        {
+            // P4-72: poison in the swamp, snow below the mountains, a storm in the desert, cracks in
+            // the wasteland — each starts on its ground, does its harm and clears away again.
+            yield return Boot();
+            var service = Services.Get<DisasterService>();
+            var world = Services.Get<World.WorldService>();
+            var grid = world.Grid;
+            var clockField = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+            var startedAt = typeof(Disaster).GetProperty(nameof(Disaster.StartedHour)).GetSetMethod(nonPublic: true);
+            DisasterService.SpreadScale = 0f;
+            try
+            {
+                foreach (var kind in new[] { DisasterKind.PoisonFog, DisasterKind.Avalanche, DisasterKind.Sandstorm, DisasterKind.Quake })
+                {
+                    Disaster d = null;
+                    for (int y = 4; y < grid.Height - 4 && d == null; y += 3)
+                    for (int x = 4; x < grid.Width - 4 && d == null; x += 3)
+                    {
+                        var c = new Vector2Int(x, y);
+                        if (DisasterRules.RegionOf(kind) is { } region && world.Map.RegionOf(x, y) != region) continue;
+                        if (Vector2.Distance(World.GridMap.CellToWorld(c), world.TownCenterWorld) < 40f) continue;
+                        d = service.Begin(kind, c);
+                    }
+                    Assume.That(d, Is.Not.Null, $"{kind}: its ground on this map");
+                    Assert.That(d.Cells.Count, Is.GreaterThan(0), $"{kind} covers ground");
+                    foreach (var c in d.Cells)
+                    {
+                        Assert.That(grid.HazardAt(c), Is.EqualTo(DisasterRules.HazardOf(kind)));
+                        if (World.Hazards.Blocks(d.Hazard)) Assert.That(grid.IsWalkable(c), Is.False, $"{kind} blocks the way");
+                    }
+                    var cells = d.Cells.ToList();
+
+                    if (d.HasCore)
+                    {
+                        // Worked at its core: the whole thing clears once the core is done.
+                        service.Work(d, World.GridMap.WorldToCell(d.Core), DisasterRules.WorkHours(kind), null);
+                        Assert.That(d.Ending && d.DealtWith, Is.True, $"{kind}: its core worked away");
+                    }
+                    else startedAt.Invoke(d, new object[] { Clock.TotalHours - DisasterRules.LifetimeHours(kind) - 0.1f }); // its time is up
+                    for (int i = 0; i < 6 && !d.Over; i++)
+                    {
+                        clockField.SetValue(Clock, Clock.TotalHours + 0.3f);
+                        yield return null;
+                    }
+                    Assert.That(d.Over, Is.True, $"{kind} clears away");
+                    Assert.That(cells.All(c => grid.HazardAt(c) == World.HazardKind.None), Is.True, $"{kind} leaves nothing behind");
+                    Assert.That(cells.All(c => grid.IsWalkable(c)), Is.True,
+                        $"{kind}: the way is open again");
+                }
+            }
+            finally { DisasterService.SpreadScale = 1f; }
         }
 
         [UnityTest]
@@ -2305,7 +2475,13 @@ namespace GuildMaster.Tests
                 Assert.That(spread, Is.LessThan(8f), "and keeps together");
 
                 // An empty nest of its habitat nearby: they move in, all of them.
-                var target = eco.Nests.Where(n => n != from && n.Suits(species))
+                // One no migrating band is heading for (P4-56): a band on its way, or newcomers from the
+                // edge, would take it first.
+                var migration = Services.Get<MigrationService>();
+                MigrationService.NoNewcomers = true;
+                foreach (var band in migration.Bands.ToList())
+                    foreach (var m in band.Members.ToList()) if (m.IsAlive) m.Perish();
+                var target = eco.Nests.Where(n => n != from && n.Suits(species) && !migration.IsTarget(n))
                     .OrderBy(n => Vector2.Distance(n.WorldPosition, pack.Center)).First();
                 foreach (var m in target.Members.ToList()) m.Perish();
                 foreach (var m in pack.Members)
@@ -2314,12 +2490,14 @@ namespace GuildMaster.Tests
                     m.transform.position = target.WorldPosition + new Vector2(6f, 0f);
                 }
                 yield return WaitFor(() => !roaming.Packs.Contains(pack), 5f);
-                Assert.That(roaming.Packs.Contains(pack), Is.False, "the pack settled");
+                Assert.That(roaming.Packs.Contains(pack), Is.False,
+                    $"the pack settled ({target.DisplayName} empty {target.IsEmpty} pop {target.Population}, {pack.Species.id} pack of {pack.Members.Count} at {Vector2.Distance(pack.Center, target.WorldPosition):0} cells, " +
+                    $"migration target {Services.Get<MigrationService>().IsTarget(target)})");
                 Assert.That(target.Species, Is.EqualTo(species));
                 Assert.That(members.Where(m => m.IsAlive).All(m => m.Home == target && target.Members.Contains(m)), Is.True,
                             "every member moved in");
             }
-            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; MigrationService.NoNewcomers = false; }
         }
 
         /// <summary>

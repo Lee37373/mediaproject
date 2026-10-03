@@ -48,6 +48,12 @@ namespace GuildMaster.Economy
         public float ExpPerHour { get; set; }
         public int DailyTax { get; set; }
 
+        /// <summary>Share of today's tax lost (P4-72: a disaster at the walls); reset when the tax comes in.</summary>
+        public float TaxCutToday { get; private set; }
+
+        /// <summary>Today's tax is cut by this share (the largest cut of the day holds).</summary>
+        public void CutTodaysTax(float share) => TaxCutToday = Mathf.Clamp01(Mathf.Max(TaxCutToday, share));
+
         float _expFraction;
 
         public GuildTreasury(int gold, int exp, float expPerHour, int dailyTax)
@@ -71,7 +77,9 @@ namespace GuildMaster.Economy
 
         void OnDay(DayPassedEvent e)
         {
-            if (DailyTax > 0) AddGold(DailyTax, GoldReason.Tax);
+            int tax = Mathf.RoundToInt(DailyTax * (1f - TaxCutToday));
+            TaxCutToday = 0f;
+            if (tax > 0) AddGold(tax, GoldReason.Tax);
         }
 
         public bool CanAfford(int gold, int exp = 0) => Gold >= gold && Exp >= exp;

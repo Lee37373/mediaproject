@@ -73,6 +73,8 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Town.BuildingDestroyedEvent>(OnBuildingDestroyed);
             EventBus.Subscribe<Town.MerchantArrivedEvent>(OnMerchant);
             EventBus.Subscribe<Reports.DailyReportClosedEvent>(OnDailyReport);
+            EventBus.Subscribe<Disasters.DisasterSightedEvent>(OnDisasterSighted);
+            EventBus.Subscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
         }
 
         public void Dispose()
@@ -89,6 +91,27 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Town.BuildingDestroyedEvent>(OnBuildingDestroyed);
             EventBus.Unsubscribe<Town.MerchantArrivedEvent>(OnMerchant);
             EventBus.Unsubscribe<Reports.DailyReportClosedEvent>(OnDailyReport);
+            EventBus.Unsubscribe<Disasters.DisasterSightedEvent>(OnDisasterSighted);
+            EventBus.Unsubscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
+        }
+
+        // ---------------- Natural disasters (P4-72): only those the guild has seen ----------------
+
+        void OnDisasterSighted(Disasters.DisasterSightedEvent e)
+        {
+            var d = e.Disaster;
+            _center.Post(NotificationKind.Danger, $"{d.Name} 발생!",
+                $"{QuestBoard.DescribeArea(d.WorldOrigin)}에서 {d.Name}이(가) 번지고 있습니다. 마을이 {Disasters.DisasterRules.WorkName(d.Kind)} 의뢰를 냈습니다.",
+                "disaster:" + d.Id, NotificationLink.Location(d.WorldOrigin));
+        }
+
+        void OnDisasterEnded(Disasters.DisasterEndedEvent e)
+        {
+            if (!e.Known) return;
+            _center.Resolve("disaster:" + e.Disaster.Id);
+            if (e.DealtWith)
+                _center.Post(NotificationKind.Success, $"{e.Disaster.Name} 수습",
+                    $"길드가 {e.Disaster.Name}을(를) 수습했습니다.", "disaster-end:" + e.Disaster.Id);
         }
 
         static string NegotiableKey(Quest q) => "negotiable:" + q.Id;

@@ -9,7 +9,8 @@ namespace GuildMaster.World
     ///   first forest cell on a line is seen, not what lies inside or beyond it;
     /// - an eye inside a forest is not blocked by it, but sees only <see cref="InForestFactor"/> of
     ///   its usual distance;
-    /// - the region's weather shortens sight too (<see cref="TerrainRegions.SightMultiplier"/>);
+    /// - the region's weather shortens sight too (<see cref="TerrainRegions.SightMultiplier"/>), and so
+    ///   does standing in poison or a sandstorm (P4-72, <see cref="Hazards.SightFactor"/>);
     /// - elevated eyes (town watch, watchtowers: <c>SeesOverWalls</c>) ignore all of it.
     /// </summary>
     public static class ForestSight
@@ -26,7 +27,7 @@ namespace GuildMaster.World
         {
             if (elevated) return radius;
             var cell = GridMap.WorldToCell(eye);
-            float r = radius * TerrainRegions.SightMultiplier(world.Map.RegionOf(cell.x, cell.y));
+            float r = radius * TerrainRegions.SightMultiplier(world.Map.RegionOf(cell.x, cell.y)) * Hazards.SightFactor(world.Grid.HazardAt(cell));
             return InForest(world, eye) ? r * InForestFactor : r;
         }
 
