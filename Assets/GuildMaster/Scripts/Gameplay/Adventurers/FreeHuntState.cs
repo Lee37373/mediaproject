@@ -78,6 +78,12 @@ namespace GuildMaster.Adventurers
             Owner.Mover.UnknownToMe = ExplorationRoute.KnowledgeOf(Services.TryGet<Fog.FogOfWar>(out var fog) ? fog : null);
             CountBand(Owner);
             _band = Services.TryGet<HuntBandService>(out var bands) ? bands.Join(Owner) : null;
+            // Back on the hunt after mending (P4-71): the band goes on, its time out still counted from the gate.
+            if (_band != null && _band.Paused)
+            {
+                _band.Paused = false;
+                _startHour = _band.SetOutHour;
+            }
             // With invitations out the leader has already asked (P4-51).
             bool inviting = _band != null && Services.TryGet<PartyService>(out var invites) && invites.IsGathering(_band);
             if (_band != null && _band.Leader == Owner && _band.Members.Count == 1 && !inviting) Owner.Say("사냥 나갈 사람?");
@@ -87,6 +93,8 @@ namespace GuildMaster.Adventurers
         {
             Owner.Mover.SpeedMultiplier = 1f;
             Owner.Mover.UnknownToMe = null;
+            // Pulling back to mend (P4-71): still one of the band, which goes on afterwards.
+            if (_band != null && _band.Paused) { _band = null; return; }
             if (_band != null && !_band.Mustering) _band.GoingHome = true;
             if (Services.TryGet<HuntBandService>(out var bands)) bands.Leave(Owner);
             _band = null;

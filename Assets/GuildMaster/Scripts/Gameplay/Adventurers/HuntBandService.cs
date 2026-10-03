@@ -30,6 +30,16 @@ namespace GuildMaster.Adventurers
         /// too instead of carrying on short-handed (P4-38, user report: members ending up alone).
         /// </summary>
         public bool GoingHome { get; internal set; }
+
+        /// <summary>
+        /// The band stopped to mend a hurt member (P4-71): it pulled back and/or made camp, and goes
+        /// on hunting afterwards. Members leaving the hunt meanwhile do not break the band up.
+        /// </summary>
+        public bool Paused { get; internal set; }
+
+        /// <summary>Game hour the band set out from the guild (its time out counts from here, camps included).</summary>
+        public float SetOutHour { get; internal set; }
+
         public bool Has(Adventurer a) => Members.Contains(a);
     }
 
@@ -123,12 +133,16 @@ namespace GuildMaster.Adventurers
             {
                 var b = _bands[i];
                 b.Members.RemoveAll(m => m == null || !m.IsAlive || !m.IsGuildMember);
+                // A paused band keeps those pulling back or at the fire; one that got home is out of it.
+                if (b.Paused) b.Members.RemoveAll(m => m.Fsm.Current != m.FreeHuntState && m.Fsm.Current != m.ReturnState && m.Fsm.Current != m.CampState);
+                else b.Members.RemoveAll(m => m.Fsm.Current == m.ReturnState || m.Fsm.Current == m.CampState); // hunting again: whoever went home is out
                 if (b.Members.Count == 0) { _bands.RemoveAt(i); continue; }
                 // Waits while hunt invitations are being answered (P4-51), then leaves together.
                 bool answering = Services.TryGet<PartyService>(out var invites) && invites.IsGathering(b);
                 if (b.Mustering && !answering && (hour >= b.MusterUntilHour || b.Members.Count >= _capacity))
                 {
                     b.Mustering = false;
+                    b.SetOutHour = hour;
                     // Setting out together: a standing party forms or goes on an outing (P4-50).
                     if (b.Members.Count >= 2 && Services.TryGet<GuildParties>(out var parties)) parties.SetOut(b.Members);
                 }

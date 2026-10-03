@@ -424,11 +424,18 @@ namespace GuildMaster.Adventurers
             }
             if (HpRatio < RetreatThreshold || wearinessCounts && Data.fatigue >= 95f)
             {
+                Data.stress = Mathf.Min(100f, Data.stress + 15f);
+                // Out with a party: it stops to mend or pulls back with us (P4-71), nobody leaves alone.
+                if (PartyRecovery.Handle(this))
+                {
+                    if (HpRatio < RetreatThreshold && Fsm.Current == ReturnState && ReturnState.Retreating)
+                        EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });
+                    return true;
+                }
                 if (HpRatio < RetreatThreshold)
                     EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });
                 Engage.Clear();
                 Looting.Cancel();
-                Data.stress = Mathf.Min(100f, Data.stress + 15f);
                 ReturnState.RequestRetreat();
                 Fsm.ChangeState(ReturnState);
                 return true;

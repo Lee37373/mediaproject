@@ -24,7 +24,8 @@ namespace GuildMaster.Adventurers
     /// A standing party (P4-50, user decision 2026-09-22): formed in town by a leader, it goes out
     /// together (a quest or a free hunt), pools the gold it brings back, and at the guild the leader
     /// splits it (<see cref="PartySettlement"/>). It stays together over several outings; a member
-    /// unhappy with the split, or on bad terms with another, leaves. Members are in joining order,
+    /// unhappy with the split, or on bad terms with another, leaves, and a party that does not go out
+    /// again within <see cref="GuildParties.DisbandIdleHours"/> of a split breaks up (P4-71). Members are in joining order,
     /// the first leads; when the leader falls the next one takes over.
     /// </summary>
     public class Party
@@ -48,6 +49,8 @@ namespace GuildMaster.Adventurers
         public readonly Dictionary<Adventurer, float> ArrivedAt = new();
         public float FirstArrivalHour { get; internal set; } = -1f;
         public bool Settling { get; internal set; }
+        /// <summary>Game hour the last outing was settled; the party breaks up if it does not go out again soon (P4-71).</summary>
+        public float SettledAtHour { get; internal set; } = -1f;
 
         public bool Has(Adventurer a) => Members.Contains(a);
         public bool WentOut(Adventurer a) => OnOuting && Out.ContainsKey(a);
@@ -64,6 +67,11 @@ namespace GuildMaster.Adventurers
         public const float WaitForRestHours = 2f;
         /// <summary>Game hours after the first one is back before the split goes ahead without the missing.</summary>
         public const float GiveUpOnMissingHours = 12f;
+        /// <summary>
+        /// Game hours after a split before a party that has not gone out together again breaks up
+        /// (P4-71, user decision 2026-10-03: "it never breaks up once back in town").
+        /// </summary>
+        public const float DisbandIdleHours = 6f;
 
         readonly List<Party> _parties = new();
         readonly Dictionary<Adventurer, Party> _of = new();
@@ -182,6 +190,7 @@ namespace GuildMaster.Adventurers
                 var p = _parties[i];
                 p.Members.RemoveAll(m => m == null || !m.IsGuildMember);
                 if (p.Members.Count < 2) { Disband(p, "인원 부족"); continue; }
+                if (!p.OnOuting && p.SettledAtHour >= 0f && Hour - p.SettledAtHour >= DisbandIdleHours) { Disband(p, "마을에서 해산"); continue; }
                 if (p.OnOuting && !p.Settling && p.Arrived.Count > 0) TrySettle(p);
             }
         }
@@ -202,6 +211,7 @@ namespace GuildMaster.Adventurers
         internal void Finish(Party p)
         {
             p.OnOuting = false;
+            p.SettledAtHour = Hour;
             p.Settling = false;
             p.Out.Clear();
             p.Arrived.Clear();

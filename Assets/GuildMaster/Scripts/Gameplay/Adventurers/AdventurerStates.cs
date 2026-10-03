@@ -443,6 +443,15 @@ namespace GuildMaster.Adventurers
         public bool Retreating { get; private set; }
         bool _retreatRequested;
 
+        /// <summary>
+        /// A party pulling back to mend (P4-71): what each goes back to once a camp on the way has
+        /// patched it up (the quest, the hunt). Null: plain walk home.
+        /// </summary>
+        public State<Adventurer> ResumeAfter { get; private set; }
+        State<Adventurer> _resumeRequested;
+        bool _calmRequested;
+        float _formationRepath;
+
         const float LureTimeout = 12f;
         /// <summary>Hurt as they are, members still pick up what lies this close to where the retreat began once no enemy is in sight.</summary>
         const float RetreatLootRadius = 8f;
@@ -460,18 +469,29 @@ namespace GuildMaster.Adventurers
         /// Makes the next entry a retreat. A request survives the Exit of a re-entry, so a member
         /// already walking home can still switch to retreating (Exit resets <see cref="Retreating"/>).
         /// </summary>
-        public void RequestRetreat() => _retreatRequested = true;
+        public void RequestRetreat(State<Adventurer> resumeAfter = null, bool calm = false)
+        {
+            _retreatRequested = true;
+            _resumeRequested = resumeAfter;
+            _calmRequested = calm;
+        }
 
         public override void Enter()
         {
             var a = Owner;
             Retreating = _retreatRequested;
             _retreatRequested = false;
+            ResumeAfter = Retreating ? _resumeRequested : null;
+            bool calm = _calmRequested;
+            _resumeRequested = null;
+            _calmRequested = false;
+            _formationRepath = 0f;
             _retreatFrom = a.Position;
             a.Mover.SpeedMultiplier = Retreating ? 1.15f : 1f;
             _luring = false;
-            // Veterans drag their pursuer past a known hostile nest on the way out (P4-18).
-            if (Retreating && a.Tier >= CombatTier.Veteran)
+            // Veterans drag their pursuer past a known hostile nest on the way out (P4-18) — alone:
+            // a party pulls back together (P4-71).
+            if (Retreating && a.Tier >= CombatTier.Veteran && !InAParty(a))
             {
                 var pursuer = TerritoryTactics.FindPursuer(a);
                 if (pursuer != null && TerritoryTactics.FindLurePoint(a, pursuer, AdvCtx.GuildDoor, true, out _lurePoint, out _)
@@ -482,7 +502,7 @@ namespace GuildMaster.Adventurers
                     return;
                 }
             }
-            if (Retreating) a.Say("위험해! 일단 물러나자!");
+            if (Retreating && !calm) a.Say("위험해! 일단 물러나자!");
             a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
         }
 
@@ -525,8 +545,18 @@ namespace GuildMaster.Adventurers
                 a.ChangeState(a.VisitState);
                 return;
             }
+            // A party walks home together (P4-71, user report: members drifting home one by one):
+            // followers keep their slots, the leader waits for stragglers.
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out _)) return;
+                if (party.PaceLeader(a)) return;
+            }
             if (!a.Mover.IsMoving) a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
         }
+
+        /// <summary>One of a party out together (a quest, a band, a standing party on the way home).</summary>
+        static bool InAParty(Adventurer a) => Services.TryGet<PartyTactics>(out var party) && party.LeaderOf(a) != null;
 
         public override void Exit()
         {

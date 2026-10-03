@@ -140,7 +140,7 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>A monster in sight that would come for us, or is fighting one of us.</summary>
-        static Unit ThreatInSight(Adventurer a)
+        internal static Unit ThreatInSight(Adventurer a)
             => UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
                 u => u is Monster m && m.IsAlive && (m.IsHostileTo(a) || m.CombatEngagement?.Target is Adventurer) && a.CanSee(m));
 
@@ -187,8 +187,23 @@ namespace GuildMaster.Adventurers
 
         // ---------------- Pitching ----------------
 
+        /// <summary>
+        /// A party out together stops right where it is to mend a hurt member (P4-71, <see cref="PartyRecovery"/>):
+        /// how far from town does not matter, and afterwards each goes back to its quest or hunt.
+        /// </summary>
+        public bool PitchToMend(List<Adventurer> group)
+        {
+            if (group == null || group.Count == 0) return false;
+            var resume = new Dictionary<Adventurer, State<Adventurer>>();
+            foreach (var m in group) resume[m] = PartyRecovery.ResumeOf(m, this);
+            PartyRecovery.PauseBands(group);
+            if (Pitch(group, CampReason.Recover, resume)) return true;
+            foreach (var m in group) if (Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(m) is { } band) band.Paused = false;
+            return false;
+        }
+
         /// <summary>Makes camp for <paramref name="group"/> (leader first) near where the leader stands.</summary>
-        public bool Pitch(List<Adventurer> group, CampReason reason)
+        public bool Pitch(List<Adventurer> group, CampReason reason, Dictionary<Adventurer, State<Adventurer>> resume = null)
         {
             if (group == null || group.Count == 0) return false;
             var leader = group[0];
@@ -207,7 +222,7 @@ namespace GuildMaster.Adventurers
             foreach (var m in group)
             {
                 camp.Members.Add(m);
-                camp.ResumeTo[m] = ResumeFor(m);
+                camp.ResumeTo[m] = resume != null && resume.TryGetValue(m, out var next) ? next : ResumeFor(m);
             }
             _camps.Add(camp);
             foreach (var m in group)
@@ -226,10 +241,14 @@ namespace GuildMaster.Adventurers
             return reason == CampReason.Night ? "날이 저물었어. 여기서 밤을 보내자." : "여기서 불 피우고 좀 쉬었다 가자.";
         }
 
-        /// <summary>A quest goes on after the night; everything else heads home.</summary>
+        /// <summary>
+        /// A quest goes on after the night; a party that pulled back to mend goes back to what it was
+        /// doing (P4-71, <see cref="ReturnToTownState.ResumeAfter"/>); everything else heads home.
+        /// </summary>
         static State<Adventurer> ResumeFor(Adventurer m)
         {
             var s = m.Fsm.Current;
+            if (s == m.ReturnState && m.ReturnState.ResumeAfter != null) return m.ReturnState.ResumeAfter;
             bool onQuest = (s == m.TravelState || s == m.HuntState) && m.CurrentQuest != null && m.CurrentQuest.IsActive;
             return onQuest ? m.TravelState : m.ReturnState;
         }
@@ -329,15 +348,20 @@ namespace GuildMaster.Adventurers
         void Break(Camp camp)
         {
             var leader = camp.Leader;
-            var going = camp.Members.ToList();
-            foreach (var m in going)
-            {
-                var next = camp.ResumeTo.TryGetValue(m, out var s) && s != null ? s : m.ReturnState;
-                if (next == m.TravelState && (m.CurrentQuest == null || !m.CurrentQuest.IsActive)) next = m.ReturnState;
-                m.ChangeState(next);
-            }
+            // Everyone's road first: the first one back on the hunt un-pauses the band (P4-71).
+            var going = camp.Members.Select(m => (m, next: NextRoad(camp, m))).ToList();
+            foreach (var (m, next) in going) m.ChangeState(next);
             if (leader != null && leader.IsAlive) leader.Say(camp.Reason == CampReason.Night ? "날이 밝았다. 가자!" : "이제 좀 살겠다. 출발하자!");
             End(camp);
+        }
+
+        static State<Adventurer> NextRoad(Camp camp, Adventurer m)
+        {
+            var next = camp.ResumeTo.TryGetValue(m, out var s) && s != null ? s : m.ReturnState;
+            if (next == m.TravelState && (m.CurrentQuest == null || !m.CurrentQuest.IsActive)) return m.ReturnState;
+            // Back to the hunt only with the band still waiting for it (P4-71), not to muster a new one out here.
+            if (next == m.FreeHuntState && !(Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(m) is { Paused: true })) return m.ReturnState;
+            return next;
         }
 
         void End(Camp camp)

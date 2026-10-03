@@ -1399,21 +1399,8 @@ namespace GuildMaster.Tests
             var camps = Services.Get<CampService>();
             var world = Services.Get<World.WorldService>();
             var grid = world.Grid;
-            var eco = Services.Get<EcosystemManager>();
 
-            // Open ground about 40 cells out, well away from any den.
-            Vector2 spot = default;
-            bool found = false;
-            for (int k = 0; k < 16 && !found; k++)
-            {
-                var d = new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f));
-                if (!grid.TryFindNearestWalkable(World.GridMap.WorldToCell(world.TownCenterWorld + d * 40f), 3, out var c)) continue;
-                var p = World.GridMap.CellToWorld(c);
-                if (eco.Nests.Any(n => Vector2.Distance(n.WorldPosition, p) < 20f)) continue;
-                spot = p;
-                found = true;
-            }
-            Assume.That(found, "open ground 40 cells out");
+            Assume.That(GroundFarOut(out var spot), "open ground 40 cells out");
             ClearStrangersNear(spot, 30f);
             // Evening: the camp is made in daylight and the night comes while they sit at it (a clock
             // jumped past the night would also run past the camp's longest stay).
@@ -1555,6 +1542,108 @@ namespace GuildMaster.Tests
             float gap = 0f;
             for (int i = 0; i < angles.Count; i++) gap = Mathf.Max(gap, (i + 1 < angles.Count ? angles[i + 1] : angles[0] + 360f) - angles[i]);
             return gap;
+        }
+
+        /// <summary>Open ground about 40 cells out, well away from any den.</summary>
+        static bool GroundFarOut(out Vector2 spot)
+        {
+            spot = default;
+            var world = Services.Get<World.WorldService>();
+            var eco = Services.Get<EcosystemManager>();
+            for (int k = 0; k < 16; k++)
+            {
+                var d = new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f));
+                if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(world.TownCenterWorld + d * 40f), 3, out var c)) continue;
+                var p = World.GridMap.CellToWorld(c);
+                if (eco.Nests.Any(n => Vector2.Distance(n.WorldPosition, p) < 20f)) continue;
+                spot = p;
+                return true;
+            }
+            return false;
+        }
+
+        [UnityTest]
+        public IEnumerator OneBadlyHurt_ThePartyMendsOrPullsBackTogether_AndBreaksUpIdleInTown()
+        {
+            // P4-71 (user report 2026-10-03): a badly hurt member walked home alone while the rest
+            // hunted on, and a party never broke up once back in town.
+            yield return Boot();
+            var camps = Services.Get<CampService>();
+            var bands = Services.Get<HuntBandService>();
+            var parties = Services.Get<GuildParties>();
+            Assume.That(GroundFarOut(out var spot), "open ground 40 cells out");
+            ClearStrangersNear(spot, 30f);
+
+            var pair = Roster.Members.Where(a => a.IsAlive && a.Data.cls != AdventurerClass.Priest).Take(2).ToList();
+            // Nobody else free to be invited along (P4-51).
+            foreach (var other in Roster.Members.Where(a => a.IsAlive && !pair.Contains(a))) other.ChangeState(other.RestState);
+            foreach (var a in pair) a.ChangeState(a.FreeHuntState);
+            yield return null;
+            var band = bands.BandOf(pair[0]);
+            Assert.That(bands.BandOf(pair[1]), Is.SameAs(band));
+            band.MusterUntilHour = 0f;
+            yield return null;
+            Assert.That(band.Mustering, Is.False);
+            var party = parties.PartyOf(pair[0]);
+            Assert.That(party, Is.Not.Null.And.SameAs(parties.PartyOf(pair[1])), "setting out together makes a standing party");
+            for (int i = 0; i < pair.Count; i++)
+            {
+                pair[i].Mover.Stop();
+                pair[i].transform.position = spot + new Vector2(i * 1.2f, 0f);
+                pair[i].Data.potions = 0;
+                pair[i].Data.fatigue = 0f;
+            }
+            var hurt = pair[1];
+
+            // 1. Nothing about: the party makes camp right there, and the band waits for it.
+            hurt.ReceiveDamage(hurt.Hp - hurt.Stats.MaxHp * 0.2f, null, false);
+            yield return WaitFor(() => camps.Camps.Count > 0, 3f);
+            Assert.That(camps.Camps.Count, Is.EqualTo(1), $"the party stops to mend ({string.Join(", ", pair.Select(a => a.StateLabel))})");
+            Assert.That(camps.Camps[0].Members, Is.EquivalentTo(pair), "both sit down, nobody walks home alone");
+            Assert.That(bands.BandOf(pair[0]), Is.SameAs(band).And.Property("Paused").True, "the band is held together meanwhile");
+
+            // Mended: back to the same hunt.
+            foreach (var a in pair) a.Heal(a.Stats.MaxHp);
+            yield return WaitFor(() => pair.All(a => a.Fsm.Current == a.FreeHuntState), 3f);
+            Assert.That(pair.Select(a => a.StateLabel), Is.All.EqualTo(pair[0].FreeHuntState.Label), "they go on hunting");
+            Assert.That(bands.BandOf(pair[1]), Is.SameAs(band).And.Property("Paused").False, "as the same band");
+
+            // 2. A fight on: the whole party pulls back with the hurt one, meaning to come back.
+            var goblin = SpawnMonster("goblin", spot + new Vector2(0f, 1.5f), meleeOnly: true);
+            goblin.ForceTarget(pair[0]);
+            yield return WaitFor(() => pair[0].Engage.Target == goblin || pair[0].WasRecentlyAttackedBy(goblin), 3f);
+            hurt.ReceiveDamage(hurt.Hp - hurt.Stats.MaxHp * 0.2f, null, false);
+            yield return null;
+            yield return null;
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                Assert.That(pair.All(a => a.Fsm.Current == a.ReturnState && a.ReturnState.Retreating), Is.True,
+                    $"the one still fit pulls back too ({string.Join(", ", pair.Select(a => a.StateLabel))})");
+                Assert.That(pair.All(a => a.ReturnState.ResumeAfter == a.FreeHuntState), Is.True, "they mean to go on hunting once mended");
+                Assert.That(Services.Get<PartyTactics>().LeaderOf(hurt), Is.Not.Null, "pulling back in formation");
+                goblin.Perish();
+
+                // 3. Home and the split done: a party that does not go out again breaks up.
+                var door = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+                foreach (var a in pair)
+                {
+                    a.Mover.Stop();
+                    a.transform.position = door;
+                }
+                yield return WaitFor(() => !party.OnOuting, 15f);
+                Assert.That(party.OnOuting, Is.False, "the outing is settled");
+                Assert.That(parties.PartyOf(pair[0]), Is.SameAs(party), "a party stays together for a while after the split");
+                var clockField = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+                for (int h = 0; h < 7 && parties.PartyOf(pair[0]) != null; h++)
+                {
+                    foreach (var a in pair) a.ChangeState(a.RestState); // staying in town, not going out together
+                    clockField.SetValue(Clock, Clock.TotalHours + 1f);
+                    yield return null;
+                }
+                Assert.That(parties.PartyOf(pair[0]), Is.Null, "six hours idle in town and it breaks up");
+            }
+            finally { Unit.GuildInvulnerable = false; }
         }
 
         [UnityTest]
