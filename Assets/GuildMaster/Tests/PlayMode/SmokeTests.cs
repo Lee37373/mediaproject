@@ -1063,6 +1063,30 @@ namespace GuildMaster.Tests
             var eye = World.GridMap.WorldToCell(avatar.Position);
             float third = avatar.Stats.SightRadius * World.TerrainRegions.SightMultiplier(world.Map.RegionOf(eye.x, eye.y)) / 3f;
             Assert.That(avatar.EffectiveSightRadius, Is.EqualTo(third).Within(0.01f), "sight is a third in the forest");
+
+            // P4-70 (user report: monsters kept seeing whoever hid in a forest): a chaser outside loses
+            // a target in the forest, walks to where it was last seen, and gives up when it is gone.
+            Unit.GuildInvulnerable = true; // damage only: the goblin may still go for the master
+            try
+            {
+                EmptyNestsNear(deepPos, 24f);
+                avatar.Mover.Stop();
+                avatar.transform.position = deepPos;
+                var goblin = SpawnMonster("goblin", World.GridMap.CellToWorld(outside), meleeOnly: true);
+                goblin.ForceTarget(avatar);
+                yield return new WaitForSeconds(0.5f);
+                Assert.That(goblin.Engage.IsSearching, Is.True, "the master in the forest is out of the goblin's sight");
+                Assert.That(Vector2.Distance(goblin.Engage.LastSeenPosition, deepPos), Is.LessThan(0.5f), "it heads for where the master was");
+
+                var away = deepPos + new Vector2(9f, 0f); // still within the chase distance, out of sight
+                avatar.transform.position = away;
+                yield return WaitFor(() => goblin.CurrentTarget != avatar, 15f);
+                Assert.That(goblin.CurrentTarget, Is.Not.EqualTo(avatar), "found nothing there: it gives up");
+                Assert.That(Vector2.Distance(goblin.Position, deepPos), Is.LessThan(Vector2.Distance(goblin.Position, away)),
+                    "it searched where the master was seen, not where it went");
+                goblin.Perish();
+            }
+            finally { Unit.GuildInvulnerable = false; }
         }
 
         [UnityTest]

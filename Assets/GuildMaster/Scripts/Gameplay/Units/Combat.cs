@@ -150,6 +150,10 @@ namespace GuildMaster.Units
             _tacticTimer = 0f;
             _retargetTimer = CombatTiers.RetargetInterval(_self.Tier);
             _holdOffTime = 0f;
+            _known = true;
+            _sightTimer = SightCheckSeconds;
+            IsSearching = false;
+            if (target != null) LastSeenPosition = target.Position;
             ResetChase();
         }
 
@@ -167,6 +171,8 @@ namespace GuildMaster.Units
             _kiting = false;
             _steering = false;
             _lockedUntil = 0f;
+            _known = true;
+            IsSearching = false;
             ResetChase();
         }
 
@@ -217,6 +223,9 @@ namespace GuildMaster.Units
 
             if (_self.IsStunned || IsChanneling()) return EngageStatus.Attacking;
 
+            // Out of sight (into a forest, behind cover): only where it was last seen is known (P4-70).
+            if (!TrackTarget(dt, dist)) return SearchTick(dt);
+
             // Periodic re-evaluation (tier sets how often and what counts, see TargetSelector);
             // instinct-driven units only turn on whoever just hit them.
             var tier = _self.Tier;
@@ -244,6 +253,95 @@ namespace GuildMaster.Units
             if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
 
             return _self.Stats.IsRanged ? RangedTick(dt, dist) : MeleeTick(dt, dist);
+        }
+
+        // ---------------- Losing sight of the target (P4-70) ----------------
+
+        /// <summary>This close a target is felt, seen or not.</summary>
+        public const float SenseRange = 1.5f;
+        /// <summary>A blow from the target within this many seconds gives away where it is.</summary>
+        const float HitRevealsSeconds = 2f;
+        /// <summary>A target fighting one of ours this close is heard (as <c>Adventurer.ComradeCryRadius</c> and the pack alarm).</summary>
+        const float HearFightRange = 8f;
+        /// <summary>Looking round the last-seen spot this long before giving up.</summary>
+        const float SearchSeconds = 3f;
+        /// <summary>Slack on top of the walk there and the look round before the whole search is given up.</summary>
+        const float SearchSlackSeconds = 3f;
+        const float SightCheckSeconds = 0.2f;
+
+        float _sightTimer;
+        bool _known = true, _lookedThisTick;
+        float _searchTime, _lookTime, _searchBudget;
+
+        /// <summary>The target is out of sight and this unit is searching where it was last seen (debug).</summary>
+        public bool IsSearching { get; private set; }
+        /// <summary>Where the target was last seen (or felt, or heard).</summary>
+        public Vector2 LastSeenPosition { get; private set; }
+
+        /// <summary>
+        /// Whether the unit still knows where its target is: it sees it (forest rules, <see cref="Unit.CanSee(Unit)"/>),
+        /// feels it right next to it, was just hit by it, or hears it fighting one of its own nearby.
+        /// </summary>
+        public static bool KnowsWhere(Unit self, Unit target, float dist)
+        {
+            if (dist <= SenseRange || self.WasRecentlyAttackedBy(target, HitRevealsSeconds)) return true;
+            if (dist <= HearFightRange && TargetSelector.IsAlly(self, target.CurrentTarget)) return true;
+            return self.CanSee(target);
+        }
+
+        /// <summary>Refreshes what is known of the target; false while it is out of sight.</summary>
+        bool TrackTarget(float dt, float dist)
+        {
+            _sightTimer -= dt;
+            _lookedThisTick = _sightTimer <= 0f;
+            if (_lookedThisTick)
+            {
+                _sightTimer = SightCheckSeconds;
+                _known = KnowsWhere(_self, Target, dist);
+            }
+            if (!_known) return false;
+            LastSeenPosition = Target.Position;
+            if (IsSearching) { IsSearching = false; ResetChase(); }
+            return true;
+        }
+
+        /// <summary>
+        /// Walks to where the target was last seen and looks round a moment (a forest cuts sight to a
+        /// third, so it may turn up close by); still nothing, and the target is dropped for a while.
+        /// A better visible target found meanwhile is taken instead.
+        /// </summary>
+        EngageStatus SearchTick(float dt)
+        {
+            if (!IsSearching)
+            {
+                IsSearching = true;
+                _searchTime = 0f;
+                // Long enough to walk to where it was last seen (a pack cry, a campfire may be far off).
+                _searchBudget = SearchSeconds + SearchSlackSeconds
+                                + 1.5f * Vector2.Distance(_self.Position, LastSeenPosition) / Mathf.Max(0.5f, _self.Stats.MoveSpeed);
+                _lookTime = 0f;
+                _kiting = false;
+                _steering = false;
+                if (!_self.Mover.SetDestination(LastSeenPosition, 0.4f)) return GiveUpSearch();
+            }
+            _searchTime += dt;
+            if (_lookedThisTick && CandidateFilter != null && Time.time >= _lockedUntil && !CombatTiers.RetaliatesOnly(_self.Tier)
+                && TargetSelector.Pick(_self, SearchRadius, u => u != Target && CandidateFilter(u), this) is { } other)
+            {
+                SetTarget(other);
+                return EngageStatus.Chasing;
+            }
+            if (!_self.Mover.IsMoving || (LastSeenPosition - _self.Position).sqrMagnitude < 0.6f * 0.6f) _lookTime += dt;
+            if (_lookTime >= SearchSeconds || _searchTime >= _searchBudget) return GiveUpSearch();
+            return EngageStatus.Chasing;
+        }
+
+        EngageStatus GiveUpSearch()
+        {
+            Ignore(Target, IgnoreSeconds);
+            Clear();
+            _self.Mover.Stop();
+            return EngageStatus.Lost;
         }
 
         /// <summary>After turning on an attacker, instinct-driven units ignore other hits this long.</summary>

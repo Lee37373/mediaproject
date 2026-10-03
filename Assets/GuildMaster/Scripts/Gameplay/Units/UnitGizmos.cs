@@ -51,7 +51,14 @@ namespace GuildMaster.Units
             Handles.DrawWireDisc(p, Vector3.forward, u.Stats.AttackRange + Combat.ContactPadding + u.Radius);
 
             var engage = u.CombatEngagement;
-            if (u.CurrentTarget != null && u.CurrentTarget.IsAlive)
+            if (engage != null && engage.IsSearching)
+            {
+                // Lost from sight (P4-70): a dotted line to where it was last seen.
+                Handles.color = guild ? GuildTargetColor : EnemyTargetColor;
+                Handles.DrawDottedLine(p, engage.LastSeenPosition, 3f);
+                Handles.DrawWireDisc(engage.LastSeenPosition, Vector3.forward, 0.4f);
+            }
+            else if (u.CurrentTarget != null && u.CurrentTarget.IsAlive)
             {
                 Handles.color = guild ? GuildTargetColor : EnemyTargetColor;
                 Handles.DrawLine(p, u.CurrentTarget.Position, 2f);
@@ -70,6 +77,7 @@ namespace GuildMaster.Units
 
             string label = $"{u.DisplayName} [{CombatTiers.Label(u.Tier)}] {u.DebugState}";
             if (engage != null && engage.IsHoldingOff) label += " (어부지리 대기)";
+            if (engage != null && engage.IsSearching) label += " (놓침, 수색)";
             if (engage != null && engage.StallTime > 0.5f) label += $"\n추격 정체 {engage.StallTime:0.0}/{CombatTiers.ChaseGiveUp(u.Tier):0.0}s";
             var style = new GUIStyle(EditorStyles.miniBoldLabel) { normal = { textColor = guild ? GuildTargetColor : EnemyTargetColor } };
             Handles.Label(p + new Vector2(0.4f, 1.1f), label, style);
