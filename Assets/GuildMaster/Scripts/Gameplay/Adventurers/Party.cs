@@ -226,7 +226,8 @@ namespace GuildMaster.Adventurers
             if (p == null || !p.Members.Remove(a)) return;
             _of.Remove(a);
             EventBus.Publish(new PartyChangedEvent { Party = p, Member = a, Joined = false, Reason = reason });
-            if (p.Members.Count < 2 && !p.Settling) Disband(p, reason);
+            // The one left behind did not move or die: its party simply ran out (P4-73: it was logged with the leaver's reason).
+            if (p.Members.Count < 2 && !p.Settling) Disband(p, "인원 부족");
         }
 
         void Disband(Party p, string reason)
