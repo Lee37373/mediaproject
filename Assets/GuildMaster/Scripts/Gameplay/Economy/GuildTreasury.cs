@@ -42,9 +42,52 @@ namespace GuildMaster.Economy
     /// The player's guild funds: gold, the hourly EXP pool used for quest rewards,
     /// and the stockpile of materials/goods. All mutations publish change events.
     /// </summary>
-    public class GuildTreasury
+    public class GuildTreasury : ISaveable
     {
         readonly Dictionary<string, int> _stock = new();
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int gold;
+            public int exp;
+            public float exp_per_hour;
+            public int daily_tax;
+            public float tax_cut_today;
+            public float exp_fraction;
+            public List<Data.ItemStack> stock = new();
+        }
+
+        public string SaveKey => "treasury";
+
+        public string Capture()
+        {
+            var s = new SaveData
+            {
+                gold = Gold, exp = Exp, exp_per_hour = ExpPerHour, daily_tax = DailyTax,
+                tax_cut_today = TaxCutToday, exp_fraction = _expFraction,
+            };
+            var ids = new List<string>(_stock.Keys);
+            ids.Sort(System.StringComparer.Ordinal); // the same order every time, whatever was added first
+            foreach (var id in ids) s.stock.Add(new Data.ItemStack { itemId = id, count = _stock[id] });
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            Gold = s.gold;
+            Exp = s.exp;
+            ExpPerHour = s.exp_per_hour;
+            DailyTax = s.daily_tax;
+            TaxCutToday = s.tax_cut_today;
+            _expFraction = s.exp_fraction;
+            _stock.Clear();
+            foreach (var st in s.stock) _stock[st.itemId] = st.count;
+            Notify();
+        }
 
         public int Gold { get; private set; }
         public int Exp { get; private set; }

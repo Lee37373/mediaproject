@@ -12,8 +12,30 @@ namespace GuildMaster.Town
     /// navigation grid shut to monsters where a gate stands, and repairs broken or battered gates
     /// for gold (user decision 2026-09-21).
     /// </summary>
-    public class GateService : MonoBehaviour
+    public class GateService : MonoBehaviour, ISaveable
     {
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData { public List<float> hp = new(); }
+
+        public string SaveKey => "gates";
+
+        /// <summary>Durability per gate, in the map's gate order (the same for the same seed).</summary>
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var g in _gates) s.hp.Add(g.Hp);
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            if (s.hp.Count != _gates.Count) ctx.Warnings.Add($"gates: saved {s.hp.Count}, map has {_gates.Count}");
+            for (int i = 0; i < _gates.Count && i < s.hp.Count; i++) _gates[i].RestoreHp(s.hp[i]);
+        }
+
         /// <summary>A monster this close to a gate keeps the carpenters away.</summary>
         public const float RepairSafeDistance = 4f;
 

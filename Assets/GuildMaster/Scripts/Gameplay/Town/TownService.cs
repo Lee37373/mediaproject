@@ -7,11 +7,59 @@ using UnityEngine;
 namespace GuildMaster.Town
 {
     /// <summary>Places the town's buildings, blocks their footprints, and answers town queries.</summary>
-    public class TownService : MonoBehaviour
+    public class TownService : MonoBehaviour, ISaveable
     {
         readonly List<Building> _buildings = new();
         WorldService _world;
         GameDatabase _db;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedBuilding
+        {
+            public BuildingType type;
+            public RectInt rect;
+            public int level;
+            public float max_hp;
+            public float hp;
+            /// <summary>Put up by the player (a watchtower): rebuilt on load; the starting town is already there.</summary>
+            public bool placed;
+        }
+
+        [System.Serializable]
+        class SaveData { public List<SavedBuilding> buildings = new(); }
+
+        public string SaveKey => "town";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var b in _buildings)
+                s.buildings.Add(new SavedBuilding
+                {
+                    type = b.Type, rect = b.Footprint, level = b.Level, max_hp = b.MaxHp, hp = b.Hp,
+                    placed = System.Array.IndexOf(ConstructionService.Placeable, b.Type) >= 0,
+                });
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            foreach (var saved in s.buildings)
+            {
+                if (saved.placed)
+                {
+                    if (Services.TryGet<ConstructionService>(out var construction))
+                        construction.RestorePlaced(saved.type, saved.rect, saved.level, saved.max_hp, saved.hp);
+                    continue;
+                }
+                var b = _buildings.Find(x => x.Type == saved.type);
+                if (b == null) { ctx.Warnings.Add("town: no building " + saved.type); continue; }
+                b.RestoreState(saved.level, saved.max_hp, saved.hp);
+            }
+        }
 
         public ListView<Building> Buildings => new(_buildings);
         public RectInt TownRect => _world.Map.TownRect;

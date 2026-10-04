@@ -34,8 +34,49 @@ namespace GuildMaster.Fog
     /// out of sight (or are still fading), and redraws just the <see cref="Block"/>-cell blocks
     /// around them. It used to fade, blur and redraw the whole map ten times a second.
     /// </summary>
-    public class FogOfWar : MonoBehaviour
+    public class FogOfWar : MonoBehaviour, ISaveable
     {
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int width;
+            public int height;
+            /// <summary>Explored cells, one bit each (row-major), base64.</summary>
+            public string explored;
+        }
+
+        public string SaveKey => "fog";
+
+        public string Capture()
+        {
+            var bits = new byte[(_explored.Length + 7) / 8];
+            for (int i = 0; i < _explored.Length; i++)
+                if (_explored[i]) bits[i >> 3] |= (byte)(1 << (i & 7));
+            return JsonUtility.ToJson(new SaveData { width = _w, height = _h, explored = System.Convert.ToBase64String(bits) });
+        }
+
+        /// <summary>What was explored comes back explored; what is in sight is worked out on the next tick.</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            if (s.width != _w || s.height != _h) { ctx.Warnings.Add($"fog: saved {s.width}x{s.height}, map {_w}x{_h}"); return; }
+            var bits = System.Convert.FromBase64String(s.explored);
+            ExploredCount = 0;
+            for (int i = 0; i < _explored.Length; i++)
+            {
+                bool e = (bits[i >> 3] & (1 << (i & 7))) != 0;
+                _explored[i] = e;
+                if (e) ExploredCount++;
+                // Cells the boot's first tick already sees stay clear: the next tick does not count
+                // them as newly in sight, so they would not fade back.
+                _alpha[i] = _visibleStamp[i] == _stamp ? 0f : e ? _exploredAlpha : 1f;
+            }
+            for (int b = 0; b < _blockDirty.Length; b++) MarkBlock(b);
+            Render();
+        }
+
         public const int SortingOrder = 3000;
         /// <summary>Render texels per map cell (the simulation stays one value per cell).</summary>
         public const int RenderScale = 2;

@@ -85,6 +85,22 @@ namespace GuildMaster.Session
             PendingSeed = 0;
             ShowTitle = true;
             PaintGround = true;
+            PendingLoad = null;
+            PendingLoadSlot = -1;
+            Restoring = null;
         }
+
+        /// <summary>A saved game for the next scene load to put back (P5-4, see <c>Save.SaveService.Load</c>).</summary>
+        public static Save.SaveFile PendingLoad { get; set; }
+        public static int PendingLoadSlot { get; set; } = -1;
+
+        /// <summary>
+        /// The save being put back while the session boots (null otherwise). Systems skip their own
+        /// first filling (starting members, the nests' first monsters…) when the save has their section.
+        /// </summary>
+        public static Save.SaveFile Restoring { get; set; }
+
+        /// <summary>The boot is restoring a save that holds this section: do not fill it fresh.</summary>
+        public static bool RestoresSection(string key) => Restoring != null && Restoring.Has(key);
     }
 }

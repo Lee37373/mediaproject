@@ -135,6 +135,22 @@ namespace GuildMaster.Town
             return true;
         }
 
+        /// <summary>
+        /// Puts a saved player-built building back (P5-4): no cost, no event. A fallen tower keeps
+        /// its eye shut, as it would have after collapsing.
+        /// </summary>
+        public Building RestorePlaced(BuildingType type, RectInt footprint, int level, float maxHp, float hp)
+        {
+            var b = _town.Build(type, footprint, maxHp, _mapRenderer);
+            b.RestoreState(level, maxHp, hp);
+            if (type == BuildingType.Watchtower)
+            {
+                AttachVision(b, CostOf(type)?.sightRadius ?? 0f);
+                if (b.IsDestroyed) b.GetComponent<VisionSource>().enabled = false;
+            }
+            return b;
+        }
+
         /// <summary>A watchtower is an elevated eye: it sees over walls and buildings.</summary>
         static void AttachVision(Building b, float radius)
         {

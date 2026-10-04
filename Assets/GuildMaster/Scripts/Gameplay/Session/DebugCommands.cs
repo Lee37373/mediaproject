@@ -1123,5 +1123,35 @@ namespace GuildMaster.Session
             if (PerfProbe.Instance != null) Object.Destroy(PerfProbe.Instance.gameObject);
             return "stopped";
         }
+
+        // ---------------- Save/load (P5-4) ----------------
+
+        public static string Save(int slot)
+            => Services.Get<GuildMaster.Save.SaveService>().Save(slot, out var error) ? $"saved to {GuildMaster.Save.SaveService.PathOf(slot)}" : error;
+
+        /// <summary>Loads a slot (the scene restarts; in an empty test scene use the test's own restart).</summary>
+        public static string Load(int slot) => GuildMaster.Save.SaveService.Load(slot, out var error) ? "loading" : error;
+
+        public static string Slots()
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < GuildMaster.Save.SaveService.SlotCount; i++)
+            {
+                var info = GuildMaster.Save.SaveService.Peek(i);
+                sb.AppendLine(!info.Exists ? $"{i}: (비어 있음)"
+                    : info.Problem != null ? $"{i}: {info.Problem}"
+                    : $"{i}: {info.Summary.day}일차 {info.Summary.hour}시 · {info.Summary.gold}G · 길드원 {info.Summary.members} · {info.SavedAt:yyyy-MM-dd HH:mm}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Section sizes of the current game's save (nothing written).</summary>
+        public static string SaveSections()
+        {
+            var file = Services.Get<GuildMaster.Save.SaveService>().Capture();
+            var sb = new StringBuilder();
+            foreach (var s in file.sections) sb.AppendLine($"{s.key}: {s.json.Length}자");
+            return sb.ToString();
+        }
     }
 }

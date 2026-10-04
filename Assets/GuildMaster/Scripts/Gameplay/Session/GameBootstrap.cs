@@ -44,6 +44,14 @@ namespace GuildMaster.Session
             // Simulation (and async LLM work) keeps running when the window loses focus.
             Application.runInBackground = true;
 
+            // A saved game handed over by Save.SaveService.Load (P5-4): the world is rebuilt from its
+            // seed below, then every system gets its section back at the end.
+            var load = GameSettings.PendingLoad;
+            int loadSlot = GameSettings.PendingLoadSlot;
+            GameSettings.PendingLoad = null;
+            GameSettings.PendingLoadSlot = -1;
+            GameSettings.Restoring = load;
+
             Balance = balanceOverride ? balanceOverride : GameBalance.Load();
             // A seed typed on the title screen wins (P4-10), then the balance asset, then random.
             Seed = GameSettings.PendingSeed != 0 ? GameSettings.PendingSeed
@@ -53,6 +61,9 @@ namespace GuildMaster.Session
             GameRandom.Shared = new GameRandom(Seed);
             Services.Register(this);
             Services.Register(Balance);
+            // Save/load (P5-4): systems register below in this file's order, which is also the restore order.
+            var save = new Save.SaveService(Seed);
+            Services.Register(save);
 
             _systems = new GameObject("Systems").transform;
 
@@ -60,6 +71,7 @@ namespace GuildMaster.Session
             var clock = AddSystem<GameClock>();
             clock.Configure(Balance.realSecondsPerGameHour, Balance.startHour);
             Services.Register(clock);
+            save.Register(clock);
             Services.Register(AddSystem<PoolService>());
 
             // --- World ---
@@ -82,6 +94,7 @@ namespace GuildMaster.Session
             // --- Fog of war ---
             var fog = new GameObject("FogOfWar").AddComponent<FogOfWar>();
             Services.Register(fog);
+            save.Register(fog);
             var townVision = new GameObject("TownVision").AddComponent<VisionSource>();
             townVision.transform.SetParent(_systems, false);
             townVision.transform.position = world.TownCenterWorld;
@@ -98,6 +111,7 @@ namespace GuildMaster.Session
             var treasury = new GuildTreasury(Balance.startingGold, Balance.startingExp, guildHall?.expPerHour ?? 0f, townHall?.dailyTax ?? 0);
             treasury.AddStock(DefaultContent.Potion, Balance.startingPotions);
             Services.Register(treasury);
+            save.Register(treasury);
             Services.Register(new TradeService(treasury, db) { LootBuyRate = Balance.lootBuyRate, GoodsSellRate = Balance.goodsSellRate });
             Services.Register(new GameLog(clock, db));
 
@@ -105,10 +119,12 @@ namespace GuildMaster.Session
             var town = AddSystem<TownService>();
             town.Init(world, mapRenderer, db); // P5-1: level-1 durability comes from the building data
             Services.Register(town);
+            save.Register(town);
             // Gates (P4-39): open for the guild, shut to monsters until broken.
             var gates = AddSystem<GateService>();
             gates.Init(world, treasury, Balance.gateMaxHp, Balance.gateRepairGoldPerHp);
             Services.Register(gates);
+            save.Register(gates);
 
             // Player-placed buildings (P4-13): the watchtower and what comes after it.
             var construction = AddSystem<ConstructionService>();
@@ -281,6 +297,13 @@ namespace GuildMaster.Session
             DayNightLighting.Create(_systems, clock);
             EnsureEventSystem();
             AddSystem<GameHotkeys>();
+
+            if (load != null)
+            {
+                var warnings = save.Restore(load, loadSlot);
+                Debug.Log($"[GuildMaster] Save restored (slot {loadSlot}, day {load.summary.day}, {warnings.Count} warnings).");
+            }
+            GameSettings.Restoring = null;
 
             Debug.Log($"[GuildMaster] Session started. seed={Seed}, nests={map.Nests.Count}");
             EventBus.Publish(new SessionStartedEvent { Seed = Seed });

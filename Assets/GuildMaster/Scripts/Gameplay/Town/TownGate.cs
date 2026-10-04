@@ -95,6 +95,20 @@ namespace GuildMaster.Town
             EventBus.Publish(new GateRepairedEvent { Gate = this });
         }
 
+        /// <summary>Puts saved durability back quietly (P5-4); a broken gate opens the walls as it did.</summary>
+        public void RestoreHp(float hp)
+        {
+            bool wasBroken = IsBroken;
+            Hp = Mathf.Clamp(hp, 0f, MaxHp);
+            _tint = Color.Lerp(new Color(0.55f, 0.4f, 0.35f), Color.white, Hp / MaxHp);
+            if (wasBroken != IsBroken)
+            {
+                RefreshSprite();
+                _service.OnGateChanged(this);
+            }
+            ApplyColor();
+        }
+
         /// <summary>Closest point of the gate's span, for attackers measuring their reach.</summary>
         public Vector2 ClosestPoint(Vector2 from)
         {

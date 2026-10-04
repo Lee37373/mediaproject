@@ -87,6 +87,16 @@ namespace GuildMaster.Town
             EventBus.Publish(new BuildingLevelChangedEvent { Building = this, Level = level });
         }
 
+        /// <summary>Puts a saved level and durability back quietly (P5-4: no upgrade or collapse events).</summary>
+        public void RestoreState(int level, float maxHp, float hp)
+        {
+            Level = level;
+            MaxHp = maxHp;
+            Hp = Mathf.Clamp(hp, 0f, maxHp);
+            _tint = Color.Lerp(new Color(0.45f, 0.3f, 0.3f), Color.white, MaxHp > 0f ? Hp / MaxHp : 1f);
+            ApplyColor();
+        }
+
         public void SetMaxHp(float maxHp, bool heal)
         {
             float ratio = MaxHp > 0 ? Hp / MaxHp : 1f;
