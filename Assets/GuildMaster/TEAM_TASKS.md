@@ -83,7 +83,7 @@
 | P5-2 | 성능(유닛 200·투사체 100에서 60FPS): 유닛 공간 색인(목표 고르기 O(N²) 제거), 안개 바뀐 곳만 갱신, 영역 검사 반경 질의, GC 30KB→약 5KB/프레임. 부하 p99 48.7→13.2ms | 이재혁 | 완료 | Units/UnitRegistry·TargetSelector·CrowdSimulation·Unit·Combat, Fog/FogOfWar, Ecosystem/TerritoryService·Nest, Core/ListView(신규), Monsters, Adventurers, UI/World/NameTagLayer, Session/PerfProbe(신규)·DebugCommands, Editor/ProfilerDigest(신규) | 3a78069 |
 | P5-3 | LLM 예외 처리(실패해도 게임 진행·대기 상한·기아 방지·요청 통계). 속도 최적화는 제외(사용자 결정 2026-10-04) | 이재혁 | 완료 | LLM/LlmGateway·LlmStats(신규)·LlmTypes, UI/Views/LlmDebugView, Tests/PlayMode/FakeLlmBackend·LlmFaultTests(신규) | 9cc2c19 |
 | P5-4 | 세이브/로드(사용자 결정: 완전 스냅숏·수동 여러 슬롯·오프라인 진행 없음): 시스템별 저장 섹션 33개, 일시정지 메뉴·타이틀의 저장/불러오기 창. 새 시스템을 만들면 `ISaveable`을 구현하고 `GameBootstrap`에서 `save.Register`할 것(CODEMAP 1.10절) | 이재혁 | 완료 | Core/Saving(신규), Save/*(신규), 거의 모든 시스템, UI/Views/SaveLoadView(신규)·PauseMenuView·TitleView, Tests/PlayMode/SaveTests(신규) | f8d5831, 1d30311, 37c1d30, 3040302 |
-| P5-5 | Windows 빌드 | 미정 | 예정 | 빌드 설정 | |
+| P5-5 | Windows 빌드 | 이재혁 | 진행 중 | 빌드 설정 | |
 | P5-6 | 시연 자료 | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 가장 마지막에 진행 | 미정 | 예정 | Audio(신규) | |
 | P4-12 | 대화 묶음 생성과 미리 받기 | 미정 | 보류 | LLM, Adventurers/BanterService | |
@@ -112,7 +112,7 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: (없음)
+- **진행 중**: P5-5 Windows 빌드
 - **예정**: (정해지면 적기)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-75, P5-1 ~ P5-4 (위 표 참고)
 
