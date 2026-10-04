@@ -24,7 +24,7 @@ namespace GuildMaster.Proposals
     /// Choosing one posts it through the normal <see cref="QuestBoard.TryPost"/>, so escrow, negotiation and
     /// persuasion work as for any quest. A new list is made every game day, and on request after a cool-down.
     /// </summary>
-    public class QuestProposalService : IDisposable
+    public class QuestProposalService : IDisposable, ISaveable
     {
         readonly QuestBoard _board;
         readonly GuildIntel _intel;
@@ -50,6 +50,83 @@ namespace GuildMaster.Proposals
         }
 
         public void Dispose() => EventBus.Unsubscribe<DayPassedEvent>(OnDayPassed);
+
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SavedPlan
+        {
+            public string id;
+            public string target_key;
+            public QuestType target_type;
+            public DangerLevel target_danger;
+            public string target_label, target_area;
+            public float target_distance;
+            public int target_observed;
+            public Vector2 target_point;
+            public string species;
+            public ProposalStyle style;
+            public DangerLevel danger;
+            public int count, party, reward_gold, reward_exp, base_reward_gold;
+            public string risk, title, pitch;
+            public bool from_llm;
+        }
+
+        [Serializable]
+        class SaveData
+        {
+            public List<SavedPlan> plans = new();
+            public string source;
+            public string empty_reason;
+            public float generated_at;
+            public int generation;
+            public float reroll_ready_at;
+        }
+
+        public string SaveKey => "proposals";
+
+        /// <summary>The cards on the table; a list still being made is not saved (it is made again on demand).</summary>
+        public string Capture()
+        {
+            var s = new SaveData
+            {
+                source = Source, empty_reason = EmptyReason, generated_at = GeneratedAtHour, generation = Generation, reroll_ready_at = _rerollReadyAt,
+            };
+            foreach (var p in _current)
+                s.plans.Add(new SavedPlan
+                {
+                    id = p.Id, target_key = p.Target.Key, target_type = p.Target.Type, target_danger = p.Target.Danger, target_label = p.Target.Label,
+                    target_area = p.Target.Area, target_distance = p.Target.Distance, target_observed = p.Target.Observed, target_point = p.Target.Point,
+                    species = (p.Target.Source as MonsterDefinition)?.id, style = p.Style, danger = p.Danger, count = p.Count, party = p.Party,
+                    reward_gold = p.RewardGold, reward_exp = p.RewardExp, base_reward_gold = p.BaseRewardGold, risk = p.Risk, title = p.Title,
+                    pitch = p.Pitch, from_llm = p.FromLlm,
+                });
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            var db = Services.Get<GameDatabase>();
+            Source = s.source;
+            EmptyReason = s.empty_reason;
+            GeneratedAtHour = s.generated_at;
+            Generation = s.generation;
+            _rerollReadyAt = s.reroll_ready_at;
+            _current = new List<ProposalPlan>();
+            foreach (var p in s.plans)
+                _current.Add(new ProposalPlan
+                {
+                    Id = p.id,
+                    Target = new ProposalTarget
+                    {
+                        Key = p.target_key, Type = p.target_type, Danger = p.target_danger, Label = p.target_label, Area = p.target_area,
+                        Distance = p.target_distance, Observed = p.target_observed, Point = p.target_point, Source = db.Monster(p.species),
+                    },
+                    Style = p.style, Danger = p.danger, Count = p.count, Party = p.party, RewardGold = p.reward_gold, RewardExp = p.reward_exp,
+                    BaseRewardGold = p.base_reward_gold, Risk = p.risk, Title = p.title, Pitch = p.pitch, FromLlm = p.from_llm,
+                });
+        }
 
         public IReadOnlyList<ProposalPlan> Current => _current;
         public bool Generating => _generating;

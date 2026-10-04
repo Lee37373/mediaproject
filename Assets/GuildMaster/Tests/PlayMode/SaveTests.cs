@@ -138,6 +138,85 @@ namespace GuildMaster.Tests
             AssertSameSections(a, Saves.Capture());
         }
 
+        /// <summary>
+        /// The same round trip with everything going on at once: a hunt taken by two, a visitor and the
+        /// merchant in town, a disaster burning, loot on the ground, a raid on the way, a camp out in
+        /// the wild, auto-crafting set. Saved mid-flow, it all comes back as it was.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RoundTrip_WithEverythingGoingOn()
+        {
+            BootNow();
+            yield return null;
+            var clock = Services.Get<GameClock>();
+            var eco = Services.Get<Ecosystem.EcosystemManager>();
+            var known = typeof(Ecosystem.GuildIntel).GetField("_known", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            ((System.Collections.Generic.HashSet<Data.MonsterDefinition>)known.GetValue(Services.Get<Ecosystem.GuildIntel>()))
+                .Add(System.Linq.Enumerable.First(eco.Species, s => s.id == "slime"));
+            string questId = DebugCommands.PostHunt("slime", 3, 30, 10, 2);
+            DebugCommands.ForceAccept(questId, 2);
+            DebugCommands.SpawnVisitor();
+            DebugCommands.MerchantVisit();
+            DebugCommands.DropItem("slime_jelly", 2);
+            DebugCommands.ForceRaid(0, true);
+            // One member far out and hurt makes camp there.
+            var camper = Services.Get<Adventurers.GuildRoster>().Members[3];
+            var grid = Services.Get<World.WorldService>().Grid;
+            Assert.That(grid.TryFindNearestWalkable(Services.Get<World.WorldService>().Map.TownCenter + new Vector2Int(0, -40), 8, out var campCell), Is.True);
+            camper.Mover.Stop();
+            camper.transform.position = World.GridMap.CellToWorld(campCell);
+            DebugCommands.Hurt(3, camper.Stats.MaxHp * 0.6f);
+            DebugCommands.CampNow(3, false);
+            var crafting = Services.Get<Economy.CraftingService>();
+            crafting.SetTarget(crafting.Recipes[0], 2);
+            // A wildfire (or whatever the ground nearby suits) somewhere out of town.
+            var disasters = Services.Get<Disasters.DisasterService>();
+            var town = Services.Get<World.WorldService>().Map.TownCenter;
+            for (int r = 25; r < 70 && disasters.Active.Count == 0; r += 5)
+            for (int k = 0; k < 16 && disasters.Active.Count == 0; k++)
+            {
+                var cell = town + new Vector2Int(Mathf.RoundToInt(Mathf.Cos(k * 0.39f) * r), Mathf.RoundToInt(Mathf.Sin(k * 0.39f) * r));
+                for (int kind = 0; kind < 5 && disasters.Active.Count == 0; kind++) disasters.Begin((Disasters.DisasterKind)kind, cell);
+            }
+            Assert.That(disasters.Active.Count, Is.GreaterThan(0), "a disaster under way");
+
+            clock.SetSpeed(3);
+            float start = clock.TotalHours;
+            float end = Time.realtimeSinceStartup + 15f;
+            while (clock.TotalHours < start + 1.5f && Time.realtimeSinceStartup < end) yield return null;
+            clock.SetSpeed(0);
+            yield return new WaitForSecondsRealtime(1f);
+
+            var board = Services.Get<Quests.QuestBoard>();
+            int quests = board.Quests.Count, takers = board.FindById(questId)?.Assignees.Count ?? 0;
+            int visitors = Services.Get<Recruitment.VisitorService>().Visitors.Count;
+            bool merchant = Services.Get<Town.MerchantService>().Merchant != null;
+            int camps = Services.Get<Adventurers.CampService>().Camps.Count;
+            int raidCount = Services.Get<Town.WaveManager>().RaidCount;
+            int active = disasters.Active.Count;
+            Debug.Log($"[SaveTests] busy save: quests {quests} takers {takers} visitors {visitors} merchant {merchant} camps {camps} raids {raidCount} disasters {active} ground {Services.Get<Items.GroundItemService>().Items.Count}");
+            Assert.That(takers, Is.GreaterThan(0), "the hunt was taken");
+            Assert.That(visitors, Is.GreaterThan(0), "a visitor in town");
+            Assert.That(merchant, Is.True, "the merchant in town");
+            Assert.That(camps, Is.GreaterThan(0), "a camp out in the wild");
+
+            var a = Saves.Capture();
+            yield return BootFrom(a);
+            AssertSameSections(a, _afterBoot);
+
+            board = Services.Get<Quests.QuestBoard>();
+            Assert.That(board.Quests.Count, Is.EqualTo(quests), "quests");
+            Assert.That(board.FindById(questId)?.Assignees.Count ?? 0, Is.EqualTo(takers), "the hunt's takers");
+            Assert.That(Services.Get<Recruitment.VisitorService>().Visitors.Count, Is.EqualTo(visitors), "visitors");
+            Assert.That(Services.Get<Town.MerchantService>().Merchant != null, Is.EqualTo(merchant), "the merchant");
+            Assert.That(Services.Get<Adventurers.CampService>().Camps.Count, Is.EqualTo(camps), "camps");
+            Assert.That(Services.Get<Town.WaveManager>().RaidCount, Is.EqualTo(raidCount), "raids");
+            Assert.That(Services.Get<Disasters.DisasterService>().Active.Count, Is.EqualTo(active), "disasters");
+
+            yield return new WaitForSecondsRealtime(1f);
+            AssertSameSections(a, Saves.Capture());
+        }
+
         [UnityTest]
         public IEnumerator Slots_AreWrittenReadListedAndDeleted_AndBadFilesAreRefused()
         {

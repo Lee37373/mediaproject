@@ -15,7 +15,7 @@ namespace GuildMaster.Reports
     /// <see cref="DailyReport"/> per game day, and closes it when the next day begins. Plain logic with no
     /// Unity objects, so it is covered by EditMode tests; the report window and the "정산" notification read from it.
     /// </summary>
-    public class DailyLedger : IDisposable
+    public class DailyLedger : IDisposable, ISaveable
     {
         /// <summary>Older closed reports are dropped beyond this many.</summary>
         public const int MaxReports = 30;
@@ -66,6 +66,77 @@ namespace GuildMaster.Reports
             EventBus.Unsubscribe<Town.RaidSightedEvent>(OnRaidSighted);
             EventBus.Unsubscribe<Town.BuildingDestroyedEvent>(OnBuildingDestroyed);
             EventBus.Unsubscribe<CraftCompletedEvent>(OnCrafted);
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SavedReport
+        {
+            public int day;
+            public float start;
+            public bool closed;
+            public int gold_start, gold_end, exp_start, exp_end;
+            public int posted, completed, failed, cancelled, quest_paid, crafted, raids;
+            public List<string> recruited = new(), departed = new(), deaths = new(), level_ups = new(), buildings_lost = new();
+            public List<int> amounts = new();
+        }
+
+        [Serializable]
+        class SaveData
+        {
+            public List<SavedReport> reports = new();
+            public SavedReport current;
+        }
+
+        public string SaveKey => "ledger";
+
+        static SavedReport CaptureReport(DailyReport r)
+        {
+            var s = new SavedReport
+            {
+                day = r.Day, start = r.StartHour, closed = r.Closed, gold_start = r.GoldStart, gold_end = r.GoldEnd, exp_start = r.ExpStart,
+                exp_end = r.ExpEnd, posted = r.QuestsPosted, completed = r.QuestsCompleted, failed = r.QuestsFailed,
+                cancelled = r.QuestsCancelled, quest_paid = r.QuestPaidGold, crafted = r.Crafted, raids = r.Raids,
+            };
+            s.recruited.AddRange(r.Recruited);
+            s.departed.AddRange(r.Departed);
+            s.deaths.AddRange(r.Deaths);
+            s.level_ups.AddRange(r.LevelUps);
+            s.buildings_lost.AddRange(r.BuildingsLost);
+            s.amounts.AddRange(r.Amounts);
+            return s;
+        }
+
+        static DailyReport RestoreReport(SavedReport s)
+        {
+            var r = new DailyReport(s.day, s.start, s.gold_start, s.exp_start)
+            {
+                Closed = s.closed, GoldEnd = s.gold_end, ExpEnd = s.exp_end, QuestsPosted = s.posted, QuestsCompleted = s.completed,
+                QuestsFailed = s.failed, QuestsCancelled = s.cancelled, QuestPaidGold = s.quest_paid, Crafted = s.crafted, Raids = s.raids,
+            };
+            r.Recruited.AddRange(s.recruited);
+            r.Departed.AddRange(s.departed);
+            r.Deaths.AddRange(s.deaths);
+            r.LevelUps.AddRange(s.level_ups);
+            r.BuildingsLost.AddRange(s.buildings_lost);
+            for (int i = 0; i < s.amounts.Count && i < r.Amounts.Length; i++) r.Amounts[i] = s.amounts[i];
+            return r;
+        }
+
+        public string Capture()
+        {
+            var s = new SaveData { current = CaptureReport(Current) };
+            foreach (var r in _reports) s.reports.Add(CaptureReport(r));
+            return UnityEngine.JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = UnityEngine.JsonUtility.FromJson<SaveData>(json);
+            _reports.Clear();
+            foreach (var r in s.reports) _reports.Add(RestoreReport(r));
+            if (s.current != null) Current = RestoreReport(s.current);
         }
 
         /// <summary>The report of a day, closed or still running; null when it is not kept (too old or in the future).</summary>

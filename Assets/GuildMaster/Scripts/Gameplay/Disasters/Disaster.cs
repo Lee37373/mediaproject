@@ -62,5 +62,37 @@ namespace GuildMaster.Disasters
 
         /// <summary>What is left to work: cells, or 1 for an untouched core.</summary>
         public int WorkLeft => HasCore ? (Ending ? 0 : 1) : Cells.Count;
+
+        /// <summary>Save id of a disaster (quests point at theirs this way, P5-4).</summary>
+        public static string SaveKeyOf(int id) => "disaster:" + id;
+    }
+
+    /// <summary>A disaster as saved (P5-4); cells and their numbers in sorted order.</summary>
+    [System.Serializable]
+    public class DisasterSave
+    {
+        public int id;
+        public DisasterKind kind;
+        public Vector2Int origin;
+        public float started;
+        public List<Vector2Int> cells = new();
+        public List<Vector2Int> lit_cells = new();
+        public List<float> lit_at = new();
+        public List<Vector2Int> work_cells = new();
+        public List<float> work_done = new();
+        public float growth_owed;
+        public Vector2 drift;
+        public float next_storm_refresh;
+        public Vector2 core;
+        public float core_work_left;
+        public bool known;
+        public float sighted;
+        public string quest;
+        public bool ending;
+        public float ending_since;
+        public bool dealt_with;
+        public bool over;
+        public bool reached_town;
+        public List<int> fled = new();
     }
 }

@@ -30,7 +30,7 @@ namespace GuildMaster.Disasters
     /// once the guild has seen it; the quest's workers work it away. Left alone it dies down when its
     /// time is up. The numbers are in <see cref="DisasterRules"/>.
     /// </summary>
-    public class DisasterService : MonoBehaviour
+    public class DisasterService : MonoBehaviour, ISaveable, ISaveLink
     {
         /// <summary>Tests and debug: overrides <see cref="DisasterRules.TriggerChance"/> when 0..1.</summary>
         public static float ChanceOverride = -1f;
@@ -97,6 +97,110 @@ namespace GuildMaster.Disasters
 
         float Now => _clock.TotalHours;
         GridMap Grid => _world.Grid;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public List<DisasterSave> active = new();
+            public List<DisasterSave> history = new();
+            public List<Vector2Int> burnt = new();
+            public List<float> burnt_at = new();
+        }
+
+        SaveData _restoring;
+        readonly List<(Disaster d, DisasterSave s)> _restoredDisasters = new();
+
+        public string SaveKey => "disasters";
+
+        static int CompareCells(Vector2Int a, Vector2Int b) => a.y != b.y ? a.y.CompareTo(b.y) : a.x.CompareTo(b.x);
+
+        DisasterSave CaptureDisaster(Disaster d, IReadOnlyList<Nest> nests)
+        {
+            var s = new DisasterSave
+            {
+                id = d.Id, kind = d.Kind, origin = d.Origin, started = d.StartedHour, growth_owed = d.GrowthOwed, drift = d.Drift,
+                next_storm_refresh = d.NextStormRefresh, core = d.Core, core_work_left = d.CoreWorkLeft, known = d.Known,
+                sighted = d.SightedHour, quest = d.Quest?.Id, ending = d.Ending, ending_since = d.EndingSinceHour,
+                dealt_with = d.DealtWith, over = d.Over, reached_town = d.ReachedTown,
+            };
+            s.cells.AddRange(d.Cells);
+            s.cells.Sort(CompareCells);
+            var lit = new List<Vector2Int>(d.LitAt.Keys);
+            lit.Sort(CompareCells);
+            foreach (var c in lit) { s.lit_cells.Add(c); s.lit_at.Add(d.LitAt[c]); }
+            var worked = new List<Vector2Int>(d.WorkDone.Keys);
+            worked.Sort(CompareCells);
+            foreach (var c in worked) { s.work_cells.Add(c); s.work_done.Add(d.WorkDone[c]); }
+            for (int i = 0; i < nests.Count; i++) if (d.Fled.Contains(nests[i])) s.fled.Add(i);
+            return s;
+        }
+
+        public string Capture()
+        {
+            var nests = Services.TryGet<EcosystemManager>(out var eco) ? new List<Nest>(eco.Nests) : new List<Nest>();
+            var s = new SaveData { next_id = _nextId };
+            foreach (var d in _active) s.active.Add(CaptureDisaster(d, nests));
+            foreach (var d in _history) s.history.Add(CaptureDisaster(d, nests));
+            var burnt = new List<Vector2Int>(_burnt.Keys);
+            burnt.Sort(CompareCells);
+            foreach (var c in burnt) { s.burnt.Add(c); s.burnt_at.Add(_burnt[c]); }
+            return JsonUtility.ToJson(s);
+        }
+
+        /// <summary>The disasters, and what they did to the map: their cells' hazards, and the forest burnt away.</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            _nextId = _restoring.next_id;
+            _lastHour = Now;
+            var nests = Services.TryGet<EcosystemManager>(out var eco) ? new List<Nest>(eco.Nests) : new List<Nest>();
+            _restoredDisasters.Clear();
+            for (int i = 0; i < _restoring.burnt.Count && i < _restoring.burnt_at.Count; i++)
+            {
+                var c = _restoring.burnt[i];
+                _burnt[c] = _restoring.burnt_at[i];
+                Grid.SetHazard(c, HazardKind.Burnt);
+                if (_renderer != null) _renderer.SetTreeBurnt(c, true);
+                _world.Risk.SetForestCleared(c.x, c.y, true);
+                EventBus.Publish(new HazardChangedEvent { Cell = c, Kind = HazardKind.Burnt });
+            }
+            foreach (var s in _restoring.active) _active.Add(RestoreDisaster(s, nests, ctx, applyCells: true));
+            foreach (var s in _restoring.history) _history.Add(RestoreDisaster(s, nests, ctx, applyCells: false));
+        }
+
+        Disaster RestoreDisaster(DisasterSave s, IReadOnlyList<Nest> nests, SaveContext ctx, bool applyCells)
+        {
+            var d = new Disaster
+            {
+                Id = s.id, Kind = s.kind, Origin = s.origin, StartedHour = s.started, GrowthOwed = s.growth_owed, Drift = s.drift,
+                NextStormRefresh = s.next_storm_refresh, Core = s.core, CoreWorkLeft = s.core_work_left, Known = s.known,
+                SightedHour = s.sighted, Ending = s.ending, EndingSinceHour = s.ending_since, DealtWith = s.dealt_with, Over = s.over,
+                ReachedTown = s.reached_town,
+            };
+            foreach (var c in s.cells)
+            {
+                d.Cells.Add(c);
+                if (!applyCells) continue;
+                Grid.SetHazard(c, d.Hazard);
+                EventBus.Publish(new HazardChangedEvent { Cell = c, Kind = d.Hazard });
+            }
+            for (int i = 0; i < s.lit_cells.Count && i < s.lit_at.Count; i++) d.LitAt[s.lit_cells[i]] = s.lit_at[i];
+            for (int i = 0; i < s.work_cells.Count && i < s.work_done.Count; i++) d.WorkDone[s.work_cells[i]] = s.work_done[i];
+            foreach (var i in s.fled) if (i >= 0 && i < nests.Count) d.Fled.Add(nests[i]);
+            ctx.Register(Disaster.SaveKeyOf(d.Id), d);
+            _restoredDisasters.Add((d, s));
+            return d;
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            foreach (var (d, s) in _restoredDisasters) d.Quest = ctx.Find<Quest>(s.quest);
+            _restoredDisasters.Clear();
+            _restoring = null;
+        }
 
         // ---------------- Setting one off ----------------
 

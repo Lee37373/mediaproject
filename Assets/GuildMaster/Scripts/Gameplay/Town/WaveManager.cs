@@ -44,7 +44,7 @@ namespace GuildMaster.Town
     /// when they give up. Nothing is announced until a raider is seen (information hiding;
     /// watchtowers will extend that sight, P4-13). Several nests may raid at once.
     /// </summary>
-    public class WaveManager : MonoBehaviour
+    public class WaveManager : MonoBehaviour, ISaveable, ISaveLink
     {
         const float SightCheckInterval = 0.25f;
 
@@ -86,6 +86,73 @@ namespace GuildMaster.Town
         readonly List<RaidFront> _fronts = new();
         /// <summary>A new gate must be this much closer to the vanguard before a front moves (no flicker).</summary>
         const float FrontSwitchRatio = 0.8f;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedRaid
+        {
+            public int id;
+            public int nest = -1;
+            public List<string> members = new();
+            public float started;
+            public bool sighted;
+            public int killed;
+            public Vector2Int front_gate;
+            public Vector2 front;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int raid_count;
+            public List<SavedRaid> raids = new();
+            public List<string> seen = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "raids";
+
+        /// <summary>The fronts are worked out again every check, so only the raids and who was seen are saved.</summary>
+        public string Capture()
+        {
+            var s = new SaveData { raid_count = RaidCount };
+            foreach (var r in _raids)
+            {
+                var sr = new SavedRaid
+                {
+                    id = r.Id, nest = r.Nest != null ? _eco.Nests.IndexOf(r.Nest) : -1, started = r.StartedAtHour, sighted = r.Sighted,
+                    killed = r.Killed, front_gate = r.FrontGate, front = r.Front,
+                };
+                foreach (var m in r.Members) if (m != null && m.IsAlive) sr.members.Add(m.UnitId);
+                s.raids.Add(sr);
+            }
+            foreach (var m in _seenRaiders) if (m != null && m.IsAlive) s.seen.Add(m.UnitId);
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            RaidCount = _restoring.raid_count;
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            foreach (var sr in _restoring.raids)
+            {
+                var r = new Raid
+                {
+                    Id = sr.id, Nest = sr.nest >= 0 && sr.nest < _eco.Nests.Count ? _eco.Nests[sr.nest] : null, StartedAtHour = sr.started,
+                    Sighted = sr.sighted, Killed = sr.killed, FrontGate = sr.front_gate, Front = sr.front,
+                };
+                foreach (var id in sr.members) if (ctx.Find<Monster>(id) is { } m) r.Members.Add(m);
+                _raids.Add(r);
+            }
+            foreach (var id in _restoring.seen) if (ctx.Find<Monster>(id) is { } m) _seenRaiders.Add(m);
+            _restoring = null;
+        }
 
         public void Init(RaidSettings cfg, GameClock clock, EcosystemManager eco, WorldService world)
         {

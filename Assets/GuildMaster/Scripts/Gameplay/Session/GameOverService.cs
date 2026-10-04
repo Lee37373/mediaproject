@@ -22,12 +22,24 @@ namespace GuildMaster.Session
     /// Ends the session: freezes the clock and publishes the summary for the game-over screen.
     /// Triggers: guild master downed (P3-4a), town hall destroyed (P3-6).
     /// </summary>
-    public class GameOverService
+    public class GameOverService : Core.ISaveable
     {
         readonly GameClock _clock;
         int _recruits;
 
         public bool IsOver { get; private set; }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData { public int recruits; }
+
+        public string SaveKey => "gameover";
+
+        /// <summary>Only the tally for the closing screen: a finished game is not saved (the menu does not offer it).</summary>
+        public string Capture() => UnityEngine.JsonUtility.ToJson(new SaveData { recruits = _recruits });
+
+        public void Restore(string json, Core.SaveContext ctx) => _recruits = UnityEngine.JsonUtility.FromJson<SaveData>(json).recruits;
 
         public GameOverService(GameClock clock)
         {

@@ -25,7 +25,7 @@ namespace GuildMaster.Quests
     /// The quest board: posts quests with escrowed rewards, lets adventurers accept/abandon them,
     /// tracks progress from game events, and pays out contribution-weighted rewards on turn-in.
     /// </summary>
-    public class QuestBoard : MonoBehaviour
+    public class QuestBoard : MonoBehaviour, ISaveable, ISaveLink
     {
         const float TurnInDeadlineHours = 36f;
 
@@ -38,6 +38,57 @@ namespace GuildMaster.Quests
 
         public IReadOnlyList<Quest> Quests => _quests;
         public IReadOnlyList<Quest> History => _history;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public List<Quest.QuestSave> quests = new();
+            public List<Quest.QuestSave> history = new();
+        }
+
+        SaveData _restoring;
+        readonly List<(Quest quest, Quest.QuestSave saved)> _restoredQuests = new();
+
+        public string SaveKey => "board";
+
+        public string Capture()
+        {
+            var nests = new List<Nest>(_eco.Nests);
+            var s = new SaveData { next_id = _nextId };
+            foreach (var q in _quests) s.quests.Add(q.CaptureSave(nests));
+            foreach (var q in _history) s.history.Add(q.CaptureSave(nests));
+            return JsonUtility.ToJson(s);
+        }
+
+        /// <summary>Quests are registered under their own ids (members and disasters point at them).</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            _nextId = _restoring.next_id;
+            var db = Services.Get<GameDatabase>();
+            var nests = new List<Nest>(_eco.Nests);
+            _restoredQuests.Clear();
+            foreach (var qs in _restoring.quests) _quests.Add(RestoreQuest(qs, db, nests, ctx));
+            foreach (var qs in _restoring.history) _history.Add(RestoreQuest(qs, db, nests, ctx));
+        }
+
+        Quest RestoreQuest(Quest.QuestSave qs, GameDatabase db, List<Nest> nests, SaveContext ctx)
+        {
+            var q = new Quest(qs, db, nests);
+            ctx.Register(q.Id, q);
+            _restoredQuests.Add((q, qs));
+            return q;
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            foreach (var (q, qs) in _restoredQuests) q.LinkSave(qs, ctx);
+            _restoredQuests.Clear();
+            _restoring = null;
+        }
 
         public void Init(GuildTreasury treasury, EcosystemManager eco, GameClock clock)
         {

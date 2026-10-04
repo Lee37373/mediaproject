@@ -24,7 +24,7 @@ namespace GuildMaster.Session
     /// Turns gameplay events into a readable, bounded history (shown in the UI and usable as
     /// recent-events context for LLM prompts).
     /// </summary>
-    public class GameLog
+    public class GameLog : ISaveable
     {
         const int MaxEntries = 200;
 
@@ -33,6 +33,38 @@ namespace GuildMaster.Session
         readonly GameDatabase _db;
 
         public IReadOnlyList<LogEntry> Entries => _entries;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public List<string> times = new();
+            public List<string> texts = new();
+            public List<LogCategory> categories = new();
+        }
+
+        public string SaveKey => "log";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var e in _entries)
+            {
+                s.times.Add(e.Time);
+                s.texts.Add(e.Text);
+                s.categories.Add(e.Category);
+            }
+            return UnityEngine.JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = UnityEngine.JsonUtility.FromJson<SaveData>(json);
+            _entries.Clear();
+            for (int i = 0; i < s.texts.Count && i < s.times.Count && i < s.categories.Count; i++)
+                _entries.Add(new LogEntry { Time = s.times[i], Text = s.texts[i], Category = s.categories[i] });
+        }
 
         public GameLog(GameClock clock, GameDatabase db)
         {

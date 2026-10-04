@@ -48,7 +48,7 @@ namespace GuildMaster.Adventurers
     /// A member that decides to hunt joins a band still mustering at the guild; when none is, it
     /// starts one and invites others in town (P4-51, <see cref="PartyService.InviteToHunt"/>).
     /// </summary>
-    public class HuntBandService : MonoBehaviour
+    public class HuntBandService : MonoBehaviour, ISaveable, ISaveLink
     {
         /// <summary>
         /// Game hours the band waits at the guild before setting off, beyond the time its invitations
@@ -68,6 +68,62 @@ namespace GuildMaster.Adventurers
         }
 
         public IReadOnlyList<HuntBand> Bands => _bands;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedBand
+        {
+            public List<string> members = new();
+            public Vector2 spot;
+            public bool has_spot;
+            public float muster_until;
+            public bool mustering;
+            public bool going_home;
+            public bool paused;
+            public float set_out;
+        }
+
+        [System.Serializable]
+        class SaveData { public List<SavedBand> bands = new(); }
+
+        SaveData _restoring;
+
+        public string SaveKey => "bands";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var b in _bands)
+            {
+                var sb = new SavedBand
+                {
+                    spot = b.Spot, has_spot = b.HasSpot, muster_until = b.MusterUntilHour, mustering = b.Mustering,
+                    going_home = b.GoingHome, paused = b.Paused, set_out = b.SetOutHour,
+                };
+                foreach (var m in b.Members) if (m != null) sb.members.Add(m.Data.id);
+                s.bands.Add(sb);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx) => _restoring = JsonUtility.FromJson<SaveData>(json);
+
+        /// <summary>Bands are their members (the free hunters find theirs again when they resume).</summary>
+        public void Link(SaveContext ctx)
+        {
+            foreach (var sb in _restoring.bands)
+            {
+                var b = new HuntBand
+                {
+                    Spot = sb.spot, HasSpot = sb.has_spot, MusterUntilHour = sb.muster_until, Mustering = sb.mustering,
+                    GoingHome = sb.going_home, Paused = sb.paused, SetOutHour = sb.set_out,
+                };
+                foreach (var id in sb.members) if (ctx.Find<Adventurer>(id) is { } a) b.Members.Add(a);
+                if (b.Members.Count > 0) _bands.Add(b);
+            }
+            _restoring = null;
+        }
 
         public HuntBand BandOf(Adventurer a)
         {

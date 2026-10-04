@@ -38,7 +38,7 @@ namespace GuildMaster.Welfare
     /// tools: interview, leave, bonus and dismissal. The rules live in <see cref="StressRules"/> and
     /// <see cref="CareRules"/>; this class is the glue to the game world.
     /// </summary>
-    public class GuildWelfare : IDisposable
+    public class GuildWelfare : IDisposable, ISaveable
     {
         readonly GameClock _clock;
         readonly GuildRoster _roster;
@@ -70,6 +70,29 @@ namespace GuildMaster.Welfare
             EventBus.Unsubscribe<AdventurerDiedEvent>(OnDied);
             EventBus.Unsubscribe<AdventurerLeftEvent>(OnLeft);
             _care.Clear();
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SaveData { public List<MemberCare.CareSave> care = new(); }
+
+        public string SaveKey => "welfare";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            var ids = new List<string>(_care.Keys);
+            ids.Sort(StringComparer.Ordinal);
+            foreach (var id in ids) s.care.Add(_care[id].Capture(id));
+            return UnityEngine.JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = UnityEngine.JsonUtility.FromJson<SaveData>(json);
+            _care.Clear();
+            foreach (var c in s.care) _care[c.member] = MemberCare.Restore(c);
         }
 
         static string DemandKey(string id) => "demand:" + id;

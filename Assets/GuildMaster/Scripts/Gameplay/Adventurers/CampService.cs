@@ -61,7 +61,7 @@ namespace GuildMaster.Adventurers
     /// mended. The rules and numbers are in <see cref="CampRules"/>; the members' side in
     /// <see cref="CampState"/>.
     /// </summary>
-    public class CampService : MonoBehaviour
+    public class CampService : MonoBehaviour, ISaveable, ISaveLink
     {
         const float LightInterval = 0.5f;
         /// <summary>A monster the light drew once leaves it be for a while after (seconds).</summary>
@@ -91,6 +91,107 @@ namespace GuildMaster.Adventurers
             _pool = pool;
             _roster = roster;
             pool.Register(Campfire.PoolKey, Campfire.Create, 1, 16);
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedCamp
+        {
+            public int id;
+            public Vector2 position;
+            public CampReason reason;
+            public float pitched;
+            public float sit_until;
+            public List<string> members = new();
+            /// <summary>Per member (same order): the state it goes back to when the fire is put out.</summary>
+            public List<string> resume_to = new();
+            public string watcher;
+            public bool alarmed;
+            public float quiet_since;
+            public bool talked;
+            public int raids;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public int monsters_drawn;
+            public List<SavedCamp> camps = new();
+            public List<string> night_choice = new();
+            public List<int> night_choice_night = new();
+            public List<bool> night_choice_camp = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "camps";
+
+        public string Capture()
+        {
+            var s = new SaveData { next_id = _nextId, monsters_drawn = MonstersDrawn };
+            foreach (var c in _camps)
+            {
+                var sc = new SavedCamp
+                {
+                    id = c.Id, position = c.Position, reason = c.Reason, pitched = c.PitchedAtHour, sit_until = c.SitUntilHour,
+                    watcher = c.Watcher != null ? c.Watcher.Data.id : null, alarmed = c.Alarmed, quiet_since = SaveTime.Rel(c.QuietSince),
+                    talked = c.Talked, raids = c.Raids,
+                };
+                foreach (var m in c.Members)
+                {
+                    sc.members.Add(m.Data.id);
+                    sc.resume_to.Add(c.ResumeTo.TryGetValue(m, out var next) ? Adventurer.NameOf(next) : null);
+                }
+                s.camps.Add(sc);
+            }
+            var choosers = new List<Adventurer>(_nightChoice.Keys);
+            choosers.Sort((a, b) => string.CompareOrdinal(a.Data.id, b.Data.id));
+            foreach (var a in choosers)
+            {
+                if (a == null || !a.IsAlive) continue;
+                s.night_choice.Add(a.Data.id);
+                s.night_choice_night.Add(_nightChoice[a].night);
+                s.night_choice_camp.Add(_nightChoice[a].camp);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            _nextId = _restoring.next_id;
+            MonstersDrawn = _restoring.monsters_drawn;
+        }
+
+        /// <summary>The fires are lit again with the same people round them (they sit back down when they resume).</summary>
+        public void Link(SaveContext ctx)
+        {
+            foreach (var sc in _restoring.camps)
+            {
+                var c = new Camp
+                {
+                    Id = sc.id, Position = sc.position, Reason = sc.reason, PitchedAtHour = sc.pitched, SitUntilHour = sc.sit_until,
+                    Watcher = ctx.Find<Adventurer>(sc.watcher), Alarmed = sc.alarmed, QuietSince = SaveTime.Abs(sc.quiet_since),
+                    Talked = sc.talked, Raids = sc.raids,
+                };
+                for (int i = 0; i < sc.members.Count; i++)
+                {
+                    if (ctx.Find<Adventurer>(sc.members[i]) is not { } m) continue;
+                    c.Members.Add(m);
+                    var next = i < sc.resume_to.Count ? m.StateNamed(sc.resume_to[i]) : null;
+                    c.ResumeTo[m] = next ?? m.ReturnState;
+                }
+                if (c.Members.Count == 0) continue;
+                c.Fire = _pool.Spawn<Campfire>(Campfire.PoolKey, c.Position);
+                c.Fire.Light();
+                _camps.Add(c);
+            }
+            for (int i = 0; i < _restoring.night_choice.Count && i < _restoring.night_choice_night.Count && i < _restoring.night_choice_camp.Count; i++)
+                if (ctx.Find<Adventurer>(_restoring.night_choice[i]) is { } a)
+                    _nightChoice[a] = (_restoring.night_choice_night[i], _restoring.night_choice_camp[i]);
+            _restoring = null;
         }
 
         public Camp CampOf(Adventurer a)

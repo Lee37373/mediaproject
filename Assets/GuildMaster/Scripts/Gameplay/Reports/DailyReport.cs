@@ -108,6 +108,9 @@ namespace GuildMaster.Reports
 
         public int Amount(GoldCategory c) => _amounts[(int)c];
 
+        /// <summary>Save (P5-4): the sums per category, in <see cref="GoldCategory"/> order.</summary>
+        internal int[] Amounts => _amounts;
+
         internal void Add(GoldCategory c, int amount) => _amounts[(int)c] += amount;
 
         /// <summary>Moves part of one category to another (a raised reward was first counted as a new escrow).</summary>

@@ -13,7 +13,7 @@ namespace GuildMaster.Recruitment
     /// for 12 hours (longer while talking) and then leave (see VisitorStates). The player can also
     /// pay for a recruitment notice to bring the next one sooner.
     /// </summary>
-    public class VisitorService : MonoBehaviour
+    public class VisitorService : MonoBehaviour, ISaveable, ISaveLink, ISaveResume
     {
         public const float StayHours = 12f;
         // P4-38 (was 12–20): hunting in parties needs a bigger roster, and deaths have to be
@@ -58,6 +58,53 @@ namespace GuildMaster.Recruitment
             if (Services.TryGet<Session.GameLog>(out var log))
                 log.Add($"모집 공고를 붙였습니다(-{NoticeCost}G). 곧 지원자가 찾아옵니다.", Session.LogCategory.Economy);
             return true;
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public float next_visit;
+            public float notice;
+            public List<Adventurer.AdventurerSave> visitors = new();
+        }
+
+        readonly List<(Adventurer visitor, Adventurer.AdventurerSave saved)> _restoring = new();
+
+        public string SaveKey => "visitors";
+
+        /// <summary>A talk in progress is not saved: the visitor is back on the plaza, ready to be spoken to.</summary>
+        public string Capture()
+        {
+            var s = new SaveData { next_visit = _nextVisitHour, notice = _noticeHour };
+            foreach (var v in _visitors) if (v != null && v.IsAlive) s.visitors.Add(v.CaptureSave());
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _nextVisitHour = s.next_visit;
+            _noticeHour = s.notice;
+            _restoring.Clear();
+            foreach (var saved in s.visitors)
+            {
+                var v = Adventurer.RestoreSave(saved, transform, ctx);
+                _visitors.Add(v);
+                _restoring.Add((v, saved));
+            }
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            foreach (var (v, saved) in _restoring) v.LinkSave(saved, ctx);
+        }
+
+        public void Resume(SaveContext ctx)
+        {
+            foreach (var (v, saved) in _restoring) v.ResumeSave(saved, ctx);
+            _restoring.Clear();
         }
 
         public void Init(GameClock clock, GuildRoster roster, WorldService world)

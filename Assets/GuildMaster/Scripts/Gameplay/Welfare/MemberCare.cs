@@ -78,6 +78,35 @@ namespace GuildMaster.Welfare
 
         public bool Resigning => ResignAt > 0f;
 
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        public class CareSave
+        {
+            public string member;
+            public CareDemand demand;
+            public float demand_raised, demand_cooldown, interview_ready, leave_ready, bonus_ready, leave_until;
+            public int grudges;
+            public float last_grudge, breaking_hours;
+            public bool warned;
+            public float resign_at;
+            public QuitCause cause;
+        }
+
+        internal CareSave Capture(string member) => new()
+        {
+            member = member, demand = Demand, demand_raised = DemandRaisedAt, demand_cooldown = DemandCooldownUntil,
+            interview_ready = InterviewReadyAt, leave_ready = LeaveReadyAt, bonus_ready = BonusReadyAt, leave_until = LeaveUntil,
+            grudges = Grudges, last_grudge = LastGrudgeAt, breaking_hours = BreakingHours, warned = Warned, resign_at = ResignAt, cause = Cause,
+        };
+
+        internal static MemberCare Restore(CareSave s) => new()
+        {
+            Demand = s.demand, DemandRaisedAt = s.demand_raised, DemandCooldownUntil = s.demand_cooldown, InterviewReadyAt = s.interview_ready,
+            LeaveReadyAt = s.leave_ready, BonusReadyAt = s.bonus_ready, LeaveUntil = s.leave_until, Grudges = s.grudges,
+            LastGrudgeAt = s.last_grudge, BreakingHours = s.breaking_hours, Warned = s.warned, ResignAt = s.resign_at, Cause = s.cause,
+        };
+
         public bool OnLeave(float now) => LeaveUntil > 0f && now < LeaveUntil;
 
         public float LeaveHoursLeft(float now) => OnLeave(now) ? LeaveUntil - now : 0f;

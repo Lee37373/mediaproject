@@ -223,5 +223,106 @@ namespace GuildMaster.Quests
             _payouts.Clear();
             return (g, e);
         }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        public class QuestSave
+        {
+            public string id;
+            public QuestType type;
+            public string species;
+            public Vector2 point;
+            public float radius;
+            public int required;
+            public int progress;
+            public int reward_gold;
+            public int bonus_gold;
+            public int reward_exp;
+            public int max_party;
+            public QuestStatus status;
+            public float posted;
+            public float completed;
+            public DangerLevel danger;
+            public int target_nest = -1;
+            public bool town_funded;
+            public int disaster = -1;
+            public int worked;
+            public int max_hours;
+            public float escort_hours;
+            public bool escort_left;
+            public int pay_gold;
+            public int pay_exp;
+            public List<string> assignees = new();
+            public List<string> contribution_ids = new();
+            public List<int> contribution = new();
+            public List<string> payout_ids = new();
+            public List<int> payout_gold = new();
+            public List<int> payout_exp = new();
+        }
+
+        internal QuestSave CaptureSave(IReadOnlyList<Nest> nests)
+        {
+            var s = new QuestSave
+            {
+                id = Id, type = Type, species = Species != null ? Species.id : null, point = Point, radius = Radius, required = RequiredCount,
+                progress = Progress, reward_gold = RewardGold, bonus_gold = BonusGold, reward_exp = RewardExp, max_party = MaxParty,
+                status = Status, posted = PostedAtHour, completed = CompletedAtHour, danger = Danger,
+                target_nest = TargetNest != null ? IndexOf(nests, TargetNest) : -1, town_funded = TownFunded,
+                disaster = Disaster != null ? Disaster.Id : -1, worked = Worked, max_hours = MaxHours, escort_hours = EscortHours,
+                escort_left = EscortLeftTown, pay_gold = PayGold, pay_exp = PayExp,
+            };
+            foreach (var a in _assignees) s.assignees.Add(a.TakerId);
+            var ids = new List<string>(_contribution.Keys);
+            ids.Sort(System.StringComparer.Ordinal);
+            foreach (var id in ids) { s.contribution_ids.Add(id); s.contribution.Add(_contribution[id]); }
+            ids = new List<string>(_payouts.Keys);
+            ids.Sort(System.StringComparer.Ordinal);
+            foreach (var id in ids) { s.payout_ids.Add(id); s.payout_gold.Add(_payouts[id].gold); s.payout_exp.Add(_payouts[id].exp); }
+            return s;
+        }
+
+        static int IndexOf(IReadOnlyList<Nest> nests, Nest n)
+        {
+            for (int i = 0; i < nests.Count; i++) if (nests[i] == n) return i;
+            return -1;
+        }
+
+        /// <summary>A saved quest as it stood (its takers and disaster come in <see cref="LinkSave"/>).</summary>
+        internal Quest(QuestSave s, GameDatabase db, IReadOnlyList<Nest> nests)
+        {
+            Id = s.id;
+            Type = s.type;
+            Species = db.Monster(s.species);
+            Point = s.point;
+            Radius = s.radius;
+            RequiredCount = s.required;
+            Progress = s.progress;
+            RewardGold = s.reward_gold;
+            BonusGold = s.bonus_gold;
+            RewardExp = s.reward_exp;
+            MaxParty = s.max_party;
+            Status = s.status;
+            PostedAtHour = s.posted;
+            CompletedAtHour = s.completed;
+            Danger = s.danger;
+            TargetNest = s.target_nest >= 0 && s.target_nest < nests.Count ? nests[s.target_nest] : null;
+            TownFunded = s.town_funded;
+            Worked = s.worked;
+            MaxHours = s.max_hours;
+            EscortHours = s.escort_hours;
+            EscortLeftTown = s.escort_left;
+            PayGold = s.pay_gold;
+            PayExp = s.pay_exp;
+            for (int i = 0; i < s.contribution_ids.Count && i < s.contribution.Count; i++) _contribution[s.contribution_ids[i]] = s.contribution[i];
+            for (int i = 0; i < s.payout_ids.Count && i < s.payout_gold.Count && i < s.payout_exp.Count; i++)
+                _payouts[s.payout_ids[i]] = (s.payout_gold[i], s.payout_exp[i]);
+        }
+
+        internal void LinkSave(QuestSave s, Core.SaveContext ctx)
+        {
+            foreach (var id in s.assignees) if (ctx.Find<IQuestTaker>(id) is { } t) _assignees.Add(t);
+            if (s.disaster >= 0) Disaster = ctx.Find<Disasters.Disaster>(Disasters.Disaster.SaveKeyOf(s.disaster));
+        }
     }
 }

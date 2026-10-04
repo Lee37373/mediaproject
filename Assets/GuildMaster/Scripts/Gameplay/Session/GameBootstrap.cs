@@ -113,7 +113,9 @@ namespace GuildMaster.Session
             Services.Register(treasury);
             save.Register(treasury);
             Services.Register(new TradeService(treasury, db) { LootBuyRate = Balance.lootBuyRate, GoodsSellRate = Balance.goodsSellRate });
-            Services.Register(new GameLog(clock, db));
+            var gameLog = new GameLog(clock, db);
+            Services.Register(gameLog);
+            save.Register(gameLog);
 
             // --- Town ---
             var town = AddSystem<TownService>();
@@ -187,12 +189,14 @@ namespace GuildMaster.Session
             var board = AddSystem<QuestBoard>();
             board.Init(treasury, eco, clock);
             Services.Register(board);
+            save.Register(board);
             AddSystem<QuestAreaMarkers>().Init();
 
             // Natural disasters (P4-72): set off by monsters' skills, dealt with through town quests.
             var disasters = AddSystem<Disasters.DisasterService>();
             disasters.Init(clock, world, mapRenderer, board, treasury);
             Services.Register(disasters);
+            save.Register(disasters);
             AddSystem<Disasters.HazardOverlay>().Init(world, fog);
 
             // --- AI: LLM gateway (falls back to rules when no model is available) ---
@@ -215,15 +219,18 @@ namespace GuildMaster.Session
             // Notifications (F-1): the list behind the toasts and the HUD badge, fed by gameplay events.
             var notifications = new Notifications.NotificationCenter(() => clock.TotalHours, () => $"{clock.Day}일 {clock.Hour:00}:{clock.Minute:00}");
             Services.Register(notifications);
+            save.Register(notifications);
             Services.Register(new Notifications.NotificationSources(notifications, clock, board));
             // Bands that go out hunting without a quest (P4-37); PartyTactics formats them like a party.
             var bands = AddSystem<HuntBandService>();
             bands.Init(clock, Balance.rosterCapacity);
             Services.Register(bands);
+            save.Register(bands);
             // Standing parties (P4-50): formed in town, pooled pay split by the leader back home.
             var parties = AddSystem<GuildParties>();
             parties.Init(clock, new PartySettlement(llm));
             Services.Register(parties);
+            save.Register(parties);
             // Party roles, formation and focus fire on the leader's call (P4-27).
             var partyTactics = AddSystem<PartyTactics>();
             partyTactics.Init(pool);
@@ -237,10 +244,12 @@ namespace GuildMaster.Session
             banter.Init(llm, roster, world);
             Services.Register(new RelationshipRecorder());
             Services.Register(banter);
+            save.Register(banter);
             // Camps out in the wild (P4-66): campfires, the watch, raiders drawn by the light, talk at the fire.
             var camps = AddSystem<CampService>();
             camps.Init(clock, world, pool, roster);
             Services.Register(camps);
+            save.Register(camps);
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
             // A loaded game brings its own members back (P5-4).
             for (int i = 0; i < (GameSettings.RestoresSection("roster") ? 0 : Balance.startingAdventurers); i++)
@@ -252,19 +261,30 @@ namespace GuildMaster.Session
             }
             // Daily accounts (F-3): income, spending and events per game day. Created after the starting members
             // joined, so they do not count as the first day's recruits.
-            Services.Register(new Reports.DailyLedger(treasury, clock.Day, clock.HourOfDay));
+            var ledger = new Reports.DailyLedger(treasury, clock.Day, clock.HourOfDay);
+            Services.Register(ledger);
+            save.Register(ledger);
             // Stress and its consequences (F-2): demands, walking away from quests, quitting; interview, leave, bonus.
-            Services.Register(new Welfare.GuildWelfare(clock, roster, treasury, board, notifications));
+            var welfare = new Welfare.GuildWelfare(clock, roster, treasury, board, notifications);
+            Services.Register(welfare);
+            save.Register(welfare);
             // Members' keep (P4-68): meals at midnight, lodging while resting in town, unpaid goes on the slate.
-            Services.Register(new LivingCosts(roster, treasury, world, Balance.dailyMealGold, Balance.lodgingGoldPerHour));
+            var living = new LivingCosts(roster, treasury, world, Balance.dailyMealGold, Balance.lodgingGoldPerHour);
+            Services.Register(living);
+            save.Register(living);
             // What death leaves behind (F-6): the wall of the fallen, relics to fetch, last stands and the wounds after them.
-            Services.Register(new Legacy.GuildLegacy(clock, roster, treasury, notifications));
+            var legacy = new Legacy.GuildLegacy(clock, roster, treasury, notifications);
+            Services.Register(legacy);
+            save.Register(legacy);
             // Quest proposals (F-8): the LLM (or the rules) offers a few quests to choose from instead of the posting form.
-            Services.Register(new Proposals.QuestProposalService(board, intel, roster, treasury, clock, notifications));
+            var proposals = new Proposals.QuestProposalService(board, intel, roster, treasury, clock, notifications);
+            Services.Register(proposals);
+            save.Register(proposals);
             // --- Recruitment: visitors who can be talked into joining ---
             var visitors = AddSystem<Recruitment.VisitorService>();
             visitors.Init(clock, roster, world);
             Services.Register(visitors);
+            save.Register(visitors);
             // Lets ambient town small talk pair a visitor with a member too (user request 2026-09-23);
             // wired here (after VisitorService is created) rather than in BanterService.Init above.
             banter.SetVisitorService(visitors);
@@ -274,12 +294,14 @@ namespace GuildMaster.Session
             var crafting = AddSystem<CraftingService>();
             crafting.Init(treasury, db, clock, town);
             Services.Register(crafting);
+            save.Register(crafting);
             // Travelling merchant buying the guild's stock (P4-3).
             var market = new MerchantMarket(treasury, db, eco.LootAbundance);
             Services.Register(market);
             var merchant = AddSystem<MerchantService>();
             merchant.Init(clock, world, market);
             Services.Register(merchant);
+            save.Register(merchant);
 
             // --- Camera ---
             var cam = SetupCamera(world);
@@ -289,7 +311,9 @@ namespace GuildMaster.Session
             var avatar = PlayerAvatar.Create(world.TownCenterWorld + new Vector2(0f, -2f), Balance.playerMoveSpeed, Balance.playerSightRadius);
             Services.Register(avatar);
             save.Register(avatar);
-            Services.Register(new GameOverService(clock));
+            var gameOver = new GameOverService(clock);
+            Services.Register(gameOver);
+            save.Register(gameOver);
 
             // --- Raids (P3-6) ---
             Monsters.RaidState.BuildingDamageMul = Balance.monsterBuildingDamageMul; // P5-1
@@ -300,6 +324,7 @@ namespace GuildMaster.Session
                 MaxHours = Balance.raidMaxHours,
             }, clock, eco, world);
             Services.Register(waves);
+            save.Register(waves);
             AddSystem<DefenseCoordinator>().Init(waves, roster, world, Balance.raidDefendRadius);
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());
 

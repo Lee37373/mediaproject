@@ -916,6 +916,9 @@ namespace GuildMaster.Monsters
             public float next_lure;
             public float next_regroup;
             public float last_fight;
+            /// <summary>Seconds (scaled) until the next look round and the next look for spoils.</summary>
+            public float sense_timer;
+            public float pickup_timer;
             public UnitSave unit;
             public Engagement.EngageSave engage;
             public string state;
@@ -948,7 +951,8 @@ namespace GuildMaster.Monsters
                 id = UnitId, species = Def.id, boss = IsBoss, ranged = IsRangedVariant, level = Level, exp = Exp, tier_exp = TierExp,
                 absorbed = Equipment.AbsorbedHp, spawn = _spawnPosition, default_state = DefaultStateOverride?.GetType().Name,
                 next_lure = SaveTime.Rel(NextLureTime), next_regroup = SaveTime.Rel(NextRegroupTime),
-                last_fight = SaveTime.Rel(_lastFightTime), unit = CaptureUnit(), engage = Engage.Capture(),
+                last_fight = SaveTime.Rel(_lastFightTime), sense_timer = Round(_senseTimer), pickup_timer = Round(_pickupTimer),
+                unit = CaptureUnit(), engage = Engage.Capture(),
             };
             var worn = new System.Collections.Generic.List<ItemDefinition>(Equipment.Worn);
             worn.Sort((a, b) => a.equipSlot.CompareTo(b.equipSlot)); // the same order every time
@@ -985,7 +989,8 @@ namespace GuildMaster.Monsters
             m.NextLureTime = SaveTime.Abs(s.next_lure);
             m.NextRegroupTime = SaveTime.Abs(s.next_regroup);
             m._lastFightTime = SaveTime.Abs(s.last_fight);
-            m._senseTimer = 0f;
+            m._senseTimer = s.sense_timer;
+            m._pickupTimer = s.pickup_timer;
             m.Fsm.ChangeState(m.WanderState);
             m.RestoreUnit(s.unit);
             ctx.Register(m.UnitId, m);

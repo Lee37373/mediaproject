@@ -32,7 +32,10 @@ namespace GuildMaster.Adventurers
     {
         static int s_next;
 
-        public readonly int Id = ++s_next;
+        public int Id { get; internal set; } = ++s_next;
+
+        /// <summary>The next id (saved, P5-4).</summary>
+        internal static int NextId { get => s_next; set => s_next = value; }
         public readonly List<Adventurer> Members = new();
         public Adventurer Leader => Members.Count > 0 ? Members[0] : null;
         public string Name => Leader != null ? $"{Leader.Data.name}의 파티" : "파티";
@@ -61,7 +64,7 @@ namespace GuildMaster.Adventurers
     /// (contribution from combat events, the gold pool, who is back) and starting the split once
     /// everyone who went out is back at the guild.
     /// </summary>
-    public class GuildParties : MonoBehaviour
+    public class GuildParties : MonoBehaviour, ISaveable, ISaveLink
     {
         /// <summary>Game hours a member back waits by the guild for the rest; after that it goes about town, still owed its share.</summary>
         public const float WaitForRestHours = 2f;
@@ -79,6 +82,113 @@ namespace GuildMaster.Adventurers
         PartySettlement _settlement;
 
         public IReadOnlyList<Party> Parties => _parties;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedRecord
+        {
+            public string member;
+            public float damage;
+            public float taken;
+            public float healing;
+            public int kills;
+            public int deposited;
+        }
+
+        [System.Serializable]
+        class SavedParty
+        {
+            public int id;
+            public List<string> members = new();
+            public bool on_outing;
+            public List<SavedRecord> out_records = new();
+            public int pool;
+            public List<string> arrived = new();
+            public List<float> arrived_at = new();
+            public float first_arrival;
+            public float settled_at;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public List<SavedParty> parties = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "parties";
+
+        /// <summary>A split under way is not saved: it starts again once loaded (the leader asks anew).</summary>
+        public string Capture()
+        {
+            var s = new SaveData { next_id = Party.NextId };
+            foreach (var p in _parties)
+            {
+                var sp = new SavedParty
+                {
+                    id = p.Id, on_outing = p.OnOuting, pool = p.Pool, first_arrival = p.FirstArrivalHour, settled_at = p.SettledAtHour,
+                };
+                foreach (var m in p.Members) sp.members.Add(m.Data.id);
+                foreach (var kv in p.Out)
+                {
+                    if (kv.Key == null) continue;
+                    sp.out_records.Add(new SavedRecord
+                    {
+                        member = kv.Key.Data.id, damage = kv.Value.Damage, taken = kv.Value.Taken, healing = kv.Value.Healing,
+                        kills = kv.Value.Kills, deposited = kv.Value.Deposited,
+                    });
+                }
+                sp.out_records.Sort((a, b) => string.CompareOrdinal(a.member, b.member));
+                var arrived = new List<Adventurer>(p.Arrived);
+                arrived.Sort((a, b) => string.CompareOrdinal(a.Data.id, b.Data.id));
+                foreach (var a in arrived)
+                {
+                    sp.arrived.Add(a.Data.id);
+                    sp.arrived_at.Add(p.ArrivedAt.TryGetValue(a, out var at) ? at : 0f);
+                }
+                s.parties.Add(sp);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+        }
+
+        /// <summary>Parties are their members: built once the members are back.</summary>
+        public void Link(SaveContext ctx)
+        {
+            foreach (var sp in _restoring.parties)
+            {
+                var p = new Party
+                {
+                    Id = sp.id, OnOuting = sp.on_outing, Pool = sp.pool, FirstArrivalHour = sp.first_arrival, SettledAtHour = sp.settled_at,
+                };
+                foreach (var id in sp.members)
+                {
+                    if (ctx.Find<Adventurer>(id) is not { } a) continue;
+                    p.Members.Add(a);
+                    _of[a] = p;
+                }
+                foreach (var r in sp.out_records)
+                    if (ctx.Find<Adventurer>(r.member) is { } a)
+                        p.Out[a] = new OutingRecord { Damage = r.damage, Taken = r.taken, Healing = r.healing, Kills = r.kills, Deposited = r.deposited };
+                for (int i = 0; i < sp.arrived.Count && i < sp.arrived_at.Count; i++)
+                {
+                    if (ctx.Find<Adventurer>(sp.arrived[i]) is not { } a) continue;
+                    p.Arrived.Add(a);
+                    p.ArrivedAt[a] = sp.arrived_at[i];
+                }
+                _parties.Add(p);
+            }
+            // Building them counted ids up again: the saved counter goes on from where it was.
+            Party.NextId = _restoring.next_id;
+            _restoring = null;
+        }
 
         public void Init(GameClock clock, PartySettlement settlement)
         {

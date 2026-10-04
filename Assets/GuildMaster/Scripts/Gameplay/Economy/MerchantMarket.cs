@@ -58,6 +58,9 @@ namespace GuildMaster.Economy
 
         public float Sold(string itemId) => itemId != null && _sold.TryGetValue(itemId, out var s) ? s : 0f;
 
+        /// <summary>Save (P5-4): what the merchants have bought lately, item by item.</summary>
+        internal Dictionary<string, float> SoldTable => _sold;
+
         /// <summary>Scarcity part of demand: 1 for goods, <see cref="RareDemand"/>..<see cref="CommonDemand"/> for loot.</summary>
         public float Scarcity(ItemDefinition item)
         {

@@ -17,7 +17,7 @@ namespace GuildMaster.Adventurers
     /// the town itself can win someone over, not just the guild master's formal dialogue. See
     /// <see cref="ApplyVisitorAffinity"/>.
     /// </summary>
-    public class BanterService : MonoBehaviour
+    public class BanterService : MonoBehaviour, ISaveable
     {
         // Rebalanced (user report 2026-09-23: "너무 대화나 상호작용이 적은 느낌"), then rebalanced
         // again the same day ("애들이 마을 밖에 탐험 안나감 + 대화도 잘 안함"). The local LLM backend
@@ -48,6 +48,28 @@ namespace GuildMaster.Adventurers
         public int Attempts { get; private set; }
         public int LlmBanters { get; private set; }
         public int FixedBanters { get; private set; }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData { public int hours_since_try, attempts, llm, fixed_lines; }
+
+        public string SaveKey => "banter";
+
+        /// <summary>A talk under way (lines not yet said) is not saved.</summary>
+        public string Capture() => JsonUtility.ToJson(new SaveData
+        {
+            hours_since_try = _hoursSinceTry, attempts = Attempts, llm = LlmBanters, fixed_lines = FixedBanters,
+        });
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _hoursSinceTry = s.hours_since_try;
+            Attempts = s.attempts;
+            LlmBanters = s.llm;
+            FixedBanters = s.fixed_lines;
+        }
 
         public void Init(LlmGateway gateway, GuildRoster roster, WorldService world)
         {

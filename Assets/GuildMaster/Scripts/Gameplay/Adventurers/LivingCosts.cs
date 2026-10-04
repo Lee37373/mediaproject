@@ -29,7 +29,7 @@ namespace GuildMaster.Adventurers
     /// wherever a member is; lodging every game hour a member rests in town (<see cref="RestState"/>);
     /// a camp in the wild costs nothing. The rules are <see cref="LivingCostRules"/>.
     /// </summary>
-    public class LivingCosts : IDisposable
+    public class LivingCosts : IDisposable, ISaveable
     {
         readonly GuildRoster _roster;
         readonly GuildTreasury _treasury;
@@ -43,6 +43,32 @@ namespace GuildMaster.Adventurers
 
         /// <summary>All gold received since the game began (balance runs).</summary>
         public int TotalReceived { get; private set; }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SaveData
+        {
+            public int meals, lodging, repaid, new_debt, total;
+        }
+
+        public string SaveKey => "living";
+
+        /// <summary>The day's tally so far (each member's debt is in its own data).</summary>
+        public string Capture() => UnityEngine.JsonUtility.ToJson(new SaveData
+        {
+            meals = _meals, lodging = _lodging, repaid = _repaid, new_debt = _newDebt, total = TotalReceived,
+        });
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = UnityEngine.JsonUtility.FromJson<SaveData>(json);
+            _meals = s.meals;
+            _lodging = s.lodging;
+            _repaid = s.repaid;
+            _newDebt = s.new_debt;
+            TotalReceived = s.total;
+        }
 
         public LivingCosts(GuildRoster roster, GuildTreasury treasury, WorldService world, int mealGold, int lodgingGoldPerHour)
         {

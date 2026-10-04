@@ -23,6 +23,7 @@ namespace GuildMaster.Quests
             EventBus.Subscribe<QuestPostedEvent>(OnPosted);
             EventBus.Subscribe<QuestClosedEvent>(OnClosed);
             EventBus.Subscribe<QuestCompletedEvent>(OnCompleted);
+            EventBus.Subscribe<Save.GameLoadedEvent>(OnLoaded);
         }
 
         void OnDestroy()
@@ -30,11 +31,21 @@ namespace GuildMaster.Quests
             EventBus.Unsubscribe<QuestPostedEvent>(OnPosted);
             EventBus.Unsubscribe<QuestClosedEvent>(OnClosed);
             EventBus.Unsubscribe<QuestCompletedEvent>(OnCompleted);
+            EventBus.Unsubscribe<Save.GameLoadedEvent>(OnLoaded);
         }
 
-        void OnPosted(QuestPostedEvent e)
+        /// <summary>A loaded game posts nothing: mark the hunts still being worked (P5-4).</summary>
+        void OnLoaded(Save.GameLoadedEvent e)
         {
-            var q = e.Quest;
+            if (!Services.TryGet<QuestBoard>(out var board)) return;
+            foreach (var q in board.Quests)
+                if (q.IsActive && q.Status != QuestStatus.Completed) Add(q);
+        }
+
+        void OnPosted(QuestPostedEvent e) => Add(e.Quest);
+
+        void Add(Quest q)
+        {
             if (q.Type != QuestType.Hunt || _markers.ContainsKey(q)) return;
             var go = new GameObject($"HuntArea {q.Id}");
             go.transform.SetParent(transform, false);
