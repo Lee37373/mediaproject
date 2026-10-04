@@ -54,8 +54,20 @@ namespace GuildMaster.Adventurers
         {
             var grid = Services.Get<WorldService>().Grid;
             var cell = GridMap.WorldToCell(q.Point);
-            return !grid.IsWalkable(cell) && grid.TryFindNearestWalkable(cell, 6, out var near) ? GridMap.CellToWorld(near) : q.Point;
+            if (Standable(grid, cell)) return q.Point;
+            // Also off snow and cracks (P4-72): they are walls one only crosses with no way round.
+            for (int r = 1; r <= 6; r++)
+            for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++)
+            {
+                if (Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dy)) != r) continue;
+                var c = new Vector2Int(cell.x + dx, cell.y + dy);
+                if (Standable(grid, c)) return GridMap.CellToWorld(c);
+            }
+            return q.Point;
         }
+
+        static bool Standable(GridMap grid, Vector2Int c) => grid.IsWalkable(c) && !Hazards.Blocks(grid.HazardAt(c));
 
         /// <summary>Seconds between the checks for making camp (P4-66).</summary>
         public const float CampCheckInterval = 0.5f;
@@ -460,7 +472,7 @@ namespace GuildMaster.Adventurers
             for (int dx = -1; dx <= 1; dx++)
             {
                 var c = new Vector2Int(cell.x + dx, cell.y + dy);
-                if (!grid.IsWalkable(c) || Hazards.Hurts(grid.HazardAt(c))) continue;
+                if (!grid.IsWalkable(c) || Hazards.Hurts(grid.HazardAt(c)) || Hazards.Blocks(grid.HazardAt(c))) continue;
                 float dist = (GridMap.CellToWorld(c) - a.Position).sqrMagnitude;
                 if (dist >= best) continue;
                 best = dist;

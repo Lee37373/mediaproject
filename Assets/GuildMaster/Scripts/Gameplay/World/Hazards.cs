@@ -10,11 +10,11 @@ namespace GuildMaster.World
         Burnt,
         /// <summary>Swamp mist gone poisonous: hurts and shortens sight.</summary>
         Poison,
-        /// <summary>An avalanche's snow: blocks the cell.</summary>
+        /// <summary>An avalanche's snow: walls the cell in (see <see cref="Hazards.Blocks"/>).</summary>
         Snow,
         /// <summary>Inside a sandstorm: hard to see and slow going.</summary>
         Sandstorm,
-        /// <summary>An earthquake's crack: blocks the cell.</summary>
+        /// <summary>An earthquake's crack: walls the cell in (see <see cref="Hazards.Blocks"/>).</summary>
         Fissure,
     }
 
@@ -25,8 +25,15 @@ namespace GuildMaster.World
     /// </summary>
     public static class Hazards
     {
-        /// <summary>Nobody walks through it (snow piled up, the ground split open).</summary>
+        /// <summary>
+        /// Walls the way (snow piled up, the ground split open): walkers go round it — it costs
+        /// <see cref="WallCost"/> times a step — and cross it only when there is no other way out
+        /// (P4-73: as true walls, a crack against a rock face shut members in for sixteen hours).
+        /// </summary>
         public static bool Blocks(HazardKind k) => k is HazardKind.Snow or HazardKind.Fissure;
+
+        /// <summary>Path cost of a walled cell: any detour of up to this many cells is taken instead.</summary>
+        public const float WallCost = 25f;
 
         /// <summary>Path cost factor: walkers go round fire and poison when they can.</summary>
         public static float CostFactor(HazardKind k) => k switch
@@ -34,6 +41,7 @@ namespace GuildMaster.World
             HazardKind.Fire => 4f,
             HazardKind.Poison => 2f,
             HazardKind.Sandstorm => 1.8f,
+            HazardKind.Snow or HazardKind.Fissure => WallCost,
             _ => 1f,
         };
 

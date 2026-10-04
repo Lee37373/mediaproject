@@ -1251,7 +1251,7 @@ namespace GuildMaster.Tests
                     foreach (var c in d.Cells)
                     {
                         Assert.That(grid.HazardAt(c), Is.EqualTo(DisasterRules.HazardOf(kind)));
-                        if (World.Hazards.Blocks(d.Hazard)) Assert.That(grid.IsWalkable(c), Is.False, $"{kind} blocks the way");
+                        if (World.Hazards.Blocks(d.Hazard)) Assert.That(grid.Cost(c), Is.GreaterThanOrEqualTo(World.Hazards.WallCost), $"{kind} walls the way");
                     }
                     var cells = d.Cells.ToList();
 
@@ -1272,6 +1272,25 @@ namespace GuildMaster.Tests
                     Assert.That(cells.All(c => grid.IsWalkable(c)), Is.True,
                         $"{kind}: the way is open again");
                 }
+
+                // P4-73 (long run: a crack against a rock face shut two members in for sixteen hours):
+                // one walled in by cracks all round still climbs out, slowly.
+                var master = MasterOnOpenGround();
+                var centre = World.GridMap.WorldToCell(master.Position);
+                var ring = new System.Collections.Generic.List<Vector2Int>();
+                for (int dy = -2; dy <= 2; dy++)
+                for (int dx = -2; dx <= 2; dx++)
+                    if (Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dy)) == 2) ring.Add(centre + new Vector2Int(dx, dy));
+                foreach (var c in ring) grid.SetHazard(c, World.HazardKind.Fissure);
+                var walker = Roster.Members.First(a => a.IsAlive);
+                walker.Mover.Stop();
+                walker.transform.position = World.GridMap.CellToWorld(centre);
+                walker.ChangeState(walker.RestState); // in town business: only the walk is measured
+                var outside = World.GridMap.CellToWorld(centre + new Vector2Int(6, 0));
+                Assert.That(walker.Mover.SetDestination(outside, 0.5f), Is.True, "a way out exists, over the crack");
+                yield return WaitFor(() => Vector2.Distance(walker.Position, World.GridMap.CellToWorld(centre)) > 3f, 20f);
+                Assert.That(Vector2.Distance(walker.Position, World.GridMap.CellToWorld(centre)) > 3f, Is.True, "it got out of the ring");
+                foreach (var c in ring) grid.SetHazard(c, World.HazardKind.None);
             }
             finally { DisasterService.SpreadScale = 1f; }
         }

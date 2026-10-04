@@ -241,12 +241,27 @@ namespace GuildMaster.Disasters
             {
                 u.ReceiveDamage(Mathf.Round(u.Stats.MaxHp * DisasterRules.BuriedDamage), null, false);
                 if (!u.IsAlive) continue;
-                if (Grid.TryFindNearestWalkable(c, 4, out var free))
+                if (FreeCellNear(c, out var free))
                 {
                     u.Mover.Stop();
                     u.transform.position = GridMap.CellToWorld(free);
                 }
             }
+        }
+
+        /// <summary>The nearest walkable cell within 4 that is not walled in by snow or a crack.</summary>
+        bool FreeCellNear(Vector2Int from, out Vector2Int free)
+        {
+            for (int r = 1; r <= 4; r++)
+            for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++)
+            {
+                if (Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dy)) != r) continue;
+                var c = new Vector2Int(from.x + dx, from.y + dy);
+                if (Grid.IsWalkable(c) && !Hazards.Blocks(Grid.HazardAt(c))) { free = c; return true; }
+            }
+            free = from;
+            return false;
         }
 
         /// <summary>A den in the way is abandoned: its pack moves out or takes to the road (P4-72, the wild changes).</summary>

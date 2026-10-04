@@ -63,7 +63,8 @@ namespace GuildMaster.Tests
 
             int version = grid.Version;
             grid.SetHazard(c, HazardKind.Snow);
-            Assert.That(grid.IsWalkable(c), Is.False, "snow piled up blocks the way");
+            Assert.That(grid.Cost(c), Is.GreaterThanOrEqualTo(Hazards.WallCost), "snow piled up walls the way: walkers go round it");
+            Assert.That(grid.IsWalkable(c), Is.True, "but one shut in can still climb out (P4-73)");
             Assert.That(grid.Version, Is.GreaterThan(version), "and paths are checked again");
 
             Assert.That(Hazards.SightFactor(HazardKind.Sandstorm), Is.LessThan(Hazards.SightFactor(HazardKind.Poison)));

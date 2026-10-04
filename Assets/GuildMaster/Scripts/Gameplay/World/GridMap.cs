@@ -35,7 +35,7 @@ namespace GuildMaster.World
         {
             if (!Data.InBounds(x, y)) return false;
             int i = y * Width + x;
-            return !_blocked[i] && MapData.IsWalkable(Data.Tiles[i]) && !Hazards.Blocks(_hazard[i]);
+            return !_blocked[i] && MapData.IsWalkable(Data.Tiles[i]);
         }
 
         /// <summary>
@@ -94,7 +94,7 @@ namespace GuildMaster.World
         public HazardKind HazardAt(int x, int y) => Data.InBounds(x, y) ? _hazard[y * Width + x] : HazardKind.None;
         public HazardKind HazardAt(Vector2Int c) => HazardAt(c.x, c.y);
 
-        /// <summary>Lays a hazard on a cell (or clears it with <see cref="HazardKind.None"/>). Paths are re-checked when walkability changes.</summary>
+        /// <summary>Lays a hazard on a cell (or clears it with <see cref="HazardKind.None"/>). Walkers re-check their paths when a wall of snow or a crack comes or goes.</summary>
         public void SetHazard(Vector2Int c, HazardKind kind)
         {
             if (!Data.InBounds(c)) return;
