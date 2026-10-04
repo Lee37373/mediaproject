@@ -21,7 +21,7 @@ namespace GuildMaster.Town
         WorldService _world;
         GuildTreasury _treasury;
 
-        public IReadOnlyList<TownGate> Gates => _gates;
+        public ListView<TownGate> Gates => new(_gates);
         public float RepairGoldPerHp { get; private set; }
 
         public void Init(WorldService world, GuildTreasury treasury, float maxHp, float repairGoldPerHp)

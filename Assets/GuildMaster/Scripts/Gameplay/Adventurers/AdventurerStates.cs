@@ -347,6 +347,8 @@ namespace GuildMaster.Adventurers
             return m.Def == q.Species;
         }
 
+        System.Func<Unit, bool> _isAreaTarget; // made once (P5-2)
+
         /// <summary>A quest target inside the quest area (hunts), or any resident of the nest (clearing).</summary>
         bool IsAreaTarget(Unit u)
         {
@@ -360,7 +362,7 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
             if (TryDrive(a)) return;
-            if (a.HandleCombat(dt, IsAreaTarget)) return;
+            if (a.HandleCombat(dt, _isAreaTarget ??= IsAreaTarget)) return;
             // Loot left by the kills (P4-21) before searching on.
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
             if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;

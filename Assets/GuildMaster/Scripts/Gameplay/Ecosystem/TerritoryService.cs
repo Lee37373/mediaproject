@@ -37,6 +37,7 @@ namespace GuildMaster.Ecosystem
         readonly Dictionary<Nest, float> _cooldown = new();
         /// <summary>Intruders per pack: keyed by their nest, or by species for nest-less strays.</summary>
         readonly Dictionary<object, List<Monster>> _groups = new();
+        readonly List<Unit> _inside = new();
 
         public void Init(EcosystemManager eco) => _eco = eco;
 
@@ -90,9 +91,13 @@ namespace GuildMaster.Ecosystem
         {
             foreach (var list in _groups.Values) list.Clear();
             bool any = false;
-            foreach (var u in UnitRegistry.All)
+            float radius = nest.TerritoryRadius;
+            if (radius <= 0f) return;
+            // Only the units inside the territory (P5-2: every nest used to scan the whole map).
+            UnitRegistry.Collect(nest.WorldPosition, radius, _inside);
+            foreach (var u in _inside)
             {
-                if (u is not Monster m || !m.IsAlive || m.Home == nest || !nest.InTerritory(m.Position)) continue;
+                if (u is not Monster m || m.Home == nest) continue;
                 object pack = m.Home != null ? m.Home : m.Roaming != null ? m.Roaming : m.Def;
                 if (!_groups.TryGetValue(pack, out var list)) _groups[pack] = list = new List<Monster>();
                 list.Add(m);

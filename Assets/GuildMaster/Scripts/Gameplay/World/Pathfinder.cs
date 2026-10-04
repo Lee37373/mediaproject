@@ -84,6 +84,24 @@ namespace GuildMaster.World
             System.Func<int, int, bool> believedShut = null, float caution = 0f,
             System.Func<int, int, bool> unknown = null)
         {
+            using (s_marker.Auto())
+            {
+                LastFound = Search(start, goal, result, passesGates, believedShut, caution, unknown);
+                if (!LastFound) { FailedSearches++; FailedExpanded += LastExpanded; }
+                Searches++;
+                TotalExpanded += LastExpanded;
+                return LastFound;
+            }
+        }
+
+        static readonly Unity.Profiling.ProfilerMarker s_marker = new("Pathfinder.FindPath");
+        public bool LastFound { get; private set; }
+        public static long Searches, FailedSearches, TotalExpanded, FailedExpanded;
+
+        bool Search(Vector2Int start, Vector2Int goal, List<Vector2Int> result, bool passesGates,
+            System.Func<int, int, bool> believedShut, float caution, System.Func<int, int, bool> unknown)
+        {
+            LastExpanded = 0;
             _passesGates = passesGates;
             _believedShut = believedShut;
             _caution = caution;

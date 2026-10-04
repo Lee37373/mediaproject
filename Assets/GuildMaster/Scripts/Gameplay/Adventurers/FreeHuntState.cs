@@ -120,6 +120,9 @@ namespace GuildMaster.Adventurers
         /// <summary>What may be fought at all: our own prey, plus anything that has just hit us.</summary>
         bool Allowed(Unit u) => Huntable(u) || Owner.WasRecentlyAttackedBy(u);
 
+        /// <summary>The two filters above as delegates, made once (P5-2).</summary>
+        System.Func<Unit, bool> _huntable, _allowed;
+
         public override void Tick(float dt)
         {
             var a = Owner;
@@ -142,7 +145,7 @@ namespace GuildMaster.Adventurers
                 return;
             }
 
-            if (a.HandleCombat(dt, Huntable, Allowed)) return;
+            if (a.HandleCombat(dt, _huntable ??= Huntable, _allowed ??= Allowed)) return;
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
             // Night out on a hunt: the band may make camp, then head home in the morning (P4-66).
             if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;

@@ -227,7 +227,9 @@ namespace GuildMaster.Units
             if (_self.IsStunned || IsChanneling()) return EngageStatus.Attacking;
 
             // Out of sight (into a forest, behind cover): only where it was last seen is known (P4-70).
-            if (!TrackTarget(dt, dist)) return SearchTick(dt);
+            bool tracked;
+            using (s_trackMarker.Auto()) tracked = TrackTarget(dt, dist);
+            if (!tracked) using (s_searchMarker.Auto()) return SearchTick(dt);
 
             // Periodic re-evaluation (tier sets how often and what counts, see TargetSelector);
             // instinct-driven units only turn on whoever just hit them.
@@ -244,7 +246,8 @@ namespace GuildMaster.Units
             {
                 _retargetTimer = CombatTiers.RetargetInterval(tier);
                 if (CandidateFilter != null && Time.time >= _lockedUntil)
-                    better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
+                    using (s_retargetMarker.Auto())
+                        better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
             }
             if (better != null && better != Target)
             {
@@ -252,11 +255,18 @@ namespace GuildMaster.Units
                 dist = Combat.Distance(_self, Target);
             }
 
-            if (HoldOffTick(dt, dist)) return EngageStatus.Chasing;
-            if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
+            using (s_holdOffMarker.Auto())
+                if (HoldOffTick(dt, dist)) return EngageStatus.Chasing;
+            using (s_skillsMarker.Auto())
+                if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
 
-            return _self.Stats.IsRanged ? RangedTick(dt, dist) : MeleeTick(dt, dist);
+            if (_self.Stats.IsRanged) using (s_rangedMarker.Auto()) return RangedTick(dt, dist);
+            using (s_meleeMarker.Auto()) return MeleeTick(dt, dist);
         }
+
+        static readonly Unity.Profiling.ProfilerMarker s_trackMarker = new("Engage.Track"), s_searchMarker = new("Engage.Search"),
+            s_retargetMarker = new("Engage.Retarget"), s_holdOffMarker = new("Engage.HoldOff"), s_skillsMarker = new("Engage.Skills"),
+            s_rangedMarker = new("Engage.Ranged"), s_meleeMarker = new("Engage.Melee");
 
         // ---------------- Losing sight of the target (P4-70) ----------------
 

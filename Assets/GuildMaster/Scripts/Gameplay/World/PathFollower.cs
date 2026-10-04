@@ -69,13 +69,17 @@ namespace GuildMaster.World
         /// Walks to <paramref name="target"/>. <paramref name="caution"/> (P4-63) makes the route
         /// avoid cover (above 0) or seek it (below 0); the default 0 is the shortest path.
         /// </summary>
+        static readonly Unity.Profiling.ProfilerMarker s_setDestinationMarker = new("Mover.SetDestination");
+
         public bool SetDestination(Vector2 target, float stopDistance = 0.05f, float caution = 0f)
         {
             _destination = target;
             _stopDistance = Mathf.Max(0.05f, stopDistance);
             RouteCaution = caution;
             _steerFrame = -10;
-            if (!BuildPath())
+            bool built;
+            using (s_setDestinationMarker.Auto()) built = BuildPath();
+            if (!built)
             {
                 IsMoving = false;
                 PathFailed?.Invoke();

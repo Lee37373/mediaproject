@@ -348,16 +348,13 @@ namespace GuildMaster.Adventurers
             // and the caller's optional extra targets, limited to the optional zone.
             // Party members only take fights near their leader (P4-38); what hits them is fought anyway.
             var leash = PartyLeashCentre();
-            // Also one that is fighting a comrade: a slime never starts a fight, but once it hits
-            // back at one of us the rest pitch in instead of looting around it (user report 2026-09-22).
-            System.Func<Unit, bool> threat = u => u is Monster m && (allowed == null || allowed(m))
-                                                   && (WasRecentlyAttackedBy(m)
-                                                       || ((m.IsHostileTo(this) || m.CombatEngagement?.Target is Adventurer { IsGuildMember: true })
-                                                           && CanSee(m) && PartyTactics.InLeash(leash, m.Position))
-                                                       || HearsFightingAComrade(m) && PartyTactics.InLeash(leash, m.Position));
-            System.Func<Unit, bool> extra = extraTargets == null ? null
-                : u => extraTargets(u) && (allowed == null || allowed(u)) && CanSee(u) && PartyTactics.InLeash(leash, u.Position);
-            Engage.CandidateFilter = extra == null ? threat : u => threat(u) || extra(u);
+            // The filters read these (P5-2: they used to be fresh closures every frame).
+            _combatLeash = leash;
+            _combatAllowed = allowed;
+            _combatExtraTargets = extraTargets;
+            var threat = _threatFilter ??= IsThreatCandidate;
+            var extra = extraTargets == null ? null : _extraFilter ??= IsExtraCandidate;
+            Engage.CandidateFilter = extra == null ? threat : _anyFilter ??= IsAnyCandidate;
             Engage.SearchRadius = Mathf.Max(Stats.SightRadius, ComradeCryRadius);
 
             // Optional zone (town defense): drop targets outside it instead of chasing them.
@@ -385,6 +382,31 @@ namespace GuildMaster.Adventurers
             Engage.SetTarget(target);
             return Engage.Tick(dt) != EngageStatus.Lost && Fighting();
         }
+
+        // What HandleCombat's last call set for its target filters (party leash, zone, extra targets).
+        Vector2? _combatLeash;
+        System.Func<Unit, bool> _combatAllowed, _combatExtraTargets;
+        System.Func<Unit, bool> _threatFilter, _extraFilter, _anyFilter;
+
+        /// <summary>
+        /// A threat: a monster (inside the zone, if any) that hit us, or that is hostile or fighting one
+        /// of ours and in sight within the party leash. Also one heard fighting a comrade: a slime never
+        /// starts a fight, but once it hits back at one of us the rest pitch in instead of looting
+        /// around it (user report 2026-09-22).
+        /// </summary>
+        bool IsThreatCandidate(Unit u)
+            => u is Monster m && (_combatAllowed == null || _combatAllowed(m))
+               && (WasRecentlyAttackedBy(m)
+                   || ((m.IsHostileTo(this) || m.CombatEngagement?.Target is Adventurer { IsGuildMember: true })
+                       && CanSee(m) && PartyTactics.InLeash(_combatLeash, m.Position))
+                   || HearsFightingAComrade(m) && PartyTactics.InLeash(_combatLeash, m.Position));
+
+        /// <summary>One of the calling state's extra targets (inside the zone, in sight, within the leash).</summary>
+        bool IsExtraCandidate(Unit u)
+            => _combatExtraTargets != null && _combatExtraTargets(u) && (_combatAllowed == null || _combatAllowed(u))
+               && CanSee(u) && PartyTactics.InLeash(_combatLeash, u.Position);
+
+        bool IsAnyCandidate(Unit u) => IsThreatCandidate(u) || IsExtraCandidate(u);
 
         /// <summary>Where this member's party leash is tied (its leader), or null when it has none.</summary>
         internal Vector2? PartyLeashCentre()

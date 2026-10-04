@@ -48,7 +48,22 @@ namespace GuildMaster.AI
             next.InternalEnter();
         }
 
-        public void Tick(float dt) => Current?.InternalTick(dt);
+        public void Tick(float dt)
+        {
+            var state = Current;
+            if (state == null) return;
+            using (MarkerFor(state.GetType()).Auto()) state.InternalTick(dt);
+        }
+
+        /// <summary>One profiler marker per state type ("State.MonsterEngageState"), so the profiler shows what each state costs (P5-2).</summary>
+        static readonly System.Collections.Generic.Dictionary<System.Type, Unity.Profiling.ProfilerMarker> s_markers = new();
+
+        static Unity.Profiling.ProfilerMarker MarkerFor(System.Type type)
+        {
+            if (!s_markers.TryGetValue(type, out var marker))
+                s_markers[type] = marker = new Unity.Profiling.ProfilerMarker("State." + type.Name);
+            return marker;
+        }
 
         public bool IsIn<TState>() where TState : State<TOwner> => Current is TState;
     }

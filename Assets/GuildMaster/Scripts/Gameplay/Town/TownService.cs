@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using GuildMaster.Core;
 using GuildMaster.Data;
 using GuildMaster.World;
 using UnityEngine;
@@ -12,7 +13,7 @@ namespace GuildMaster.Town
         WorldService _world;
         GameDatabase _db;
 
-        public IReadOnlyList<Building> Buildings => _buildings;
+        public ListView<Building> Buildings => new(_buildings);
         public RectInt TownRect => _world.Map.TownRect;
         public Vector2 PlazaPosition => _world.TownCenterWorld;
 

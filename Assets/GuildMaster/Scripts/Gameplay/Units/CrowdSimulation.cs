@@ -6,115 +6,85 @@ using UnityEngine;
 namespace GuildMaster.Units
 {
     /// <summary>
-    /// Crowd layer on top of path following: a spatial hash of all units plus boids-style
-    /// separation so units never stack. Displacements are mass-weighted (big monsters shove
-    /// small ones) and never push a unit into unwalkable terrain. Also serves fast
-    /// neighbour queries for AI.
+    /// Crowd layer on top of path following: boids-style separation so units never stack.
+    /// Displacements are mass-weighted (big monsters shove small ones) and never push a unit into
+    /// unwalkable terrain. Neighbours come from the <see cref="UnitRegistry"/> bucket grid, which
+    /// this refreshes once a frame (P5-2: it used to keep a hash of its own).
     /// </summary>
     [DefaultExecutionOrder(100)]
     public class CrowdSimulation : MonoBehaviour
     {
-        const float CellSize = 2f;
         const float Strength = 5f;
         const float MaxStep = 0.12f;
+        /// <summary>
+        /// No two bodies touch from further apart than this (a slime king boss, the biggest body, has a 0.55 radius
+        /// and two of them touch from 1.1), which is what lets a unit look at only the 2×2 buckets nearest it.
+        /// </summary>
+        const float MaxContact = UnitRegistry.BucketSize * 0.5f;
 
-        readonly Dictionary<int, List<Unit>> _cells = new();
-        readonly Stack<List<Unit>> _free = new();
-        readonly List<Unit> _units = new();
         readonly List<Vector2> _push = new();
         WorldService _world;
-
-        static int Key(int cx, int cy) => (cx & 0xFFFF) | (cy << 16);
-
-        void Rebuild()
-        {
-            foreach (var list in _cells.Values) { list.Clear(); _free.Push(list); }
-            _cells.Clear();
-            _units.Clear();
-            foreach (var u in UnitRegistry.All)
-            {
-                if (!u.IsAlive) continue;
-                _units.Add(u);
-                var p = u.Position;
-                int key = Key(Mathf.FloorToInt(p.x / CellSize), Mathf.FloorToInt(p.y / CellSize));
-                if (!_cells.TryGetValue(key, out var list))
-                {
-                    list = _free.Count > 0 ? _free.Pop() : new List<Unit>(8);
-                    _cells[key] = list;
-                }
-                list.Add(u);
-            }
-        }
-
-        /// <summary>Units within radius of a point (uses the hash built this frame).</summary>
-        public void Query(Vector2 p, float radius, List<Unit> results)
-        {
-            results.Clear();
-            int minX = Mathf.FloorToInt((p.x - radius) / CellSize), maxX = Mathf.FloorToInt((p.x + radius) / CellSize);
-            int minY = Mathf.FloorToInt((p.y - radius) / CellSize), maxY = Mathf.FloorToInt((p.y + radius) / CellSize);
-            float r2 = radius * radius;
-            for (int cy = minY; cy <= maxY; cy++)
-            for (int cx = minX; cx <= maxX; cx++)
-            {
-                if (!_cells.TryGetValue(Key(cx, cy), out var list)) continue;
-                foreach (var u in list)
-                    if (u.IsAlive && (u.Position - p).sqrMagnitude <= r2) results.Add(u);
-            }
-        }
 
         void Update()
         {
             _world ??= Services.Get<WorldService>();
-            Rebuild();
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
 
+            UnitRegistry.RebuildIndex();
+            int n = UnitRegistry.SlotCount;
             _push.Clear();
-            for (int i = 0; i < _units.Count; i++)
+            for (int i = 0; i < n; i++)
             {
-                var u = _units[i];
-                var p = u.Position;
-                int cx = Mathf.FloorToInt(p.x / CellSize), cy = Mathf.FloorToInt(p.y / CellSize);
+                var u = UnitRegistry.SlotUnit(i);
+                if (!u.IsAlive) { _push.Add(Vector2.zero); continue; }
+                var p = UnitRegistry.SlotPosition(i);
+                float ur = u.Radius, um = u.Mass;
+                int bx = UnitRegistry.BucketOf(p.x), by = UnitRegistry.BucketOf(p.y);
+                // Only the 2×2 buckets nearest the unit can hold anyone touching it.
+                int x0 = p.x - bx * UnitRegistry.BucketSize < UnitRegistry.BucketSize * 0.5f ? bx - 1 : bx;
+                int y0 = p.y - by * UnitRegistry.BucketSize < UnitRegistry.BucketSize * 0.5f ? by - 1 : by;
                 Vector2 push = Vector2.zero;
-                for (int oy = -1; oy <= 1; oy++)
-                for (int ox = -1; ox <= 1; ox++)
+                for (int cy = y0; cy <= y0 + 1; cy++)
+                for (int cx = x0; cx <= x0 + 1; cx++)
+                for (int j = UnitRegistry.BucketHead(cx, cy); j >= 0; j = UnitRegistry.NextInBucket(j))
                 {
-                    if (!_cells.TryGetValue(Key(cx + ox, cy + oy), out var list)) continue;
-                    foreach (var o in list)
-                    {
-                        if (o == u) continue;
-                        float min = u.Radius + o.Radius;
-                        var d = p - o.Position;
-                        float sq = d.sqrMagnitude;
-                        if (sq >= min * min) continue;
-                        float dist = Mathf.Sqrt(sq);
-                        // Deterministic sideways split for perfectly overlapping units.
-                        var dir = dist > 1e-4f ? d / dist : new Vector2(Mathf.Sign(u.GetInstanceID() - o.GetInstanceID()), 0.3f).normalized;
-                        float overlap = (min - dist) / min;
-                        float massRatio = o.Mass / (u.Mass + o.Mass);
-                        push += dir * overlap * massRatio * 2f;
-                    }
+                    if (j == i) continue;
+                    var d = p - UnitRegistry.SlotPosition(j);
+                    float sq = d.sqrMagnitude;
+                    if (sq >= MaxContact * MaxContact) continue;
+                    var o = UnitRegistry.SlotUnit(j);
+                    float min = ur + o.Radius;
+                    if (sq >= min * min || !o.IsAlive) continue;
+                    float dist = Mathf.Sqrt(sq);
+                    // Deterministic sideways split for perfectly overlapping units.
+                    var dir = dist > 1e-4f ? d / dist : new Vector2(Mathf.Sign(u.GetInstanceID() - o.GetInstanceID()), 0.3f).normalized;
+                    float overlap = (min - dist) / min;
+                    float massRatio = o.Mass / (um + o.Mass);
+                    push += dir * overlap * massRatio * 2f;
                 }
                 _push.Add(push);
             }
 
-            for (int i = 0; i < _units.Count; i++)
+            for (int i = 0; i < n; i++)
             {
                 var push = _push[i];
                 if (push.sqrMagnitude < 1e-6f) continue;
-                var u = _units[i];
+                var u = UnitRegistry.SlotUnit(i);
+                var pos = UnitRegistry.SlotPosition(i);
                 var step = Vector2.ClampMagnitude(push * Strength * dt, MaxStep);
-                var next = u.Position + step;
+                var next = pos + step;
                 if (!_world.Grid.IsWalkable(GridMap.WorldToCell(next), u.PassesGates))
                 {
                     // Slide along one axis if the diagonal is blocked.
-                    var nx = u.Position + new Vector2(step.x, 0f);
-                    var ny = u.Position + new Vector2(0f, step.y);
+                    var nx = pos + new Vector2(step.x, 0f);
+                    var ny = pos + new Vector2(0f, step.y);
                     if (_world.Grid.IsWalkable(GridMap.WorldToCell(nx), u.PassesGates)) next = nx;
                     else if (_world.Grid.IsWalkable(GridMap.WorldToCell(ny), u.PassesGates)) next = ny;
                     else continue;
                 }
-                u.transform.position = new Vector3(next.x, next.y, u.transform.position.z);
+                var t = u.transform;
+                t.position = new Vector3(next.x, next.y, t.position.z);
             }
         }
     }

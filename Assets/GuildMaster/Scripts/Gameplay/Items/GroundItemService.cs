@@ -28,7 +28,7 @@ namespace GuildMaster.Items
         GameClock _clock;
         GameDatabase _db;
 
-        public IReadOnlyList<GroundItem> Items => _items;
+        public ListView<GroundItem> Items => new(_items);
 
         public void Init(PoolService pool, GameClock clock, GameDatabase db)
         {

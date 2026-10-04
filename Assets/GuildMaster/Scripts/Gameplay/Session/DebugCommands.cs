@@ -1056,5 +1056,71 @@ namespace GuildMaster.Session
             if (n == 0) sb.AppendLine("  자율 사냥 중인 길드원이 없습니다");
             return sb.ToString();
         }
+
+        // ---------------- Performance (P5-2) ----------------
+
+        /// <summary>
+        /// Load test (P5-2): <paramref name="total"/> monsters, half goblins and half skulls (hostile
+        /// species with archer variants), spawned 8 cells apart about <paramref name="distance"/> cells
+        /// out of town so they fight each other; the camera watches. <paramref name="projectiles"/>
+        /// harmless arrows are kept in flight between live units. Read with <see cref="PerfReport"/>.
+        /// </summary>
+        public static string PerfStress(int total = 200, int projectiles = 100, float distance = 40f)
+        {
+            var eco = Services.Get<EcosystemManager>();
+            var a = eco.Species.FirstOrDefault(s => s.id == "goblin");
+            var b = eco.Species.FirstOrDefault(s => s.id == "skull");
+            if (a == null || b == null) return "species missing";
+            var world = Services.Get<World.WorldService>();
+            var pool = Services.Get<PoolService>();
+            var rng = GameRandom.Shared;
+            var center = world.TownCenterWorld;
+            Vector2 site = default;
+            bool found = false;
+            foreach (var d in new[] { Vector2.right, Vector2.left, Vector2.up, Vector2.down })
+            {
+                var cell = World.GridMap.WorldToCell(center + d * distance);
+                if (!world.Grid.TryFindNearestWalkable(cell, 8, out cell) || world.Grid.IsInTown(cell)) continue;
+                site = World.GridMap.CellToWorld(cell);
+                found = true;
+                break;
+            }
+            if (!found) return "no site";
+            int spawned = 0;
+            for (int i = 0; i < total; i++)
+            {
+                var origin = World.GridMap.WorldToCell(site + new Vector2(i % 2 == 0 ? -4f : 4f, 0f));
+                if (!world.Grid.TryRandomWalkableNear(origin, 4, rng, out var c)) continue;
+                var m = pool.Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(c) + rng.InsideUnitCircle() * 0.3f);
+                m.Setup(i % 2 == 0 ? a : b, null);
+                spawned++;
+            }
+            if (Services.TryGet<CameraControl.CameraController>(out var cam))
+            {
+                cam.Follow(null);
+                cam.JumpTo(site);
+            }
+            var probe = PerfProbe.Ensure();
+            probe.ProjectileFloor = projectiles;
+            probe.ResetStats();
+            return $"stress: {spawned} monsters at {site}, projectile floor {projectiles}";
+        }
+
+        /// <summary>Starts (or restarts) frame sampling without spawning anything.</summary>
+        public static string PerfStart(int projectiles = 0)
+        {
+            var probe = PerfProbe.Ensure();
+            probe.ProjectileFloor = projectiles;
+            probe.ResetStats();
+            return "sampling";
+        }
+
+        public static string PerfReport() => PerfProbe.Instance == null ? "not started" : PerfProbe.Instance.Report();
+
+        public static string PerfStop()
+        {
+            if (PerfProbe.Instance != null) Object.Destroy(PerfProbe.Instance.gameObject);
+            return "stopped";
+        }
     }
 }

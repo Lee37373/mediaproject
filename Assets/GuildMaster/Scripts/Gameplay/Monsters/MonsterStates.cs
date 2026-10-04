@@ -81,7 +81,9 @@ namespace GuildMaster.Monsters
             var m = Owner;
             var target = m.Engage.Target;
             // Too far from home and nothing keeps it here (see MonsterLeash for the whole rule).
-            if (MonsterLeash.ShouldReturn(m))
+            bool leash;
+            using (s_leashMarker.Auto()) leash = MonsterLeash.ShouldReturn(m);
+            if (leash)
             {
                 m.Engage.Clear();
                 Machine.ChangeState(m.ReturnState);
@@ -90,6 +92,7 @@ namespace GuildMaster.Monsters
 
             // Veterans losing a fight drag the pursuer through another species' territory (P4-18).
             if (m.Tier >= CombatTier.Veteran && m.HpRatio < 0.35f && Time.time >= m.NextLureTime)
+            using (s_lureMarker.Auto())
             {
                 m.NextLureTime = Time.time + 20f;
                 var pursuer = Ecosystem.TerritoryTactics.FindPursuer(m);
@@ -102,9 +105,13 @@ namespace GuildMaster.Monsters
             }
 
             // Skilled+ monsters losing a fight alone fall back to their pack and strike back together (P4-28).
-            if (m.TryStartRegroup()) return;
+            using (s_regroupMarker.Auto())
+                if (m.TryStartRegroup()) return;
 
-            if (m.Engage.Tick(dt) == EngageStatus.Lost)
+            EngageStatus status;
+            using (s_engageMarker.Auto()) status = m.Engage.Tick(dt);
+            if (status == EngageStatus.Lost)
+            using (s_lostMarker.Auto())
             {
                 // Chased someone back behind the walls (P4-39, user decision): the gate is what is
                 // in the way, so break it.
@@ -117,6 +124,10 @@ namespace GuildMaster.Monsters
         }
 
         public override void Exit() => Owner.Mover.Stop();
+
+        static readonly Unity.Profiling.ProfilerMarker s_leashMarker = new("MonsterEngage.Leash"),
+            s_regroupMarker = new("MonsterEngage.Regroup"), s_engageMarker = new("MonsterEngage.Engagement"),
+            s_lureMarker = new("MonsterEngage.Lure"), s_lostMarker = new("MonsterEngage.Lost");
     }
 
     /// <summary>Run directly away from a predator until out of sight.</summary>

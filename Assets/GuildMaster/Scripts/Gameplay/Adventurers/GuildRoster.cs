@@ -15,7 +15,7 @@ namespace GuildMaster.Adventurers
     {
         readonly List<Adventurer> _members = new();
 
-        public IReadOnlyList<Adventurer> Members => _members;
+        public ListView<Adventurer> Members => new(_members);
         public int Capacity { get; set; } = 6;
         public bool IsFull => _members.Count >= Capacity;
 

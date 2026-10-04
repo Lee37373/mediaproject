@@ -27,7 +27,7 @@ namespace GuildMaster.Units
     /// </summary>
     public class ProjectileService : MonoBehaviour
     {
-        const string PoolKey = "fx.projectile";
+        public const string PoolKey = "fx.projectile";
 
         PoolService _pool;
 

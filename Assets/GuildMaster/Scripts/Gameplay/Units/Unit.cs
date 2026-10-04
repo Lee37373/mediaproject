@@ -94,7 +94,26 @@ namespace GuildMaster.Units
         void OnDrawGizmosSelected() => UnitGizmos.Draw(this, true);
 
         /// <summary>Unit currently targeted by this unit (for UI, taunts, focus fire).</summary>
-        public Unit CurrentTarget { get; internal set; }
+        public Unit CurrentTarget
+        {
+            get => _currentTarget;
+            internal set
+            {
+                if (ReferenceEquals(_currentTarget, value)) return;
+                if (!ReferenceEquals(_currentTarget, null)) _currentTarget._targetedBy.Remove(this);
+                _currentTarget = value;
+                if (!ReferenceEquals(value, null)) value._targetedBy.Add(this);
+            }
+        }
+
+        Unit _currentTarget;
+        readonly System.Collections.Generic.List<Unit> _targetedBy = new();
+
+        /// <summary>
+        /// Units whose <see cref="CurrentTarget"/> is this one, alive or not (P5-2: counting who
+        /// piles onto a target used to scan every unit around it).
+        /// </summary>
+        public Core.ListView<Unit> TargetedBy => new(_targetedBy);
 
         // ---------------- Group roles (P4-27) ----------------
 

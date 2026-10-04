@@ -159,7 +159,7 @@ namespace GuildMaster.Monsters
             Engage.Clear();
             Engage.GiveUpDistance = def.leashRadius;
             Engage.SearchRadius = def.sightRadius;
-            Engage.CandidateFilter = IsTargetCandidate;
+            Engage.CandidateFilter = _isTargetCandidate ??= IsTargetCandidate;
             DefaultStateOverride = null;
             _spawnPosition = transform.position;
             _corpseTimer = 0f;
@@ -185,7 +185,7 @@ namespace GuildMaster.Monsters
         public Vector2 HomePosition => Home != null ? Home.WorldPosition : Roaming != null ? Roaming.Center : _spawnPosition;
 
         /// <summary>Its pack: the nest's members, or the roaming pack's (P4-58); null when alone.</summary>
-        public System.Collections.Generic.IReadOnlyList<Monster> PackMembers => Home != null ? Home.Members : Roaming?.Members;
+        internal System.Collections.Generic.List<Monster> PackMembers => Home != null ? Home.MemberList : Roaming?.Members;
         Vector2 _spawnPosition;
 
         /// <summary>Pack leader = first living member of the nest (packs flock around it).</summary>
@@ -346,7 +346,10 @@ namespace GuildMaster.Monsters
         }
 
         /// <summary>Best target by <see cref="TargetSelector"/> (tier-dependent), or null.</summary>
-        public Unit FindTarget() => TargetSelector.Pick(this, Stats.SightRadius, IsTargetCandidate, Engage);
+        public Unit FindTarget() => TargetSelector.Pick(this, Stats.SightRadius, _isTargetCandidate ??= IsTargetCandidate, Engage);
+
+        /// <summary>Created once: a method group passed as a delegate allocates a new one every call (P5-2).</summary>
+        System.Func<Unit, bool> _isTargetCandidate;
 
         /// <summary>
         /// What we want is on the other side of the town wall and no path leads there (P4-39): go
@@ -448,8 +451,8 @@ namespace GuildMaster.Monsters
         public Monster FindPredator()
         {
             if (!Def.fleesFromPredators) return null;
-            return UnitRegistry.FindNearest(Position, Stats.SightRadius,
-                u => u is Monster m && m.Def.IsPredatorOf(Def) && CanSee(m)) as Monster;
+            return UnitRegistry.FindNearest(Position, Stats.SightRadius, this,
+                static (u, self) => u is Monster m && m.Def.IsPredatorOf(self.Def) && self.CanSee(m)) as Monster;
         }
 
         // ---------------- Pack tactics (skilled+, P4-28) ----------------
@@ -575,11 +578,16 @@ namespace GuildMaster.Monsters
             if (_senseTimer <= 0f)
             {
                 _senseTimer = SenseInterval;
-                LookAtGates();
-                Sense();
+                using (s_senseMarker.Auto())
+                {
+                    LookAtGates();
+                    Sense();
+                }
             }
             Fsm.Tick(Time.deltaTime);
         }
+
+        static readonly Unity.Profiling.ProfilerMarker s_senseMarker = new("Monster.Sense");
 
         // ---------------- What it knows of the town gates (user report 2026-09-22) ----------------
 
@@ -693,12 +701,25 @@ namespace GuildMaster.Monsters
             if (_pickupTimer > 0f) return;
             _pickupTimer = PickupCheckInterval;
             if (!Services.TryGet<Items.GroundItemService>(out var ground) || ground.Items.Count == 0) return;
+            var item = FindSpoils(ground, goingHome);
+            if (item == null || !item.Reserve(this)) return;
+            PickupState.Begin(item);
+            Fsm.ChangeState(PickupState);
+        }
+
+        /// <summary>
+        /// Split from <see cref="TryStartPickup"/> so that its lambda's captures are allocated only
+        /// when there is something to look for (P5-2: captured parameters are allocated on entry,
+        /// before the early returns, which was garbage on every sense of every monster).
+        /// </summary>
+        Items.GroundItem FindSpoils(Items.GroundItemService ground, bool goingHome)
+        {
             var home = HomePosition;
             float range = Def.wanderRadius + 3f;
             var here = Position;
             bool afterFight = Time.time - _lastFightTime <= PostFightPickupSeconds;
             var leader = PackLeader;
-            var item = ground.FindNearest(Position, Stats.SightRadius, g =>
+            return ground.FindNearest(Position, Stats.SightRadius, g =>
             {
                 if (!g.IsFreeFor(this) || !WantsItem(g.Item) || !CanSee(g.Position)) return false;
                 // The spoils of its own fight are its to take; the leader's first pick is for drops at home.
@@ -707,9 +728,6 @@ namespace GuildMaster.Monsters
                 return (g.Position - home).sqrMagnitude <= range * range
                        && (leader == null || leader == this || g.Age >= LeaderFirstSeconds || !leader.WantsItem(g.Item));
             });
-            if (item == null || !item.Reserve(this)) return;
-            PickupState.Begin(item);
-            Fsm.ChangeState(PickupState);
         }
 
         protected override void OnDamaged(float amount, Unit source)

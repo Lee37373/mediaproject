@@ -40,7 +40,8 @@ namespace GuildMaster.Ecosystem
         public int EmptyHours { get; set; }
         public bool Discovered { get; private set; }
 
-        public IReadOnlyList<Monster> Members => _members;
+        public ListView<Monster> Members => new(_members);
+        internal List<Monster> MemberList => _members;
         public int Population => _members.Count;
         public bool IsEmpty => _members.Count == 0;
         public Vector2 WorldPosition => GridMap.CellToWorld(Cell);

@@ -64,7 +64,7 @@ namespace GuildMaster.Ecosystem
         /// <summary>Species that exist in the game (newcomers from beyond the edge are drawn from these).</summary>
         internal IReadOnlyList<MonsterDefinition> AllSpecies => _db.monsters;
 
-        public IReadOnlyList<Nest> Nests => _nests;
+        public ListView<Nest> Nests => new(_nests);
         public IEnumerable<MonsterDefinition> Species => _db.monsters;
         public int TotalMonsters => _population.Values.Sum();
 

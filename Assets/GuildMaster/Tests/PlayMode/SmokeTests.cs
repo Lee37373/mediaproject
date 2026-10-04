@@ -183,6 +183,31 @@ namespace GuildMaster.Tests
                 .ToList();
             Assert.That(stuck, Is.Empty, "at x8 nobody ends up somewhere it cannot walk: " + string.Join(", ", stuck));
             Clock.SetSpeed(1);
+
+            // P5-2: queries go through the bucket grid now; they must find exactly what a scan of
+            // every unit finds, wherever and however wide they look (a frame into the game, so the
+            // grid is a snapshot units have moved away from since).
+            yield return null;
+            var rng = new System.Random(5);
+            var map = Services.Get<World.WorldService>().Map;
+            for (int i = 0; i < 300; i++)
+            {
+                var p = new Vector2((float)rng.NextDouble() * map.Width, (float)rng.NextDouble() * map.Height);
+                float r = i % 10 == 0 ? 600f : 0.5f + (float)rng.NextDouble() * 20f;
+                var expected = UnitRegistry.All.Where(u => u.IsAlive && (u.Position - p).sqrMagnitude <= r * r).ToList();
+                var found = new System.Collections.Generic.List<Unit>();
+                UnitRegistry.Collect(p, r, found);
+                Assert.That(found, Is.EquivalentTo(expected), $"units within {r:0.0} of {p}");
+                Assert.That(UnitRegistry.CountInRadius(p, r, u => u is Monster), Is.EqualTo(expected.Count(u => u is Monster)), "count");
+                var nearest = expected.OrderBy(u => (u.Position - p).sqrMagnitude).FirstOrDefault();
+                Assert.That(UnitRegistry.FindNearest(p, r, _ => true), Is.SameAs(nearest), "nearest");
+            }
+            // Who targets whom is kept from both ends.
+            foreach (var u in UnitRegistry.All)
+            {
+                foreach (var a in u.TargetedBy) Assert.That(a.CurrentTarget, Is.SameAs(u), "TargetedBy lists only its attackers");
+                if (u.CurrentTarget != null) Assert.That(u.CurrentTarget.TargetedBy.Contains(u), Is.True, "a target lists its attacker");
+            }
         }
 
         [UnityTest]
