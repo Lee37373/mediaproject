@@ -2,7 +2,7 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-10-03
+- 마지막 갱신: 2026-10-04
 - 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-76**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
@@ -40,9 +40,9 @@
 | P4-70 | 사용자 보고: 교전 중 숲으로 숨은 상대를 계속 봄(마지막 본 곳 수색 후 포기) | 이재혁 | 완료 | Units/Combat | e33eb98 |
 | P4-71 | 사용자 보고: 파티원 혼자 후퇴(파티가 멈춰 회복·전체 후퇴), 마을에서 6시간 뒤 상설 파티 해산 | 이재혁 | 완료 | Adventurers/Party·PartyTactics·Adventurer·AdventurerStates·CampService | 7daa3f4 |
 | P4-72 | 사용자 요청: 자연재해 5종(산불·독안개·눈사태·모래폭풍·지진)과 재해 몬스터 5종, 마을 자동 게시 해결 의뢰 | 이재혁 | 완료 | Disasters(신규), Data/DefaultContent, Quests, World, Monsters | 4c9fd66 |
-| P4-73 | 사용자 요청: 전체 검증·리팩터링 3차(기획서 대조) | 이재혁 | 완료 | 전반 | 949d866, 50fb3e5, 51f9683 |
-| P4-74 | 사용자 결정: 무너진·손상된 기본 건물을 골드로 수리(성문과 같은 방식) | 이재혁 | 진행 중 | Town/TownService·Building, UI/Views/BuildingView | |
-| P4-75 | 사용자 결정: 재해 몬스터 희귀도 높음(배정 가중치 0.6→0.15) | 이재혁 | 진행 중 | Data/DefaultContent | |
+| P4-73 | 사용자 요청: 전체 검증·리팩터링 3차(기획서 대조) | 이재혁 | 완료 | 전반 | 949d866, 50fb3e5, 51f9683, cd696df, d3f91d7 |
+| P4-74 | 사용자 결정: 무너진·손상된 기본 건물을 골드로 수리(성문과 같은 방식) | 이재혁 | 완료 | Town/TownService·Building, UI/Views/BuildingView | 0dfb7aa |
+| P4-75 | 사용자 결정: 재해 몬스터 희귀도 높음(배정 가중치 0.6→0.15) | 이재혁 | 완료 | Data/DefaultContent | 0dfb7aa |
 | P4-26 | 전투 지능 등급 재정리(본능 단계 추가, 카이팅·엄폐·분산·재선택을 등급별로) | 이재혁 | 완료 | Units/CombatTier·Combat·TargetSelector, Data/MonsterDefinition·DefaultContent | 9f5ab3a |
 | P4-27 | 파티 역할과 대형(전열·후열, 이동 대형, 집중 공격 지정) | 이재혁 | 완료 | Adventurers/PartyTactics(신규), AdventurerStates, Units/TargetSelector·Combat·Unit, Visuals/TargetMarker(신규) | 1419d87 |
 | P4-28 | 몬스터 전술(숙련 이상: 포위, 후퇴 후 합류, 무리 목표 지정) | 이재혁 | 완료 | Monsters/PackTactics·MonsterRegroupState(신규)·Monster, Units/Combat | 757850a |
