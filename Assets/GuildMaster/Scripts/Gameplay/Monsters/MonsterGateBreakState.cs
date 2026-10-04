@@ -45,6 +45,30 @@ namespace GuildMaster.Monsters
             _rerouteTimer = RerouteSeconds;
         }
 
+        [System.Serializable]
+        class Saved
+        {
+            /// <summary>The gate's place in <see cref="GateService.Gates"/> (the map's gate order).</summary>
+            public int gate = -1;
+            public bool patient;
+        }
+
+        public override string SaveState()
+        {
+            int index = -1;
+            if (_gate != null && Core.Services.TryGet<GateService>(out var gates))
+                for (int i = 0; i < gates.Gates.Count; i++) if (gates.Gates[i] == _gate) index = i;
+            return JsonUtility.ToJson(new Saved { gate = index, patient = _patient });
+        }
+
+        public override void ResumeState(string json, Core.SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            _gate = s.gate >= 0 && Core.Services.TryGet<GateService>(out var gates) && s.gate < gates.Gates.Count ? gates.Gates[s.gate] : null;
+            _patient = s.patient;
+            Enter();
+        }
+
         public override void Tick(float dt)
         {
             var m = Owner;

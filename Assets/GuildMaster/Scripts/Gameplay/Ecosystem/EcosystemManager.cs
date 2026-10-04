@@ -24,11 +24,110 @@ namespace GuildMaster.Ecosystem
     /// A kind may vanish for a while (the P4-43 "no extinction" guarantee went with the refill):
     /// newcomers from beyond the edge are of any kind and bring it back.
     /// </summary>
-    public class EcosystemManager : MonoBehaviour
+    public class EcosystemManager : MonoBehaviour, ISaveable, ISaveLink, ISaveResume
     {
         readonly List<Nest> _nests = new();
         readonly Dictionary<MonsterDefinition, int> _population = new();
         GameDatabase _db;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedNest
+        {
+            public string species;
+            public float growth;
+            public int empty_hours;
+            public bool discovered;
+            public List<Vector2Int> known_gates = new();
+            /// <summary>In the pack's order: the first one alive leads it.</summary>
+            public List<Monster.MonsterSave> members = new();
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public List<SavedNest> nests = new();
+            /// <summary>Monsters with no nest (roaming packs, strays), by id.</summary>
+            public List<Monster.MonsterSave> loose = new();
+            public List<string> population_species = new();
+            public List<int> population = new();
+        }
+
+        readonly List<(Monster monster, Monster.MonsterSave saved)> _restoring = new();
+
+        public string SaveKey => "ecosystem";
+
+        /// <summary>Every living monster (nest members in pack order, then the nest-less), the nests and the head counts.</summary>
+        public string Capture()
+        {
+            var s = new SaveData { next_id = Monster.IdCounter };
+            foreach (var nest in _nests)
+            {
+                var n = new SavedNest
+                {
+                    species = nest.Species.id, growth = nest.GrowthAccumulator, empty_hours = nest.EmptyHours, discovered = nest.Discovered,
+                };
+                n.known_gates.AddRange(nest.KnownOpenGates);
+                n.known_gates.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
+                foreach (var m in nest.MemberList) if (m != null && m.IsAlive) n.members.Add(m.CaptureSave());
+                s.nests.Add(n);
+            }
+            var loose = new List<Monster>();
+            foreach (var u in UnitRegistry.All) if (u is Monster m && m.IsAlive && m.Home == null) loose.Add(m);
+            loose.Sort((a, b) => string.CompareOrdinal(a.UnitId, b.UnitId));
+            foreach (var m in loose) s.loose.Add(m.CaptureSave());
+            foreach (var species in _db.monsters)
+            {
+                s.population_species.Add(species.id);
+                s.population.Add(GetPopulation(species));
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _restoring.Clear();
+            if (s.nests.Count != _nests.Count) ctx.Warnings.Add($"ecosystem: saved {s.nests.Count} nests, map has {_nests.Count}");
+            for (int i = 0; i < _nests.Count && i < s.nests.Count; i++)
+            {
+                var nest = _nests[i];
+                var saved = s.nests[i];
+                nest.RestoreSpecies(_db.Monster(saved.species));
+                nest.GrowthAccumulator = saved.growth;
+                nest.EmptyHours = saved.empty_hours;
+                nest.RestoreDiscovered(saved.discovered);
+                nest.KnownOpenGates.Clear();
+                foreach (var g in saved.known_gates) nest.KnownOpenGates.Add(g);
+                foreach (var ms in saved.members) RestoreMonster(ms, nest, ctx);
+            }
+            foreach (var ms in s.loose) RestoreMonster(ms, null, ctx);
+            for (int i = 0; i < s.population_species.Count && i < s.population.Count; i++)
+                if (_db.Monster(s.population_species[i]) is { } species) _population[species] = s.population[i];
+            Monster.IdCounter = Mathf.Max(Monster.IdCounter, s.next_id);
+        }
+
+        void RestoreMonster(Monster.MonsterSave ms, Nest nest, SaveContext ctx)
+        {
+            var def = _db.Monster(ms.species);
+            if (def == null) { ctx.Warnings.Add("ecosystem: unknown species " + ms.species); return; }
+            var m = Monster.RestoreSave(ms, def, nest, ctx);
+            nest?.RestoreMember(m);
+            _restoring.Add((m, ms));
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            foreach (var (m, saved) in _restoring) m.LinkSave(saved, ctx);
+        }
+
+        public void Resume(SaveContext ctx)
+        {
+            foreach (var (m, saved) in _restoring) m.ResumeSave(saved, ctx);
+            _restoring.Clear();
+        }
 
         [SerializeField] float starvationChancePerHour = 0.03f;
 
@@ -89,6 +188,8 @@ namespace GuildMaster.Ecosystem
                 nest.GrowthFactor = GrowthFactorAt(nest.WorldPosition);
                 nest.BirthLevel = MonsterLevel.BirthLevel(Distance01(nest.WorldPosition));
                 _nests.Add(nest);
+                // A loaded game brings its own monsters back (P5-4).
+                if (Session.GameSettings.RestoresSection(SaveKey)) continue;
                 // A founded pack may have a boss (P4-57): the first one born.
                 bool boss = GameRandom.Shared.Chance(MonsterBoss.Chance);
                 for (int k = 0; k < assignment[i].initialPopulation; k++) Spawn(nest, null, boss && k == 0);

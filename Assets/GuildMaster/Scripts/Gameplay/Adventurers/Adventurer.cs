@@ -76,8 +76,6 @@ namespace GuildMaster.Adventurers
         internal Quests.Quest DroveForQuest;
         /// <summary>What this member dropped on the ground when they died (F-6: tracked as relics by GuildLegacy).</summary>
         public IReadOnlyList<Items.GroundItem> DeathDrops { get; private set; }
-        /// <summary>Until this time (Time.time) nothing can hurt the member: a few seconds after a last stand (F-6).</summary>
-        float _graceUntil;
 
         float _senseTimer;
         bool _dodging;
@@ -504,7 +502,7 @@ namespace GuildMaster.Adventurers
         protected override void OnDamaged(float amount, Unit source)
         {
             // Just after a last stand (F-6): a few seconds in which nothing can finish the member off, so they can get away.
-            if (Time.time < _graceUntil)
+            if (Time.time < GraceUntil)
             {
                 Hp = Mathf.Min(Stats.MaxHp, Hp + amount);
                 return;
@@ -516,7 +514,7 @@ namespace GuildMaster.Adventurers
             if (Hp <= 0f && IsGuildMember && !IsVisitor && Services.TryGet<Legacy.GuildLegacy>(out var legacy) && legacy.TryLastStand(this, source))
             {
                 Hp = 1f;
-                _graceUntil = Time.time + Legacy.LegacyRules.GraceSeconds;
+                GraceUntil = Time.time + Legacy.LegacyRules.GraceSeconds;
                 Engage.Clear();
                 Looting.Cancel();
                 ApplySpeedBuff(1.4f, Legacy.LegacyRules.GraceSeconds + 2f);
@@ -553,6 +551,97 @@ namespace GuildMaster.Adventurers
             // priest that heals the whole fight never landed one at all — Lv1 after three days.
             UnitRegistry.Collect(Position, ExpShareRadius, u => u != this && u is Adventurer m && m.IsGuildMember, s_expShare);
             foreach (var u in s_expShare) ((Adventurer)u).GainExp(exp);
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        /// <summary>A member or visitor as saved: its data, its standing as a unit, and what it was doing.</summary>
+        [System.Serializable]
+        public class AdventurerSave
+        {
+            public AdventurerData data;
+            public UnitSave unit;
+            public bool visitor;
+            public bool member;
+            public float visitor_leave_hour;
+            public string quest;
+            public string drove_for_quest;
+            public string last_thought;
+            public bool thought_from_llm;
+            public Engagement.EngageSave engage;
+            public string state;
+            public float state_time;
+            public string state_data;
+        }
+
+        State<Adventurer>[] _allStates;
+
+        State<Adventurer>[] AllStates => _allStates ??= new State<Adventurer>[]
+        {
+            IdleState, DecidingState, TravelState, HuntState, FreeHuntState, EscortState, GatherState, DefendState,
+            ReturnState, VisitState, RestState, CampState, DeadState, VisitorWanderState, VisitorLeaveState, LureState,
+            TownGuardState, RetrievalState,
+        };
+
+        /// <summary>One of this member's states by class name (saved states refer to each other this way), or null.</summary>
+        internal State<Adventurer> StateNamed(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            foreach (var s in AllStates) if (s.GetType().Name == name) return s;
+            return null;
+        }
+
+        internal static string NameOf(State<Adventurer> state) => state?.GetType().Name;
+
+        public AdventurerSave CaptureSave()
+        {
+            var current = Fsm.Current;
+            return new AdventurerSave
+            {
+                data = Data, unit = CaptureUnit(), visitor = IsVisitor, member = IsGuildMember,
+                visitor_leave_hour = VisitorLeaveAtHour, quest = CurrentQuest?.Id, drove_for_quest = DroveForQuest?.Id,
+                last_thought = LastThought, thought_from_llm = LastThoughtFromLlm, engage = Engage.Capture(),
+                state = NameOf(current), state_time = Mathf.Round((current?.Elapsed ?? 0f) * 100f) / 100f,
+                state_data = current?.SaveState(),
+            };
+        }
+
+        /// <summary>First pass: the member is created where it stood, as it was (no join event).</summary>
+        public static Adventurer RestoreSave(AdventurerSave s, Transform parent, SaveContext ctx)
+        {
+            var a = Create(s.data, new Vector2(s.unit.x, s.unit.y), parent);
+            a.IsGuildMember = s.member;
+            if (s.visitor)
+            {
+                a.Faction = Faction.Visitor;
+                a.VisitorLeaveAtHour = s.visitor_leave_hour;
+            }
+            a.RestoreUnit(s.unit);
+            a.LastThought = s.last_thought;
+            a.LastThoughtFromLlm = s.thought_from_llm;
+            ctx.Register(a.UnitId, a);
+            return a;
+        }
+
+        /// <summary>Second pass: what it points at (its quest, who hit it last).</summary>
+        public void LinkSave(AdventurerSave s, SaveContext ctx)
+        {
+            LinkUnit(s.unit, ctx);
+            CurrentQuest = ctx.Find<Quest>(s.quest);
+            DroveForQuest = ctx.Find<Quest>(s.drove_for_quest);
+        }
+
+        /// <summary>Third pass: back to what it was doing, and to whom it was fighting.</summary>
+        public void ResumeSave(AdventurerSave s, SaveContext ctx)
+        {
+            var state = StateNamed(s.state);
+            if (state == null || state == DeadState)
+            {
+                if (!string.IsNullOrEmpty(s.state)) ctx.Warnings.Add($"{Data.name}: unknown state {s.state}");
+                state = IsVisitor ? VisitorWanderState : IdleState;
+            }
+            Fsm.Resume(state, s.state_time, s.state_data, ctx);
+            Engage.Restore(s.engage, ctx);
         }
 
         public void GainExp(int amount)

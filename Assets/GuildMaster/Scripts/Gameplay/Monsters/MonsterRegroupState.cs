@@ -24,6 +24,29 @@ namespace GuildMaster.Monsters
 
         public override string Label => "재집결";
 
+        [System.Serializable]
+        class Saved
+        {
+            public string rally;
+            public Vector2 point;
+            public string enemy;
+        }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved
+        {
+            rally = RallyMate != null && RallyMate.IsAlive ? RallyMate.UnitId : null, point = Point,
+            enemy = Enemy != null && Enemy.IsAlive ? Enemy.UnitId : null,
+        });
+
+        public override void ResumeState(string json, Core.SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            RallyMate = ctx.Find<Monster>(s.rally);
+            Point = s.point;
+            Enemy = ctx.Find<Units.Unit>(s.enemy);
+            Enter();
+        }
+
         Vector2 Destination => RallyMate != null && RallyMate.IsAlive ? RallyMate.Position : Point;
 
         public override void Enter()

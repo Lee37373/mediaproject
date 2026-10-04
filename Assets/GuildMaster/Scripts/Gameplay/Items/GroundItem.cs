@@ -28,13 +28,16 @@ namespace GuildMaster.Items
         float _droppedAt;
         float _bobPhase;
 
+        /// <summary>The dot an item is drawn as (fog memories of items use it too).</summary>
+        public static Sprite DotSprite => SpriteFactory.Circle(12, Color.white, new Color(0.1f, 0.08f, 0.06f, 1f));
+
         void Awake()
         {
             // The dot lives on a child so its bobbing never moves the item itself.
             var body = new GameObject("Body");
             body.transform.SetParent(transform, false);
             _body = body.AddComponent<SpriteRenderer>();
-            _body.sprite = SpriteFactory.Circle(12, Color.white, new Color(0.1f, 0.08f, 0.06f, 1f));
+            _body.sprite = DotSprite;
             _fog = gameObject.AddComponent<FogHideable>();
         }
 
@@ -54,6 +57,13 @@ namespace GuildMaster.Items
             _body.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f) - 3;
             _fog.Refresh();
         }
+
+        /// <summary>Save (P5-4): the drop moment as seconds from now (it decides who may take it first).</summary>
+        internal float DroppedAtRelative => SaveTime.Rel(_droppedAt);
+
+        internal void RestoreDroppedAt(float relative) => _droppedAt = SaveTime.Abs(relative);
+
+        internal void RestoreReservation(Unit who) => ReservedBy = who;
 
         // ---------------- Fog memory (P4-23) ----------------
 

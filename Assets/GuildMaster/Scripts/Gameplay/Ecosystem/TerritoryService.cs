@@ -22,7 +22,7 @@ namespace GuildMaster.Ecosystem
     /// outmatched residents abandon the nest and resettle elsewhere, outmatched intruders turn back
     /// (raids give up). The guild is never routed by this rule.
     /// </summary>
-    public class TerritoryService : MonoBehaviour
+    public class TerritoryService : MonoBehaviour, ISaveable
     {
         public const float RoutRatio = 2.5f;
         const float CheckInterval = 0.5f;
@@ -40,6 +40,38 @@ namespace GuildMaster.Ecosystem
         readonly List<Unit> _inside = new();
 
         public void Init(EcosystemManager eco) => _eco = eco;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            /// <summary>Nests (map order) still cooling down after a rout, and the seconds left.</summary>
+            public List<int> nests = new();
+            public List<float> until = new();
+        }
+
+        public string SaveKey => "territory";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            for (int i = 0; i < _eco.Nests.Count; i++)
+            {
+                if (!_cooldown.TryGetValue(_eco.Nests[i], out var until) || until <= Time.time) continue;
+                s.nests.Add(i);
+                s.until.Add(SaveTime.Rel(until));
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _cooldown.Clear();
+            for (int i = 0; i < s.nests.Count && i < s.until.Count; i++)
+                if (s.nests[i] >= 0 && s.nests[i] < _eco.Nests.Count) _cooldown[_eco.Nests[s.nests[i]]] = SaveTime.Abs(s.until[i]);
+        }
 
         /// <summary>Fighting weight of a unit: current HP × attack.</summary>
         public static float Strength(Unit u) => u == null || !u.IsAlive ? 0f : u.Hp * Mathf.Max(1f, u.Stats.Attack);

@@ -124,6 +124,25 @@ namespace GuildMaster.Ecosystem
             // The map keeps the old den art until the guild sees the new owners (GuildIntel).
         }
 
+        /// <summary>Save (P5-4): the owners it has now (they may have changed since the map was dealt), quietly.</summary>
+        internal void RestoreSpecies(MonsterDefinition species)
+        {
+            if (species == null || species == Species) return;
+            Species = species;
+            Capacity = species.nestCapacity;
+            name = $"Nest {NestId} ({species.id})";
+        }
+
+        /// <summary>Save (P5-4): found before; shown on the map at once, no discovery event.</summary>
+        internal void RestoreDiscovered(bool discovered)
+        {
+            Discovered = discovered;
+            if (_renderer != null) _renderer.enabled = discovered;
+        }
+
+        /// <summary>Save (P5-4): a saved member back in its place in the pack's order (the first one alive leads).</summary>
+        internal void RestoreMember(Monster m) => _members.Add(m);
+
         EcosystemManager _eco;
 
         public void Init(EcosystemManager eco, string id, MonsterDefinition species, NestSite site)

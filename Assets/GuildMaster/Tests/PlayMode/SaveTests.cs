@@ -83,6 +83,12 @@ namespace GuildMaster.Tests
                 if (System.Array.IndexOf(except, section.key) >= 0) continue;
                 var other = b.Find(section.key);
                 Assert.That(other, Is.Not.Null, "section " + section.key);
+                if (other.json != section.json)
+                {
+                    // Both sides on disk for a diff (Temp/save-diff-*.json).
+                    File.WriteAllText(Path.Combine("Temp", $"save-diff-{section.key}-A.json"), section.json);
+                    File.WriteAllText(Path.Combine("Temp", $"save-diff-{section.key}-B.json"), other.json);
+                }
                 Assert.That(other.json, Is.EqualTo(section.json), $"section '{section.key}' came back the same");
             }
         }
@@ -112,6 +118,8 @@ namespace GuildMaster.Tests
             town.Get(Town.BuildingType.Blacksmith).Damage(40f);
             Services.Get<Town.GateService>().Gates[0].Damage(1e6f); // broken: the walls are open there
             clock.SetSpeed(0); // nothing moves between the save and the comparison
+            // Some checks run on real time while paused (fog, nests coming into view): let them settle.
+            yield return new WaitForSecondsRealtime(1f);
 
             var a = Saves.Capture();
             yield return BootFrom(a);
@@ -125,11 +133,9 @@ namespace GuildMaster.Tests
             Assert.That(tower, Is.Not.Null, "the tower is back");
             Assert.That(tower.GetComponent<Fog.VisionSource>().enabled, Is.True, "and watches");
 
-            // A few frames later (systems that set up in Start), still the same. The fog is left out
-            // until the units come back too (P5-4b/c): until then they see from where they booted.
-            yield return null;
-            yield return null;
-            AssertSameSections(a, Saves.Capture(), "fog");
+            // A second later (systems that set up in Start, the real-time checks), still the same.
+            yield return new WaitForSecondsRealtime(1f);
+            AssertSameSections(a, Saves.Capture());
         }
 
         [UnityTest]

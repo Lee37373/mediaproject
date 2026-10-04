@@ -22,8 +22,84 @@ namespace GuildMaster.Ecosystem
     /// inwards over the days, and only a nest close to the town sends its band against the town
     /// itself (the raid).
     /// </summary>
-    public class MigrationService : MonoBehaviour
+    public class MigrationService : MonoBehaviour, ISaveable, ISaveLink
     {
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedBand
+        {
+            public int id;
+            public int from = -1;
+            public int target = -1;
+            public List<string> members = new();
+            public List<int> refused = new();
+            public float started_at;
+            public bool resting;
+            public string species;
+            public bool arrival;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int count;
+            public List<SavedBand> bands = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "migration";
+
+        int NestIndex(Nest n) => n != null ? _eco.Nests.IndexOf(n) : -1;
+        Nest NestAt(int i) => i >= 0 && i < _eco.Nests.Count ? _eco.Nests[i] : null;
+
+        public string Capture()
+        {
+            var s = new SaveData { count = _count };
+            foreach (var b in _bands)
+            {
+                var sb = new SavedBand
+                {
+                    id = b.Id, from = NestIndex(b.From), target = NestIndex(b.Target), started_at = b.StartedAtHour, resting = b.Resting,
+                    species = b.Species != null ? b.Species.id : null, arrival = b.Arrival,
+                };
+                foreach (var m in b.Members) if (m != null && m.IsAlive) sb.members.Add(m.UnitId);
+                foreach (var n in b.Refused) sb.refused.Add(NestIndex(n));
+                sb.refused.Sort();
+                s.bands.Add(sb);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            _count = _restoring.count;
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            var db = Services.Get<GameDatabase>();
+            foreach (var sb in _restoring.bands)
+            {
+                var band = new Band
+                {
+                    Id = sb.id, From = NestAt(sb.from), Target = NestAt(sb.target), StartedAtHour = sb.started_at, Resting = sb.resting,
+                    Species = db.Monster(sb.species), Arrival = sb.arrival,
+                };
+                foreach (var i in sb.refused) if (NestAt(i) is { } n) band.Refused.Add(n);
+                foreach (var id in sb.members)
+                {
+                    if (ctx.Find<Monster>(id) is not { } m) continue;
+                    band.Members.Add(m);
+                    _of[m] = band;
+                }
+                _bands.Add(band);
+            }
+            _restoring = null;
+        }
+
         /// <summary>A target site must be at least this much nearer the town than the band's nest.</summary>
         public const float MinStep = 15f;
         /// <summary>How far (cells) a band looks for its next home.</summary>

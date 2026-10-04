@@ -100,10 +100,24 @@ namespace GuildMaster.Monsters
 
         public void Setup(MonsterDefinition def, Nest home, bool boss = false)
         {
+            // The random draws stay in this order (seeded worlds must come out the same).
+            bool ranged = !boss && def.rangedVariantChance > 0f && GameRandom.Shared.Chance(def.rangedVariantChance);
+            Prepare(def, home, boss, ranged, $"M_{++s_counter:0000}");
+            _pickupTimer = GameRandom.Shared.Range(0f, PickupCheckInterval);
+            foreach (var g in def.startingGear)
+                if (g.item != null && GameRandom.Shared.Chance(g.chance)) Equipment.Equip(g.item);
+            Finish(home);
+            _senseTimer = GameRandom.Shared.Range(0f, SenseInterval);
+            Fsm.ChangeState(WanderState);
+        }
+
+        /// <summary>Who it is and its base numbers, at its nest's birth level, wearing nothing (no random draws).</summary>
+        void Prepare(MonsterDefinition def, Nest home, bool boss, bool ranged, string id)
+        {
             Def = def;
             Home = home;
             Roaming = null;
-            UnitId =$"M_{++s_counter:0000}";
+            UnitId = id;
             IsBoss = boss;
             DisplayName = boss ? MonsterBoss.Name(def.displayName, def.bossName) : def.displayName;
             name = $"{def.displayName}[{UnitId}]";
@@ -112,7 +126,7 @@ namespace GuildMaster.Monsters
                 MaxHp = Combat.ScaledHp(def.maxHp), Attack = def.attack, Defense = def.defense, AttackRange = def.attackRange,
                 AttackCooldown = def.attackCooldown, MoveSpeed = def.moveSpeed, SightRadius = def.sightRadius,
             };
-            IsRangedVariant = !boss && def.rangedVariantChance > 0f && GameRandom.Shared.Chance(def.rangedVariantChance);
+            IsRangedVariant = ranged;
             if (IsRangedVariant)
             {
                 Stats.AttackRange = def.rangedVariantRange;
@@ -143,13 +157,14 @@ namespace GuildMaster.Monsters
             _crownAura = false;
             NextLureTime = 0f;
             NextRegroupTime = 0f;
-            _pickupTimer = GameRandom.Shared.Range(0f, PickupCheckInterval);
-            foreach (var g in def.startingGear)
-                if (g.item != null && GameRandom.Shared.Chance(g.chance)) Equipment.Equip(g.item);
+        }
+
+        /// <summary>Stats with its gear, looks, bars and fighting settings; full health, at home doing nothing.</summary>
+        void Finish(Nest home)
+        {
+            var def = Def;
             RefreshStats(fullHeal: true);
-            // Imported Casual Monsters art when available (archer variants and bosses have their own image).
-            var art = boss && !string.IsNullOrEmpty(def.bossArtKey) ? ArtLibrary.Monster(def.bossArtKey) : null;
-            if (art == null) art = ArtLibrary.Monster(IsRangedVariant && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
+            var art = ImportedArt(def, IsBoss, IsRangedVariant);
             Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
             // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
             var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
@@ -163,9 +178,18 @@ namespace GuildMaster.Monsters
             DefaultStateOverride = null;
             _spawnPosition = transform.position;
             _corpseTimer = 0f;
-            _senseTimer = GameRandom.Shared.Range(0f, SenseInterval);
-            Fsm.ChangeState(WanderState);
         }
+
+        /// <summary>Imported Casual Monsters art when available (archer variants and bosses have their own image), else null.</summary>
+        public static Sprite ImportedArt(MonsterDefinition def, bool boss, bool ranged)
+        {
+            var art = boss && !string.IsNullOrEmpty(def.bossArtKey) ? ArtLibrary.Monster(def.bossArtKey) : null;
+            return art != null ? art : ArtLibrary.Monster(ranged && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
+        }
+
+        /// <summary>How this kind is drawn (imported art, or the generated picture).</summary>
+        public static Sprite ArtFor(MonsterDefinition def, bool boss, bool ranged)
+            => ImportedArt(def, boss, ranged) is { } art ? art : PixelArt.Monster(def);
 
         /// <summary>The terrain region of its nest (or of where it appeared, when it has none).</summary>
         Region RegionOfHome(Nest home)
@@ -870,6 +894,125 @@ namespace GuildMaster.Monsters
             _gearIcon.transform.localScale = new Vector3(s, s, 1f);
             _gearIcon.transform.localPosition = shown.IsUnique ? new Vector3(0f, 0.95f * Scale, 0f) : new Vector3(0.28f * Scale, 0.55f * Scale, 0f);
             _gearIcon.sortingOrder = CharacterVisual.BaseSortingOrder + 900;
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        public class MonsterSave
+        {
+            public string id;
+            public string species;
+            public bool boss;
+            public bool ranged;
+            public int level;
+            public int exp;
+            public int tier_exp;
+            public System.Collections.Generic.List<string> worn = new();
+            public float absorbed;
+            public Vector2 spawn;
+            public string default_state;
+            public System.Collections.Generic.List<Vector2Int> known_gates = new();
+            public float next_lure;
+            public float next_regroup;
+            public float last_fight;
+            public UnitSave unit;
+            public Engagement.EngageSave engage;
+            public string state;
+            public float state_time;
+            public string state_data;
+        }
+
+        /// <summary>The next id handed out (saved, so a loaded world never reuses one).</summary>
+        public static int IdCounter { get => s_counter; set => s_counter = value; }
+
+        State<Monster>[] _allStates;
+
+        State<Monster>[] AllStates => _allStates ??= new State<Monster>[]
+        {
+            WanderState, EngageState, FleeState, LureState, ReturnState, RaidState, MigrateState, RoamState,
+            PickupState, RegroupState, GateBreakState,
+        };
+
+        internal State<Monster> StateNamed(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            foreach (var s in AllStates) if (s.GetType().Name == name) return s;
+            return null;
+        }
+
+        public MonsterSave CaptureSave()
+        {
+            var s = new MonsterSave
+            {
+                id = UnitId, species = Def.id, boss = IsBoss, ranged = IsRangedVariant, level = Level, exp = Exp, tier_exp = TierExp,
+                absorbed = Equipment.AbsorbedHp, spawn = _spawnPosition, default_state = DefaultStateOverride?.GetType().Name,
+                next_lure = SaveTime.Rel(NextLureTime), next_regroup = SaveTime.Rel(NextRegroupTime),
+                last_fight = SaveTime.Rel(_lastFightTime), unit = CaptureUnit(), engage = Engage.Capture(),
+            };
+            var worn = new System.Collections.Generic.List<ItemDefinition>(Equipment.Worn);
+            worn.Sort((a, b) => a.equipSlot.CompareTo(b.equipSlot)); // the same order every time
+            foreach (var item in worn) s.worn.Add(item.id);
+            var gates = new System.Collections.Generic.List<Vector2Int>(_ownKnownOpenGates);
+            gates.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
+            s.known_gates = gates;
+            var current = Fsm.Current;
+            s.state = current?.GetType().Name;
+            s.state_time = Mathf.Round((current?.Elapsed ?? 0f) * 100f) / 100f;
+            s.state_data = current?.SaveState();
+            return s;
+        }
+
+        /// <summary>
+        /// First pass: the monster comes back where it stood, with its level, gear and wounds
+        /// (no random draws, no events). Its nest or pack takes it in; what it was doing comes in <see cref="ResumeSave"/>.
+        /// </summary>
+        public static Monster RestoreSave(MonsterSave s, MonsterDefinition def, Nest home, SaveContext ctx)
+        {
+            var pool = Services.Get<PoolService>();
+            var m = pool.Spawn<Monster>(PoolKey, new Vector2(s.unit.x, s.unit.y));
+            m.Prepare(def, home, s.boss, s.ranged, s.id);
+            m.Level = Mathf.Clamp(s.level, 1, MonsterLevel.MaxLevel);
+            m.Exp = s.exp;
+            m.TierExp = s.tier_exp;
+            m.ApplyLevel();
+            var db = Services.Get<GameDatabase>();
+            foreach (var id in s.worn) if (db.Item(id) is { } item) m.Equipment.Equip(item);
+            m.Equipment.RestoreAbsorbed(s.absorbed);
+            m.Finish(home);
+            m._spawnPosition = s.spawn;
+            foreach (var g in s.known_gates) m._ownKnownOpenGates.Add(g);
+            m.NextLureTime = SaveTime.Abs(s.next_lure);
+            m.NextRegroupTime = SaveTime.Abs(s.next_regroup);
+            m._lastFightTime = SaveTime.Abs(s.last_fight);
+            m._senseTimer = 0f;
+            m.Fsm.ChangeState(m.WanderState);
+            m.RestoreUnit(s.unit);
+            ctx.Register(m.UnitId, m);
+            return m;
+        }
+
+        public void LinkSave(MonsterSave s, SaveContext ctx) => LinkUnit(s.unit, ctx);
+
+        /// <summary>Third pass: its standing orders (a raid, a march, the road), then what it was doing and to whom.</summary>
+        public void ResumeSave(MonsterSave s, SaveContext ctx)
+        {
+            DefaultStateOverride = StateNamed(s.default_state);
+            var state = StateNamed(s.state);
+            if (state == null)
+            {
+                if (!string.IsNullOrEmpty(s.state)) ctx.Warnings.Add($"{UnitId}: unknown state {s.state}");
+                state = DefaultStateOverride ?? WanderState;
+            }
+            Fsm.Resume(state, s.state_time, s.state_data, ctx);
+            Engage.Restore(s.engage, ctx);
+        }
+
+        /// <summary>Joins a roaming pack while a save is put back (P5-4): no change of orders, no events.</summary>
+        internal void RestoreRoaming(RoamingPack pack)
+        {
+            Home = null;
+            Roaming = pack;
         }
 
         /// <summary>Removes the monster without a killer (starvation, despawn).</summary>

@@ -29,6 +29,32 @@ namespace GuildMaster.Core
         void Link(SaveContext ctx);
     }
 
+    /// <summary>
+    /// Third pass, after every section is linked: units take up what they were doing (their FSM
+    /// states look at quests, parties, camps… that must all be back first).
+    /// </summary>
+    public interface ISaveResume
+    {
+        void Resume(SaveContext ctx);
+    }
+
+    /// <summary>
+    /// <c>Time.time</c> counts from when the application started, so a moment is saved as how far it
+    /// lies from now (seconds, rounded to 10 ms so a save → load → save comes out the same even after
+    /// hours of play, when a float holding Time.time has lost its last digits).
+    /// </summary>
+    public static class SaveTime
+    {
+        const float Limit = 1e6f;
+
+        /// <summary>Seconds from now to <paramref name="time"/> (negative: in the past).</summary>
+        public static float Rel(float time)
+            => UnityEngine.Mathf.Round(UnityEngine.Mathf.Clamp(time - UnityEngine.Time.time, -Limit, Limit) * 100f) / 100f;
+
+        /// <summary>The moment that lies <paramref name="relative"/> seconds from now.</summary>
+        public static float Abs(float relative) => UnityEngine.Time.time + relative;
+    }
+
     /// <summary>Shared by the sections of one restore: the objects by save id, and what went wrong.</summary>
     public class SaveContext
     {

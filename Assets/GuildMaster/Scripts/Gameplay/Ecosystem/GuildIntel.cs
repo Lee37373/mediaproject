@@ -18,7 +18,7 @@ namespace GuildMaster.Ecosystem
     /// nest populations. UI, adventurer navigation, logs and LLM prompts read this instead of
     /// the real simulation (<see cref="EcosystemManager"/>), so nothing outside vision leaks.
     /// </summary>
-    public class GuildIntel : MonoBehaviour
+    public class GuildIntel : MonoBehaviour, ISaveable, ISaveLink
     {
         const float ScanInterval = 0.5f;
 
@@ -94,6 +94,117 @@ namespace GuildMaster.Ecosystem
 
         /// <summary>Living monsters currently inside the guild's vision.</summary>
         public int VisibleMonsters { get; private set; }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedNest
+        {
+            public int nest;
+            public bool observed;
+            public int last_count;
+            public float last_seen;
+            public string species;
+            public int scavenged;
+        }
+
+        [System.Serializable]
+        class SavedGear
+        {
+            public string monster;
+            public string species;
+            public int home = -1;
+            public List<string> worn = new();
+            public float absorbed;
+            public float hour;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public List<string> known = new();
+            public List<SavedNest> nests = new();
+            /// <summary>Sightings of monsters still alive (a dead one's record goes with it).</summary>
+            public List<SavedGear> gear = new();
+            public List<string> bosses = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "intel";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var d in _known) s.known.Add(d.id);
+            s.known.Sort(System.StringComparer.Ordinal);
+            for (int i = 0; i < _eco.Nests.Count; i++)
+            {
+                if (!_nests.TryGetValue(_eco.Nests[i], out var ni)) continue;
+                s.nests.Add(new SavedNest
+                {
+                    nest = i, observed = ni.Observed, last_count = ni.LastCount, last_seen = ni.LastSeenHour,
+                    species = ni.Species != null ? ni.Species.id : null, scavenged = ni.ScavengedSteps,
+                });
+            }
+            foreach (var kv in _gear)
+            {
+                if (kv.Key == null || !kv.Key.IsAlive) continue;
+                var g = new SavedGear
+                {
+                    monster = kv.Key.UnitId, species = kv.Value.Def != null ? kv.Value.Def.id : null,
+                    home = kv.Value.Home != null ? _eco.Nests.IndexOf(kv.Value.Home) : -1, absorbed = kv.Value.AbsorbedHp, hour = kv.Value.Hour,
+                };
+                if (kv.Value.Worn != null) foreach (var item in kv.Value.Worn) if (item != null) g.worn.Add(item.id);
+                s.gear.Add(g);
+            }
+            s.gear.Sort((a, b) => string.CompareOrdinal(a.monster, b.monster));
+            foreach (var b in _bossesSeen) if (b != null && b.IsAlive) s.bosses.Add(b.UnitId);
+            s.bosses.Sort(System.StringComparer.Ordinal);
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            var db = Services.Get<GameDatabase>();
+            _known.Clear();
+            foreach (var id in _restoring.known) if (db.Monster(id) is { } d) _known.Add(d);
+            _nests.Clear();
+            foreach (var sn in _restoring.nests)
+            {
+                if (sn.nest < 0 || sn.nest >= _eco.Nests.Count) continue;
+                var nest = _eco.Nests[sn.nest];
+                var ni = Get(nest);
+                ni.Observed = sn.observed;
+                ni.LastCount = sn.last_count;
+                ni.LastSeenHour = sn.last_seen;
+                ni.Species = db.Monster(sn.species);
+                ni.ScavengedSteps = sn.scavenged;
+                if (ni.Species != null) nest.ShowAs(ni.Species);
+            }
+        }
+
+        /// <summary>Gear sightings and seen bosses point at monsters: those are all back by now.</summary>
+        public void Link(SaveContext ctx)
+        {
+            var db = Services.Get<GameDatabase>();
+            _gear.Clear();
+            foreach (var g in _restoring.gear)
+            {
+                if (ctx.Find<Monster>(g.monster) is not { } m) continue;
+                var worn = new List<ItemDefinition>();
+                foreach (var id in g.worn) if (db.Item(id) is { } item) worn.Add(item);
+                _gear[m] = new GearSighting
+                {
+                    Def = db.Monster(g.species), Home = g.home >= 0 && g.home < _eco.Nests.Count ? _eco.Nests[g.home] : null,
+                    Worn = worn.ToArray(), AbsorbedHp = g.absorbed, Hour = g.hour,
+                };
+            }
+            _bossesSeen.Clear();
+            foreach (var id in _restoring.bosses) if (ctx.Find<Monster>(id) is { } boss) _bossesSeen.Add(boss);
+            _restoring = null;
+        }
 
         public void Init(EcosystemManager eco, FogOfWar fog, GameClock clock, WorldService world)
         {

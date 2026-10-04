@@ -197,6 +197,16 @@ namespace GuildMaster.Save
                     Debug.LogException(e);
                 }
             }
+            foreach (var s in restored)
+            {
+                if (s is not ISaveResume resume) continue;
+                try { resume.Resume(ctx); }
+                catch (Exception e)
+                {
+                    ctx.Warnings.Add($"{s.SaveKey} resume: {e.Message}");
+                    Debug.LogException(e);
+                }
+            }
             // A fresh stream rather than the seed's first numbers again (replay is not promised).
             GameRandom.Shared = new GameRandom(unchecked(file.seed * 31 + Mathf.RoundToInt(file.summary.total_hours * 60f)));
             CurrentSlot = slot;

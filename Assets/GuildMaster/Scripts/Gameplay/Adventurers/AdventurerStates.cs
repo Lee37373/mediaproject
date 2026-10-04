@@ -528,6 +528,27 @@ namespace GuildMaster.Adventurers
             if (!string.IsNullOrEmpty(_line)) a.Say(_line);
         }
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class Saved
+        {
+            public Vector2 point;
+            public string next;
+        }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved { point = _point, next = Adventurer.NameOf(Next) });
+
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            _point = s.point;
+            Next = Owner.StateNamed(s.next);
+            _line = null;
+            Owner.Mover.SpeedMultiplier = 1.1f;
+            Owner.Mover.SetDestination(_point, 0.5f);
+        }
+
         public override void Tick(float dt)
         {
             var a = Owner;
@@ -666,6 +687,40 @@ namespace GuildMaster.Adventurers
         /// <summary>One of a party out together (a quest, a band, a standing party on the way home).</summary>
         static bool InAParty(Adventurer a) => Services.TryGet<PartyTactics>(out var party) && party.LeaderOf(a) != null;
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class Saved
+        {
+            public bool retreating;
+            public string resume_after;
+            public bool luring;
+            public Vector2 lure_point;
+            public Vector2 retreat_from;
+        }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved
+        {
+            retreating = Retreating, resume_after = Adventurer.NameOf(ResumeAfter), luring = _luring,
+            lure_point = _lurePoint, retreat_from = _retreatFrom,
+        });
+
+        /// <summary>On the way again, without the shout it gave when it set off.</summary>
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            var a = Owner;
+            Retreating = s.retreating;
+            ResumeAfter = Retreating ? a.StateNamed(s.resume_after) : null;
+            _luring = s.luring;
+            _lurePoint = s.lure_point;
+            _retreatFrom = s.retreat_from;
+            _formationRepath = 0f;
+            a.Mover.SpeedMultiplier = Retreating ? 1.15f : 1f;
+            if (_luring) a.Mover.SetDestination(_lurePoint, 0.5f);
+            else a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
+        }
+
         public override void Exit()
         {
             Owner.Mover.SpeedMultiplier = 1f;
@@ -749,6 +804,26 @@ namespace GuildMaster.Adventurers
             while (a.Data.potions < 2 && trade.SellGoods(a, DefaultContent.Potion)) a.Data.potions++;
             // Survival first (potions), then the next gear tier if the gold is left (P4-4).
             GearShopping.TryBuy(a);
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class Saved
+        {
+            public bool going_to_door;
+            public bool shopped;
+        }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved { going_to_door = _goingToDoor, shopped = _shopped });
+
+        /// <summary>Its business at the counter is not done twice: only the walk to the door is taken up again.</summary>
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            _goingToDoor = s.going_to_door;
+            _shopped = s.shopped;
+            if (_goingToDoor) Owner.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
         }
 
         public override void Tick(float dt)

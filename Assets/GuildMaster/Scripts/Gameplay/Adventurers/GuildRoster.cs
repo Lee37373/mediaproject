@@ -11,9 +11,53 @@ namespace GuildMaster.Adventurers
     public struct AdventurerLeftEvent { public Adventurer Adventurer; }
 
     /// <summary>The guild's member list. Owns adventurer creation and removal.</summary>
-    public class GuildRoster : MonoBehaviour
+    public class GuildRoster : MonoBehaviour, ISaveable, ISaveLink, ISaveResume
     {
         readonly List<Adventurer> _members = new();
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int capacity;
+            public List<Adventurer.AdventurerSave> members = new();
+        }
+
+        readonly List<(Adventurer member, Adventurer.AdventurerSave saved)> _restoring = new();
+
+        public string SaveKey => "roster";
+
+        public string Capture()
+        {
+            var s = new SaveData { capacity = Capacity };
+            foreach (var m in _members) if (m != null && m.IsAlive) s.members.Add(m.CaptureSave());
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            Capacity = s.capacity;
+            _restoring.Clear();
+            foreach (var saved in s.members)
+            {
+                var a = Adventurer.RestoreSave(saved, transform, ctx);
+                _members.Add(a);
+                _restoring.Add((a, saved));
+            }
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            foreach (var (member, saved) in _restoring) member.LinkSave(saved, ctx);
+        }
+
+        public void Resume(SaveContext ctx)
+        {
+            foreach (var (member, saved) in _restoring) member.ResumeSave(saved, ctx);
+            _restoring.Clear();
+        }
 
         public ListView<Adventurer> Members => new(_members);
         public int Capacity { get; set; } = 6;

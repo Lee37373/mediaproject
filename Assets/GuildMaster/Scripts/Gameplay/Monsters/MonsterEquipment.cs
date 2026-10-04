@@ -20,6 +20,9 @@ namespace GuildMaster.Monsters
         readonly Dictionary<EquipSlot, ItemDefinition> _worn = new();
 
         public float AbsorbedHp { get; private set; }
+
+        /// <summary>Save (P5-4): what it had swallowed comes back with it.</summary>
+        internal void RestoreAbsorbed(float hp) => AbsorbedHp = hp;
         public IEnumerable<ItemDefinition> Worn => _worn.Values;
         public int WornCount => _worn.Count;
 

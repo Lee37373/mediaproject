@@ -89,6 +89,42 @@ namespace GuildMaster.Adventurers
             if (_band != null && _band.Leader == Owner && _band.Members.Count == 1 && !inviting) Owner.Say("사냥 나갈 사람?");
         }
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class Saved
+        {
+            public float start_hour;
+            public bool scouting;
+            public int surprises;
+        }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved
+        {
+            start_hour = _startHour, scouting = _scouting, surprises = _surprises,
+        });
+
+        /// <summary>As <see cref="Enter"/>, but back in its band (restored with it) without asking around again.</summary>
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            _searchTimer = 0f;
+            _roamTimer = 0f;
+            _formationRepath = 0f;
+            _nextBackOffLine = 0f;
+            _enemies = 1;
+            _nestNearby = 0;
+            _correctionsAtAim = Owner.Mover.RouteCorrections;
+            Owner.Mover.UnknownToMe = ExplorationRoute.KnowledgeOf(Services.TryGet<Fog.FogOfWar>(out var fog) ? fog : null);
+            CountBand(Owner);
+            // Only the band it was in (restored with the bands): joining would open a new one and
+            // ask everyone in town along again.
+            _band = Services.TryGet<HuntBandService>(out var bands) ? bands.BandOf(Owner) : null;
+            _startHour = s.start_hour;
+            _scouting = s.scouting;
+            _surprises = s.surprises;
+        }
+
         public override void Exit()
         {
             Owner.Mover.SpeedMultiplier = 1f;

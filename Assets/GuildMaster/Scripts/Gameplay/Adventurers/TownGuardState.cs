@@ -69,6 +69,20 @@ namespace GuildMaster.Adventurers
             return m.CombatEngagement?.Target is Unit t && t.Faction == Faction.Guild && town.WithinReachOfTown(m.Position, WallReach);
         }
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class Saved { public string next; }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved { next = Adventurer.NameOf(Next) });
+
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            Next = Owner.StateNamed(JsonUtility.FromJson<Saved>(json).next);
+            _calm = CalmSeconds;
+            _repath = 0f;
+        }
+
         public override void Enter()
         {
             _calm = CalmSeconds;

@@ -148,6 +148,7 @@ namespace GuildMaster.Session
             var groundItems = AddSystem<Items.GroundItemService>();
             groundItems.Init(pool, clock, db);
             Services.Register(groundItems);
+            save.Register(groundItems);
             var telegraphs = AddSystem<TelegraphService>();
             telegraphs.Init(pool);
             Services.Register(telegraphs);
@@ -155,27 +156,33 @@ namespace GuildMaster.Session
 
             var eco = AddSystem<EcosystemManager>();
             Services.Register(eco);
+            save.Register(eco);
             eco.Init(db, map, GameRandom.Shared);
             // Territorial clashes: lopsided fights rout the weaker side (P4-18).
             var territory = AddSystem<TerritoryService>();
             territory.Init(eco);
             Services.Register(territory);
+            save.Register(territory);
             // Crowded nests move a band a step towards the town (P4-56); WaveManager rolls when.
             var migration = AddSystem<MigrationService>();
             migration.Init(eco, world, clock);
             Services.Register(migration);
+            save.Register(migration);
             // Packs driven out with nowhere to go walk their habitat as one (P4-58).
             var roaming = AddSystem<RoamingPackService>();
             roaming.Init(eco, world, clock);
             Services.Register(roaming);
+            save.Register(roaming);
             // What the guild has actually seen; UI and adventurers read this, not the simulation.
             var intel = AddSystem<GuildIntel>();
             intel.Init(eco, fog, clock, world);
             Services.Register(intel);
+            save.Register(intel);
             // Fog memory (P4-23): grey last-seen copies of what the fog swallowed.
             var ghosts = AddSystem<Fog.FogGhostService>();
             ghosts.Init(pool, fog, clock, eco);
             Services.Register(ghosts);
+            save.Register(ghosts);
 
             var board = AddSystem<QuestBoard>();
             board.Init(treasury, eco, clock);
@@ -198,6 +205,7 @@ namespace GuildMaster.Session
             var roster = AddSystem<GuildRoster>();
             roster.Capacity = Balance.rosterCapacity;
             Services.Register(roster);
+            save.Register(roster);
             // Per-adventurer memories; before recruiting so the starting members remember joining.
             Services.Register(new MemoryRecorder(clock, roster));
             // Multi-person quests: the first taker invites idle members (LLM, rule fallback).
@@ -234,7 +242,8 @@ namespace GuildMaster.Session
             camps.Init(clock, world, pool, roster);
             Services.Register(camps);
             var guildDoor = town.Get(BuildingType.GuildHall).DoorPosition;
-            for (int i = 0; i < Balance.startingAdventurers; i++)
+            // A loaded game brings its own members back (P5-4).
+            for (int i = 0; i < (GameSettings.RestoresSection("roster") ? 0 : Balance.startingAdventurers); i++)
             {
                 // Starting lineup covers a fixed set of roles instead of whatever the RNG happens to roll.
                 var founder = AdventurerGenerator.Generate(GameRandom.Shared);
@@ -279,6 +288,7 @@ namespace GuildMaster.Session
             // --- Player ---
             var avatar = PlayerAvatar.Create(world.TownCenterWorld + new Vector2(0f, -2f), Balance.playerMoveSpeed, Balance.playerSightRadius);
             Services.Register(avatar);
+            save.Register(avatar);
             Services.Register(new GameOverService(clock));
 
             // --- Raids (P3-6) ---

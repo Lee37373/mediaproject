@@ -16,8 +16,69 @@ namespace GuildMaster.Items
     /// pickers, hands them over, and cleans up — items rot after <see cref="LifetimeHours"/> game hours
     /// and the oldest go first above <see cref="MaxItems"/>.
     /// </summary>
-    public class GroundItemService : MonoBehaviour
+    public class GroundItemService : MonoBehaviour, ISaveable, ISaveLink
     {
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SavedItem
+        {
+            public string item;
+            public int count;
+            public Vector2 position;
+            public float dropped_hour;
+            public float dropped_at;
+            public string reserved_by;
+        }
+
+        [Serializable]
+        class SaveData { public List<SavedItem> items = new(); }
+
+        SaveData _restoring;
+
+        /// <summary>Save id of the item at this place in the list (pickers refer to it this way).</summary>
+        public static string SaveId(int index) => "item:" + index;
+        public int IndexOf(GroundItem g) => _items.IndexOf(g);
+
+        public string SaveKey => "ground";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var g in _items)
+                s.items.Add(new SavedItem
+                {
+                    item = g.Item != null ? g.Item.id : null, count = g.Count, position = g.Position, dropped_hour = g.DroppedAtHour,
+                    dropped_at = g.DroppedAtRelative, reserved_by = g.ReservedBy != null && g.ReservedBy.IsAlive ? g.ReservedBy.UnitId : null,
+                });
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            for (int i = 0; i < _restoring.items.Count; i++)
+            {
+                var saved = _restoring.items[i];
+                var def = _db.Item(saved.item);
+                if (def == null) { ctx.Warnings.Add("ground: unknown item " + saved.item); continue; }
+                var g = _pool.Spawn<GroundItem>(PoolKey, saved.position);
+                g.Init(def, saved.count, saved.dropped_hour);
+                g.RestoreDroppedAt(saved.dropped_at);
+                _items.Add(g);
+                ctx.Register(SaveId(i), g);
+            }
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            for (int i = 0; i < _restoring.items.Count; i++)
+            {
+                if (string.IsNullOrEmpty(_restoring.items[i].reserved_by)) continue;
+                if (ctx.Find<GroundItem>(SaveId(i)) is { } g) g.RestoreReservation(ctx.Find<Unit>(_restoring.items[i].reserved_by));
+            }
+            _restoring = null;
+        }
         public const string PoolKey = "world.groundItem";
         public const float LifetimeHours = 48f;
         public const int MaxItems = 40;

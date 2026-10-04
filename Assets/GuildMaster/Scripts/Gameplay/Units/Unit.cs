@@ -352,5 +352,71 @@ namespace GuildMaster.Units
 
         protected virtual void OnDamaged(float amount, Unit source) { }
         protected abstract void OnDeath(Unit killer);
+
+        // ---------------- Save (P5-4) ----------------
+
+        /// <summary>
+        /// What every unit carries besides its own data: where it stands, its health, and the
+        /// moments it waits for (as seconds from now, see <see cref="SaveTime"/>). Only the living are saved.
+        /// </summary>
+        [Serializable]
+        public class UnitSave
+        {
+            public float x;
+            public float y;
+            public float hp;
+            public string last_attacker;
+            public float last_attacked;
+            public float next_attack;
+            public float stunned_until;
+            public float speed_buff = 1f;
+            public float speed_buff_until;
+            public float hidden_until;
+            public float grace_until;
+            /// <summary>Seconds left on each skill, in the order of <see cref="Skills"/>.</summary>
+            public System.Collections.Generic.List<float> skill_cooldowns = new();
+        }
+
+        public UnitSave CaptureUnit()
+        {
+            var p = Position;
+            var s = new UnitSave
+            {
+                x = Round(p.x), y = Round(p.y), hp = Round(Hp),
+                last_attacker = LastAttacker != null && LastAttacker.IsAlive ? LastAttacker.UnitId : null,
+                last_attacked = SaveTime.Rel(LastAttackedTime), next_attack = SaveTime.Rel(NextAttackTime),
+                stunned_until = SaveTime.Rel(StunnedUntil), speed_buff = _speedBuff, speed_buff_until = SaveTime.Rel(_speedBuffUntil),
+                hidden_until = SaveTime.Rel(_hiddenUntil), grace_until = SaveTime.Rel(GraceUntil),
+            };
+            foreach (var skill in Skills) s.skill_cooldowns.Add(Mathf.Round(skill.CooldownLeft * 100f) / 100f);
+            return s;
+        }
+
+        /// <summary>Puts the saved standing back (call after the unit is set up; the attacker comes in <see cref="LinkUnit"/>).</summary>
+        public void RestoreUnit(UnitSave s)
+        {
+            transform.position = new Vector3(s.x, s.y, transform.position.z);
+            Hp = Mathf.Clamp(s.hp, 1f, Stats.MaxHp);
+            LastAttackedTime = SaveTime.Abs(s.last_attacked);
+            NextAttackTime = SaveTime.Abs(s.next_attack);
+            StunnedUntil = SaveTime.Abs(s.stunned_until);
+            _speedBuff = s.speed_buff;
+            _speedBuffUntil = SaveTime.Abs(s.speed_buff_until);
+            _hiddenUntil = SaveTime.Abs(s.hidden_until);
+            if (Visual != null) Visual.Fade = IsHidden ? 0.35f : 1f;
+            GraceUntil = SaveTime.Abs(s.grace_until);
+            for (int i = 0; i < Skills.Count && i < s.skill_cooldowns.Count; i++) Skills[i].ResetCooldown(s.skill_cooldowns[i]);
+        }
+
+        public void LinkUnit(UnitSave s, SaveContext ctx)
+        {
+            if (!string.IsNullOrEmpty(s.last_attacker)) LastAttacker = ctx.Find<Unit>(s.last_attacker);
+        }
+
+        /// <summary>Until this moment (Time.time) nothing can hurt the unit (a last stand's grace, F-6).</summary>
+        protected float GraceUntil { get; set; }
+
+        /// <summary>Positions and health to the hundredth: enough to stand in the same place, and stable through a save → load → save.</summary>
+        protected static float Round(float v) => Mathf.Round(v * 100f) / 100f;
     }
 }

@@ -143,6 +143,44 @@ namespace GuildMaster.Units
 
         public Engagement(Unit self) { _self = self; }
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        public class EngageSave
+        {
+            public string target;
+            public float locked_until;
+            public List<string> ignored = new();
+            public List<float> ignored_until = new();
+        }
+
+        public EngageSave Capture()
+        {
+            var s = new EngageSave
+            {
+                target = Target != null && Target.IsAlive ? Target.UnitId : null,
+                locked_until = SaveTime.Rel(_lockedUntil),
+            };
+            foreach (var (unit, until) in _ignored)
+            {
+                if (unit == null || !unit.IsAlive || Time.time >= until || string.IsNullOrEmpty(unit.UnitId)) continue;
+                s.ignored.Add(unit.UnitId);
+                s.ignored_until.Add(SaveTime.Rel(until));
+            }
+            return s;
+        }
+
+        /// <summary>Takes the saved fight up again (after the owner's state is back: some states clear it on entry).</summary>
+        public void Restore(EngageSave s, SaveContext ctx)
+        {
+            if (s == null) return;
+            _ignored.Clear();
+            for (int i = 0; i < s.ignored.Count && i < s.ignored_until.Count; i++)
+                if (ctx.Find<Unit>(s.ignored[i]) is { } u) _ignored.Add((u, SaveTime.Abs(s.ignored_until[i])));
+            if (!string.IsNullOrEmpty(s.target) && ctx.Find<Unit>(s.target) is { IsAlive: true } target) SetTarget(target);
+            _lockedUntil = SaveTime.Abs(s.locked_until);
+        }
+
         public void SetTarget(Unit target)
         {
             if (target == Target) return;

@@ -21,6 +21,19 @@ namespace GuildMaster.Monsters
 
         public void Begin(GroundItem item) => _item = item;
 
+        [System.Serializable]
+        class Saved { public int item = -1; }
+
+        public override string SaveState()
+            => JsonUtility.ToJson(new Saved { item = _item != null && Core.Services.TryGet<GroundItemService>(out var ground) ? ground.IndexOf(_item) : -1 });
+
+        public override void ResumeState(string json, Core.SaveContext ctx)
+        {
+            int index = JsonUtility.FromJson<Saved>(json).item;
+            _item = index >= 0 ? ctx.Find<GroundItem>(GroundItemService.SaveId(index)) : null;
+            Enter();
+        }
+
         public override void Enter()
         {
             var m = Owner;

@@ -146,6 +146,24 @@ namespace GuildMaster.Monsters
             Owner.Mover.SpeedMultiplier = 1.25f;
         }
 
+        [System.Serializable]
+        class Saved
+        {
+            public string from;
+            public Vector2 point;
+        }
+
+        public override string SaveState()
+            => JsonUtility.ToJson(new Saved { from = From != null && From.IsAlive ? From.UnitId : null, point = FromPoint });
+
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            From = ctx.Find<Unit>(s.from);
+            FromPoint = s.point;
+            Enter();
+        }
+
         public override void Tick(float dt)
         {
             var m = Owner;
@@ -182,6 +200,17 @@ namespace GuildMaster.Monsters
         public Vector2 Point;
 
         public override string Label => "유인";
+
+        [System.Serializable]
+        class Saved { public Vector2 point; }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved { point = Point });
+
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            Point = JsonUtility.FromJson<Saved>(json).point;
+            Enter();
+        }
 
         public override void Enter()
         {

@@ -46,8 +46,84 @@ namespace GuildMaster.Ecosystem
     /// packs' territories and the town), rests a few hours at each stop and heals, and moves into
     /// the first empty nest of its habitat it comes near. It does not breed on the road.
     /// </summary>
-    public class RoamingPackService : MonoBehaviour
+    public class RoamingPackService : MonoBehaviour, ISaveable, ISaveLink
     {
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedPack
+        {
+            public int id;
+            public string species;
+            public List<string> members = new();
+            public Vector2 center;
+            public Vector2 stop;
+            public Vector2 goal;
+            public bool moving;
+            public float moving_since;
+            public float rest_until;
+            public bool sighted;
+            public int left_nest = -1;
+            public float left_at;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int count;
+            public List<SavedPack> packs = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "roaming";
+
+        public string Capture()
+        {
+            var s = new SaveData { count = _count };
+            foreach (var p in _packs)
+            {
+                var sp = new SavedPack
+                {
+                    id = p.Id, species = p.Species != null ? p.Species.id : null, center = p.Center, stop = p.Stop, goal = p.Goal,
+                    moving = p.Moving, moving_since = p.MovingSinceHour, rest_until = p.RestUntilHour, sighted = p.Sighted,
+                    left_nest = p.LeftNest != null ? _eco.Nests.IndexOf(p.LeftNest) : -1, left_at = p.LeftAtHour,
+                };
+                foreach (var m in p.Members) if (m != null && m.IsAlive) sp.members.Add(m.UnitId);
+                s.packs.Add(sp);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            _count = _restoring.count;
+        }
+
+        /// <summary>The packs, with their members (restored by the ecosystem) back on the road with them.</summary>
+        public void Link(SaveContext ctx)
+        {
+            var db = Services.Get<GameDatabase>();
+            foreach (var sp in _restoring.packs)
+            {
+                var pack = new RoamingPack
+                {
+                    Id = sp.id, Species = db.Monster(sp.species), Service = this, Center = sp.center, Stop = sp.stop, Goal = sp.goal,
+                    Moving = sp.moving, MovingSinceHour = sp.moving_since, RestUntilHour = sp.rest_until, Sighted = sp.sighted,
+                    LeftNest = sp.left_nest >= 0 && sp.left_nest < _eco.Nests.Count ? _eco.Nests[sp.left_nest] : null, LeftAtHour = sp.left_at,
+                };
+                foreach (var id in sp.members)
+                {
+                    if (ctx.Find<Monster>(id) is not { } m) continue;
+                    pack.Members.Add(m);
+                    m.RestoreRoaming(pack);
+                }
+                _packs.Add(pack);
+            }
+            _restoring = null;
+        }
+
         /// <summary>Distance (cells) of each walk.</summary>
         public const float MinStep = 20f, MaxStep = 45f;
         /// <summary>Game hours of rest at each stop.</summary>
