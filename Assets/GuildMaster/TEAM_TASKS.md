@@ -82,7 +82,7 @@
 | P4-58 | 사용자 결정: 강함은 레벨(종 능력치 차이 축소·태어남 레벨 1~15·위험도는 레벨로), 지형별 서식(지형만으로 배정), 무리는 쪼개지거나 합쳐지지 않음, 쫓겨난 무리는 서식 지형의 빈 땅을 떠돎 | 이재혁 | 완료 | Monsters/MonsterLevel·Monster, Data/DefaultContent·MonsterDefinition, Quests/QuestBoard, Adventurers/FreeHunt·Decisions, Ecosystem/EcosystemManager·TerritoryService·MigrationService·RoamingPackService(신규)·Nest, Monsters/RoamState(신규), UI/Views | d1b67ea, 02084af |
 | P5-2 | 성능(유닛 200·투사체 100에서 60FPS): 유닛 공간 색인(목표 고르기 O(N²) 제거), 안개 바뀐 곳만 갱신, 영역 검사 반경 질의, GC 30KB→약 5KB/프레임. 부하 p99 48.7→13.2ms | 이재혁 | 완료 | Units/UnitRegistry·TargetSelector·CrowdSimulation·Unit·Combat, Fog/FogOfWar, Ecosystem/TerritoryService·Nest, Core/ListView(신규), Monsters, Adventurers, UI/World/NameTagLayer, Session/PerfProbe(신규)·DebugCommands, Editor/ProfilerDigest(신규) | 3a78069 |
 | P5-3 | LLM 예외 처리(실패해도 게임 진행·대기 상한·기아 방지·요청 통계). 속도 최적화는 제외(사용자 결정 2026-10-04) | 이재혁 | 완료 | LLM/LlmGateway·LlmStats(신규)·LlmTypes, UI/Views/LlmDebugView, Tests/PlayMode/FakeLlmBackend·LlmFaultTests(신규) | 9cc2c19 |
-| P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
+| P5-4 | 세이브/로드(사용자 결정: 완전 스냅숏·수동 여러 슬롯·오프라인 진행 없음) | 이재혁 | 진행 중 | Save(신규), 거의 모든 시스템 | |
 | P5-5 | Windows 빌드 | 미정 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 가장 마지막에 진행 | 미정 | 예정 | Audio(신규) | |
@@ -112,7 +112,7 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: (없음)
+- **진행 중**: P5-4 세이브/로드 — 거의 모든 시스템에 저장·복원 코드를 넣으니 이 기간 큰 변경은 미리 알려 주세요
 - **예정**: (정해지면 적기)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-75, P5-1 ~ P5-3 (위 표 참고)
 
