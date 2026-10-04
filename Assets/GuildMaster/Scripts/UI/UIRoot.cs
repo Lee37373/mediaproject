@@ -123,9 +123,11 @@ namespace GuildMaster.UI
             _pause = HudLayer.gameObject.AddComponent<PauseMenuView>();
             _title = HudLayer.gameObject.AddComponent<TitleView>();
             _settings = HudLayer.gameObject.AddComponent<SettingsView>();
-            _pause.Build(HudLayer, _settings);
-            _title.Build(HudLayer, _settings);
+            _saves = HudLayer.gameObject.AddComponent<SaveLoadView>(); // P5-4
+            _pause.Build(HudLayer, _settings, _saves);
+            _title.Build(HudLayer, _settings, _saves);
             _settings.Build(HudLayer);
+            _saves.Build(HudLayer);
             // ` key: shortcut reference with toggle states (drawn above everything else).
             HudLayer.gameObject.AddComponent<KeyHelpView>().Build(HudLayer);
             // Hover tooltips sit above every window.
@@ -137,6 +139,7 @@ namespace GuildMaster.UI
         PauseMenuView _pause;
         TitleView _title;
         SettingsView _settings;
+        SaveLoadView _saves;
 
         void OnDestroy() => EventBus.Unsubscribe<MapPickingChangedEvent>(OnPicking);
 
@@ -229,6 +232,7 @@ namespace GuildMaster.UI
             {
                 if (!kb.escapeKey.wasPressedThisFrame) return;
                 if (_settings.IsOpen) _settings.Hide();
+                else if (_saves.IsOpen) _saves.Hide();
                 else if (_pause.IsOpen) _pause.Hide();
                 return;
             }
