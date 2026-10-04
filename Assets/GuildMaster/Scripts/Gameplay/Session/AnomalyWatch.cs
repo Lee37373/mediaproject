@@ -82,7 +82,7 @@ namespace GuildMaster.Session
                 if (hours > LimitHours(a, s)) Report($"{a.Data.name}: '{s.Label}' {hours:0.0}h (limit {LimitHours(a, s):0})", $"long:{a.Data.name}:{s.Label}");
 
                 if (!_lastMove.TryGetValue(a, out var last) || (a.Position - last.pos).sqrMagnitude > 1f) _lastMove[a] = (a.Position, now);
-                else if (Walking(a, s) && now - last.hour >= 2f)
+                else if (Walking(a, s) && a.Engage.Target == null && now - last.hour >= 2f) // a fight of twenty seconds is two game hours
                     Report($"{a.Data.name}: '{s.Label}' but has not moved for {now - last.hour:0.0}h at {a.Position}{Context(a)}", $"still:{a.Data.name}:{s.Label}:{Mathf.RoundToInt(last.hour)}");
             }
 
