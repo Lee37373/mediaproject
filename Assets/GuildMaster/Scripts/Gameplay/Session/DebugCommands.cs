@@ -865,7 +865,8 @@ namespace GuildMaster.Session
             return $"{g.StatusText}\n  enabled={g.Enabled} ready={g.IsReady} busy={g.IsBusy} queue={g.QueueCount}\n" +
                    $"  completed={g.Completed} failed={g.Failed} consecutiveFailures={g.ConsecutiveFailures}/{LLM.LlmGateway.FailuresBeforeRecovery}\n" +
                    $"  recovering={g.IsRecovering} attempts={g.RecoveryAttempts}/{LLM.LlmGateway.MaxRecoveryAttempts} gaveUp={g.GaveUpOnRecovery}\n" +
-                   $"  backend={g.Backend.State} ({g.Backend.Description})";
+                   $"  backend={g.Backend.State} ({g.Backend.Description})\n" +
+                   "  " + g.Stats.Summary(10).Replace("\n", "\n  ");
         }
 
         /// <summary>Restarts the LLM backend by hand (the same thing the gateway does on its own).</summary>

@@ -18,6 +18,7 @@ namespace GuildMaster.UI
         protected override float RefreshInterval => 0.5f;
 
         Text _summary;
+        Text _stats;
         RectTransform _list;
         Text _detail;
         ScrollRect _detailScroll;
@@ -35,6 +36,11 @@ namespace GuildMaster.UI
             _summary = UIBuilder.Label(top, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, -1, 1);
             UIBuilder.Button(top, "최신 따라가기", () => { _followLatest = true; _lastShownId = -1; Refresh(); }, 120, 26, fontSize: 14);
             UIBuilder.Button(top, "복사", CopySelected, 70, 26, fontSize: 14);
+
+            // Session statistics (P5-3): outcomes, timings, callers.
+            var stats = UIBuilder.Row(body, 54);
+            _stats = UIBuilder.Label(stats, "", 13, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, -1, 1);
+            _stats.horizontalOverflow = HorizontalWrapMode.Wrap;
 
             var split = UIBuilder.Rect(body, "Split");
             UIBuilder.HLayout(split, 8, 0, expandWidth: false);
@@ -57,6 +63,7 @@ namespace GuildMaster.UI
             var history = gw.History;
             _summary.text = $"{gw.StatusText} · 완료 {gw.Completed} · 실패 {gw.Failed} · 대기열 {gw.QueueCount} · " +
                             $"응답 속도 평균 {gw.HistoryAverageSeconds:0.0}s / 최근 {gw.LastSeconds:0.0}s · 기록 {history.Count}개";
+            _stats.text = gw.Stats.Summary();
 
             EnsureRows(_list, _rows, history.Count, ExchangeRow.Create);
             // Newest first.

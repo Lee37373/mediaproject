@@ -13,8 +13,9 @@ namespace GuildMaster.LLM
 
     /// <summary>
     /// Single entry point for LLM work. A local model can only serve one generation at a time,
-    /// so requests are queued by priority (dialogue > party > decisions > banter), deduplicated,
-    /// bounded per priority, and time-limited. Callers always get a result (Ok=false on any
+    /// so requests are queued by priority (dialogue > party > decisions > banter, a waiting request
+    /// rising a level every <see cref="AgingSeconds"/>), deduplicated, bounded per priority, dropped
+    /// after waiting too long, and time-limited. Callers always get a result (Ok=false on any
     /// failure) and are expected to fall back to rule-based logic.
     /// </summary>
     public class LlmGateway : MonoBehaviour
@@ -34,10 +35,11 @@ namespace GuildMaster.LLM
         /// <summary>The request currently being generated (null when idle).</summary>
         Pending _current;
 
-        const float CancelGraceSeconds = 3f;
+        /// <summary>How long a cancelled generation is given to unwind (settable for tests).</summary>
+        public float CancelGraceSeconds { get; set; } = 3f;
         /// <summary>How long a new request waits for a cancelled-but-still-running generation to end.
         /// Must cover one full generation (4B model: ~10 s), or requests after any cancel fail as "busy".</summary>
-        const float StaleWaitSeconds = 25f;
+        public float StaleWaitSeconds { get; set; } = 25f;
         /// <summary>Generation that timed out and ignored cancellation (still running natively).</summary>
         Task _stale;
         /// <summary>When that generation was set aside (realtime), so it cannot block the queue forever.</summary>
@@ -49,6 +51,8 @@ namespace GuildMaster.LLM
         public const int FailuresBeforeRecovery = 3;
         /// <summary>A stale generation is given up on after this long, and recovery is tried instead.</summary>
         public const float StaleDeadlineSeconds = 90f;
+        /// <summary>The same, per gateway (tests shorten it).</summary>
+        public float StaleDeadline { get; set; } = StaleDeadlineSeconds;
         /// <summary>Recovery is not tried more than this many times before the LLM is left alone.</summary>
         public const int MaxRecoveryAttempts = 5;
 
@@ -169,8 +173,38 @@ namespace GuildMaster.LLM
                 _lastState = state;
                 EventBus.Publish(new LlmStatusChangedEvent { State = state, Description = _backend.Description });
             }
+            DropOverdue();
             TickRecovery();
         }
+
+        /// <summary>Session request statistics (P5-3).</summary>
+        public LlmStats Stats { get; } = new();
+
+        /// <summary>Queued requests past their <see cref="LlmRequest.MaxWaitSeconds"/> fail now, so their callers fall back (P5-3).</summary>
+        void DropOverdue()
+        {
+            float now = Time.realtimeSinceStartup;
+            for (int i = _queue.Count - 1; i >= 0; i--)
+            {
+                var p = _queue[i];
+                if (now - p.Exchange.QueuedAt <= p.Request.MaxWaitSeconds) continue;
+                _queue.RemoveAt(i);
+                Finish(p, LlmResult.Fail("queue timeout"));
+            }
+        }
+
+        // ---------------- Starvation (P5-3) ----------------
+
+        /// <summary>Every this many seconds of waiting raises a queued request one priority level.</summary>
+        public const float AgingSeconds = 20f;
+
+        /// <summary>
+        /// Priority used to pick the next request: the request's own, raised a level per
+        /// <see cref="AgingSeconds"/> waited. Without it a steady stream of conversations and party
+        /// invitations kept decisions and small talk waiting until they were dropped.
+        /// </summary>
+        public static float EffectivePriority(LlmPriority priority, float waitedSeconds)
+            => (int)priority - Mathf.Floor(Mathf.Max(0f, waitedSeconds) / AgingSeconds);
 
         /// <summary>
         /// Two ways the LLM stops answering without anything throwing: a generation that ignored
@@ -181,9 +215,9 @@ namespace GuildMaster.LLM
         void TickRecovery()
         {
             if (!Enabled || _recovering || _gaveUp) return;
-            if (_stale != null && !_stale.IsCompleted && Time.realtimeSinceStartup - _staleSince > StaleDeadlineSeconds)
+            if (_stale != null && !_stale.IsCompleted && Time.realtimeSinceStartup - _staleSince > StaleDeadline)
             {
-                Debug.LogWarning($"[LLM] a generation has been stuck for {StaleDeadlineSeconds:0}s; restarting the backend");
+                Debug.LogWarning($"[LLM] a generation has been stuck for {StaleDeadline:0}s; restarting the backend");
                 _consecutiveFailures = Mathf.Max(_consecutiveFailures, FailuresBeforeRecovery);
             }
             if (!ShouldRecover(_consecutiveFailures)) return;
@@ -194,8 +228,8 @@ namespace GuildMaster.LLM
         /// <summary>Queues a request. Never throws; returns Ok=false when the LLM is unavailable, busy-dropped, timed out or failed.</summary>
         public Task<LlmResult> RequestAsync(LlmRequest request, CancellationToken ct = default)
         {
-            if (!Enabled || !IsReady) return Task.FromResult(LlmResult.Fail("offline"));
-            if (ct.IsCancellationRequested) return Task.FromResult(LlmResult.Fail("cancelled"));
+            if (!Enabled || !IsReady) return Rejected("offline", request);
+            if (ct.IsCancellationRequested) return Rejected("cancelled", request);
 
             // Supersede older queued request with the same key.
             if (!string.IsNullOrEmpty(request.DedupeKey))
@@ -212,7 +246,7 @@ namespace GuildMaster.LLM
             int queuedSame = 0;
             foreach (var q in _queue) if ((int)q.Request.Priority == p) queuedSame++;
             if (queuedSame >= MaxQueuedPerPriority[Mathf.Clamp(p, 0, MaxQueuedPerPriority.Length - 1)])
-                return Task.FromResult(LlmResult.Fail("queue full"));
+                return Rejected("queue full", request);
 
             var pending = new Pending
             {
@@ -223,12 +257,19 @@ namespace GuildMaster.LLM
                 Exchange = new LlmExchange { Id = ++_exchangeId, QueuedAt = Time.realtimeSinceStartup, Request = request },
             };
             _queue.Add(pending);
+            Stats.NoteQueueLength(_queue.Count);
             // Small talk yields the model to anything more important.
             if (_current != null && _current.Request.Preemptible && request.Priority < _current.Request.Priority
                 && !_current.Preempt.IsCancellationRequested)
                 _current.Preempt.Cancel();
             if (!_busy) _ = PumpAsync();
             return pending.Tcs.Task;
+        }
+
+        Task<LlmResult> Rejected(string reason, LlmRequest request)
+        {
+            Stats.RecordRejected(reason, request?.Tag);
+            return Task.FromResult(LlmResult.Fail(reason));
         }
 
         async Task PumpAsync()
@@ -294,6 +335,7 @@ namespace GuildMaster.LLM
             result.Exchange = x;
             _history.Add(x);
             if (_history.Count > HistorySize) _history.RemoveAt(0);
+            Stats.Record(x);
             if (Debug.isDebugBuild) Debug.Log(FormatSpeedLine(x));
             EventBus.Publish(new LlmExchangeEvent { Exchange = x });
             p.Tcs.TrySetResult(result);
@@ -301,13 +343,18 @@ namespace GuildMaster.LLM
 
         Pending TakeNext()
         {
+            float now = Time.realtimeSinceStartup;
             int best = 0;
+            float bestPriority = EffectivePriority(_queue[0].Request.Priority, now - _queue[0].Exchange.QueuedAt);
             for (int i = 1; i < _queue.Count; i++)
             {
                 var a = _queue[i];
-                var b = _queue[best];
-                if (a.Request.Priority < b.Request.Priority || (a.Request.Priority == b.Request.Priority && a.Order < b.Order))
+                float pa = EffectivePriority(a.Request.Priority, now - a.Exchange.QueuedAt);
+                if (pa < bestPriority || (pa == bestPriority && a.Order < _queue[best].Order))
+                {
                     best = i;
+                    bestPriority = pa;
+                }
             }
             var p = _queue[best];
             _queue.RemoveAt(best);
