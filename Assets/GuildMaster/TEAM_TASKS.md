@@ -81,7 +81,7 @@
 | P4-57 | 사용자 보고·결정: 몬스터끼리 싸운 뒤 전리품 줍기(전투 직후·귀소 중), 종마다 보스 개체(둥지마다 낮은 확률, 죽으면 다시 안 생김) | 이재혁 | 완료 | Monsters/Monster·MonsterBoss(신규), Data/MonsterDefinition·DefaultContent, Ecosystem/EcosystemManager·MigrationService, Editor/ArtCatalogBuilder, UI/World/NameTagLayer | de157ed |
 | P4-58 | 사용자 결정: 강함은 레벨(종 능력치 차이 축소·태어남 레벨 1~15·위험도는 레벨로), 지형별 서식(지형만으로 배정), 무리는 쪼개지거나 합쳐지지 않음, 쫓겨난 무리는 서식 지형의 빈 땅을 떠돎 | 이재혁 | 완료 | Monsters/MonsterLevel·Monster, Data/DefaultContent·MonsterDefinition, Quests/QuestBoard, Adventurers/FreeHunt·Decisions, Ecosystem/EcosystemManager·TerritoryService·MigrationService·RoamingPackService(신규)·Nest, Monsters/RoamState(신규), UI/Views | d1b67ea, 02084af |
 | P5-2 | 성능(유닛 200·투사체 100에서 60FPS): 유닛 공간 색인(목표 고르기 O(N²) 제거), 안개 바뀐 곳만 갱신, 영역 검사 반경 질의, GC 30KB→약 5KB/프레임. 부하 p99 48.7→13.2ms | 이재혁 | 완료 | Units/UnitRegistry·TargetSelector·CrowdSimulation·Unit·Combat, Fog/FogOfWar, Ecosystem/TerritoryService·Nest, Core/ListView(신규), Monsters, Adventurers, UI/World/NameTagLayer, Session/PerfProbe(신규)·DebugCommands, Editor/ProfilerDigest(신규) | 3a78069 |
-| P5-3 | LLM 예외 처리(실패해도 게임 진행·대기열 상한·기아 방지·요청 통계). 속도 최적화는 제외(사용자 결정 2026-10-04) | 이재혁 | 진행 중 | LLM/LlmGateway | |
+| P5-3 | LLM 예외 처리(실패해도 게임 진행·대기 상한·기아 방지·요청 통계). 속도 최적화는 제외(사용자 결정 2026-10-04) | 이재혁 | 완료 | LLM/LlmGateway·LlmStats(신규)·LlmTypes, UI/Views/LlmDebugView, Tests/PlayMode/FakeLlmBackend·LlmFaultTests(신규) | 9cc2c19 |
 | P5-4 | 세이브/로드 | 미정 | 예정 | Save(신규), 모든 Data | |
 | P5-5 | Windows 빌드 | 미정 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 | 미정 | 예정 | 영상·발표 자료 | |
@@ -112,9 +112,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P5-3 LLM 예외 처리
+- **진행 중**: (없음)
 - **예정**: (정해지면 적기)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-75, P5-1, P5-2 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-75, P5-1 ~ P5-3 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
