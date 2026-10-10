@@ -182,12 +182,13 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.15f));
         }
 
+        /// <param name="def">The owners the guild has seen there; null for a den whose owners nobody has seen (plain earth, P4-76).</param>
         public static Sprite Nest(Data.MonsterDefinition def)
         {
-            string key = "c_nest:" + def.id;
+            string key = "c_nest:" + (def != null ? def.id : "unknown");
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             var c = new Canvas(60, 40);
-            var mound = Color.Lerp(def.bodyColor, Hex(0x7A5634), 0.65f);
+            var mound = def != null ? Color.Lerp(def.bodyColor, Hex(0x7A5634), 0.65f) : Hex(0x7A5634);
             var body = Ellipse(30, 14, 27, 13);
             c.Shape(body, mound, Darker(mound, 0.45f), 3f);
             c.ShapeClipped(Ellipse(22, 20, 12, 5), (x, y) => body(x, y) + 3f, Lighter(mound, 0.2f));

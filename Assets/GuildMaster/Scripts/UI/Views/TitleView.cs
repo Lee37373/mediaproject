@@ -60,7 +60,6 @@ namespace GuildMaster.UI
             int seed = Services.TryGet<GameBootstrap>(out var boot) ? boot.Seed : 0;
             _message.text = $"지금 월드의 시드: {seed}";
             _load.interactable = SaveLoadView.AnyLoadable();
-            _load.interactable = SaveLoadView.AnyLoadable();
             _root.SetAsLastSibling();
             _root.gameObject.SetActive(true);
         }

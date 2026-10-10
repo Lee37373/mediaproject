@@ -158,7 +158,9 @@ namespace GuildMaster.Ecosystem
             transform.position = WorldPosition;
 
             _renderer = gameObject.AddComponent<SpriteRenderer>();
-            _renderer.sprite = CartoonArt.Nest(species);
+            // Plain earth until the guild sees who lives here (GuildIntel calls ShowAs then, P4-76):
+            // a den tinted by its owners' colour told them apart before anyone had seen them.
+            _renderer.sprite = CartoonArt.Nest(null);
             _renderer.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f) - 2;
             _renderer.enabled = false;
         }

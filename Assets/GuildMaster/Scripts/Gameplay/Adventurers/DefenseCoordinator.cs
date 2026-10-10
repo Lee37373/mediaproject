@@ -125,8 +125,14 @@ namespace GuildMaster.Adventurers
                 if (a.HpRatio < MinHpToDefend) a.ChangeState(a.RestState);
                 else if (q != null && q.Status == QuestStatus.Completed) a.ChangeState(a.VisitState);
                 else if (q != null && q.IsActive && q.IsAssigned(a)) a.ChangeState(a.TravelState);
+                // Called in from the field (P4-76): report at the guild first — sell the loot, join
+                // the party's split. Straight to idling, an outing never counted them back.
+                else if (a.Data.LootCount > 0 || BackFromAnOuting(a)) a.ChangeState(a.VisitState);
                 else a.ChangeState(a.IdleState);
             }
         }
+
+        static bool BackFromAnOuting(Adventurer a)
+            => Services.TryGet<GuildParties>(out var parties) && parties.PartyOf(a) is { } p && p.WentOut(a) && !p.Arrived.Contains(a);
     }
 }

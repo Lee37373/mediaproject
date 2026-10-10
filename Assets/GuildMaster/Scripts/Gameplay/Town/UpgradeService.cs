@@ -91,6 +91,9 @@ namespace GuildMaster.Town
         /// <summary>Training ground: members idling in town gain a little EXP every game hour.</summary>
         void OnHour(HourPassedEvent e)
         {
+            // A fallen training ground trains nobody until it is rebuilt (P4-76, as crafting stops, P4-74).
+            var ground = _town.Get(BuildingType.TrainingGround);
+            if (ground == null || ground.IsDestroyed) return;
             int exp = (int)(Current(BuildingType.TrainingGround)?.idleExpPerHour ?? 0f);
             if (exp <= 0) return;
             foreach (var a in _roster.Members.ToList())

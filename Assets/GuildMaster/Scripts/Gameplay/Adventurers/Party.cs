@@ -284,11 +284,30 @@ namespace GuildMaster.Adventurers
         {
             var p = PartyOf(a);
             if (p == null || !p.WentOut(a)) return false;
-            if (p.Arrived.Count == 0) p.FirstArrivalHour = Hour;
-            if (p.Arrived.Add(a)) p.ArrivedAt[a] = Hour;
+            MarkArrived(p, a);
             TrySettle(p);
             return p.OnOuting;
         }
+
+        void MarkArrived(Party p, Adventurer a)
+        {
+            if (p.Arrived.Count == 0) p.FirstArrivalHour = Hour;
+            if (p.Arrived.Add(a)) p.ArrivedAt[a] = Hour;
+        }
+
+        /// <summary>
+        /// Back in town and at rest without having reported at the guild counter (P4-76: a raid's
+        /// defence ended with everyone idling about town, nobody counted as back, the outing never
+        /// settled, and its leader — waiting for the split — kept the whole party in town for days).
+        /// The guild-visit state reports on its own, so it is not counted here — and neither is
+        /// making up one's mind: a quest party sets out while its leader is still deciding in town
+        /// (P4-76: counting that as back forced the split twelve hours into the quest, and the party
+        /// "broke up in town" six hours later while still out). Home for good, a member idles first.
+        /// </summary>
+        static bool HomeWithoutReport(Adventurer m)
+            => m != null && m.IsAlive && m.IsGuildMember
+               && (m.Fsm.Current == m.IdleState || m.Fsm.Current == m.RestState)
+               && Services.TryGet<World.WorldService>(out var world) && world.Grid.IsInTown(m.Position);
 
         /// <summary>Still waiting for the split (or for the others to come back).</summary>
         public bool IsWaiting(Adventurer a)
@@ -307,6 +326,9 @@ namespace GuildMaster.Adventurers
                 p.Members.RemoveAll(m => m == null || !m.IsGuildMember);
                 if (p.Members.Count < 2) { Disband(p, "인원 부족"); continue; }
                 if (!p.OnOuting && p.SettledAtHour >= 0f && Hour - p.SettledAtHour >= DisbandIdleHours) { Disband(p, "마을에서 해산"); continue; }
+                if (p.OnOuting && !p.Settling)
+                    foreach (var m in p.Out.Keys)
+                        if (!p.Arrived.Contains(m) && HomeWithoutReport(m)) MarkArrived(p, m);
                 if (p.OnOuting && !p.Settling && p.Arrived.Count > 0) TrySettle(p);
             }
         }

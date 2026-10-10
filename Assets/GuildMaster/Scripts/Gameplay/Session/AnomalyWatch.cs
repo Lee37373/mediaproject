@@ -42,6 +42,9 @@ namespace GuildMaster.Session
             if (s == a.DefendState) return 12f;
             if (s == a.TownGuardState) return 4f;
             if (s == a.LureState) return 1f;
+            // Idling decides every hour and a half; a follower waits for its leader, but not for half a
+            // day (P4-76: an outing that never settled held a whole party in town for days).
+            if (s == a.IdleState) return 12f;
             return float.PositiveInfinity;
         }
 
@@ -50,9 +53,10 @@ namespace GuildMaster.Session
 
         readonly List<string> _findings = new();
         readonly HashSet<string> _reported = new();
-        readonly Dictionary<Adventurer, (Vector2 pos, float hour)> _lastMove = new();
+        readonly Dictionary<Adventurer, (Vector2 pos, float hour, State<Adventurer> state)> _lastMove = new();
         readonly Dictionary<Quest, float> _unworkedSince = new();
         readonly Dictionary<Party, float> _splitSince = new();
+        readonly Dictionary<Party, float> _openOutingSince = new();
         const float SplitDistance = 25f;
 
         /// <summary>Out of town on the party's business (not at home, not camped).</summary>
@@ -81,7 +85,11 @@ namespace GuildMaster.Session
                 float hours = s.Elapsed * hoursPerSecond;
                 if (hours > LimitHours(a, s)) Report($"{a.Data.name}: '{s.Label}' {hours:0.0}h (limit {LimitHours(a, s):0})", $"long:{a.Data.name}:{s.Label}");
 
-                if (!_lastMove.TryGetValue(a, out var last) || (a.Position - last.pos).sqrMagnitude > 1f) _lastMove[a] = (a.Position, now);
+                // Standing still counts from when it last moved or last changed what it was doing (P4-76:
+                // three hours' rest by the guild door, then a hunt mustering on the same spot, read as a
+                // muster stuck for three hours).
+                if (!_lastMove.TryGetValue(a, out var last) || (a.Position - last.pos).sqrMagnitude > 1f || last.state != s)
+                    _lastMove[a] = (a.Position, now, s);
                 else if (Walking(a, s) && a.Engage.Target == null && now - last.hour >= 2f) // a fight of twenty seconds is two game hours
                     Report($"{a.Data.name}: '{s.Label}' but has not moved for {now - last.hour:0.0}h at {a.Position}{Context(a)}", $"still:{a.Data.name}:{s.Label}:{Mathf.RoundToInt(last.hour)}");
             }
@@ -108,11 +116,21 @@ namespace GuildMaster.Session
                     for (int i = 0; i < outside.Count; i++)
                     for (int j = i + 1; j < outside.Count; j++)
                         spread = Mathf.Max(spread, Vector2.Distance(outside[i].Position, outside[j].Position));
+                    // An outing still open with everyone who went out back home: its split never comes
+                    // (P4-76), and its leader waits for it.
+                    bool anyoneOut = p.Out.Keys.Any(m => m != null && m.IsAlive && m.IsGuildMember && !p.Arrived.Contains(m)
+                                                         && !(m.Fsm.Current == m.IdleState || m.Fsm.Current == m.DecidingState || m.Fsm.Current == m.RestState));
+                    if (p.OnOuting && !p.Settling && !anyoneOut)
+                    {
+                        if (!_openOutingSince.TryGetValue(p, out var open)) _openOutingSince[p] = open = now;
+                        if (now - open >= 3f) Report($"{p.Name}: outing still open {now - open:0}h with nobody out (arrived {p.Arrived.Count}/{p.Out.Count})", $"outing:{p.Id}:{Mathf.RoundToInt(open)}");
+                    }
+                    else _openOutingSince.Remove(p);
                     if (spread < SplitDistance) { _splitSince.Remove(p); continue; }
                     if (!_splitSince.TryGetValue(p, out var since)) _splitSince[p] = since = now;
                     if (now - since >= 1f)
                         Report($"{p.Name} split {spread:0} cells apart for {now - since:0.0}h: " +
-                               string.Join(", ", outside.Select(m => $"{m.Data.name} '{m.StateLabel}' {m.Position}")), $"split:{p.Id}:{Mathf.RoundToInt(since)}");
+                               string.Join(" | ", outside.Select(m => $"{m.Data.name} '{m.StateLabel}' {m.Position}{Context(m)}")), $"split:{p.Id}:{Mathf.RoundToInt(since)}");
                 }
 
             if (Services.TryGet<QuestBoard>(out var board))

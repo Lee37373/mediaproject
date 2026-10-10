@@ -187,6 +187,23 @@ namespace GuildMaster.World
             return false;
         }
 
+        /// <summary>
+        /// The map changed and a cell still ahead on the plan cannot be walked any more: a gate shut
+        /// again, a building put up. Only the next waypoint used to be checked (P4-76), so a walker
+        /// whose way was closed further on walked straight through the repaired gate or the new tower.
+        /// Cells the walker has never seen are the plan's own guess (P4-64) and are left to it.
+        /// </summary>
+        bool PlanBlocked()
+        {
+            for (int i = _index; i < _waypoints.Count; i++)
+            {
+                var c = GridMap.WorldToCell(_waypoints[i]);
+                if (UnknownToMe != null && UnknownToMe(c.x, c.y)) continue;
+                if (!Passable(c)) return true;
+            }
+            return false;
+        }
+
         void Update()
         {
             if (!IsMoving) return;
@@ -194,7 +211,7 @@ namespace GuildMaster.World
             if (_gridVersion != World.Grid.Version)
             {
                 _gridVersion = World.Grid.Version;
-                if (_index < _waypoints.Count && !Passable(GridMap.WorldToCell(_waypoints[_index])))
+                if (PlanBlocked())
                 {
                     if (!BuildPath()) { Stop(); PathFailed?.Invoke(); return; }
                 }

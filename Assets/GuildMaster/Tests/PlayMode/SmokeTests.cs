@@ -928,6 +928,19 @@ namespace GuildMaster.Tests
             Assert.That(sharesSum, Is.EqualTo(settledPool), "the shares add up to the pool");
             Assert.That(parties.PartyOf(mate), Is.EqualTo(party), "a fair split keeps the party together");
 
+            // Out again, then called home by a raid's defence and left idling in town without going to
+            // the counter (P4-76): the outing still settles, or its leader would wait for it forever.
+            Assert.That(parties.SetOut(members), Is.EqualTo(party));
+            Assert.That(party.OnOuting, Is.True, "a second outing");
+            foreach (var m in members)
+            {
+                m.Mover.Stop();
+                m.ChangeState(m.IdleState);
+            }
+            yield return WaitFor(() => !party.OnOuting, 5f);
+            Assert.That(party.OnOuting, Is.False, "back home without reporting still counts as back");
+            Assert.That(parties.OutingUnfinished(leader), Is.False, "the leader decides again");
+
             // The leader takes a party quest: the mate comes along without an invitation.
             yield return WaitFor(() => mate.Fsm.Current == mate.IdleState || mate.Fsm.Current == mate.RestState, 5f);
             if (mate.Fsm.Current == mate.RestState) mate.ChangeState(mate.IdleState);

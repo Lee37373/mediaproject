@@ -170,7 +170,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<NestClearedEvent>(e =>
             {
                 if (Witnessed(e.Nest) || e.Killer is Adventurer)
-                    Add($"[생태계] {e.Nest.DisplayName}이(가) 비었습니다.", LogCategory.Ecosystem);
+                    Add($"[생태계] {KnownName(e.Nest)}이(가) 비었습니다.", LogCategory.Ecosystem);
             });
             EventBus.Subscribe<NestRecolonizedEvent>(e =>
             {
@@ -184,7 +184,8 @@ namespace GuildMaster.Session
             EventBus.Subscribe<RoamingPackSettledEvent>(e => { if (e.Observed) Add($"떠돌던 {e.Pack.Species.displayName} 무리가 {e.Nest.DisplayName}에 자리 잡았습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<IntrudersRoutedEvent>(e => { if (e.Observed) Add($"{e.IntruderHome.Species.displayName} 무리가 {e.Territory.DisplayName}의 기세에 눌려 물러났습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<BandSettledEvent>(e => { if (e.Observed) Add($"{e.Species.displayName} 무리 {e.Count}마리가 옮겨 와 {e.To.DisplayName}에 자리 잡았습니다.", LogCategory.Ecosystem); });
-            EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {e.Nest.DisplayName}", LogCategory.Ecosystem));
+            // Found by seeing the den, not who lives in it (P4-76: the log named the real owners).
+            EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {KnownName(e.Nest)}", LogCategory.Ecosystem));
             // Monsters using ground items (P4-21), only when the guild sees it happen.
             EventBus.Subscribe<Monsters.MonsterItemUsedEvent>(e =>
             {
@@ -201,6 +202,10 @@ namespace GuildMaster.Session
             });
             EventBus.Subscribe<DayPassedEvent>(e => Add($"{e.Day}일차가 밝았습니다.", LogCategory.Info));
         }
+
+        /// <summary>The den as the guild knows it: named after the owners last seen there, "정체불명" before that.</summary>
+        static string KnownName(Nest nest)
+            => Services.TryGet<GuildIntel>(out var intel) ? intel.NameOf(nest) : nest.NameFor(null);
 
         static bool Witnessed(Nest nest)
             => nest.Discovered && Services.TryGet<Fog.FogOfWar>(out var fog) && fog.IsVisibleRaw(nest.Cell);
