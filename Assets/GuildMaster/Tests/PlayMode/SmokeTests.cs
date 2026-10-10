@@ -945,11 +945,39 @@ namespace GuildMaster.Tests
             yield return WaitFor(() => mate.Fsm.Current == mate.IdleState || mate.Fsm.Current == mate.RestState, 5f);
             if (mate.Fsm.Current == mate.RestState) mate.ChangeState(mate.IdleState);
             MakeKnown(Services.Get<EcosystemManager>().Species.First(s2 => s2.id == "slime"));
+
+            // Someone else's party quest does not ask this party along — its leader neither (P4-77: a leader
+            // who said yes pulled the inviter into its party and left its own members waiting in town).
+            var outsider = Roster.Members.FirstOrDefault(a => a.IsAlive && parties.PartyOf(a) == null && a.CurrentQuest == null);
+            Assume.That(outsider, Is.Not.Null, "a member in no party");
+            outsider.ChangeState(outsider.IdleState);
+            leader.ChangeState(leader.IdleState);
+            var asked = new System.Collections.Generic.List<Adventurer>();
+            System.Action<PartyInviteAnsweredEvent> onAnswer = e => asked.Add(e.Invitee);
+            EventBus.Subscribe(onAnswer);
+            var theirs = board.FindById(DebugCommands.PostHunt("slime", 2, 60, 20, party: 3));
+            Assert.That(theirs, Is.Not.Null);
+            Assert.That(board.TryAccept(theirs, outsider), Is.True);
+            outsider.CurrentQuest = theirs;
+            yield return null;
+            EventBus.Unsubscribe(onAnswer);
+            Assert.That(asked.Contains(leader), Is.False, "another party's leader is not invited");
+            Assert.That(asked.Contains(mate), Is.False, "nor its members");
+            Assert.That(leader.CurrentQuest, Is.Null);
+
             var q = board.FindById(DebugCommands.PostHunt("slime", 2, 60, 20, party: 2));
             Assert.That(q, Is.Not.Null);
             Assert.That(board.TryAccept(q, leader), Is.True);
             leader.CurrentQuest = q;
             Assert.That(mate.CurrentQuest, Is.EqualTo(q), "the party member took the quest with its leader");
+
+            // Done together, each warms to the other (P4-77: counted as each was paid, and the board takes a
+            // member off the quest as it pays them, so only the first to report warmed to the rest).
+            int toMate = Relationships.Get(leader, mate), toLeader = Relationships.Get(mate, leader);
+            Assert.That(board.Cancel(q), Is.True, "taken: cancelling pays it out as done");
+            Assert.That(q.Status, Is.EqualTo(QuestStatus.Completed));
+            Assert.That(Relationships.Get(leader, mate), Is.EqualTo(toMate + RelationshipRecorder.SharedRewardBonus), "the leader to the mate");
+            Assert.That(Relationships.Get(mate, leader), Is.EqualTo(toLeader + RelationshipRecorder.SharedRewardBonus), "the mate to the leader");
         }
 
         [UnityTest]
@@ -1791,6 +1819,26 @@ namespace GuildMaster.Tests
                 Assert.That(camps.Camps.Contains(camp), Is.False, $"the camp breaks up (alarmed {camp.Alarmed})");
                 Assert.That(camp.Fire.Burning, Is.False, "the fire is put out");
                 foreach (var a in pair) Assert.That(a.Fsm.Current, Is.Not.EqualTo(a.CampState), $"{a.Data.name} is on the road again");
+
+                // A fight at the fire that does not end does not hold the camp past its longest stay either
+                // (P4-77: the alarm skipped the limit, and a camp by a den ran fourteen hours).
+                Unit.GuildInvulnerable = false;
+                foreach (var a in pair)
+                {
+                    DebugCommands.Hurt(Roster.Members.ToList().IndexOf(a), a.Stats.MaxHp * 0.5f); // not mended yet, or it ends at once
+                    a.Data.fatigue = 60f;
+                }
+                Unit.GuildInvulnerable = true;
+                Assert.That(camps.Pitch(new System.Collections.Generic.List<Adventurer>(pair), CampReason.Recover), Is.True, "a second fire");
+                var second = camps.Camps.Last();
+                var brute = SpawnMonster("goblin", second.Position + new Vector2(2f, 0f), meleeOnly: true, level: MonsterLevel.MaxLevel);
+                Assume.That(brute, Is.Not.Null);
+                yield return WaitFor(() => second.Alarmed, 5f);
+                Assert.That(second.Alarmed, Is.True, "a raider at the fire");
+                second.PitchedAtHour = Clock.TotalHours - CampRules.MaxHours - 0.1f;
+                yield return WaitFor(() => !camps.Camps.Contains(second), 3f);
+                Assert.That(camps.Camps.Contains(second), Is.False, $"the camp ends at its longest stay though the fight goes on (raider alive {brute.IsAlive})");
+                brute.Perish();
             }
             finally { Unit.GuildInvulnerable = false; }
         }
@@ -2377,6 +2425,46 @@ namespace GuildMaster.Tests
             }
             Assert.That(pickedIt, Is.False, "a Lv1 member does not pick a fight with a slime king");
             king.Perish();
+
+            // P4-77: a quest it would not take — far out, beyond a Lv1 — does not call it home. Any open quest
+            // used to: one nobody takes sent every band back from the gate to decide on a hunt again, all day.
+            member.Engage.Clear();
+            member.Heal(member.Stats.MaxHp);
+            // Nobody idle in town takes them first (its own band mates stay: one leaving sends the band home).
+            var ownBand = Services.Get<HuntBandService>().BandOf(member);
+            foreach (var other in Roster.Members.Where(a => a.IsAlive && a != member && (ownBand == null || !ownBand.Has(a))))
+                other.ChangeState(other.RestState);
+            var board = Services.Get<QuestBoard>();
+            MakeKnown(Services.Get<EcosystemManager>().Species.First(s2 => s2.id == "slime"));
+            var far = FarHuntPoint(10);
+            Assert.That(far.HasValue, Is.True, "a hunting spot far out");
+            var tooMuch = board.FindById(DebugCommands.PostHunt("slime", 8, 60, 20, party: 1, far.Value.x, far.Value.y));
+            Assert.That(tooMuch, Is.Not.Null);
+            Assert.That(RuleBasedDecisionMaker.Score(member, tooMuch), Is.EqualTo(0f), "a quest it would not take");
+            float stay = Time.time + 2f;
+            while (Time.time < stay && member.Fsm.Current == member.FreeHuntState) yield return null;
+            Assert.That(member.Fsm.Current, Is.EqualTo(member.FreeHuntState), "it hunts on, now " + member.StateLabel);
+
+            // One it would take, posted while it is out, does.
+            var near = board.FindById(DebugCommands.PostHunt("slime", 1, 80, 20, party: 1, member.Position.x + 3f, member.Position.y));
+            Assert.That(near, Is.Not.Null);
+            Assert.That(RuleBasedDecisionMaker.Score(member, near), Is.GreaterThan(0f));
+            yield return WaitFor(() => member.Fsm.Current == member.ReturnState, 3f);
+            Assert.That(member.Fsm.Current, Is.EqualTo(member.ReturnState), "a new quest it would take calls it home");
+        }
+
+        /// <summary>A spot the board accepts for a hunt where monsters are born at least this level, or null.</summary>
+        static Vector2? FarHuntPoint(int minLevel)
+        {
+            var center = Services.Get<World.WorldService>().TownCenterWorld;
+            var eco = Services.Get<EcosystemManager>();
+            for (float r = 120f; r > 30f; r -= 5f)
+            for (int k = 0; k < 16; k++)
+            {
+                var p = center + new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f)) * r;
+                if (QuestBoard.HuntPointError(p) == null && eco.BirthLevelAt(p) >= minLevel) return p;
+            }
+            return null;
         }
 
         [UnityTest]

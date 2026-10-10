@@ -121,8 +121,15 @@ namespace GuildMaster.Items
                 dropped.Add(g);
                 EventBus.Publish(new GroundItemDroppedEvent { Item = g });
             }
-            while (_items.Count > MaxItems) Remove(_items[0]);
+            while (_items.Count > MaxItems) Remove(OldestToSweep());
             return dropped;
+        }
+
+        /// <summary>The oldest item that is not a kept relic (the very oldest when everything is one).</summary>
+        GroundItem OldestToSweep()
+        {
+            foreach (var g in _items) if (g == null || !g.Kept) return g;
+            return _items[0];
         }
 
         /// <summary>Nearest item within radius passing the filter, or null.</summary>

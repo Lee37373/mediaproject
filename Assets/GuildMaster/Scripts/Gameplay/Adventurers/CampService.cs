@@ -422,6 +422,9 @@ namespace GuildMaster.Adventurers
                 {
                     if (camp.Members.Any(m => m.Engage.Target != null || ThreatInSight(m) != null)) camp.QuietSince = Time.time;
                     else if (Time.time - camp.QuietSince >= CampRules.QuietSeconds) camp.Alarmed = false;
+                    // A fight that never quite ends — a den in sight of the fire — does not hold the camp past
+                    // its time either (P4-77: the alarm skipped the limit, and a camp ran fourteen hours).
+                    if (hour - camp.PitchedAtHour >= CampRules.MaxHours) Break(camp, quietly: true);
                     continue;
                 }
                 if (!camp.Talked && camp.Sitting(hour) && camp.Members.Count >= 2 && camp.Members.All(m => m.CampState.Seated)) StartTalk(camp);
@@ -445,14 +448,17 @@ namespace GuildMaster.Adventurers
             return CampRules.Done(camp.Reason, lowest, tiredest, _clock.IsNight, hour - camp.PitchedAtHour);
         }
 
-        /// <summary>Everyone mended (or morning come): the fire is put out and each goes back to its road.</summary>
-        void Break(Camp camp)
+        /// <summary>
+        /// Everyone mended (or morning come, or the time up): the fire is put out and each goes back to its
+        /// road. <paramref name="quietly"/>: broken off mid-fight, without the cheerful send-off.
+        /// </summary>
+        void Break(Camp camp, bool quietly = false)
         {
             var leader = camp.Leader;
             // Everyone's road first: the first one back on the hunt un-pauses the band (P4-71).
             var going = camp.Members.Select(m => (m, next: NextRoad(camp, m))).ToList();
             foreach (var (m, next) in going) m.ChangeState(next);
-            if (leader != null && leader.IsAlive) leader.Say(camp.Reason == CampReason.Night ? "날이 밝았다. 가자!" : "이제 좀 살겠다. 출발하자!");
+            if (!quietly && leader != null && leader.IsAlive) leader.Say(camp.Reason == CampReason.Night ? "날이 밝았다. 가자!" : "이제 좀 살겠다. 출발하자!");
             End(camp);
         }
 

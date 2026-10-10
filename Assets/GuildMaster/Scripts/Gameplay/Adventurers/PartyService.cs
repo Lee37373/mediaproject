@@ -278,8 +278,10 @@ namespace GuildMaster.Adventurers
             return _roster.Members
                 .Where(a => a != leader && FreeInTown(a)
                             && !IsInvited(a)
-                            // Someone else's party member waits for its own leader (P4-50).
-                            && (parties == null || !parties.FollowsALeader(a))
+                            // Someone else's party stays with its own leader (P4-50) — its leader too, as for hunts
+                            // (P4-77: a leader who said yes pulled the inviter into its party, left its own members
+                            // waiting in town for the whole quest, and reset an outing still being split).
+                            && (parties == null || parties.PartyOf(a) == null)
                             && Relationships.Get(leader, a) > HostileThreshold)
                 // Friends first: fitness scaled by how the leader feels about them.
                 .Select(a => (a, score: RuleBasedDecisionMaker.Score(a, q) * (1f + Relationships.Get(leader, a) / 100f)))

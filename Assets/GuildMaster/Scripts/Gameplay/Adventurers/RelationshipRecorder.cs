@@ -17,25 +17,33 @@ namespace GuildMaster.Adventurers
 
         public RelationshipRecorder()
         {
-            EventBus.Subscribe<QuestRewardPaidEvent>(OnRewardPaid);
+            EventBus.Subscribe<QuestCompletedEvent>(OnCompleted);
             EventBus.Subscribe<PartyInviteAnsweredEvent>(OnInviteAnswered);
             EventBus.Subscribe<AdventurerRetreatedEvent>(OnRetreated);
         }
 
         public void Dispose()
         {
-            EventBus.Unsubscribe<QuestRewardPaidEvent>(OnRewardPaid);
+            EventBus.Unsubscribe<QuestCompletedEvent>(OnCompleted);
             EventBus.Unsubscribe<PartyInviteAnsweredEvent>(OnInviteAnswered);
             EventBus.Unsubscribe<AdventurerRetreatedEvent>(OnRetreated);
         }
 
-        /// <summary>Each paid member warms to everyone else who worked the same quest.</summary>
-        void OnRewardPaid(QuestRewardPaidEvent e)
+        /// <summary>
+        /// Everyone who worked the quest warms to everyone else on it. Counted when it is done, while they
+        /// are all still on it: it used to be counted as each was paid, and the board takes a member off the
+        /// quest as it pays them, so the first to report warmed to the rest and the last to nobody (P4-77).
+        /// </summary>
+        void OnCompleted(QuestCompletedEvent e)
         {
-            if (e.Taker is not Adventurer me) return;
-            foreach (var t in e.Quest.Assignees)
-                if (t is Adventurer other && other != me)
-                    Relationships.Add(me, other, SharedRewardBonus, "함께 의뢰 완수");
+            var takers = e.Quest.Assignees;
+            for (int i = 0; i < takers.Count; i++)
+            {
+                if (takers[i] is not Adventurer me || !me.IsAlive) continue;
+                for (int j = 0; j < takers.Count; j++)
+                    if (j != i && takers[j] is Adventurer other && other.IsAlive)
+                        Relationships.Add(me, other, SharedRewardBonus, "함께 의뢰 완수");
+            }
         }
 
         void OnInviteAnswered(PartyInviteAnsweredEvent e)
@@ -48,9 +56,13 @@ namespace GuildMaster.Adventurers
             else Relationships.Add(e.Leader, e.Invitee, InviteRefusedPenalty, "파티 거절");
         }
 
-        /// <summary>Party mates think less of someone who runs off mid-quest.</summary>
+        /// <summary>
+        /// Party mates think less of someone who runs off mid-quest — not of one whose wounds made the whole
+        /// party pull back together (P4-71: nobody ran off; P4-77: it still cost the hurt one their regard).
+        /// </summary>
         void OnRetreated(AdventurerRetreatedEvent e)
         {
+            if (e.WithParty) return;
             var q = e.Adventurer?.CurrentQuest;
             if (q == null) return;
             foreach (var t in q.Assignees)

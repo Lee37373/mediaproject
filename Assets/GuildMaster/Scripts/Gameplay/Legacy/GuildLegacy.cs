@@ -165,8 +165,12 @@ namespace GuildMaster.Legacy
             {
                 var saved = _restoring.fallen[i].relics;
                 for (int k = 0; k < _fallen[i].Relics.Count && k < saved.Count; k++)
-                    if (saved[k].ground >= 0)
-                        _fallen[i].Relics[k].Ground = ctx.Find<Items.GroundItem>(Items.GroundItemService.SaveId(saved[k].ground));
+                {
+                    if (saved[k].ground < 0) continue;
+                    var relic = _fallen[i].Relics[k];
+                    relic.Ground = ctx.Find<Items.GroundItem>(Items.GroundItemService.SaveId(saved[k].ground));
+                    if (relic.Ground != null && relic.State == RelicState.Lying) relic.Ground.Kept = true;
+                }
             }
             _restoring = null;
         }
@@ -228,6 +232,7 @@ namespace GuildMaster.Legacy
                 foreach (var g in a.DeathDrops)
                 {
                     if (g == null || g.Item == null) continue;
+                    g.Kept = true; // lies its full time, not swept off by the ground's item cap
                     rec.Relics.Add(new RelicItem
                     {
                         ItemId = g.Item.id,

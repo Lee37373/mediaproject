@@ -14,8 +14,11 @@ using UnityEngine;
 namespace GuildMaster.Adventurers
 {
     public struct AdventurerLevelUpEvent { public Adventurer Adventurer; public int Level; }
-    /// <summary>Retreat because of low HP (not fatigue). Threat = last unit that hit us, if any.</summary>
-    public struct AdventurerRetreatedEvent { public Adventurer Adventurer; public Unit Threat; }
+    /// <summary>
+    /// Retreat because of low HP (not fatigue). Threat = last unit that hit us, if any. WithParty: the
+    /// whole party pulled back with it (P4-71), so it did not run off on its own.
+    /// </summary>
+    public struct AdventurerRetreatedEvent { public Adventurer Adventurer; public Unit Threat; public bool WithParty; }
     /// <summary>NoFeed: the line already appears in a dialogue window, so the bottom-left feed skips it (the speech bubble still shows).</summary>
     public struct AdventurerSpeechEvent { public Adventurer Adventurer; public string Text; public bool NoFeed; }
     public struct AdventurerStateChangedEvent { public Adventurer Adventurer; public string Label; }
@@ -454,7 +457,7 @@ namespace GuildMaster.Adventurers
                 if (PartyRecovery.Handle(this))
                 {
                     if (HpRatio < RetreatThreshold && Fsm.Current == ReturnState && ReturnState.Retreating)
-                        EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });
+                        EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker, WithParty = true });
                     return true;
                 }
                 if (HpRatio < RetreatThreshold)

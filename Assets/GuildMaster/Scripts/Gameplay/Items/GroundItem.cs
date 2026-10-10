@@ -21,6 +21,11 @@ namespace GuildMaster.Items
         public float Age => Time.time - _droppedAt;
         /// <summary>Unit walking to it right now; others leave it alone.</summary>
         public Unit ReservedBy { get; private set; }
+        /// <summary>
+        /// A fallen member's relic (F-6): it lies for its full time, however crowded the ground gets
+        /// (P4-77: the item cap swept away the oldest drop anywhere, relics included, long before they rotted).
+        /// </summary>
+        public bool Kept { get; internal set; }
         public Vector2 Position => transform.position;
 
         SpriteRenderer _body;
@@ -48,6 +53,7 @@ namespace GuildMaster.Items
             DroppedAtHour = hour;
             _droppedAt = Time.time;
             ReservedBy = null;
+            Kept = false;
             _bobPhase = Random.value * 6f;
             _body.color = item != null ? item.color : Color.white;
             // Bigger dot for wearable items so they read as "gear" at a glance.
@@ -93,6 +99,7 @@ namespace GuildMaster.Items
         {
             Item = null;
             ReservedBy = null;
+            Kept = false;
         }
 
         void Update()

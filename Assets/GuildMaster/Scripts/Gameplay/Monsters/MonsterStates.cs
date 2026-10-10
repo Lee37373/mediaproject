@@ -233,6 +233,13 @@ namespace GuildMaster.Monsters
     /// <summary>Walk back to the nest, regenerating health on the way.</summary>
     public class MonsterReturnState : State<Monster>
     {
+        /// <summary>
+        /// This close to the den is home. The walk aims at the den's very centre, and pack mates standing or
+        /// fighting there could hold one back just short of it for hours, walking on the spot (P4-77:
+        /// measured 4.1 game hours at 1.4 cells, not defending anything meanwhile).
+        /// </summary>
+        const float HomeRadius = 2f;
+
         public override string Label => "귀소";
 
         public override void Enter()
@@ -246,7 +253,9 @@ namespace GuildMaster.Monsters
             var m = Owner;
             m.Heal(m.Stats.MaxHp * 0.05f * dt);
             // Home: its default life (wandering, or the pack's road if it roams), not always wandering.
-            if (!m.Mover.IsMoving) m.GoToDefaultState();
+            if (m.Mover.IsMoving && (m.Position - m.HomePosition).sqrMagnitude > HomeRadius * HomeRadius) return;
+            m.Mover.Stop();
+            m.GoToDefaultState();
         }
     }
 }

@@ -272,10 +272,21 @@ namespace GuildMaster.Adventurers
         bool ShouldGoHome(Adventurer a)
         {
             if (_band != null && _band.GoingHome) return true;
-            bool quest = AdvCtx.Board.AvailableFor(a).Any();
-            if (FreeHunt.ShouldGoHome(AdvCtx.Clock.TotalHours - _startHour, a.Data.LootCount, quest, a.HpRatio)) return true;
+            if (FreeHunt.ShouldGoHome(AdvCtx.Clock.TotalHours - _startHour, a.Data.LootCount, NewQuestWorthTaking(a), a.HpRatio)) return true;
             var leader = _band?.Leader;
             return leader != null && leader != a && leader.Fsm.Current == leader.ReturnState;
+        }
+
+        /// <summary>
+        /// A quest posted since this hunt set out that this member would consider taking. Any open quest
+        /// used to count (P4-77): one nobody would take — too dangerous, waiting for persuasion — sent every
+        /// band home the moment it left the guild, to decide on a hunt again, back and forth all day.
+        /// </summary>
+        bool NewQuestWorthTaking(Adventurer a)
+        {
+            foreach (var q in AdvCtx.Board.AvailableFor(a))
+                if (q.PostedAtHour >= _startHour && RuleBasedDecisionMaker.Score(a, q) > 0f) return true;
+            return false;
         }
 
         /// <summary>
