@@ -39,6 +39,8 @@ namespace GuildMaster.Adventurers
         public bool Talked;
         public int Raids;
         public Campfire Fire;
+        /// <summary>Comrades that found no way to the fire (P4-78): they are not called to it again.</summary>
+        public readonly HashSet<Adventurer> CannotReach = new();
 
         public Adventurer Leader => Members.Count > 0 ? Members[0] : null;
         public bool Sitting(float hour) => hour < SitUntilHour;
@@ -210,7 +212,7 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public bool TryCampOnTheWay(Adventurer a)
         {
-            if (!Quiet(a)) return false;
+            if (ComradesAtAFire(a) || !Quiet(a)) return false;
             var group = Companions(a);
             bool alone = group.Count == 1;
             if (!CampRules.FarOut(DistanceToTown(a.Position), alone)) return false;
@@ -224,11 +226,25 @@ namespace GuildMaster.Adventurers
         {
             if (!_clock.IsNight) return false;
             if (Services.TryGet<PartyTactics>(out var tactics) && tactics.LeaderOf(a) is { } leader && leader != a) return false;
-            if (!Quiet(a)) return false;
+            if (ComradesAtAFire(a) || !Quiet(a)) return false;
             var group = Companions(a);
             bool alone = group.Count == 1;
             if (!CampRules.FarOut(DistanceToTown(a.Position), alone)) return false;
             return ChoosesNightCamp(group[0], alone) && Pitch(group, CampReason.Night);
+        }
+
+        /// <summary>
+        /// Its comrades have a fire going already: it joins theirs (<see cref="AdmitLateComers"/>) instead
+        /// of lighting a second one (P4-78) — unless it found no way there.
+        /// </summary>
+        bool ComradesAtAFire(Adventurer a)
+        {
+            foreach (var camp in _camps)
+            {
+                if (camp.CannotReach.Contains(a)) continue;
+                foreach (var c in camp.Members) if (Comrades(c, a)) return true;
+            }
+            return false;
         }
 
         /// <summary>No enemy in sight, nothing hit us, for <see cref="CampRules.QuietSeconds"/>.</summary>
@@ -255,14 +271,17 @@ namespace GuildMaster.Adventurers
             return camp;
         }
 
-        /// <summary>Us first (the leader of our party when it is here), then comrades close by who are out too.</summary>
+        /// <summary>
+        /// Us first (the leader of our party when it is here), then the comrades who are out too, wherever
+        /// they are (P4-78, user decision 2026-10-10: only those within 12 cells used to sit down, and the
+        /// party broke in two — the rest hunted on or walked home alone). The far ones walk to the fire.
+        /// </summary>
         List<Adventurer> Companions(Adventurer a)
         {
             var group = new List<Adventurer> { a };
             foreach (var m in _roster.Members)
             {
                 if (m == a || !m.IsAlive || !m.IsGuildMember || CampOf(m) != null || !IsOut(m) || !Comrades(a, m)) continue;
-                if (Vector2.Distance(m.Position, a.Position) > CampRules.JoinRadius) continue;
                 group.Add(m);
             }
             var leader = Services.TryGet<PartyTactics>(out var tactics) ? tactics.LeaderOf(a) : null;
@@ -279,11 +298,53 @@ namespace GuildMaster.Adventurers
             return s == m.TravelState || s == m.HuntState || s == m.FreeHuntState || s == m.ReturnState && !m.ReturnState.Luring;
         }
 
+        /// <summary>
+        /// Out on the same business: the same quest, the same hunting band, or the same standing party's
+        /// current outing (a party member out on business of its own is not called across the map).
+        /// </summary>
         static bool Comrades(Adventurer a, Adventurer b)
         {
             if (a.CurrentQuest != null && a.CurrentQuest == b.CurrentQuest) return true;
-            if (Services.TryGet<GuildParties>(out var parties) && parties.PartyOf(a) is { } p && p == parties.PartyOf(b)) return true;
+            if (Services.TryGet<GuildParties>(out var parties) && parties.PartyOf(a) is { } p && p == parties.PartyOf(b)
+                && p.WentOut(a) && p.WentOut(b)) return true;
             return Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(a) is { } band && band == bands.BandOf(b);
+        }
+
+        // ---------------- Late comers (P4-78) ----------------
+
+        const float AdmitInterval = 1f;
+        float _admitTimer;
+
+        /// <summary>
+        /// Comrades who were fighting, luring or busy when the fire was lit join it afterwards: once quiet
+        /// and out on the road, a member of the same business comes to the fire too.
+        /// </summary>
+        void AdmitLateComers(Camp camp)
+        {
+            if (camp.Members.Count == 0) return;
+            foreach (var m in _roster.Members)
+            {
+                if (!m.IsAlive || !m.IsGuildMember || CampOf(m) != null || !IsOut(m) || camp.CannotReach.Contains(m)) continue;
+                if (m.Engage.Target != null || Time.time - m.LastAttackedTime < CampRules.QuietSeconds) continue; // after its fight
+                bool comrade = false;
+                foreach (var c in camp.Members) if (Comrades(c, m)) { comrade = true; break; }
+                if (!comrade) continue;
+                camp.Members.Add(m);
+                camp.ResumeTo[m] = ResumeFor(m);
+                m.Engage.Clear();
+                m.ChangeState(m.CampState);
+            }
+        }
+
+        static readonly List<Adventurer> s_seated = new();
+
+        /// <summary>The one on watch: taken in turns among those sitting at the fire (not one still walking in).</summary>
+        static Adventurer WatchOf(Camp camp, float hour)
+        {
+            if (camp.Sitting(hour)) return null;
+            s_seated.Clear();
+            foreach (var m in camp.Members) if (m.CampState.Seated) s_seated.Add(m);
+            return s_seated.Count >= 2 ? s_seated[CampRules.WatchIndex(hour - camp.SitUntilHour, s_seated.Count)] : null;
         }
 
         // ---------------- Pitching ----------------
@@ -414,9 +475,7 @@ namespace GuildMaster.Adventurers
                 camp.Members.RemoveAll(m => m == null || !m.IsAlive || m.Fsm.Current != m.CampState);
                 if (camp.Members.Count == 0) { End(camp); continue; }
 
-                camp.Watcher = !camp.Sitting(hour) && camp.Members.Count >= 2
-                    ? camp.Members[CampRules.WatchIndex(hour - camp.SitUntilHour, camp.Members.Count)]
-                    : null;
+                camp.Watcher = WatchOf(camp, hour);
 
                 if (camp.Alarmed)
                 {
@@ -429,6 +488,13 @@ namespace GuildMaster.Adventurers
                 }
                 if (!camp.Talked && camp.Sitting(hour) && camp.Members.Count >= 2 && camp.Members.All(m => m.CampState.Seated)) StartTalk(camp);
                 if (Finished(camp, hour)) Break(camp);
+            }
+
+            _admitTimer -= Time.deltaTime;
+            if (_admitTimer <= 0f)
+            {
+                _admitTimer = AdmitInterval;
+                for (int i = _camps.Count - 1; i >= 0; i--) AdmitLateComers(_camps[i]);
             }
 
             _lightTimer -= Time.deltaTime;
@@ -462,7 +528,7 @@ namespace GuildMaster.Adventurers
             End(camp);
         }
 
-        static State<Adventurer> NextRoad(Camp camp, Adventurer m)
+        internal static State<Adventurer> NextRoad(Camp camp, Adventurer m)
         {
             var next = camp.ResumeTo.TryGetValue(m, out var s) && s != null ? s : m.ReturnState;
             if (next == m.TravelState && (m.CurrentQuest == null || !m.CurrentQuest.IsActive)) return m.ReturnState;

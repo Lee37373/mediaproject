@@ -115,8 +115,17 @@ namespace GuildMaster.Economy
             EventBus.Subscribe<DayPassedEvent>(OnDay);
         }
 
+        /// <summary>
+        /// The hourly EXP is the guild hall's: none comes while it lies in ruins, until it is stood up again
+        /// (P4-78, user decision 2026-10-10 — as crafting and the training ground stop, P4-74·76).
+        /// Without a town (EditMode tests) it always flows.
+        /// </summary>
+        public bool ExpStopped
+            => Services.TryGet<Town.TownService>(out var town) && town.Get(Town.BuildingType.GuildHall) is { IsDestroyed: true };
+
         void OnHour(HourPassedEvent e)
         {
+            if (ExpStopped) return;
             _expFraction += ExpPerHour;
             int whole = Mathf.FloorToInt(_expFraction);
             if (whole <= 0) return;

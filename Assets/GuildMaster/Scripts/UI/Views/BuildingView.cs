@@ -35,6 +35,15 @@ namespace GuildMaster.UI
             _message = UIBuilder.Label(body, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 30);
         }
 
+        /// <summary>What a fallen building no longer does, with its subject particle ("시간당 EXP가").</summary>
+        static string StoppedWhileDown(BuildingType type) => type switch
+        {
+            BuildingType.GuildHall => "시간당 EXP가",
+            BuildingType.Blacksmith or BuildingType.Apothecary => "제작이",
+            BuildingType.TrainingGround => "훈련이",
+            _ => "건물의 기능이",
+        };
+
         /// <summary>Opens the window for a building (called by the inspector on click).</summary>
         public void ShowBuilding(Building b)
         {
@@ -83,6 +92,14 @@ namespace GuildMaster.UI
                 return;
             }
             _current.text = $"{UIBuilder.Colored("현재", UITheme.TextMuted)}  {def.Level(_building.Level).effectText}";
+            // Fallen: what it gives stops until it is stood up again (P4-74·76·78), and it cannot be upgraded.
+            if (_building.IsDestroyed)
+            {
+                _next.text = UIBuilder.Colored($"무너졌습니다. 다시 세우기 전까지 {StoppedWhileDown(_building.Type)} 멈춥니다.", UITheme.Bad);
+                _cost.text = "";
+                _upgrade.gameObject.SetActive(false);
+                return;
+            }
             bool max = _building.Level >= def.MaxLevel;
             _upgrade.gameObject.SetActive(!max);
             if (max)

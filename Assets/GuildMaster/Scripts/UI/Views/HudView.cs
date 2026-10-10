@@ -63,7 +63,9 @@ namespace GuildMaster.UI
 
             var t = Services.Get<GuildTreasury>();
             _gold.text = $"{UIBuilder.Colored("골드", UITheme.Accent)} {t.Gold:N0}";
-            _exp.text = $"{UIBuilder.Colored("EXP", UITheme.Exp)} {t.Exp:N0} {UIBuilder.Colored($"(+{t.ExpPerHour:0.#}/h)", UITheme.TextMuted)}";
+            // A fallen guild hall brings in no EXP until it is stood up again (P4-78).
+            string perHour = t.ExpStopped ? UIBuilder.Colored("(홀 무너짐)", UITheme.Bad) : UIBuilder.Colored($"(+{t.ExpPerHour:0.#}/h)", UITheme.TextMuted);
+            _exp.text = $"{UIBuilder.Colored("EXP", UITheme.Exp)} {t.Exp:N0} {perHour}";
             var db = Services.Get<GameDatabase>();
             int mats = t.Stock.Where(kv => db.Item(kv.Key)?.category == ItemCategory.Material).Sum(kv => kv.Value);
             _materials.text = $"재료 {mats}";

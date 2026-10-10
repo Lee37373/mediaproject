@@ -23,8 +23,7 @@ namespace GuildMaster.Adventurers
         public const float CampAtFatigueAlone = 85f;
         /// <summary>No enemy in sight for this long (seconds) before anyone sits down.</summary>
         public const float QuietSeconds = 5f;
-        /// <summary>Comrades this close join the fire.</summary>
-        public const float JoinRadius = 12f;
+        // Comrades join the fire wherever they are (P4-78, user decision 2026-10-10; it was 12 cells).
 
         // ---- The fire ----
         /// <summary>How far the firelight shows (cells). Under the 14 at which a monster gives up a chase.</summary>

@@ -409,6 +409,23 @@ namespace GuildMaster.Tests
             Assert.That(treasury.Gold, Is.EqualTo(gold - rebuild));
             Assert.That(Services.Get<Economy.CraftingService>().CannotCraftReason(potion), Is.Not.EqualTo("제작 건물이 없습니다."), "and works again");
             Assert.That(town.CannotRepairReason(apothecary), Is.EqualTo("손상이 없습니다"));
+
+            // P4-78 (user decision 2026-10-10): a fallen guild hall brings in no hourly EXP until it stands again.
+            var hall = town.Get(Town.BuildingType.GuildHall);
+            hall.Damage(hall.MaxHp);
+            Assert.That(treasury.ExpStopped, Is.True);
+            int exp = treasury.Exp;
+            float hour = Mathf.Floor(Clock.TotalHours);
+            Clock.SetSpeed(4);
+            yield return WaitFor(() => Clock.TotalHours >= hour + 2f, 10f);
+            Assert.That(treasury.Exp, Is.EqualTo(exp), "no EXP from a fallen guild hall");
+            treasury.AddGold(town.RepairCost(hall));
+            Assert.That(town.TryRepair(hall), Is.True, town.CannotRepairReason(hall));
+            Assert.That(treasury.ExpStopped, Is.False);
+            hour = Mathf.Floor(Clock.TotalHours);
+            yield return WaitFor(() => Clock.TotalHours >= hour + 2f, 10f);
+            Clock.SetSpeed(1);
+            Assert.That(treasury.Exp, Is.GreaterThan(exp), "it flows again once the hall stands");
         }
 
         [UnityTest]
@@ -1839,6 +1856,34 @@ namespace GuildMaster.Tests
                 yield return WaitFor(() => !camps.Camps.Contains(second), 3f);
                 Assert.That(camps.Camps.Contains(second), Is.False, $"the camp ends at its longest stay though the fight goes on (raider alive {brute.IsAlive})");
                 brute.Perish();
+
+                // P4-78 (user decision 2026-10-10): the whole party gathers at one fire, wherever it is — only those
+                // within 12 cells used to sit down, and the party broke in two, each half camping or going home alone.
+                var awayFromTown = (spot - world.TownCenterWorld).normalized;
+                Assume.That(grid.TryFindNearestWalkable(World.GridMap.WorldToCell(spot + awayFromTown * 25f), 4, out var farCell), "open ground further out");
+                var farSpot = World.GridMap.CellToWorld(farCell);
+                ClearStrangersNear(spot, 20f);
+                ClearStrangersNear(farSpot, 20f);
+                foreach (var a in pair) { a.Heal(a.Stats.MaxHp); a.Data.fatigue = 30f; }
+                Unit.GuildInvulnerable = false;
+                DebugCommands.Hurt(Roster.Members.ToList().IndexOf(pair[0]), pair[0].Stats.MaxHp * 0.5f); // one of them needs the rest
+                Unit.GuildInvulnerable = true;
+                foreach (var (a, at) in new[] { (pair[0], spot), (pair[1], farSpot) })
+                {
+                    a.Mover.Stop();
+                    a.transform.position = at;
+                    a.Engage.Clear();
+                    a.ChangeState(a.ReturnState);
+                }
+                yield return WaitFor(() => camps.Camps.Count > 0, 15f);
+                Assert.That(camps.Camps.Count, Is.EqualTo(1), "one fire for the party: "
+                    + string.Join(", ", pair.Select(a => $"{a.Data.name} {a.StateLabel} hp={a.HpRatio:0.00} alive={a.IsAlive} town={Vector2.Distance(a.Position, world.TownCenterWorld):0}")));
+                var third = camps.Camps[0];
+                Assert.That(third.Members, Is.EquivalentTo(pair), "the one 25 cells off is at it too");
+                var walker = pair.OrderByDescending(a => Vector2.Distance(a.Position, third.Position)).First();
+                yield return WaitFor(() => walker.CampState.Seated, 15f);
+                Assert.That(walker.CampState.Seated, Is.True, $"it walked over and sat down ({walker.StateLabel}, {Vector2.Distance(walker.Position, third.Position):0.0} cells off)");
+                Assert.That(Vector2.Distance(walker.Position, third.Position), Is.LessThan(2f), "by the fire");
             }
             finally { Unit.GuildInvulnerable = false; }
         }
