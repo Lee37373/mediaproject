@@ -316,6 +316,29 @@ namespace GuildMaster.Adventurers
         /// <summary>Its party is still out (or settling): no new outing is decided until it is over.</summary>
         public bool OutingUnfinished(Adventurer a) => PartyOf(a) is { OnOuting: true };
 
+        /// <summary>
+        /// One of this leader's party is still resting or busy at the guild counter in town: the leader waits
+        /// for it before deciding on the next outing, so they go out together (P4-79, user decision 2026-10-10:
+        /// it set out with whoever stood about, and the one left behind — a party member waits for its leader —
+        /// stood in town for fourteen hours). Those on leave, badly wounded or at the breaking point stay home
+        /// anyway (P4-69), and one with a quest of its own goes back to it: neither is waited for.
+        /// </summary>
+        public bool MembersGettingReady(Adventurer leader)
+        {
+            if (PartyOf(leader) is not { } p || p.Leader != leader) return false;
+            foreach (var m in p.Members)
+            {
+                if (m == leader || m == null || !m.IsAlive || !m.IsGuildMember) continue;
+                var s = m.Fsm.Current;
+                if (s != m.RestState && s != m.VisitState && s != m.TownGuardState) continue;
+                if (m.CurrentQuest != null && m.CurrentQuest.IsActive) continue;
+                if (!Welfare.GuildWelfare.MayGoOut(m)) continue;
+                if (Services.TryGet<World.WorldService>(out var world) && !world.Grid.IsInTown(m.Position)) continue;
+                return true;
+            }
+            return false;
+        }
+
         float Hour => _clock != null ? _clock.TotalHours : Time.time / 10f;
 
         void Update()

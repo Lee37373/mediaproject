@@ -127,8 +127,10 @@ namespace GuildMaster.Adventurers
             // A pending party invitation is this member's decision for now.
             if (Services.TryGet<PartyService>(out var party) && party.IsInvited(a)) { _decisionTimer = 2f; return; }
             // A standing party's members go where their leader takes them (P4-50).
-            // The leader too while the last outing is not settled yet (the others are still coming back).
-            if (Services.TryGet<GuildParties>(out var parties) && (parties.FollowsALeader(a) || parties.OutingUnfinished(a))) { _decisionTimer = 2f; return; }
+            // The leader too while the last outing is not settled yet (the others are still coming back),
+            // and while one of them is still resting or at the counter (P4-79: they go out together).
+            if (Services.TryGet<GuildParties>(out var parties)
+                && (parties.FollowsALeader(a) || parties.OutingUnfinished(a) || parties.MembersGettingReady(a))) { _decisionTimer = 2f; return; }
             a.ChangeState(a.DecidingState);
         }
     }

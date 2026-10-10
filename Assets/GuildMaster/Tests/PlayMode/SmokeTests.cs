@@ -958,6 +958,21 @@ namespace GuildMaster.Tests
             Assert.That(party.OnOuting, Is.False, "back home without reporting still counts as back");
             Assert.That(parties.OutingUnfinished(leader), Is.False, "the leader decides again");
 
+            // P4-79 (user decision 2026-10-10): not while a member is still resting — it used to set out with
+            // whoever stood about, and the one left behind waited in town for its leader for half a day.
+            var decisionTimer = typeof(TownIdleState).GetField("_decisionTimer", BindingFlags.NonPublic | BindingFlags.Instance);
+            mate.Data.fatigue = 60f;
+            mate.ChangeState(mate.RestState);
+            leader.ChangeState(leader.IdleState);
+            decisionTimer.SetValue(leader.IdleState, 0f);
+            yield return null;
+            yield return null;
+            Assert.That(parties.MembersGettingReady(leader), Is.True, "a member is resting");
+            Assert.That(leader.Fsm.Current, Is.EqualTo(leader.IdleState), "the leader waits for it");
+            mate.ChangeState(mate.IdleState);
+            Assert.That(parties.MembersGettingReady(leader), Is.False, "ready: they can go together");
+            decisionTimer.SetValue(leader.IdleState, 999f); // the quests below are this test's next steps
+
             // The leader takes a party quest: the mate comes along without an invitation.
             yield return WaitFor(() => mate.Fsm.Current == mate.IdleState || mate.Fsm.Current == mate.RestState, 5f);
             if (mate.Fsm.Current == mate.RestState) mate.ChangeState(mate.IdleState);
