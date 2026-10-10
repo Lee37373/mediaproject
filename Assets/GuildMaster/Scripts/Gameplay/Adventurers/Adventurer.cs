@@ -221,7 +221,12 @@ namespace GuildMaster.Adventurers
                 if (string.IsNullOrEmpty(forgetId) || !Data.skillIds.Remove(forgetId)) return false;
             }
             Data.skillIds.Add(learnId);
+            // The skills are dealt anew: the ones kept stay on their cooldown (P4-76: a level-up in a
+            // fight made every skill ready again — a whirlwind just used could be spun at once).
+            var left = new Dictionary<System.Type, float>();
+            foreach (var s in Skills) left[s.GetType()] = s.CooldownLeft;
             SkillFactory.Assign(this, Data.skillIds);
+            foreach (var s in Skills) if (left.TryGetValue(s.GetType(), out var t)) s.ResetCooldown(t);
             return true;
         }
 

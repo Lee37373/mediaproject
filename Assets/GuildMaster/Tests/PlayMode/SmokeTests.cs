@@ -2107,6 +2107,12 @@ namespace GuildMaster.Tests
             Assert.That(patient.Hp, Is.GreaterThan(before), "the one closest to death got healed");
             Assert.That(healed, Is.EqualTo(patient), "and it was healed first");
             Assert.That(other.Hp >= otherBefore, Is.True);
+
+            // Learning a skill on level-up keeps the others on their cooldown (P4-76: they all came back ready).
+            var used1 = priest.Skills.First(s => !s.IsReady);
+            Assert.That(priest.LearnSkill("blink", priest.Data.skillIds.Count >= SkillCatalog.MaxSkills ? priest.Data.skillIds[0] : null), Is.True);
+            var same = priest.Skills.FirstOrDefault(s => s.GetType() == used1.GetType());
+            if (same != null) Assert.That(same.IsReady, Is.False, "the heal just cast is still cooling down after learning blink");
         }
 
         [UnityTest]
