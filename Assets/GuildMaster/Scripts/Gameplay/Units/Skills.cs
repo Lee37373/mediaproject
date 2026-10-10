@@ -408,7 +408,8 @@ namespace GuildMaster.Units
         public override bool TryUse(Unit self, Unit target)
         {
             if (target == null || self is not Monsters.Monster me) return false;
-            UnitRegistry.Collect(self.Position, 7f, u => u != self && u is Monsters.Monster m && m.Def == me.Def && m.Home == me.Home, Buffer); // own pack only
+            // Own pack only: a roaming pack has no nest, so "same nest" also matched every other roaming pack of the kind (P4-76).
+            UnitRegistry.Collect(self.Position, 7f, u => u is Monsters.Monster m && me.IsPackMate(m), Buffer);
             // A lone wolf has nobody to call: no howl, and no free haste either (it used to buff
             // itself on every failed try, i.e. permanently while fighting alone).
             if (Buffer.Count == 0) return false;

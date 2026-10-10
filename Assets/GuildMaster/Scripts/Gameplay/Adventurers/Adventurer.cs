@@ -609,6 +609,7 @@ namespace GuildMaster.Adventurers
         /// <summary>First pass: the member is created where it stood, as it was (no join event).</summary>
         public static Adventurer RestoreSave(AdventurerSave s, Transform parent, SaveContext ctx)
         {
+            AdventurerGenerator.NoteId(s.data.id);
             var a = Create(s.data, new Vector2(s.unit.x, s.unit.y), parent);
             a.IsGuildMember = s.member;
             if (s.visitor)

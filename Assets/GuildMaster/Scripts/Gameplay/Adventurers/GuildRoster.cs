@@ -21,6 +21,8 @@ namespace GuildMaster.Adventurers
         class SaveData
         {
             public int capacity;
+            /// <summary>Last adventurer number handed out, so the dead and the departed are never renumbered.</summary>
+            public int next_id;
             public List<Adventurer.AdventurerSave> members = new();
         }
 
@@ -30,7 +32,7 @@ namespace GuildMaster.Adventurers
 
         public string Capture()
         {
-            var s = new SaveData { capacity = Capacity };
+            var s = new SaveData { capacity = Capacity, next_id = AdventurerGenerator.Counter };
             foreach (var m in _members) if (m != null && m.IsAlive) s.members.Add(m.CaptureSave());
             return JsonUtility.ToJson(s);
         }
@@ -39,6 +41,7 @@ namespace GuildMaster.Adventurers
         {
             var s = JsonUtility.FromJson<SaveData>(json);
             Capacity = s.capacity;
+            AdventurerGenerator.Counter = s.next_id;
             _restoring.Clear();
             foreach (var saved in s.members)
             {

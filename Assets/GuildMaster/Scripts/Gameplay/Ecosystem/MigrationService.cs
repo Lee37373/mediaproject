@@ -94,6 +94,9 @@ namespace GuildMaster.Ecosystem
                     if (ctx.Find<Monster>(id) is not { } m) continue;
                     band.Members.Add(m);
                     _of[m] = band;
+                    // As Enlist: a member that falls leaves the band (the pooled body is reused as
+                    // another monster, which must not be found in this band afterwards).
+                    m.Died += OnMemberDied;
                 }
                 _bands.Add(band);
             }

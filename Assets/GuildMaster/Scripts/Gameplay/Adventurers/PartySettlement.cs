@@ -122,12 +122,16 @@ namespace GuildMaster.Adventurers
             string say = null;
             bool fromLlm = false;
             var splitter = members[0]; // the leader, or the first one back if the leader is still out
+            int session = Services.Generation;
             try
             {
                 if (_gateway != null && _gateway.Enabled && _gateway.IsReady && members.Count >= 2 && members.Count <= SplitPrompt.MaxMembers)
                 {
                     var ctx = BuildContext(splitter, members, p, pool);
                     var result = await _gateway.RequestAsync(SplitPrompt.BuildRequest(ctx, splitter.Data.id));
+                    // Loaded or restarted while the leader was thinking: this party is not in the game
+                    // any more (its split and leavers were announced to the next game's log and alerts).
+                    if (session != Services.Generation) return;
                     if (result.Ok && LlmJson.TryParse<SplitPrompt.ResponseDto>(result.Text, out var dto)
                         && SplitPrompt.TryInterpret(dto, members.Count, pool, out shares, out say))
                     {

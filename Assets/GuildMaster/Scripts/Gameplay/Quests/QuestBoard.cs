@@ -42,11 +42,21 @@ namespace GuildMaster.Quests
         // ---------------- Save (P5-4) ----------------
 
         [System.Serializable]
+        class SavedEscortShare
+        {
+            public string quest;
+            public string taker;
+            public float hours;
+        }
+
+        [System.Serializable]
         class SaveData
         {
             public int next_id;
             public List<Quest.QuestSave> quests = new();
             public List<Quest.QuestSave> history = new();
+            /// <summary>Hours each escort has been on duty so far (the pay is split by them at the end).</summary>
+            public List<SavedEscortShare> escort_shares = new();
         }
 
         SaveData _restoring;
@@ -60,6 +70,11 @@ namespace GuildMaster.Quests
             var s = new SaveData { next_id = _nextId };
             foreach (var q in _quests) s.quests.Add(q.CaptureSave(nests));
             foreach (var q in _history) s.history.Add(q.CaptureSave(nests));
+            foreach (var kv in _escortShares)
+                foreach (var share in kv.Value)
+                    if (kv.Key.IsAssigned(share.Key)) // the dead and the departed are paid nothing anyway
+                        s.escort_shares.Add(new SavedEscortShare { quest = kv.Key.Id, taker = share.Key.TakerId, hours = share.Value });
+            s.escort_shares.Sort((a, b) => a.quest != b.quest ? string.CompareOrdinal(a.quest, b.quest) : string.CompareOrdinal(a.taker, b.taker));
             return JsonUtility.ToJson(s);
         }
 
@@ -87,6 +102,14 @@ namespace GuildMaster.Quests
         {
             foreach (var (q, qs) in _restoredQuests) q.LinkSave(qs, ctx);
             _restoredQuests.Clear();
+            // Escort time already served still counts in the split (P4-76: it restarted from zero).
+            _escortShares.Clear();
+            foreach (var es in _restoring.escort_shares)
+            {
+                if (FindById(es.quest) is not { } q || ctx.Find<IQuestTaker>(es.taker) is not { } taker) continue;
+                if (!_escortShares.TryGetValue(q, out var shares)) _escortShares[q] = shares = new Dictionary<IQuestTaker, float>();
+                shares[taker] = es.hours;
+            }
             _restoring = null;
         }
 

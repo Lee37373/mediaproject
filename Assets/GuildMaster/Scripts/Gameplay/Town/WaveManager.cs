@@ -147,7 +147,14 @@ namespace GuildMaster.Town
                     Id = sr.id, Nest = sr.nest >= 0 && sr.nest < _eco.Nests.Count ? _eco.Nests[sr.nest] : null, StartedAtHour = sr.started,
                     Sighted = sr.sighted, Killed = sr.killed, FrontGate = sr.front_gate, Front = sr.front,
                 };
-                foreach (var id in sr.members) if (ctx.Find<Monster>(id) is { } m) r.Members.Add(m);
+                foreach (var id in sr.members)
+                {
+                    if (ctx.Find<Monster>(id) is not { } m) continue;
+                    r.Members.Add(m);
+                    // As Launch: a raider's death counts, and the last one's ends the raid (without
+                    // this a loaded raid stayed "on" until MaxHours, the defenders held at the gate).
+                    m.Died += OnRaiderDied;
+                }
                 _raids.Add(r);
             }
             foreach (var id in _restoring.seen) if (ctx.Find<Monster>(id) is { } m) _seenRaiders.Add(m);

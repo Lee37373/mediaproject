@@ -251,7 +251,13 @@ namespace GuildMaster.Adventurers
             }
             if (party.Members.Count < 2) { Disband(party, null); return null; }
 
-            if (party.OnOuting && !party.Settling) return party; // already out: late joiners share the pool
+            if (party.OnOuting && !party.Settling)
+            {
+                // Already out: late joiners go out with it and share the pool (they were left out of
+                // the outing's record, so their pay went to themselves and the split passed them by).
+                foreach (var a in goers) if (a != null && a.IsAlive && !party.Out.ContainsKey(a)) party.Out[a] = new OutingRecord();
+                return party;
+            }
             party.OnOuting = true;
             party.Settling = false;
             party.Pool = 0;

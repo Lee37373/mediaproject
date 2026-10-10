@@ -122,8 +122,15 @@ namespace GuildMaster.Tests
             yield return new WaitForSecondsRealtime(1f);
 
             var a = Saves.Capture();
+            // A freshly started game loads from behind the title, whose own founders were numbered
+            // from 1: the save must hand its counter back, or the next visitor gets a member's id.
+            Adventurers.AdventurerGenerator.Counter = 0;
             yield return BootFrom(a);
             AssertSameSections(a, _afterBoot);
+            var newcomer = Adventurers.AdventurerGenerator.NextId();
+            foreach (var m in Services.Get<Adventurers.GuildRoster>().Members)
+                Assert.That(m.Data.id, Is.Not.EqualTo(newcomer), "a new adventurer never takes a loaded member's id");
+            Adventurers.AdventurerGenerator.Counter--; // that id was only a look
 
             // And the restored world behaves like it: the broken gate is open, the tower watches.
             var gate = Services.Get<Town.GateService>().Gates[0];
@@ -179,6 +186,11 @@ namespace GuildMaster.Tests
                 for (int kind = 0; kind < 5 && disasters.Active.Count == 0; kind++) disasters.Begin((Disasters.DisasterKind)kind, cell);
             }
             Assert.That(disasters.Active.Count, Is.GreaterThan(0), "a disaster under way");
+            // A pack on its way to a new home (P4-56).
+            var migration = Services.Get<Ecosystem.MigrationService>();
+            foreach (var nest in eco.Nests)
+                if (!Services.Get<Town.WaveManager>().IsRaiding(nest) && migration.TryLaunch(nest)) break;
+            Assert.That(migration.Bands.Count, Is.GreaterThan(0), "a band migrating");
 
             clock.SetSpeed(3);
             float start = clock.TotalHours;
@@ -215,6 +227,22 @@ namespace GuildMaster.Tests
 
             yield return new WaitForSecondsRealtime(1f);
             AssertSameSections(a, Saves.Capture());
+
+            // The loaded raid and migration still hear their members fall (P4-76: the restore did
+            // not subscribe to the deaths — a wiped-out raid stayed "on" and kept the defenders
+            // at the gate until its time ran out).
+            var waves = Services.Get<Town.WaveManager>();
+            migration = Services.Get<Ecosystem.MigrationService>();
+            var marching = new System.Collections.Generic.List<Monsters.Monster>();
+            foreach (var band in migration.Bands) marching.AddRange(band.Members);
+            bool raiding = waves.RaidActive;
+            foreach (var u in System.Linq.Enumerable.ToList(Units.UnitRegistry.All))
+                if (u is Monsters.Monster m && m.IsAlive && m.DefaultStateOverride == m.RaidState) m.Perish();
+            foreach (var m in marching) m.Perish();
+            yield return null;
+            if (raiding) Assert.That(waves.RaidActive, Is.False, "a loaded raid ends when its last raider falls");
+            Assert.That(migration.Bands.Count, Is.EqualTo(0), "a loaded band is gone when its members are");
+            foreach (var m in marching) Assert.That(migration.TryGetBand(m, out _), Is.False, "the fallen are out of the band");
         }
 
         [UnityTest]
