@@ -2,7 +2,7 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-10-04
+- 마지막 갱신: 2026-10-10
 - 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-76**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
@@ -83,9 +83,9 @@
 | P5-2 | 성능(유닛 200·투사체 100에서 60FPS): 유닛 공간 색인(목표 고르기 O(N²) 제거), 안개 바뀐 곳만 갱신, 영역 검사 반경 질의, GC 30KB→약 5KB/프레임. 부하 p99 48.7→13.2ms | 이재혁 | 완료 | Units/UnitRegistry·TargetSelector·CrowdSimulation·Unit·Combat, Fog/FogOfWar, Ecosystem/TerritoryService·Nest, Core/ListView(신규), Monsters, Adventurers, UI/World/NameTagLayer, Session/PerfProbe(신규)·DebugCommands, Editor/ProfilerDigest(신규) | 3a78069 |
 | P5-3 | LLM 예외 처리(실패해도 게임 진행·대기 상한·기아 방지·요청 통계). 속도 최적화는 제외(사용자 결정 2026-10-04) | 이재혁 | 완료 | LLM/LlmGateway·LlmStats(신규)·LlmTypes, UI/Views/LlmDebugView, Tests/PlayMode/FakeLlmBackend·LlmFaultTests(신규) | 9cc2c19 |
 | P5-4 | 세이브/로드(사용자 결정: 완전 스냅숏·수동 여러 슬롯·오프라인 진행 없음): 시스템별 저장 섹션 33개, 일시정지 메뉴·타이틀의 저장/불러오기 창. 새 시스템을 만들면 `ISaveable`을 구현하고 `GameBootstrap`에서 `save.Register`할 것(CODEMAP 1.10절) | 이재혁 | 완료 | Core/Saving(신규), Save/*(신규), 거의 모든 시스템, UI/Views/SaveLoadView(신규)·PauseMenuView·TitleView, Tests/PlayMode/SaveTests(신규) | f8d5831, 1d30311, 37c1d30, 3040302 |
-| P5-5 | Windows 빌드 | 이재혁 | 진행 중 | 빌드 설정 | |
-| P5-6 | 시연 자료 | 미정 | 예정 | 영상·발표 자료 | |
-| P4-9 | 사운드(효과음·BGM) — 가장 마지막에 진행 | 미정 | 예정 | Audio(신규) | |
+| P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
+| P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
+| P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
 | P4-12 | 대화 묶음 생성과 미리 받기 | 미정 | 보류 | LLM, Adventurers/BanterService | |
 | P4-25 | 전체 코드 점검: 버그 8건 수정과 리팩터링(늑대 울음 버프, 사망자 부활, 귀환 중 후퇴, 안개 속 정보 노출, EventBus 할당 등) | 이재혁 | 완료 | Units/Combat·Skills, Adventurers, Monsters/Monster, UI/Views/InspectorView, Core/EventBus | b3a9183 |
 | P4-24 | 플레이 모드 스모크 테스트(부팅·타이틀·ESC·장비 줍기·마을 줍기·토벌 출발·마을 경비) | 이재혁 | 완료 | Tests/PlayMode(신규) | 67ad896 |
@@ -112,8 +112,8 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P5-5 Windows 빌드
-- **예정**: (정해지면 적기)
+- **진행 중**: 없음
+- **예정**: P5-5 Windows 빌드(맨 마지막)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-75, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
