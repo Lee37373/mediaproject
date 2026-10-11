@@ -69,8 +69,59 @@ namespace GuildMaster.Session
 
         public IReadOnlyList<string> Findings => _findings;
 
-        void OnEnable() => EventBus.Subscribe<HourPassedEvent>(OnHour);
-        void OnDisable() => EventBus.Unsubscribe<HourPassedEvent>(OnHour);
+        void OnEnable()
+        {
+            EventBus.Subscribe<HourPassedEvent>(OnHour);
+            EventBus.Subscribe<UnitHealedEvent>(OnHealed);
+        }
+
+        void OnDisable()
+        {
+            EventBus.Unsubscribe<HourPassedEvent>(OnHour);
+            EventBus.Unsubscribe<UnitHealedEvent>(OnHealed);
+        }
+
+        // ---- What a member's fighting comes to in its current state (P4-80: a healer and two goblin
+        // archers, ten hours on the same spot — does it not strike, miss, or heal off what it takes?) ----
+
+        class Tally
+        {
+            public State<Adventurer> State;
+            public Unit Target;
+            public float NextAttack, TargetHitAt, Since;
+            public int Strikes, Hits, Heals;
+        }
+
+        readonly Dictionary<Adventurer, Tally> _tally = new();
+
+        void OnHealed(UnitHealedEvent e)
+        {
+            if (e.Healer is Adventurer a && _tally.TryGetValue(a, out var t)) t.Heals++;
+        }
+
+        void Count(Adventurer a)
+        {
+            if (!_tally.TryGetValue(a, out var t)) _tally[a] = t = new Tally();
+            var target = a.Engage.Target;
+            if (t.State != a.Fsm.Current)
+            {
+                t.State = a.Fsm.Current;
+                t.Strikes = t.Hits = t.Heals = 0;
+                t.Since = _clock.TotalHours;
+                t.NextAttack = a.NextAttackTime;
+            }
+            if (a.NextAttackTime != t.NextAttack) { t.Strikes++; t.NextAttack = a.NextAttackTime; }
+            if (target != t.Target) { t.Target = target; t.TargetHitAt = target != null ? target.LastAttackedTime : 0f; }
+            else if (target != null && target.LastAttackedTime != t.TargetHitAt)
+            {
+                if (target.LastAttacker == a) t.Hits++;
+                t.TargetHitAt = target.LastAttackedTime;
+            }
+        }
+
+        string TallyOf(Adventurer a)
+            => _tally.TryGetValue(a, out var t) && t.State == a.Fsm.Current
+                ? $" tally[{_clock.TotalHours - t.Since:0.0}h strikes={t.Strikes} hits={t.Hits} heals={t.Heals}]" : "";
 
         // ---- What each member did lately (P4-80: a stuck fight, a quest walked forty cells the wrong
         // way, half a day idle in town — each needed what came before it, long gone by the report) ----
@@ -89,6 +140,7 @@ namespace GuildMaster.Session
             foreach (var a in roster.Members)
             {
                 if (a == null || a.Fsm.Current == null) continue;
+                Count(a);
                 var now = (a.Fsm.Current, a.Engage.Target);
                 if (_seen.TryGetValue(a, out var was) && was.state == now.Current && was.target == now.Target) continue;
                 _seen[a] = now;
@@ -125,7 +177,7 @@ namespace GuildMaster.Session
                 float hours = s.Elapsed * hoursPerSecond;
                 // Where and why too (P4-80: "travelling 8.6h" alone could not be traced afterwards).
                 if (hours > LimitHours(a, s))
-                    Report($"{a.Data.name}: '{s.Label}' {hours:0.0}h (limit {LimitHours(a, s):0}) at {a.Position} hp={a.HpRatio:0.00}{Context(a)}{History(a)}", $"long:{a.Data.name}:{s.Label}");
+                    Report($"{a.Data.name}: '{s.Label}' {hours:0.0}h (limit {LimitHours(a, s):0}) at {a.Position} hp={a.HpRatio:0.00}{Context(a)}{TallyOf(a)}{History(a)}", $"long:{a.Data.name}:{s.Label}");
 
                 // The same fight for hours (P4-80: a priest and a stone slime on 7 health, ten hours).
                 var target = a.Engage.Target;
@@ -133,7 +185,7 @@ namespace GuildMaster.Session
                 else if (!_fightingSince.TryGetValue(a, out var fight) || fight.target != target) _fightingSince[a] = (target, now);
                 else if (now - fight.hour >= LongFightHours)
                     Report($"{a.Data.name}: '{s.Label}' fighting {Strength(target)} for {now - fight.hour:0.0}h at {a.Position}{Context(a)}" +
-                           $"{(target.CurrentTarget is { } back ? Fight(target, back) : "")}{History(a)}", $"fight:{a.Data.name}:{target.GetInstanceID()}:{Mathf.RoundToInt(fight.hour)}");
+                           $"{(target.CurrentTarget is { } back ? Fight(target, back) : "")}{TallyOf(a)}{History(a)}", $"fight:{a.Data.name}:{target.GetInstanceID()}:{Mathf.RoundToInt(fight.hour)}");
 
                 // Standing still counts from when it last moved or last changed what it was doing (P4-76:
                 // three hours' rest by the guild door, then a hunt mustering on the same spot, read as a
@@ -141,7 +193,7 @@ namespace GuildMaster.Session
                 if (!_lastMove.TryGetValue(a, out var last) || (a.Position - last.pos).sqrMagnitude > 1f || last.state != s)
                     _lastMove[a] = (a.Position, now, s);
                 else if (Walking(a, s) && a.Engage.Target == null && now - last.hour >= 2f) // a fight of twenty seconds is two game hours
-                    Report($"{a.Data.name}: '{s.Label}' but has not moved for {now - last.hour:0.0}h at {a.Position}{Context(a)}{History(a)}", $"still:{a.Data.name}:{s.Label}:{Mathf.RoundToInt(last.hour)}");
+                    Report($"{a.Data.name}: '{s.Label}' but has not moved for {now - last.hour:0.0}h at {a.Position}{Context(a)}{TallyOf(a)}{History(a)}", $"still:{a.Data.name}:{s.Label}:{Mathf.RoundToInt(last.hour)}");
             }
 
             // Monsters: a fight, a walk home, a flight or a pickup should not last for hours.
@@ -159,7 +211,7 @@ namespace GuildMaster.Session
                 {
                     var mt = m.Engage.Target;
                     Report($"monster {Strength(m)} '{ms.Label}' {hours:0.0}h at {m.Position} (target {(mt != null ? Strength(mt) : "-")}){Fight(m, mt)}" +
-                           (mt is Adventurer foe ? $"{Fight(foe, foe.Engage.Target)} '{foe.StateLabel}'{History(foe)}" : mt?.CurrentTarget is { } back ? Fight(mt, back) : ""),
+                           (mt is Adventurer foe ? $"{Fight(foe, foe.Engage.Target)} '{foe.StateLabel}'{TallyOf(foe)}{History(foe)}" : mt?.CurrentTarget is { } back ? Fight(mt, back) : ""),
                         $"mlong:{m.GetInstanceID()}:{ms.Label}");
                 }
             }

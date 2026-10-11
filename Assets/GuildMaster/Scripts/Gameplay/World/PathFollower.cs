@@ -53,6 +53,19 @@ namespace GuildMaster.World
 
         bool Passable(Vector2Int c) => World.Grid.IsWalkable(c, PassesGates) && (BelievedShut == null || !BelievedShut(c.x, c.y));
 
+        /// <summary>
+        /// Cells this walk ran into (P4-80): known to be blocked from then on, whatever the fog says, so
+        /// a plan over unseen ground is redrawn round them at once. Only cells off the plan's own
+        /// waypoints (a diagonal grazing a corner, a shortcut) used to be missed by the fog check, and
+        /// the walker stood in front of them for hours.
+        /// </summary>
+        readonly HashSet<Vector2Int> _bumped = new();
+        Func<int, int, bool> _planUnknown;
+        /// <summary>No shortcuts until the next waypoint after running into something.</summary>
+        bool _noShortcut;
+
+        bool UnknownForPlan(int x, int y) => UnknownToMe(x, y) && (_bumped.Count == 0 || !_bumped.Contains(new Vector2Int(x, y)));
+
         public event Action Arrived;
         public event Action PathFailed;
 
@@ -74,6 +87,8 @@ namespace GuildMaster.World
         public bool SetDestination(Vector2 target, float stopDistance = 0.05f, float caution = 0f)
         {
             _destination = target;
+            _bumped.Clear();
+            _noShortcut = false;
             _stopDistance = Mathf.Max(0.05f, stopDistance);
             RouteCaution = caution;
             _steerFrame = -10;
@@ -158,7 +173,8 @@ namespace GuildMaster.World
             _waypoints.Clear();
             _index = 0;
             Vector2 from = transform.position;
-            if (!World.FindPath(from, _destination, _cells, PassesGates, BelievedShut, RouteCaution, UnknownToMe)) return false;
+            var unknown = UnknownToMe == null ? null : _planUnknown ??= UnknownForPlan;
+            if (!World.FindPath(from, _destination, _cells, PassesGates, BelievedShut, RouteCaution, unknown)) return false;
 
             for (int i = 1; i < _cells.Count; i++) _waypoints.Add(GridMap.CellToWorld(_cells[i]));
             // End exactly at the requested point if it is inside the last cell.
@@ -241,10 +257,11 @@ namespace GuildMaster.World
             }
 
             // Lookahead smoothing: skip intermediate waypoints with a clear straight line.
-            for (int look = Mathf.Min(_waypoints.Count - 1, _index + 4); look > _index; look--)
-            {
-                if (World.HasClearLine(pos, _waypoints[look])) { _index = look; break; }
-            }
+            if (!_noShortcut)
+                for (int look = Mathf.Min(_waypoints.Count - 1, _index + 4); look > _index; look--)
+                {
+                    if (World.HasClearLine(pos, _waypoints[look])) { _index = look; break; }
+                }
 
             var cell = GridMap.WorldToCell(pos);
             float cost = World.Grid.InBounds(cell) ? World.Grid.Cost(cell) : 1f;
@@ -260,8 +277,16 @@ namespace GuildMaster.World
             var nextCell = GridMap.WorldToCell(next);
             if (nextCell != cell && !Passable(nextCell) && Passable(cell))
             {
+                _bumped.Add(nextCell);
+                _noShortcut = true;
                 next = Vector2.MoveTowards(pos, GridMap.CellToWorld(cell), step);
-                _recheck = 0f;
+                if ((next - pos).sqrMagnitude < 1e-8f)
+                {
+                    // In the middle and still up against it: a new route round what it ran into.
+                    RouteCorrections++;
+                    if (!BuildPath()) { Stop(); PathFailed?.Invoke(); }
+                    return;
+                }
             }
             Velocity = (next - pos) / Mathf.Max(Time.deltaTime, 1e-5f);
             if (Mathf.Abs(next.x - pos.x) > 0.0001f) FacingLeft = next.x < pos.x;
@@ -270,6 +295,7 @@ namespace GuildMaster.World
             if ((next - target).sqrMagnitude < 0.0004f)
             {
                 _index++;
+                _noShortcut = false;
                 if (_index >= _waypoints.Count) Finish();
             }
         }
