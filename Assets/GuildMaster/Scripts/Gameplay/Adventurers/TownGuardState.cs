@@ -52,7 +52,7 @@ namespace GuildMaster.Adventurers
         /// outside (user report 2026-09-22: a stone slime that chased a member home bashed the gate
         /// while everyone inside stood about).
         /// </summary>
-        static Unit FindIntruder(Adventurer a)
+        internal static Unit FindIntruder(Adventurer a)
         {
             var town = AdvCtx.Town;
             Services.TryGet<FogOfWar>(out var fog);

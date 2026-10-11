@@ -388,7 +388,7 @@ namespace GuildMaster.Units
                 stunned_until = SaveTime.Rel(StunnedUntil), speed_buff = _speedBuff, speed_buff_until = SaveTime.Rel(_speedBuffUntil),
                 hidden_until = SaveTime.Rel(_hiddenUntil), grace_until = SaveTime.Rel(GraceUntil),
             };
-            foreach (var skill in Skills) s.skill_cooldowns.Add(Mathf.Round(skill.CooldownLeft * 100f) / 100f);
+            foreach (var skill in Skills) s.skill_cooldowns.Add(SaveTime.Hundredths(skill.CooldownLeft));
             return s;
         }
 
@@ -416,7 +416,11 @@ namespace GuildMaster.Units
         /// <summary>Until this moment (Time.time) nothing can hurt the unit (a last stand's grace, F-6).</summary>
         protected float GraceUntil { get; set; }
 
-        /// <summary>Positions and health to the hundredth: enough to stand in the same place, and stable through a save → load → save.</summary>
-        protected static float Round(float v) => Mathf.Round(v * 100f) / 100f;
+        /// <summary>
+        /// Positions, health and timers to the hundredth: enough to stand in the same place, and stable
+        /// through a save → load → save. A timer still running is never rounded to zero (it would fire
+        /// on load, see <see cref="SaveTime.Hundredths"/>).
+        /// </summary>
+        protected static float Round(float v) => SaveTime.Hundredths(v);
     }
 }

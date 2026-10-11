@@ -585,6 +585,8 @@ namespace GuildMaster.Monsters
 
         void Update()
         {
+            // Paused: nothing acts (P4-80, see Adventurer.Update).
+            if (Time.deltaTime <= 0f) return;
             if (!IsAlive)
             {
                 _corpseTimer += Time.deltaTime;

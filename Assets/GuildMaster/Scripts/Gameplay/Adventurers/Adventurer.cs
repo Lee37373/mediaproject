@@ -295,6 +295,9 @@ namespace GuildMaster.Adventurers
         {
             if (!IsAlive && Fsm.Current != DeadState) return;
             float dt = Time.deltaTime;
+            // Paused: nothing acts. A cooldown run out still struck once at dt 0, and a save taken in the
+            // pause menu did not match the game it loaded into (P4-80).
+            if (dt <= 0f) return;
             float hours = dt / (_clock != null ? _clock.RealSecondsPerGameHour : 10f);
 
             bool inTown = Services.TryGet<Town.TownService>(out var town) && town.IsInTown(Position);

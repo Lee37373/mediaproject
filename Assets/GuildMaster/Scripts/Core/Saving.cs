@@ -49,7 +49,18 @@ namespace GuildMaster.Core
 
         /// <summary>Seconds from now to <paramref name="time"/> (negative: in the past).</summary>
         public static float Rel(float time)
-            => UnityEngine.Mathf.Round(UnityEngine.Mathf.Clamp(time - UnityEngine.Time.time, -Limit, Limit) * 100f) / 100f;
+            => Hundredths(UnityEngine.Mathf.Clamp(time - UnityEngine.Time.time, -Limit, Limit));
+
+        /// <summary>
+        /// To the hundredth, except that something still ahead stays ahead: a cooldown 3 ms from ready
+        /// used to be saved as ready, and a timer 3 ms from firing as fired — after loading, a unit in a
+        /// paused game struck or looked round once (P4-80: the save round-trip test failed now and then).
+        /// </summary>
+        public static float Hundredths(float v)
+        {
+            float r = UnityEngine.Mathf.Round(v * 100f) / 100f;
+            return v > 0f && r <= 0f ? 0.01f : r;
+        }
 
         /// <summary>The moment that lies <paramref name="relative"/> seconds from now.</summary>
         public static float Abs(float relative) => UnityEngine.Time.time + relative;

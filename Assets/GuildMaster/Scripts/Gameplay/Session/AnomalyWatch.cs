@@ -105,7 +105,9 @@ namespace GuildMaster.Session
                 // A game hour is ten simulated seconds: these are minutes of fighting, not hours.
                 float limit = ms == m.EngageState ? 10f : ms == m.ReturnState ? 4f : ms == m.FleeState || ms == m.PickupState || ms == m.RegroupState || ms == m.LureState ? 2f
                             : ms == m.GateBreakState ? 8f : float.PositiveInfinity;
-                if (hours > limit) Report($"monster {m.DisplayName}#{m.GetInstanceID()} '{ms.Label}' {hours:0.0}h at {m.Position} (target {m.Engage.Target?.DisplayName ?? "-"})",
+                // Both sides' strength too (P4-80: two fights went on for ten hours, one side a stone
+                // slime boss; who could not hurt whom was gone with the fight by the time anyone looked).
+                if (hours > limit) Report($"monster {Strength(m)} '{ms.Label}' {hours:0.0}h at {m.Position} (target {(m.Engage.Target is { } mt ? Strength(mt) : "-")})",
                     $"mlong:{m.GetInstanceID()}:{ms.Label}");
             }
 
@@ -161,8 +163,21 @@ namespace GuildMaster.Session
             if (Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(a) is { } band)
                 sb.Append($" band[{string.Join("/", band.Members.Select(m => $"{m.Data.name}:{m.StateLabel}"))}] mustering={band.Mustering} paused={band.Paused} spot={(band.HasSpot ? band.Spot.ToString() : "-")}");
             if (a.CurrentQuest is { } q) sb.Append($" quest={q.Id}:{q.Status} point={q.Point}");
+            // Guarding the town with no target for hours (P4-80): what it is after and why it does not fight it.
+            if (a.Fsm.Current == a.TownGuardState)
+            {
+                var intruder = TownGuardState.FindIntruder(a);
+                sb.Append(intruder == null ? " intruder=-"
+                    : $" intruder={Strength(intruder)} at {intruder.Position} dist={Vector2.Distance(intruder.Position, a.Position):0.0}" +
+                      $" inTown={AdvCtx.Town.IsInTown(intruder.Position)} breaking={(intruder as Monster)?.IsBreakingGate} canSee={a.CanSee(intruder)}" +
+                      $" targetable={intruder.IsTargetableBy(a)} ignored={a.Engage.IsIgnoring(intruder)} state='{(intruder as Monster)?.Fsm.Current?.Label}'");
+            }
             return sb.ToString();
         }
+
+        /// <summary>Name, id, level, health and fighting numbers of a unit, for a report.</summary>
+        static string Strength(Unit u)
+            => $"{u.DisplayName}#{u.GetInstanceID()} Lv{(u is Monster m ? m.Level : u is Adventurer a ? a.Data.level : 0)} hp={u.Hp:0}/{u.Stats.MaxHp:0} atk={u.Stats.Attack:0.#} def={u.Stats.Defense:0.#}";
 
         void Report(string text, string key)
         {
