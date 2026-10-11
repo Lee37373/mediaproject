@@ -72,6 +72,46 @@ namespace GuildMaster.Session
         void OnEnable() => EventBus.Subscribe<HourPassedEvent>(OnHour);
         void OnDisable() => EventBus.Unsubscribe<HourPassedEvent>(OnHour);
 
+        // ---- What each member did lately (P4-80: a stuck fight, a quest walked forty cells the wrong
+        // way, half a day idle in town — each needed what came before it, long gone by the report) ----
+
+        const int HistoryLength = 12;
+        /// <summary>Same target this long (game hours) is a fight that is not going anywhere.</summary>
+        const float LongFightHours = 3f;
+        readonly Dictionary<Adventurer, Queue<string>> _history = new();
+        readonly Dictionary<Adventurer, (State<Adventurer> state, Unit target)> _seen = new();
+        readonly Dictionary<Adventurer, (Unit target, float hour)> _fightingSince = new();
+
+        void Update()
+        {
+            if (_clock == null && !Services.TryGet<GameClock>(out _clock)) return;
+            if (!Services.TryGet<GuildRoster>(out var roster)) return;
+            foreach (var a in roster.Members)
+            {
+                if (a == null || a.Fsm.Current == null) continue;
+                var now = (a.Fsm.Current, a.Engage.Target);
+                if (_seen.TryGetValue(a, out var was) && was.state == now.Current && was.target == now.Target) continue;
+                _seen[a] = now;
+                if (!_history.TryGetValue(a, out var h)) _history[a] = h = new Queue<string>();
+                h.Enqueue($"{_clock.FormatTime()} '{a.StateLabel}' {a.Position} hp={a.HpRatio:0.00}" + (now.Target != null ? $" vs {now.Target.DisplayName}" : ""));
+                while (h.Count > HistoryLength) h.Dequeue();
+            }
+        }
+
+        string History(Adventurer a)
+            => _history.TryGetValue(a, out var h) ? "\n      before: " + string.Join("\n              ", h) : "";
+
+        /// <summary>A member's fight as it stands: can it reach, can it shoot, when it strikes next.</summary>
+        static string Fight(Unit self, Unit target)
+        {
+            if (target == null) return "";
+            bool channeling = false;
+            foreach (var s in self.Skills) channeling |= s.IsChanneling;
+            return $" [{self.DisplayName}→{target.DisplayName} dist={Vector2.Distance(self.Position, target.Position):0.00} range={self.Stats.AttackRange:0.#}" +
+                   $"{(self.Stats.IsRanged ? " ranged" : "")} inRange={Combat.InRange(self, target)} shot={Combat.HasShot(self, target)}" +
+                   $" nextAtk={self.NextAttackTime - Time.time:0.0}s channeling={channeling} stunned={self.IsStunned}]";
+        }
+
         void OnHour(HourPassedEvent e)
         {
             if (_clock == null && !Services.TryGet<GameClock>(out _clock)) return;
@@ -85,7 +125,15 @@ namespace GuildMaster.Session
                 float hours = s.Elapsed * hoursPerSecond;
                 // Where and why too (P4-80: "travelling 8.6h" alone could not be traced afterwards).
                 if (hours > LimitHours(a, s))
-                    Report($"{a.Data.name}: '{s.Label}' {hours:0.0}h (limit {LimitHours(a, s):0}) at {a.Position} hp={a.HpRatio:0.00}{Context(a)}", $"long:{a.Data.name}:{s.Label}");
+                    Report($"{a.Data.name}: '{s.Label}' {hours:0.0}h (limit {LimitHours(a, s):0}) at {a.Position} hp={a.HpRatio:0.00}{Context(a)}{History(a)}", $"long:{a.Data.name}:{s.Label}");
+
+                // The same fight for hours (P4-80: a priest and a stone slime on 7 health, ten hours).
+                var target = a.Engage.Target;
+                if (target == null) _fightingSince.Remove(a);
+                else if (!_fightingSince.TryGetValue(a, out var fight) || fight.target != target) _fightingSince[a] = (target, now);
+                else if (now - fight.hour >= LongFightHours)
+                    Report($"{a.Data.name}: '{s.Label}' fighting {Strength(target)} for {now - fight.hour:0.0}h at {a.Position}{Context(a)}" +
+                           $"{(target.CurrentTarget is { } back ? Fight(target, back) : "")}{History(a)}", $"fight:{a.Data.name}:{target.GetInstanceID()}:{Mathf.RoundToInt(fight.hour)}");
 
                 // Standing still counts from when it last moved or last changed what it was doing (P4-76:
                 // three hours' rest by the guild door, then a hunt mustering on the same spot, read as a
@@ -93,7 +141,7 @@ namespace GuildMaster.Session
                 if (!_lastMove.TryGetValue(a, out var last) || (a.Position - last.pos).sqrMagnitude > 1f || last.state != s)
                     _lastMove[a] = (a.Position, now, s);
                 else if (Walking(a, s) && a.Engage.Target == null && now - last.hour >= 2f) // a fight of twenty seconds is two game hours
-                    Report($"{a.Data.name}: '{s.Label}' but has not moved for {now - last.hour:0.0}h at {a.Position}{Context(a)}", $"still:{a.Data.name}:{s.Label}:{Mathf.RoundToInt(last.hour)}");
+                    Report($"{a.Data.name}: '{s.Label}' but has not moved for {now - last.hour:0.0}h at {a.Position}{Context(a)}{History(a)}", $"still:{a.Data.name}:{s.Label}:{Mathf.RoundToInt(last.hour)}");
             }
 
             // Monsters: a fight, a walk home, a flight or a pickup should not last for hours.
@@ -107,8 +155,13 @@ namespace GuildMaster.Session
                             : ms == m.GateBreakState ? 8f : float.PositiveInfinity;
                 // Both sides' strength too (P4-80: two fights went on for ten hours, one side a stone
                 // slime boss; who could not hurt whom was gone with the fight by the time anyone looked).
-                if (hours > limit) Report($"monster {Strength(m)} '{ms.Label}' {hours:0.0}h at {m.Position} (target {(m.Engage.Target is { } mt ? Strength(mt) : "-")})",
-                    $"mlong:{m.GetInstanceID()}:{ms.Label}");
+                if (hours > limit)
+                {
+                    var mt = m.Engage.Target;
+                    Report($"monster {Strength(m)} '{ms.Label}' {hours:0.0}h at {m.Position} (target {(mt != null ? Strength(mt) : "-")}){Fight(m, mt)}" +
+                           (mt is Adventurer foe ? $"{Fight(foe, foe.Engage.Target)} '{foe.StateLabel}'{History(foe)}" : mt?.CurrentTarget is { } back ? Fight(mt, back) : ""),
+                        $"mlong:{m.GetInstanceID()}:{ms.Label}");
+                }
             }
 
             // A party out together that has come apart (user report 2026-10-03: "they act separately").
@@ -163,6 +216,11 @@ namespace GuildMaster.Session
             if (Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(a) is { } band)
                 sb.Append($" band[{string.Join("/", band.Members.Select(m => $"{m.Data.name}:{m.StateLabel}"))}] mustering={band.Mustering} paused={band.Paused} spot={(band.HasSpot ? band.Spot.ToString() : "-")}");
             if (a.CurrentQuest is { } q) sb.Append($" quest={q.Id}:{q.Status} point={q.Point}");
+            sb.Append(Fight(a, a.Engage.Target));
+            // Idle in town: whom it waits for (P4-80: a party member idle 12 hours while its leader was out).
+            if (Services.TryGet<GuildParties>(out var parties) && parties.PartyOf(a) is { } standing)
+                sb.Append($" standing[{standing.Name} leader={standing.Leader?.Data.name}('{standing.Leader?.StateLabel}') follows={parties.FollowsALeader(a)}" +
+                          $" outing={standing.OnOuting} unfinished={parties.OutingUnfinished(a)} gettingReady={parties.MembersGettingReady(a)}]");
             // Guarding the town with no target for hours (P4-80): what it is after and why it does not fight it.
             if (a.Fsm.Current == a.TownGuardState)
             {

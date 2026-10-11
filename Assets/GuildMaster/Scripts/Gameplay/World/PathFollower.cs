@@ -253,6 +253,16 @@ namespace GuildMaster.World
 
             Vector2 target = _waypoints[_index];
             Vector2 next = Vector2.MoveTowards(pos, target, step);
+            // Never into ground that cannot be walked (P4-80): a plan over unseen cells (P4-64) walked into
+            // rock before the fog showed it (the fog looks every tenth of a real second, two or three
+            // cells at ×8), and from inside the rock no path led out. Back to the middle of its own cell
+            // instead — from there the plan's diagonal steps clip no corner — and look again at once.
+            var nextCell = GridMap.WorldToCell(next);
+            if (nextCell != cell && !Passable(nextCell) && Passable(cell))
+            {
+                next = Vector2.MoveTowards(pos, GridMap.CellToWorld(cell), step);
+                _recheck = 0f;
+            }
             Velocity = (next - pos) / Mathf.Max(Time.deltaTime, 1e-5f);
             if (Mathf.Abs(next.x - pos.x) > 0.0001f) FacingLeft = next.x < pos.x;
             transform.position = new Vector3(next.x, next.y, transform.position.z);

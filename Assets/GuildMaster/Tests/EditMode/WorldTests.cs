@@ -88,6 +88,26 @@ namespace GuildMaster.Tests
             Assert.Greater(map.EdgeSpawnCells.Count, 10);
         }
 
+        /// <summary>
+        /// P4-80: no walkable hole nobody can reach (a ranger ended up in a two-cell hole in a rock
+        /// mass and stood there for ten days): every walkable cell joins the town's ground.
+        /// </summary>
+        [TestCase(1)]
+        [TestCase(31337)]
+        [TestCase(20260920)]
+        public void MapGenerator_LeavesNoWalkableGroundOutOfReach(int seed)
+        {
+            var map = MapGenerator.Generate(new MapGenSettings
+            {
+                Width = 256, Height = 256, Seed = seed, TownHalfSize = 11, NestCount = 64, MinNestDistanceFromTown = 24,
+            });
+            var dist = MapGenerator.FloodDistances(map, map.TownCenter);
+            int holes = 0;
+            for (int i = 0; i < map.Tiles.Length; i++)
+                if (MapData.IsWalkable(map.Tiles[i]) && dist[i] < 0) holes++;
+            Assert.AreEqual(0, holes, "walkable cells out of reach of the town");
+        }
+
         [Test]
         public void MapGenerator_IsDeterministic()
         {

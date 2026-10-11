@@ -217,7 +217,62 @@ namespace GuildMaster.World
                 if (edge && dist[map.Index(x, y)] >= 0) map.EdgeSpawnCells.Add(new Vector2Int(x, y));
             }
 
+            // 6. Pockets (P4-80): walkable ground nobody can reach from town — the middle of a rock mass,
+            //    an islet — becomes the ground round it. A nearest-walkable search could still pick it
+            //    (a campfire, the start of a path for someone pushed into the rock), and whoever ended up
+            //    there was walled in for good: a ranger stood in a two-cell hole in the rock for ten days.
+            FillPockets(map, dist);
+
             return map;
+        }
+
+        /// <summary>Turns each walkable patch <paramref name="dist"/> never reached into the blocking ground that surrounds it most.</summary>
+        static void FillPockets(MapData map, int[] dist)
+        {
+            int w = map.Width, h = map.Height;
+            var seen = new bool[w * h];
+            var cells = new List<int>();
+            var stack = new Stack<int>();
+            var votes = new Dictionary<TileType, int>();
+            for (int start = 0; start < seen.Length; start++)
+            {
+                if (seen[start] || dist[start] >= 0 || !MapData.IsWalkable(map.Tiles[start])) continue;
+                cells.Clear();
+                votes.Clear();
+                seen[start] = true;
+                stack.Push(start);
+                while (stack.Count > 0)
+                {
+                    int i = stack.Pop();
+                    cells.Add(i);
+                    int x = i % w, y = i / w;
+                    for (int k = 0; k < 4; k++)
+                    {
+                        int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        int n = ny * w + nx;
+                        var t = map.Tiles[n];
+                        if (!MapData.IsWalkable(t))
+                        {
+                            // Natural ground only: a hole by the town wall is not walled up with wall.
+                            if (t != TileType.Wall) votes[t] = votes.TryGetValue(t, out int v) ? v + 1 : 1;
+                            continue;
+                        }
+                        if (seen[n]) continue;
+                        seen[n] = true;
+                        stack.Push(n);
+                    }
+                }
+                var fill = TileType.Mountain;
+                int most = 0;
+                foreach (var kv in votes)
+                    if (kv.Value > most) { most = kv.Value; fill = kv.Key; }
+                foreach (int i in cells)
+                {
+                    map.Tiles[i] = fill;
+                    map.Trees[i] = false;
+                }
+            }
         }
 
         static float Fbm(float x, float y)

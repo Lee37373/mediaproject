@@ -597,10 +597,13 @@ namespace GuildMaster.Tests
             // P4-80: loot in a crack is left there — walkers cross one at a crawl, and a party went in
             // after a drop and took three hours to make four cells. Idle in town all the while (it would
             // go and decide on something within seconds, and deciding picks nothing up).
+            // Standing still too: a stroll round the plaza can put a building between it and the drop,
+            // and what it cannot see it does not plan for (the full run failed now and then).
             void KeepIdle()
             {
                 member.ChangeState(member.IdleState);
                 typeof(TownIdleState).GetField("_decisionTimer", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(member.IdleState, 1e6f);
+                typeof(TownIdleState).GetField("_wanderTimer", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(member.IdleState, 1e6f);
             }
             // The others rest long enough not to take it hunting (rest ends at fatigue 10, -30 an hour).
             foreach (var other in Roster.Members)
@@ -628,7 +631,8 @@ namespace GuildMaster.Tests
             // not planned straight back in (giving up used to last half a second).
             inCrack.Kept = true;
             yield return WaitFor(() => member.Looting.IsBusy, 3f);
-            Assert.That(member.Looting.IsBusy, Is.True, "it sets out for the relic");
+            Assert.That(member.Looting.IsBusy, Is.True,
+                $"it sets out for the relic (state '{member.StateLabel}', at {member.Position}, relic at {inCrack.Position}, reserved by {inCrack.ReservedBy?.DisplayName ?? "-"})");
             yield return WaitFor(() => !member.Looting.IsBusy, 20f);
             Assume.That(ground.Contains(inCrack), "the crawl took longer than a stop may");
             Assert.That(member.Looting.IsBusy, Is.False, "the stop was given up");
@@ -2919,11 +2923,22 @@ namespace GuildMaster.Tests
 
             Assert.IsTrue(walker.SetDestination(World.GridMap.CellToWorld(far), 0.5f), "it sets out");
             Clock.SetSpeed(2);
+            // P4-80: on a plan over water nobody has seen yet, it does not wade in — it stops at the shore
+            // (the same walk into unseen rock left a ranger inside a rock mass for ten days).
+            bool wet = false;
+            float shoreUntil = Time.realtimeSinceStartup + 1.5f;
+            while (Time.realtimeSinceStartup < shoreUntil)
+            {
+                wet |= !world.Grid.IsWalkable(World.GridMap.WorldToCell(walker.transform.position));
+                yield return null;
+            }
+            Assert.That(wet, Is.False, "it never stepped into the water nobody had seen");
             // The band lays eyes on the lake: the walk has to give up the plan and go round.
             fog.Reveal(World.GridMap.CellToWorld(lake), 12f);
             yield return WaitFor(() => walker.RouteCorrections > 0 || !walker.IsMoving, 8f);
             Assert.That(walker.RouteCorrections, Is.GreaterThan(0), "seeing the water redrew the route");
-            yield return WaitFor(() => !walker.IsMoving, 30f);
+            yield return WaitFor(() => { wet |= !world.Grid.IsWalkable(World.GridMap.WorldToCell(walker.transform.position)); return !walker.IsMoving; }, 30f);
+            Assert.That(wet, Is.False, "nor on the way round");
             Assert.That(Vector2.Distance(walker.transform.position, World.GridMap.CellToWorld(far)), Is.LessThan(2f),
                 "and it still got there, round the lake");
             Assert.IsTrue(world.Grid.IsWalkable(World.GridMap.WorldToCell(walker.transform.position)), "never standing in water");
