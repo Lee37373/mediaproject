@@ -161,7 +161,11 @@ namespace GuildMaster.Session
             foreach (var s in self.Skills) channeling |= s.IsChanneling;
             return $" [{self.DisplayName}→{target.DisplayName} dist={Vector2.Distance(self.Position, target.Position):0.00} range={self.Stats.AttackRange:0.#}" +
                    $"{(self.Stats.IsRanged ? " ranged" : "")} inRange={Combat.InRange(self, target)} shot={Combat.HasShot(self, target)}" +
-                   $" nextAtk={self.NextAttackTime - Time.time:0.0}s channeling={channeling} stunned={self.IsStunned}]";
+                   $" nextAtk={self.NextAttackTime - Time.time:0.0}s channeling={channeling} stunned={self.IsStunned}" +
+                   // Why two melee fighters stand apart (P4-80: a boss and a goblin warrior, 2.6 cells, ten hours).
+                   $" moving={self.Mover.IsMoving} vel={self.Mover.Velocity.magnitude:0.0} dest={self.Mover.Destination}" +
+                   (self.CombatEngagement is { } e ? $" holdOff={e.IsHoldingOff} searching={e.IsSearching} steering={e.IsSteering} ignoring={e.IsIgnoring(target)}" : "") +
+                   (self is Monster m ? $" state='{m.Fsm.Current?.Label}'" : "") + "]";
         }
 
         void OnHour(HourPassedEvent e)
