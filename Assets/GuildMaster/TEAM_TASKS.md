@@ -87,7 +87,7 @@
 | P4-77 | 전체 코드 점검 5차(사용자 요청 2026-10-10): P1~P4 기능을 동작 흐름(호출 순서)대로 따라가며 버그 7건 수정 — 자율 사냥 왕복, 다른 파티 리더 초대, 완수 호감 한쪽만, 파티 후퇴 감점, 야영 경보 12시간, 유품 상한, 몬스터 귀소 정체. 측정 2회 | 이재혁 | 완료 | FreeHuntState·PartyService·RelationshipRecorder·Adventurer·CampService·GroundItem(Service)·GuildLegacy·MonsterStates, Tests/PlayMode/SmokeTests | 1ac9bf6 |
 | P4-78 | 사용자 결정(P4-76·77 관찰): 무너진 길드 홀은 시간당 EXP를 멈춤(수리하면 재개), 야영은 같은 파티(의뢰·상설 파티·사냥 무리)면 거리와 상관없이 함께 모임 | 이재혁 | 완료 | Economy/GuildTreasury, Adventurers/CampService·CampState·CampRules, UI/Views/HudView | 3156b38 |
 | P4-79 | 사용자 결정 2026-10-10: 파티 리더는 휴식 중·길드 카운터에 있는 파티원을 기다렸다가 함께 나감(휴가·중상·한계 스트레스는 기다리지 않음). 리더가 서 있던 사람만 데리고 나가 남은 파티원이 14시간 마을 대기하던 문제 | 이재혁 | 완료 | Adventurers/Party(GuildParties)·AdventurerStates(TownIdleState) | 18b04fb |
-| P4-80 | 버그 수정 이어서(사용자 요청 2026-10-11): P4-79 측정에 남은 이상(Lv1 신입이 혼자 맡은 의뢰로 가며 8.6시간 '이동 중') 추적, 긴 측정으로 다음 이상 찾기 | 이재혁 | 진행 중 | 미정 | |
+| P4-80 | 버그 수정 이어서(사용자 요청 2026-10-11): 긴 측정 7회로 추적 — 자율 사냥이 본 바위에 갇힌 안개로 2시간 정지, 균열 속 전리품·줍기 포기 무효, 저장 반올림·일시정지 중 행동(저장 왕복 테스트 흔들림), 지도의 바위 속 구멍(레인저 열흘 갇힘), 못 걷는 칸 진입·부딪히면 재계획. AnomalyWatch 보강(이력·교전 집계) | 이재혁 | 완료 | Adventurers/ExplorationRoute·FreeHuntState·AdventurerLooting·Adventurer·TownGuardState, Monsters/Monster, Core/Saving, Units/Unit, World/MapGenerator·PathFollower, Session/AnomalyWatch, Tests | c096e07, 3e579f8, 6f29c9d, 6eeefb1, 489bdd0 |
 | P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
@@ -117,9 +117,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-80 버그 수정 이어서
+- **진행 중**: 없음
 - **예정**: P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-79, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-80, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
