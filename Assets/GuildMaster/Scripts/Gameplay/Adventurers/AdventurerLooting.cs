@@ -36,6 +36,12 @@ namespace GuildMaster.Adventurers
 
         readonly Adventurer _owner;
         readonly List<GroundItem> _route = new();
+        /// <summary>
+        /// Stops this walker gave up on, with the hour each was dropped (items are pooled and come back
+        /// as other drops). Never planned again (P4-80: a stop given up after <see cref="StopTimeout"/>
+        /// was planned straight back in half a second later, so giving up never happened).
+        /// </summary>
+        readonly Dictionary<GroundItem, float> _gaveUp = new();
         float _timer;
         float _enemyTimer;
         float _stopStartedAt;
@@ -81,8 +87,12 @@ namespace GuildMaster.Adventurers
         {
             var target = _route[0];
             // Someone else got there first, or the way is blocked: skip that stop, keep the round.
-            if (target == null || !ground.Contains(target) || Time.time - _stopStartedAt > StopTimeout)
+            if (target == null || !ground.Contains(target)) return NextStop(a, drop: true);
+            if (Time.time - _stopStartedAt > StopTimeout)
+            {
+                GiveUp(target, ground);
                 return NextStop(a, drop: true);
+            }
 
             if (Vector2.Distance(a.Position, target.Position) <= ReachDistance)
             {
@@ -100,7 +110,13 @@ namespace GuildMaster.Adventurers
             if (drop) _route[0]?.Release(a);
             _route.RemoveAt(0);
             _stopStartedAt = Time.time;
-            if (_route.Count == 0) return false;
+            if (_route.Count == 0)
+            {
+                // Round over: stop heading for a stop given up on or gone, so the state walks its own
+                // way again at once — it only re-aims once the walker stands still (P4-80).
+                if (drop) a.Mover.Stop();
+                return false;
+            }
             if (a.Mover.SetDestination(_route[0].Position, 0.2f)) return true;
             Cancel();
             return false;
@@ -118,9 +134,10 @@ namespace GuildMaster.Adventurers
             s_points.Clear();
             foreach (var g in ground.Items)
             {
-                if (g == null || !g.IsFreeFor(a)) continue;
+                if (g == null || !g.IsFreeFor(a) || GaveUpOn(g)) continue;
                 if (Vector2.Distance(a.Position, g.Position) > radius) continue;
                 if (allowed != null && !allowed(g.Position)) continue;
+                if (world != null && OnAWall(world.Grid, g)) continue;
                 if (fog != null && !fog.IsVisibleRaw(g.Position)) continue;
                 // Its own eyes too: hard cover, and forests seen from outside (P4-48).
                 if (world != null && !world.HasLineOfSight(a.Position, g.Position, 2, ForestSight.ForestBlocks(world, a.Position))) continue;
@@ -135,6 +152,31 @@ namespace GuildMaster.Adventurers
                 if (item.Reserve(a)) _route.Add(item);
             }
         }
+
+        /// <summary>
+        /// Lying in a snowdrift or a crack (P4-72), which walkers cross at a crawl: a dropped goblin
+        /// ear is not worth it (P4-80: a party went in after loot and took three hours to make four
+        /// cells). A fallen comrade's relic is, and the time-out still stops it being tried twice.
+        /// </summary>
+        public static bool OnAWall(GridMap grid, GroundItem g)
+            => !g.Kept && Hazards.Blocks(grid.HazardAt(GridMap.WorldToCell(g.Position)));
+
+        bool GaveUpOn(GroundItem g) => _gaveUp.TryGetValue(g, out var hour) && hour == g.DroppedAtHour;
+
+        void GiveUp(GroundItem g, GroundItemService ground)
+        {
+            // Forget drops that are gone (taken, rotted, or back in the pool as something else).
+            if (_gaveUp.Count >= 8)
+            {
+                s_stale.Clear();
+                foreach (var kv in _gaveUp)
+                    if (kv.Key == null || !ground.Contains(kv.Key) || kv.Key.DroppedAtHour != kv.Value) s_stale.Add(kv.Key);
+                foreach (var k in s_stale) _gaveUp.Remove(k);
+            }
+            _gaveUp[g] = g.DroppedAtHour;
+        }
+
+        static readonly List<GroundItem> s_stale = new();
 
         /// <summary>
         /// Greedy nearest-neighbour round: start where the walker stands, then always take the

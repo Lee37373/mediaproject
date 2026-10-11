@@ -83,7 +83,9 @@ namespace GuildMaster.Session
                 if (a == null || !a.IsAlive) continue;
                 var s = a.Fsm.Current;
                 float hours = s.Elapsed * hoursPerSecond;
-                if (hours > LimitHours(a, s)) Report($"{a.Data.name}: '{s.Label}' {hours:0.0}h (limit {LimitHours(a, s):0})", $"long:{a.Data.name}:{s.Label}");
+                // Where and why too (P4-80: "travelling 8.6h" alone could not be traced afterwards).
+                if (hours > LimitHours(a, s))
+                    Report($"{a.Data.name}: '{s.Label}' {hours:0.0}h (limit {LimitHours(a, s):0}) at {a.Position} hp={a.HpRatio:0.00}{Context(a)}", $"long:{a.Data.name}:{s.Label}");
 
                 // Standing still counts from when it last moved or last changed what it was doing (P4-76:
                 // three hours' rest by the guild door, then a hunt mustering on the same spot, read as a

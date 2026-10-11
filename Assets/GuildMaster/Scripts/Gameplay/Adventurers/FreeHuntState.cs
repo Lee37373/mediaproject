@@ -226,7 +226,7 @@ namespace GuildMaster.Adventurers
             if (surprised && ++_surprises >= ReconsiderAfterSurprises)
             {
                 // The way there keeps turning out worse than it looked: somewhere else, then.
-                spot = PickSpot();
+                spot = PickSpot(spot);
                 _surprises = 0;
             }
             AimLeg(a, spot);
@@ -252,15 +252,16 @@ namespace GuildMaster.Adventurers
         void AimLeg(Adventurer a, Vector2 spot)
         {
             var world = Services.Get<WorldService>();
-            var fog = Services.TryGet<Fog.FogOfWar>(out var f) ? f : null;
             float caution = RouteChoice.ForParty(a);
-            _leg = ExplorationRoute.NextLeg(world, fog, a.Position, spot, caution, _scouting);
+            _leg = ExplorationRoute.NextLeg(world, a.Mover.UnknownToMe, a.Position, spot, caution, _scouting);
             _correctionsAtAim = a.Mover.RouteCorrections;
             // The band walks the leader's route (P4-63): its nerve decides how wide of the woods it goes.
             if (a.Mover.SetDestination(_leg, 1f, caution)) { LegsWalked++; return; }
+            // Somewhere else, not the same den again (P4-80: the best den was picked straight back,
+            // and the band tried the same unwalkable leg until a scouting roll took it elsewhere).
             if (++_surprises >= ReconsiderAfterSurprises)
             {
-                PickSpot();
+                PickSpot(spot);
                 _surprises = 0;
             }
         }
@@ -409,6 +410,8 @@ namespace GuildMaster.Adventurers
                         if (!world.Grid.TryFindNearestWalkable(cell0, 3, out cell0)) continue;
                         p = GridMap.CellToWorld(cell0);
                     }
+                    // Not fog the ground seen round it walls in, though (P4-80).
+                    if (ExplorationRoute.Unseen(fog, cell0) && !ExplorationRoute.OpensOut(world.Grid, a.Mover.UnknownToMe, cell0)) continue;
                     if (world.Grid.IsInTown(cell0)) continue;
                     if (avoid != null && Vector2.Distance(p, avoid.Value) < _reach * 0.3f) continue;
                     float unseen = fog == null ? 0f : 1f - fog.ExploredFraction(p, 10f);

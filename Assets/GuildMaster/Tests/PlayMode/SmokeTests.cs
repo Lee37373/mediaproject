@@ -594,6 +594,52 @@ namespace GuildMaster.Tests
             Assert.That(longestRound, Is.GreaterThan(1), "several stops were queued as one round");
             Assert.That(member.Data.LootCount, Is.EqualTo(before + 3), "and all of it came back in that pass");
 
+            // P4-80: loot in a crack is left there — walkers cross one at a crawl, and a party went in
+            // after a drop and took three hours to make four cells. Idle in town all the while (it would
+            // go and decide on something within seconds, and deciding picks nothing up).
+            void KeepIdle()
+            {
+                member.ChangeState(member.IdleState);
+                typeof(TownIdleState).GetField("_decisionTimer", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(member.IdleState, 1e6f);
+            }
+            // The others rest long enough not to take it hunting (rest ends at fatigue 10, -30 an hour).
+            foreach (var other in Roster.Members)
+                if (other != member) { other.Data.fatigue = 100f; other.ChangeState(other.RestState); }
+            member.Mover.Stop();
+            member.transform.position = Services.Get<World.WorldService>().TownCenterWorld + new Vector2(-7f, 0f);
+            KeepIdle();
+            var crackAt = member.Position + new Vector2(5f, 0f);
+            if (grid.TryFindNearestWalkable(World.GridMap.WorldToCell(crackAt), 3, out var crackCell)) crackAt = World.GridMap.CellToWorld(crackCell);
+            crackCell = World.GridMap.WorldToCell(crackAt);
+            for (int dy = -3; dy <= 3; dy++)
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                var c = crackCell + new Vector2Int(dx, dy);
+                if (grid.IsWalkable(c) && (c - World.GridMap.WorldToCell(member.Position)).sqrMagnitude > 1) grid.SetHazard(c, World.HazardKind.Fissure);
+            }
+            DebugCommands.DropItem("slime_jelly", 1, crackAt.x, crackAt.y);
+            var inCrack = ground.Items.Last();
+            Assert.That(AdventurerLooting.OnAWall(grid, inCrack), Is.True, "it lies in the crack");
+            yield return WaitFor(() => member.Looting.IsBusy, 2f);
+            Assert.That(member.Looting.IsBusy, Is.False, "an ordinary drop in a crack is not worth the crawl");
+            Assert.That(member.Fsm.Current, Is.EqualTo(member.IdleState), "(and it was looking)");
+
+            // A fallen comrade's relic is; but given up once (it takes longer than a stop may), it is
+            // not planned straight back in (giving up used to last half a second).
+            inCrack.Kept = true;
+            yield return WaitFor(() => member.Looting.IsBusy, 3f);
+            Assert.That(member.Looting.IsBusy, Is.True, "it sets out for the relic");
+            yield return WaitFor(() => !member.Looting.IsBusy, 20f);
+            Assume.That(ground.Contains(inCrack), "the crawl took longer than a stop may");
+            Assert.That(member.Looting.IsBusy, Is.False, "the stop was given up");
+            yield return WaitFor(() => member.Looting.IsBusy, 2f);
+            Assert.That(member.Looting.IsBusy, Is.False, "and stays given up");
+            Assert.That(member.Fsm.Current, Is.EqualTo(member.IdleState), "(still looking)");
+            ground.Take(inCrack, member);
+            for (int dy = -3; dy <= 3; dy++)
+            for (int dx = -3; dx <= 3; dx++) grid.SetHazard(crackCell + new Vector2Int(dx, dy), World.HazardKind.None);
+            member.transform.position = Services.Get<World.WorldService>().TownCenterWorld + new Vector2(-7f, 0f);
+
             // With a monster in sight the round is dropped rather than walked.
             var at2 = member.Position + new Vector2(2f, 0f);
             DebugCommands.DropItem("slime_jelly", 1, at2.x, at2.y);

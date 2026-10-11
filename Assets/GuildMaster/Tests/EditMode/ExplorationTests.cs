@@ -110,6 +110,53 @@ namespace GuildMaster.Tests
             return blocked;
         }
 
+        /// <summary>
+        /// Open grass with a ring of mountain whose rim has been seen and whose middle (grass, as it
+        /// happens) never has: the inside of an outcrop the band has only walked round (P4-80).
+        /// </summary>
+        static MapData OutcropMap()
+        {
+            var map = new MapData(60, 40);
+            for (int i = 0; i < map.Tiles.Length; i++) map.Tiles[i] = TileType.Grass;
+            for (int y = 14; y <= 26; y++)
+            for (int x = 26; x <= 36; x++)
+                if (x == 26 || x == 36 || y == 14 || y == 26) map[x, y] = TileType.Mountain;
+            return map;
+        }
+
+        static bool InOutcrop(int x, int y) => x > 26 && x < 36 && y > 14 && y < 26;
+
+        [Test]
+        public void FogWalledInBySeenRock_IsNoPlaceForALeg()
+        {
+            var world = new WorldService(OutcropMap());
+            System.Func<int, int, bool> unseen = InOutcrop;
+            var from = new Vector2(12.5f, 20.5f);
+            var goal = new Vector2(55.5f, 20.5f);
+            var straightEnd = GridMap.WorldToCell(from + Vector2.right * ExplorationRoute.LegLength);
+            Assume.That(InOutcrop(straightEnd.x, straightEnd.y), "the straight leg would end inside the outcrop");
+
+            var leg = ExplorationRoute.NextLeg(world, unseen, from, goal, RouteChoice.Normal);
+            var cell = GridMap.WorldToCell(leg);
+            Assert.IsFalse(InOutcrop(cell.x, cell.y), "the leg does not end in fog the seen rock walls in");
+            var path = new List<Vector2Int>();
+            Assert.IsTrue(world.Pathfinder.FindPath(GridMap.WorldToCell(from), cell, path, true, null, RouteChoice.Normal, unseen),
+                "and the band can walk it");
+        }
+
+        [Test]
+        public void OpensOut_IsFogThatTouchesSeenGround_OrTooBigToTell()
+        {
+            var grid = new GridMap(OutcropMap());
+            Assert.IsFalse(ExplorationRoute.OpensOut(grid, InOutcrop, new Vector2Int(30, 20)), "walled in by seen rock");
+            // A gap in what was seen of the rim: the fog runs out onto the grass beyond.
+            bool Gap(int x, int y) => InOutcrop(x, y) || x == 36 && y == 20;
+            Assert.IsTrue(ExplorationRoute.OpensOut(grid, Gap, new Vector2Int(30, 20)), "the unseen rim cell may be a way in");
+            Assert.IsTrue(ExplorationRoute.OpensOut(grid, (x, y) => true, new Vector2Int(5, 5)), "a whole map of fog is too big to tell");
+            Assert.IsTrue(ExplorationRoute.OpensOut(grid, InOutcrop, new Vector2Int(5, 5)), "seen grass is open");
+            Assert.IsFalse(ExplorationRoute.OpensOut(grid, InOutcrop, new Vector2Int(26, 20)), "seen rock is not");
+        }
+
         [Test]
         public void WithoutFog_ExplorationKnowsEverything()
         {

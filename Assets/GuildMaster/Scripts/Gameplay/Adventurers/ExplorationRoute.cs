@@ -1,4 +1,4 @@
-using GuildMaster.Core;
+using System.Collections.Generic;
 using GuildMaster.Fog;
 using GuildMaster.World;
 using UnityEngine;
@@ -34,10 +34,22 @@ namespace GuildMaster.Adventurers
         const float ScoutBonus = 0.6f;
 
         /// <summary>
+        /// Most unseen cells <see cref="OpensOut"/> floods before it calls a patch of fog open country:
+        /// bigger than the inside of any rock or lake a band walks round.
+        /// </summary>
+        public const int PocketProbe = 400;
+
+        static readonly Vector2Int[] Steps = { Vector2Int.right, Vector2Int.left, Vector2Int.up, Vector2Int.down };
+        static readonly Queue<Vector2Int> s_flood = new();
+        static readonly HashSet<Vector2Int> s_flooded = new();
+
+        /// <summary>
         /// The next leg towards <paramref name="goal"/>, or the goal itself when it is within reach.
+        /// <paramref name="unseen"/> is what the guild has never seen (<see cref="KnowledgeOf"/>, the
+        /// walker's <see cref="PathFollower.UnknownToMe"/>; null: everything is known).
         /// <paramref name="scouting"/> rewards headings into the fog (that is the point of the trip).
         /// </summary>
-        public static Vector2 NextLeg(WorldService world, FogOfWar fog, Vector2 from, Vector2 goal,
+        public static Vector2 NextLeg(WorldService world, System.Func<int, int, bool> unseen, Vector2 from, Vector2 goal,
             float caution, bool scouting = false)
         {
             if (world == null) return goal;
@@ -52,8 +64,8 @@ namespace GuildMaster.Adventurers
             {
                 var dir = Rotate(straight, degrees * Mathf.Deg2Rad);
                 var end = from + dir * LegLength;
-                if (!Reachable(world, fog, end, out var snapped)) continue;
-                float score = Score(world, fog, from, snapped, goal, caution, scouting);
+                if (!Reachable(world.Grid, unseen, end, out var snapped)) continue;
+                float score = Score(world, unseen, from, snapped, goal, caution, scouting);
                 if (score <= bestScore) continue;
                 bestScore = score;
                 best = snapped;
@@ -61,40 +73,78 @@ namespace GuildMaster.Adventurers
             return best;
         }
 
-        /// <summary>A leg end has to be somewhere the band could stand: unseen ground counts.</summary>
-        static bool Reachable(WorldService world, FogOfWar fog, Vector2 end, out Vector2 snapped)
+        /// <summary>
+        /// A leg end has to be somewhere the band could stand: unseen ground counts, unless what has
+        /// been seen around it walls it in (<see cref="OpensOut"/>).
+        /// </summary>
+        static bool Reachable(GridMap grid, System.Func<int, int, bool> unseen, Vector2 end, out Vector2 snapped)
         {
             var cell = GridMap.WorldToCell(end);
             snapped = end;
-            if (!world.Grid.InBounds(cell)) return false;
-            if (Unseen(fog, cell) || world.Grid.IsWalkable(cell)) return true;
-            if (!world.Grid.TryFindNearestWalkable(cell, 3, out cell)) return false;
+            if (!grid.InBounds(cell)) return false;
+            if (IsUnseen(unseen, cell)) return OpensOut(grid, unseen, cell);
+            if (grid.IsWalkable(cell)) return true;
+            if (!grid.TryFindNearestWalkable(cell, 3, out cell)) return false;
             snapped = GridMap.CellToWorld(cell);
-            return true;
+            return !IsUnseen(unseen, cell) || OpensOut(grid, unseen, cell);
         }
+
+        /// <summary>
+        /// Whether the patch of unseen ground around <paramref name="cell"/> opens onto ground seen to
+        /// be walkable — or is too big to tell (<paramref name="probe"/> cells). False when everything
+        /// seen around it is rock, water or the map's edge (P4-80: the middle of a rock outcrop the
+        /// guild had only seen the rim of was taken for open country; a leg aimed there could never be
+        /// walked, every try searched 20 000 cells, and the band stood outside the gate re-aiming at
+        /// it for two hours). Four-way, as walkers cannot cut a corner between two walls. Only what
+        /// the guild has seen is used.
+        /// </summary>
+        public static bool OpensOut(GridMap grid, System.Func<int, int, bool> unseen, Vector2Int cell, int probe = PocketProbe)
+        {
+            if (!IsUnseen(unseen, cell)) return grid.IsWalkable(cell);
+            s_flood.Clear();
+            s_flooded.Clear();
+            s_flood.Enqueue(cell);
+            s_flooded.Add(cell);
+            int count = 0;
+            while (s_flood.Count > 0)
+            {
+                if (++count > probe) return true;
+                var c = s_flood.Dequeue();
+                foreach (var step in Steps)
+                {
+                    var n = c + step;
+                    if (!grid.InBounds(n) || !s_flooded.Add(n)) continue;
+                    if (unseen(n.x, n.y)) s_flood.Enqueue(n);
+                    else if (grid.IsWalkable(n)) return true;
+                }
+            }
+            return false;
+        }
+
+        static bool IsUnseen(System.Func<int, int, bool> unseen, Vector2Int c) => unseen != null && unseen(c.x, c.y);
 
         /// <summary>
         /// Worth of a leg: progress towards the goal, less what is known to stand in the way and the
         /// cover the party would rather avoid, plus the unseen ground it would put eyes on.
         /// </summary>
-        static float Score(WorldService world, FogOfWar fog, Vector2 from, Vector2 end, Vector2 goal,
+        static float Score(WorldService world, System.Func<int, int, bool> unseen, Vector2 from, Vector2 end, Vector2 goal,
             float caution, bool scouting)
         {
             float progress = Vector2.Distance(from, goal) - Vector2.Distance(end, goal);
-            float blocked = 0f, risk = 0f, unseen = 0f;
+            float blocked = 0f, risk = 0f, unseenCells = 0f;
             for (int i = 1; i <= Samples; i++)
             {
                 var p = Vector2.Lerp(from, end, i / (float)Samples);
                 var c = GridMap.WorldToCell(p);
                 if (!world.Grid.InBounds(c)) { blocked++; continue; }
-                if (Unseen(fog, c)) { unseen++; continue; } // nothing is known here, good or bad
+                if (IsUnseen(unseen, c)) { unseenCells++; continue; } // nothing is known here, good or bad
                 if (!world.Grid.IsWalkable(c)) { blocked++; continue; }
                 risk += world.Risk.At(c.x, c.y);
             }
             return progress * DetourWeight
                    - blocked * BlockedPenalty
                    - risk * Mathf.Max(0f, caution)
-                   + (scouting ? unseen * ScoutBonus : 0f);
+                   + (scouting ? unseenCells * ScoutBonus : 0f);
         }
 
         /// <summary>Ground the guild has never laid eyes on (no fog at all: everything is known).</summary>
