@@ -24,6 +24,13 @@ namespace GuildMaster.Fog
     public struct FogUpdatedEvent { public int NewlyExploredCells; }
 
     /// <summary>
+    /// The fog lifts for the first time somewhere in these cells (one <see cref="FogOfWar"/> block, or
+    /// the whole map when the debug fog is switched off). P4-81: the ground there gets painted — under
+    /// fog that never lifted nothing shows.
+    /// </summary>
+    public struct FogRevealedEvent { public RectInt Cells; }
+
+    /// <summary>
     /// Grid fog of war with three states (unexplored / explored / visible).
     /// Vision is recomputed per cell on a fixed tick and each cell's alpha fades smoothly. Rendering
     /// (P4-7) upsamples the cell alphas to <see cref="RenderScale"/> texels per cell after a small
@@ -68,7 +75,7 @@ namespace GuildMaster.Fog
             {
                 bool e = (bits[i >> 3] & (1 << (i & 7))) != 0;
                 _explored[i] = e;
-                if (e) ExploredCount++;
+                if (e) { ExploredCount++; NoteExplored(i); }
                 // Cells the boot's first tick already sees stay clear: the next tick does not count
                 // them as newly in sight, so they would not fade back.
                 _alpha[i] = _visibleStamp[i] == _stamp ? 0f : e ? _exploredAlpha : 1f;
@@ -114,6 +121,17 @@ namespace GuildMaster.Fog
         List<int> _seen = new(), _seenBefore = new();
         int _bw, _bh;
         bool[] _blockDirty;
+        /// <summary>Blocks where some cell has been explored (each announced once, <see cref="FogRevealedEvent"/>).</summary>
+        bool[] _blockRevealed;
+        /// <summary>Times each block was redrawn (P4-81: the minimap repaints only blocks that changed).</summary>
+        int[] _blockVersion;
+
+        /// <summary>Cells per side of a redraw block.</summary>
+        public static int BlockSize => Block;
+        public int BlocksWide => _bw;
+        public int BlocksHigh => _bh;
+        /// <summary>Goes up whenever anything in the block (row-major, <see cref="BlockSize"/> cells) looks different.</summary>
+        public int BlockVersion(int block) => _blockVersion[block];
         readonly List<int> _dirtyBlocks = new();
         bool _refreshAll;
 
@@ -132,6 +150,7 @@ namespace GuildMaster.Fog
                 if (_disabled == value) return;
                 _disabled = value;
                 _refreshAll = true;
+                if (value && _explored != null) Core.EventBus.Publish(new FogRevealedEvent { Cells = new RectInt(0, 0, _w, _h) });
             }
         }
 
@@ -170,6 +189,8 @@ namespace GuildMaster.Fog
             _bw = (width + Block - 1) / Block;
             _bh = (height + Block - 1) / Block;
             _blockDirty = new bool[_bw * _bh];
+            _blockRevealed = new bool[_bw * _bh];
+            _blockVersion = new int[_bw * _bh];
 
             _texture = new Texture2D(_tw, _th, TextureFormat.RGBA32, false)
             {
@@ -214,8 +235,19 @@ namespace GuildMaster.Fog
                 if (_explored[i]) return;
                 _explored[i] = true;
                 ExploredCount++;
+                NoteExplored(i);
                 Activate(i);
             });
+        }
+
+        /// <summary>A cell was just explored: the first in its block announces the block.</summary>
+        void NoteExplored(int i)
+        {
+            int bx = i % _w / Block, by = i / _w / Block, b = by * _bw + bx;
+            if (_blockRevealed[b]) return;
+            _blockRevealed[b] = true;
+            int x = bx * Block, y = by * Block;
+            Core.EventBus.Publish(new FogRevealedEvent { Cells = new RectInt(x, y, Mathf.Min(Block, _w - x), Mathf.Min(Block, _h - y)) });
         }
 
         void Update()
@@ -298,7 +330,7 @@ namespace GuildMaster.Fog
                         _visibleStamp[i] = _stamp;
                         _seen.Add(i);
                         if (stamp != lastTick) Activate(i);
-                        if (!_explored[i]) { _explored[i] = true; newly++; }
+                        if (!_explored[i]) { _explored[i] = true; newly++; NoteExplored(i); }
                     }
                 }
             }
@@ -358,6 +390,7 @@ namespace GuildMaster.Fog
             {
                 RenderBlock(b % _bw, b / _bw, texels);
                 _blockDirty[b] = false;
+                _blockVersion[b]++;
             }
             _dirtyBlocks.Clear();
             _texture.Apply(false);

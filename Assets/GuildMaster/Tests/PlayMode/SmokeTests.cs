@@ -1450,13 +1450,18 @@ namespace GuildMaster.Tests
             var avatar = Services.Get<PlayerAvatar>();
             var ghosts = Services.Get<Fog.FogGhostService>();
             var world = Services.Get<World.WorldService>();
-            // Well outside town, so only the guild master lights the spot.
-            var far = world.TownCenterWorld + new Vector2(30f, 0f);
+            // Well outside town, so only the guild master lights the spot — on open grass (P4-81: on the
+            // 512 map 30 cells east lay in a wood, where sight is a third and the goblins stayed unseen).
+            var spot = OpenGrassOutsideTown(28f, 60f);
+            Assert.That(spot.HasValue, Is.True, "open grass outside the town's sight");
+            var far = spot.Value;
+            avatar.Mover.Stop();
             avatar.transform.position = far;
             yield return WaitFor(() => Services.Get<Fog.FogOfWar>().IsVisibleRaw(far), 5f);
 
             DebugCommands.SpawnNearMaster("goblin", 2, 2f);
-            var seen = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null).ToList();
+            // The two just spawned (P4-81: the 512 map has homeless monsters of its own elsewhere).
+            var seen = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null && Vector2.Distance(m.Position, far) <= 6f).ToList();
             Assert.That(seen, Is.Not.Empty, "monsters spawned next to the guild master");
             // The fog must actually judge them visible first: until then they were never seen, and
             // walking away would (correctly) leave nothing behind.
@@ -1761,6 +1766,27 @@ namespace GuildMaster.Tests
         /// <summary>Moves the guild master to open ground outside town (8 walkable cells every way).</summary>
         static PlayerAvatar MasterOnOpenGround()
             => MasterOnOpenGround(clearResidents: false) ?? MasterOnOpenGround(clearResidents: true);
+
+        /// <summary>A grassland cell between these distances from the town centre with no wood or blocked ground within 4 cells.</summary>
+        static Vector2? OpenGrassOutsideTown(float from, float to)
+        {
+            var world = Services.Get<World.WorldService>();
+            var grid = world.Grid;
+            var c0 = World.GridMap.WorldToCell(world.TownCenterWorld);
+            for (float r = from; r <= to; r += 2f)
+            for (int k = 0; k < 16; k++)
+            {
+                float a = k * Mathf.PI / 8f;
+                var c = c0 + new Vector2Int(Mathf.RoundToInt(Mathf.Cos(a) * r), Mathf.RoundToInt(Mathf.Sin(a) * r));
+                if (world.Map.RegionOf(c.x, c.y) != World.Region.Grassland) continue;
+                bool open = true;
+                for (int dy = -4; dy <= 4 && open; dy++)
+                for (int dx = -4; dx <= 4 && open; dx++)
+                    if (!grid.IsWalkable(c + new Vector2Int(dx, dy)) || grid.IsForest(c + new Vector2Int(dx, dy))) open = false;
+                if (open) return World.GridMap.CellToWorld(c);
+            }
+            return null;
+        }
 
         /// <summary>
         /// With clearResidents the first open spot is taken and the nests whose territory reaches it
@@ -2568,7 +2594,8 @@ namespace GuildMaster.Tests
         {
             var center = Services.Get<World.WorldService>().TownCenterWorld;
             var eco = Services.Get<EcosystemManager>();
-            for (float r = 120f; r > 30f; r -= 5f)
+            // P4-81: the inner land's levels run out to 180 cells now (the 256 map's farthest nest).
+            for (float r = 200f; r > 30f; r -= 5f)
             for (int k = 0; k < 16; k++)
             {
                 var p = center + new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f)) * r;
@@ -2707,7 +2734,7 @@ namespace GuildMaster.Tests
                 var edge = Services.Get<World.WorldService>().Map.EdgeSpawnCells;
                 // The outer site closest to the edge, emptied (a short walk for the test).
                 float ToEdge(Ecosystem.Nest n) => edge.Min(c => (c - n.Cell).magnitude);
-                var target = eco.Nests.Where(n => eco.Distance01(n.WorldPosition) >= MigrationService.OuterSites).OrderBy(ToEdge).First();
+                var target = eco.Nests.Where(n => eco.Depth(n.WorldPosition) >= MigrationService.OuterSites).OrderBy(ToEdge).First();
                 foreach (var m in target.Members.ToList()) m.Perish();
                 Assert.That(target.IsEmpty, Is.True);
                 var species = eco.Species.First(s => s.id == "goblin");

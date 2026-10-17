@@ -323,7 +323,7 @@ namespace GuildMaster.Adventurers
             // Judged at full health: how far out the band goes is its strength, not today's scratches
             // (being hurt already sends it home, see FreeHunt.ShouldGoHome).
             _reach = Services.TryGet<EcosystemManager>(out var eco)
-                ? FreeHunt.RoamRadius(_bandStats, null, eco.Species)
+                ? FreeHunt.RoamRadius(_bandStats, null, eco.Species, eco.OutermostDistance)
                 : FreeHunt.Radius;
         }
 
@@ -403,6 +403,8 @@ namespace GuildMaster.Adventurers
                 {
                     float angle = rng.Range(0f, Mathf.PI * 2f);
                     var p = town + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * FreeHunt.ScoutDistance(rng.Value, _reach);
+                    // P4-81: a reach into the outer land can be wider than the map is from the town.
+                    p = new Vector2(Mathf.Clamp(p.x, 2f, world.Grid.Width - 3f), Mathf.Clamp(p.y, 2f, world.Grid.Height - 3f));
                     var cell0 = GridMap.WorldToCell(p);
                     // An unseen cell is a fine place to walk to; only known-blocked ground is moved off.
                     if (!ExplorationRoute.Unseen(fog, cell0))

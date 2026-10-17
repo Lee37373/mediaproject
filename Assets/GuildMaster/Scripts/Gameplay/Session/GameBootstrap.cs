@@ -83,6 +83,8 @@ namespace GuildMaster.Session
                 TownHalfSize = Balance.townHalfSize,
                 NestCount = Balance.nestCount,
                 MinNestDistanceFromTown = Balance.minNestDistanceFromTown,
+                InnerHalfSize = Balance.innerHalfSize,
+                InnerNestCount = Balance.innerNestCount,
             });
             var world = new WorldService(map);
             Services.Register(world);
@@ -100,7 +102,10 @@ namespace GuildMaster.Session
             townVision.transform.position = world.TownCenterWorld;
             townVision.SightRadius = Balance.townSightRadius;
             townVision.SeesOverWalls = true; // watchtowers on the wall
+            // P4-81: the ground is painted where the fog lifts (the town first, on the first frame).
+            EventBus.Subscribe<FogRevealedEvent>(e => { if (mapRenderer != null) mapRenderer.RequestGround(e.Cells); });
             fog.Init(map.Width, map.Height, Balance.exploredFogAlpha, Balance.fogTickInterval);
+            mapRenderer.PaintRequestedNow();
 
             // --- Content & economy ---
             var db = GameDatabase.Load();

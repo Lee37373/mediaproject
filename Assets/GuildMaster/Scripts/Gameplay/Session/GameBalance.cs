@@ -15,11 +15,24 @@ namespace GuildMaster.Session
         public int startHour = 8;
 
         [Header("Map")]
-        /// <summary>P4-53 (user decision 2026-09-22): 256×256, was 128. Nests keep their density (nestCount ×4).</summary>
-        public int mapWidth = 256;
-        public int mapHeight = 256;
+        /// <summary>
+        /// P4-53 (user decision 2026-09-22): 256×256, was 128. P4-81 (user decision 2026-10-16): 512×512 for
+        /// the other towns and the region bosses. The old 256 map stays in the middle as it was tuned
+        /// (grassland, levels 1→15 out to <see cref="Ecosystem.EcosystemManager.InnerEdge"/>); the land
+        /// beyond is new late-game ground.
+        /// </summary>
+        public int mapWidth = 512;
+        public int mapHeight = 512;
         public int townHalfSize = 11;
+        /// <summary>P4-81 (user decision): the whole map keeps 64 nests — fewer near the town than on the 256 map.</summary>
         public int nestCount = 64;
+        /// <summary>
+        /// P4-81: nests placed within this many cells of the town along x and y (the old 256 map's
+        /// square) before the rest go further out — spread evenly, 64 nests would leave a quarter of
+        /// them near the town.
+        /// </summary>
+        public int innerHalfSize = 128;
+        public int innerNestCount = 32;
         /// <summary>
         /// P5-1: was 24, which left no nest inside the first day's walk. Species are placed by
         /// distance now, so the closest ring is the weakest one and it should be findable early.
@@ -88,7 +101,7 @@ namespace GuildMaster.Session
         /// <summary>Game hours after which surviving raiders give up and go home.</summary>
         public int raidMaxHours = 10;
         /// <summary>Guild members within this many cells of the town rush to defend.</summary>
-        public float raidDefendRadius = 180f; // P4-53: the whole 256 map (half its diagonal), was 80 for 128
+        public float raidDefendRadius = 362f; // the whole map (half its diagonal): P4-53 180 for 256 (was 80 for 128), P4-81 362 for 512
         /// <summary>
         /// Share of a monster's attack that lands on a building (P5-1). Walls are not people: without
         /// this a dozen raiders flattened the town hall before anyone could walk back.

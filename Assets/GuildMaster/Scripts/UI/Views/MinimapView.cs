@@ -131,12 +131,49 @@ namespace GuildMaster.UI
             UpdateFrame();
         }
 
+        /// <summary>Fog block versions last painted (P4-81: only the blocks the fog redrew are painted again).</summary>
+        int[] _paintedVersion;
+        FogOfWar _paintedFog;
+
         void DrawFog()
         {
             Services.TryGet<FogOfWar>(out var fog);
             int w = _mapData.Width, h = _mapData.Height;
-            for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
+            if (fog == null || fog.Width != w || fog.Height != h)
+            {
+                PaintCells(null, 0, 0, w, h);
+            }
+            else
+            {
+                // The whole 512 map took about 10 ms twice a second; the fog knows what changed.
+                int bs = FogOfWar.BlockSize, bw = fog.BlocksWide, bh = fog.BlocksHigh;
+                if (_paintedFog != fog || _paintedVersion == null || _paintedVersion.Length != bw * bh)
+                {
+                    _paintedFog = fog;
+                    _paintedVersion = new int[bw * bh];
+                    for (int b = 0; b < _paintedVersion.Length; b++) _paintedVersion[b] = -1;
+                }
+                bool changed = false;
+                for (int b = 0; b < _paintedVersion.Length; b++)
+                {
+                    int v = fog.BlockVersion(b);
+                    if (v == _paintedVersion[b]) continue;
+                    _paintedVersion[b] = v;
+                    changed = true;
+                    int x0 = b % bw * bs, y0 = b / bw * bs;
+                    PaintCells(fog, x0, y0, Mathf.Min(w, x0 + bs), Mathf.Min(h, y0 + bs));
+                }
+                if (!changed) return;
+            }
+            _texture.SetPixels32(_pixels);
+            _texture.Apply(false);
+        }
+
+        void PaintCells(FogOfWar fog, int x0, int y0, int x1, int y1)
+        {
+            int w = _mapData.Width;
+            for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++)
             {
                 int i = y * w + x;
                 var c = new Vector2Int(x, y);
@@ -148,8 +185,6 @@ namespace GuildMaster.UI
                 }
                 else _pixels[i] = new Color32(12, 10, 16, 255);
             }
-            _texture.SetPixels32(_pixels);
-            _texture.Apply(false);
         }
 
         void DrawMarkers()

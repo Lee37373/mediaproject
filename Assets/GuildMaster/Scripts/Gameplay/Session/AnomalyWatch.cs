@@ -263,6 +263,10 @@ namespace GuildMaster.Session
             var sb = new StringBuilder();
             sb.Append($" moving={a.Mover.IsMoving} steering={a.Mover.IsSteering} speed={a.Mover.Speed:0.0}x{a.Mover.SpeedMultiplier:0.00} stunned={a.IsStunned} " +
                       $"dest={a.Mover.Destination} target={a.Engage.Target?.DisplayName ?? "-"} searching={a.Engage.IsSearching}");
+            // P4-81: a member stood for hours 'moving' next to rock: the walk's own state and the ground under it.
+            var cell = World.GridMap.WorldToCell(a.Position);
+            var grid = Services.Get<World.WorldService>().Grid;
+            sb.Append($" plan[{a.Mover.DebugPlan} buff={a.Mover.BuffMultiplier:0.00} cost={(grid.InBounds(cell) ? grid.Cost(cell) : -1f):0.00} v={a.Mover.Velocity}]");
             if (Services.TryGet<PartyTactics>(out var tactics) && tactics.LeaderOf(a) is { } leader)
             {
                 sb.Append($" leader={leader.Data.name}('{leader.StateLabel}' {leader.Position})");

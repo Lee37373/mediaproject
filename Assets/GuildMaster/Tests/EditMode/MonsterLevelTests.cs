@@ -40,6 +40,30 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void TheOuterLandKeepsRising_PastTheInnerEdge()
+        {
+            // P4-81 (user decision 2026-10-16): the 256 map's 1 → 15 stays inside, 15 → 25 beyond.
+            Assert.That(MonsterLevel.BirthLevel(1f), Is.EqualTo(15));
+            Assert.That(MonsterLevel.BirthLevel(1.5f), Is.EqualTo(20));
+            Assert.That(MonsterLevel.BirthLevel(2f), Is.EqualTo(25), "the outermost site");
+            Assert.That(MonsterLevel.BirthLevel(3f), Is.EqualTo(25), "nothing beyond it");
+            Assert.That(MonsterLevel.BirthLevel(2f), Is.LessThanOrEqualTo(MonsterLevel.MaxLevel));
+        }
+
+        [Test]
+        public void Depth_IsTheOld256Rule_InsideTheInnerEdge()
+        {
+            const float inner = 20f, edge = GuildMaster.Ecosystem.EcosystemManager.InnerEdge;
+            float Depth(float d, float outermost) => GuildMaster.Ecosystem.EcosystemManager.DepthAt(d, inner, outermost);
+            Assert.That(Depth(inner, 350f), Is.EqualTo(0f));
+            Assert.That(Depth(100f, 350f), Is.EqualTo((100f - inner) / (edge - inner)).Within(1e-4f), "the same however far the map goes");
+            Assert.That(Depth(edge, 350f), Is.EqualTo(1f));
+            Assert.That(Depth((edge + 350f) / 2f, 350f), Is.EqualTo(1.5f).Within(1e-4f));
+            Assert.That(Depth(350f, 350f), Is.EqualTo(2f));
+            Assert.That(Depth(170f, 170f), Is.LessThan(1f), "a 256 map never reaches the outer land");
+        }
+
+        [Test]
         public void HigherLevels_AreTougher_WorthMore_AndSmarterEveryFewLevels()
         {
             Assert.That(MonsterLevel.HpScale(1), Is.EqualTo(1f));

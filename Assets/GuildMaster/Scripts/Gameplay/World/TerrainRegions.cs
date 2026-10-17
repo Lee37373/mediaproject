@@ -37,7 +37,9 @@ namespace GuildMaster.World
         public static RegionLayout Layout(Vector2 center, float mapSize, float rotation, float noiseX, float noiseY) => new()
         {
             Center = center,
-            GrassRadius = mapSize * 0.21f, // 256 → ~54 cells: the slime and goblin rings
+            // 256 → ~54 cells: the slime and goblin rings. P4-81: a bigger map keeps the 256 map's
+            // grassland (the early game as tuned); the outer regions take the new land.
+            GrassRadius = Mathf.Min(mapSize, 256f) * 0.21f,
             Rotation = rotation,
             NoiseX = noiseX,
             NoiseY = noiseY,

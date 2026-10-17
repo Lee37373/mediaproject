@@ -567,14 +567,20 @@ namespace GuildMaster.Monsters
                 {
                     bool busy = o.Fsm.Current == o.FleeState || o.Fsm.Current == o.RegroupState;
                     if (d <= near) { if (!busy) allies++; }
-                    else if (!busy && d < rallyDist) { rallyDist = d; rally = o; }
+                    else if (!busy && d < rallyDist && d <= MonsterRegroupState.MaxDistance) { rallyDist = d; rally = o; }
                 }
                 else if ((IsHostileTo(u) || u.IsHostileTo(this)) && (u.CurrentTarget == this || d <= 2.5f)) enemies++;
             }
             // Not needed (or nowhere to go): look again in a moment rather than every frame.
             NextRegroupTime = Time.time + 0.5f;
             if (!PackTactics.ShouldRegroup(HpRatio, enemies, allies)) return false;
-            if (rally == null && (Home == null || Vector2.Distance(Position, HomePosition) <= near)) return false;
+            if (rally == null)
+            {
+                // No mate in reach: the nest, if it is near enough to fall back to (P4-81).
+                if (Home == null) return false;
+                float home = Vector2.Distance(Position, HomePosition);
+                if (home <= near || home > MonsterRegroupState.MaxDistance) return false;
+            }
             NextRegroupTime = Time.time + 20f;
             RegroupState.RallyMate = rally;
             RegroupState.Point = rally != null ? rally.Position : HomePosition;

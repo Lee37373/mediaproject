@@ -1153,5 +1153,43 @@ namespace GuildMaster.Session
             foreach (var s in file.sections) sb.AppendLine($"{s.key}: {s.json.Length}자");
             return sb.ToString();
         }
+
+        // ---------------- Map 512 (P4-81) ----------------
+
+        /// <summary>Ground chunks painted where the fog lifted, still waiting, and in the map; nests by depth.</summary>
+        public static string GroundStatus()
+        {
+            var sb = new StringBuilder();
+            if (Services.TryGet<World.MapRenderer>(out var r))
+                sb.AppendLine($"땅 덩어리: 그림 {r.GroundChunksPainted} · 대기 {r.GroundChunksWaiting} · 전체 {r.GroundChunksTotal}");
+            if (Services.TryGet<Fog.FogOfWar>(out var fog))
+                sb.AppendLine($"탐색된 칸 {fog.ExploredCount} / {fog.Width * fog.Height}");
+            var eco = Services.Get<EcosystemManager>();
+            var nests = eco.Nests.ToList();
+            int inner = nests.Count(n => eco.Depth(n.WorldPosition) <= 1f);
+            sb.AppendLine($"둥지 {nests.Count}곳: 안쪽(깊이 ≤1) {inner} · 바깥 {nests.Count - inner}, 가장 먼 둥지 {eco.OutermostDistance:0}칸, " +
+                          $"태어남 레벨 {nests.Min(n => n.BirthLevel)}~{nests.Max(n => n.BirthLevel)}");
+            return sb.ToString();
+        }
+
+        /// <summary>Path searches that gave up at the node cap: by caller, and the latest ones (P4-81).</summary>
+        public static string PathFailures()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"searches {World.Pathfinder.Searches} · failed {World.Pathfinder.FailedSearches} · expanded {World.Pathfinder.TotalExpanded} (failed {World.Pathfinder.FailedExpanded})");
+            foreach (var kv in World.Pathfinder.CappedByCaller.OrderByDescending(kv => kv.Value))
+                sb.AppendLine($"  {kv.Value}× {kv.Key}");
+            foreach (var c in World.Pathfinder.RecentCapped)
+                sb.AppendLine($"  {c.Start} → {c.Goal} ({(c.Goal - c.Start).magnitude:0}칸{(c.Exploring ? ", 탐험" : "")}{(c.PassesGates ? "" : ", 몬스터")}) {c.Caller}");
+            return sb.ToString();
+        }
+
+        public static string ResetPathStats()
+        {
+            World.Pathfinder.Searches = World.Pathfinder.FailedSearches = World.Pathfinder.TotalExpanded = World.Pathfinder.FailedExpanded = 0;
+            World.Pathfinder.CappedByCaller.Clear();
+            World.Pathfinder.RecentCapped.Clear();
+            return "reset";
+        }
     }
 }

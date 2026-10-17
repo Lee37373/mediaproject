@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using GuildMaster.Core;
 using GuildMaster.Visuals;
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
@@ -67,51 +70,235 @@ namespace GuildMaster.World
             _decor.SetTiles(decorPositions.ToArray(), decorTiles.ToArray());
         }
 
-        /// <summary>Paints all ground chunks (in parallel), then uploads them as sprites.</summary>
+        // ---------------- Ground (P4-81) ----------------
+        // At 32 px a cell the 512 map's ground is 1 GB of RGBA32 and about 36 s of painting. Now the
+        // whole map is painted once at boot at BackdropPixelsPerCell (the backdrop, under everything),
+        // and full chunks only where the fog lifts — and one chunk round it, ahead of the eye
+        // (RequestGround, fed by FogRevealedEvent in GameBootstrap) — on worker threads, nearest the
+        // camera first, compressed to BC1 (128 KB a chunk). Fog that never lifted is opaque, so the
+        // ground under it is never missed.
+
+        const int BackdropPixelsPerCell = 2;
+        const int ChunkPixels = ChunkCells * GroundPixelsPerCell;
+        /// <summary>Painted chunks turned into textures per frame (each ~0.1 ms).</summary>
+        const int UploadsPerFrame = 6;
+
+        enum ChunkState : byte { None, Queued, Painting, Done }
+
+        struct PaintedChunk
+        {
+            public int Chunk;
+            public byte[] Data;
+            public string Error;
+        }
+
+        CartoonGroundPainter _painter;
+        Transform _groundRoot;
+        ChunkState[] _chunkState;
+        int _cw, _ch;
+        int _workers;
+        int _inFlight;
+        readonly List<int> _queue = new();
+        readonly ConcurrentQueue<PaintedChunk> _painted = new();
+        readonly ConcurrentBag<Color32[]> _pixelPool = new();
+        readonly ConcurrentBag<byte[]> _dataPool = new();
+        Camera _camera;
+
+        /// <summary>Ground chunks painted / in the map / asked for but not painted yet (debug, tests).</summary>
+        public int GroundChunksPainted { get; private set; }
+        public int GroundChunksTotal => _chunkState?.Length ?? 0;
+        public int GroundChunksWaiting => _queue.Count + _inFlight;
+
         void BuildGround(MapData map)
         {
-            var root = new GameObject("Ground").transform;
-            root.SetParent(transform, false);
-            var painter = new CartoonGroundPainter(map, GroundPixelsPerCell);
-            int cw = (map.Width + ChunkCells - 1) / ChunkCells, ch = (map.Height + ChunkCells - 1) / ChunkCells;
-            var buffers = new Color32[cw * ch][];
-            var sizes = new Vector2Int[cw * ch];
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            Parallel.For(0, cw * ch, i =>
+            _groundRoot = new GameObject("Ground").transform;
+            _groundRoot.SetParent(transform, false);
+            _painter = new CartoonGroundPainter(map, GroundPixelsPerCell);
+            _cw = (map.Width + ChunkCells - 1) / ChunkCells;
+            _ch = (map.Height + ChunkCells - 1) / ChunkCells;
+            _chunkState = new ChunkState[_cw * _ch];
+            // Half the cores at most: the game keeps the main and render threads.
+            _workers = Mathf.Clamp(SystemInfo.processorCount / 2, 1, 4);
+            BuildBackdrop(map);
+            Debug.Log($"[Map] Ground backdrop painted in {sw.ElapsedMilliseconds} ms ({_cw * _ch} chunks to paint where the fog lifts)");
+        }
+
+        /// <summary>The whole map at low detail, under the chunks: what shows before a chunk is painted.</summary>
+        void BuildBackdrop(MapData map)
+        {
+            const int ppc = BackdropPixelsPerCell;
+            int w = map.Width * ppc, h = map.Height * ppc;
+            var pixels = new Color32[w * h];
+            Parallel.For(0, _ch, row =>
             {
-                int tx = i % cw * ChunkCells, ty = i / cw * ChunkCells;
-                int tw = Mathf.Min(ChunkCells, map.Width - tx), th = Mathf.Min(ChunkCells, map.Height - ty);
-                var px = new Color32[tw * GroundPixelsPerCell * th * GroundPixelsPerCell];
-                painter.Paint(tx, ty, tw, th, px);
-                buffers[i] = px;
-                sizes[i] = new Vector2Int(tw, th);
+                int ty = row * ChunkCells, th = Mathf.Min(ChunkCells, map.Height - ty);
+                var strip = new Color32[w * th * ppc];
+                _painter.Paint(0, ty, map.Width, th, strip, ppc);
+                System.Array.Copy(strip, 0, pixels, ty * ppc * w, strip.Length);
             });
-            for (int i = 0; i < buffers.Length; i++)
+            var tex = MakeGroundTexture(w, h, "GroundBackdrop", pixels, null);
+            var go = new GameObject(tex.name);
+            go.transform.SetParent(_groundRoot, false);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = Sprite.Create(tex, new Rect(0, 0, w, h), Vector2.zero, ppc, 0, SpriteMeshType.FullRect);
+            _owned.Add(sr.sprite);
+            sr.sortingOrder = GroundOrder - 1;
+        }
+
+        /// <summary>
+        /// Asks for the ground under these cells, and one chunk round them so it is ready before anyone
+        /// sees that far. Painted in the background; see <see cref="PaintRequestedNow"/>.
+        /// </summary>
+        public void RequestGround(RectInt cells)
+        {
+            if (_chunkState == null || cells.width <= 0 || cells.height <= 0) return;
+            int x0 = Mathf.Max(0, cells.xMin / ChunkCells - 1), x1 = Mathf.Min(_cw - 1, (cells.xMax - 1) / ChunkCells + 1);
+            int y0 = Mathf.Max(0, cells.yMin / ChunkCells - 1), y1 = Mathf.Min(_ch - 1, (cells.yMax - 1) / ChunkCells + 1);
+            for (int y = y0; y <= y1; y++)
+            for (int x = x0; x <= x1; x++)
             {
-                int tx = i % cw * ChunkCells, ty = i / cw * ChunkCells;
-                int pw = sizes[i].x * GroundPixelsPerCell, ph = sizes[i].y * GroundPixelsPerCell;
-                var tex = new Texture2D(pw, ph, TextureFormat.RGBA32, false)
-                {
-                    filterMode = FilterMode.Bilinear,
-                    wrapMode = TextureWrapMode.Clamp,
-                    name = $"GroundChunk_{tx}_{ty}",
-                };
-                tex.SetPixels32(buffers[i]);
-                tex.Apply(false, true); // free the CPU copy
-                _owned.Add(tex);
-                var go = new GameObject(tex.name);
-                go.transform.SetParent(root, false);
-                go.transform.position = new Vector3(tx, ty, 0f);
-                var sr = go.AddComponent<SpriteRenderer>();
-                sr.sprite = Sprite.Create(tex, new Rect(0, 0, pw, ph), Vector2.zero, GroundPixelsPerCell, 0, SpriteMeshType.FullRect);
-                _owned.Add(sr.sprite);
-                sr.sortingOrder = GroundOrder;
+                int i = y * _cw + x;
+                if (_chunkState[i] != ChunkState.None) continue;
+                _chunkState[i] = ChunkState.Queued;
+                _queue.Add(i);
             }
-            Debug.Log($"[Map] Ground painted: {buffers.Length} chunks in {sw.ElapsedMilliseconds} ms");
+        }
+
+        /// <summary>Paints every chunk asked for so far, now and in parallel (boot: the town is there on the first frame).</summary>
+        public void PaintRequestedNow()
+        {
+            if (_chunkState == null || _queue.Count == 0) return;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var chunks = _queue.ToArray();
+            _queue.Clear();
+            var data = new byte[chunks.Length][];
+            Parallel.For(0, chunks.Length, k => data[k] = PaintChunk(chunks[k]));
+            for (int k = 0; k < chunks.Length; k++) Finish(new PaintedChunk { Chunk = chunks[k], Data = data[k] });
+            Debug.Log($"[Map] Ground: {chunks.Length} chunks painted at boot in {sw.ElapsedMilliseconds} ms");
+        }
+
+        void Update()
+        {
+            if (_chunkState == null) return;
+            for (int n = 0; n < UploadsPerFrame && _painted.TryDequeue(out var done); n++)
+            {
+                _inFlight--;
+                Finish(done);
+            }
+            // Handed out one per free worker, so the order follows the camera up to the last moment.
+            while (_inFlight < _workers && _queue.Count > 0)
+            {
+                int k = NextQueued();
+                int chunk = _queue[k];
+                _queue[k] = _queue[^1];
+                _queue.RemoveAt(_queue.Count - 1);
+                _chunkState[chunk] = ChunkState.Painting;
+                _inFlight++;
+                Task.Run(() =>
+                {
+                    var result = new PaintedChunk { Chunk = chunk };
+                    try { result.Data = PaintChunk(chunk); }
+                    catch (System.Exception e) { result.Error = e.ToString(); }
+                    _painted.Enqueue(result);
+                });
+            }
+        }
+
+        /// <summary>The queued chunk nearest the camera.</summary>
+        int NextQueued()
+        {
+            if (_camera == null) _camera = Camera.main;
+            if (_camera == null) return 0;
+            Vector2 eye = _camera.transform.position;
+            int best = 0;
+            float bestD = float.MaxValue;
+            for (int k = 0; k < _queue.Count; k++)
+            {
+                int i = _queue[k];
+                var centre = new Vector2((i % _cw + 0.5f) * ChunkCells, (i / _cw + 0.5f) * ChunkCells);
+                float d = (centre - eye).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = k; }
+            }
+            return best;
+        }
+
+        void ChunkRect(int i, out int tx, out int ty, out int tw, out int th)
+        {
+            tx = i % _cw * ChunkCells;
+            ty = i / _cw * ChunkCells;
+            tw = Mathf.Min(ChunkCells, _map.Width - tx);
+            th = Mathf.Min(ChunkCells, _map.Height - ty);
+        }
+
+        /// <summary>Paints and compresses one chunk. Any thread: touches only the painter and pooled arrays.</summary>
+        byte[] PaintChunk(int i)
+        {
+            ChunkRect(i, out int tx, out int ty, out int tw, out int th);
+            if (!_pixelPool.TryTake(out var pixels)) pixels = new Color32[ChunkPixels * ChunkPixels];
+            if (!_dataPool.TryTake(out var data)) data = new byte[Bc1Encoder.EncodedSize(ChunkPixels, ChunkPixels)];
+            _painter.Paint(tx, ty, tw, th, pixels);
+            Bc1Encoder.Encode(pixels, tw * GroundPixelsPerCell, th * GroundPixelsPerCell, data);
+            _pixelPool.Add(pixels);
+            return data;
+        }
+
+        /// <summary>Main thread: a painted chunk becomes a sprite.</summary>
+        void Finish(PaintedChunk p)
+        {
+            if (this == null) return;
+            _chunkState[p.Chunk] = ChunkState.Done;
+            if (p.Error != null)
+            {
+                Debug.LogError($"[Map] Ground chunk {p.Chunk} could not be painted: {p.Error}");
+                return;
+            }
+            ChunkRect(p.Chunk, out int tx, out int ty, out int tw, out int th);
+            int pw = tw * GroundPixelsPerCell, ph = th * GroundPixelsPerCell;
+            var tex = MakeGroundTexture(pw, ph, $"GroundChunk_{tx}_{ty}", null, p.Data);
+            _dataPool.Add(p.Data);
+            var go = new GameObject(tex.name);
+            go.transform.SetParent(_groundRoot, false);
+            go.transform.position = new Vector3(tx, ty, 0f);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = Sprite.Create(tex, new Rect(0, 0, pw, ph), Vector2.zero, GroundPixelsPerCell, 0, SpriteMeshType.FullRect);
+            _owned.Add(sr.sprite);
+            sr.sortingOrder = GroundOrder;
+            GroundChunksPainted++;
+        }
+
+        /// <summary>
+        /// A BC1 texture from pixels (compressed here) or from BC1 data already made; plain RGBA32 when
+        /// a side is not a multiple of 4. The CPU copy is freed.
+        /// </summary>
+        Texture2D MakeGroundTexture(int w, int h, string name, Color32[] pixels, byte[] bc1)
+        {
+            bool compress = w % 4 == 0 && h % 4 == 0;
+            var tex = new Texture2D(w, h, compress ? TextureFormat.DXT1 : TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                name = name,
+            };
+            if (!compress) tex.SetPixels32(pixels);
+            else
+            {
+                if (bc1 == null)
+                {
+                    bc1 = new byte[Bc1Encoder.EncodedSize(w, h)];
+                    Bc1Encoder.Encode(pixels, w, h, bc1);
+                }
+                NativeArray<byte>.Copy(bc1, tex.GetRawTextureData<byte>(), Bc1Encoder.EncodedSize(w, h));
+            }
+            tex.Apply(false, true);
+            _owned.Add(tex);
+            return tex;
         }
 
         void OnDestroy()
         {
+            // Workers still painting finish into a queue nobody reads.
+            _chunkState = null;
             foreach (var o in _owned) if (o != null) Destroy(o);
             _owned.Clear();
         }

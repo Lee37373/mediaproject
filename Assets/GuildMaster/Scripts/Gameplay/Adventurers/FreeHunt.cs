@@ -15,8 +15,8 @@ namespace GuildMaster.Adventurers
     {
         /// <summary>How far from the town centre a free hunt roams at the least (user decision: 40 cells, wide).</summary>
         public const float Radius = 40f;
-        /// <summary>How far the strongest band roams: the far edge where the slime king lives.</summary>
-        public const float MaxRadius = 180f; // P4-53: the map doubled (256), the far edge moved out with it
+        /// <summary>How far a band roams once it can take the inner land's edge, where the slime king lives.</summary>
+        public const float MaxRadius = EcosystemManager.InnerEdge; // P4-53: 180 for the 256 map; P4-81: the inner land's edge
 
         /// <summary>
         /// How far this band dares to roam (P4-38, user decision 2026-09-21: "wider as they grow").
@@ -24,15 +24,20 @@ namespace GuildMaster.Adventurers
         /// 40–70 — so nothing else was ever met. Everyone knows the dangerous kinds live further out
         /// (P4-58: monsters are born higher the further out, 0 = by the walls, 1 = the edge); where
         /// their dens are still has to be found. The band goes as far out as it could still take on a
-        /// pack of any kind born there.
+        /// pack of any kind born there. P4-81: on a map reaching past the inner edge
+        /// (<paramref name="outermost"/>, the farthest nest site) a strong enough band goes on into
+        /// the new land, out to that site.
         /// </summary>
-        public static float RoamRadius(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, IEnumerable<MonsterDefinition> species)
+        public static float RoamRadius(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, IEnumerable<MonsterDefinition> species,
+            float outermost = 0f)
         {
+            bool outerLand = outermost > MaxRadius;
+            int steps = outerLand ? RoamSteps * 2 : RoamSteps;
             float frontier = 0f;
             if (species != null)
-                for (int step = 1; step <= RoamSteps; step++)
+                for (int step = 1; step <= steps; step++)
                 {
-                    float d = step / (float)RoamSteps;
+                    float d = step / (float)RoamSteps; // depth, as EcosystemManager.Depth
                     int level = Monsters.MonsterLevel.BirthLevel(d);
                     bool all = true;
                     foreach (var s in species)
@@ -40,7 +45,7 @@ namespace GuildMaster.Adventurers
                     if (!all) break;
                     frontier = d;
                 }
-            return Mathf.Lerp(Radius, MaxRadius, frontier);
+            return frontier <= 1f ? Mathf.Lerp(Radius, MaxRadius, frontier) : Mathf.Lerp(MaxRadius, outermost, frontier - 1f);
         }
 
         const int RoamSteps = 20;

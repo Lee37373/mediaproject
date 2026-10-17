@@ -106,6 +106,8 @@ namespace GuildMaster.Tests
                     TownHalfSize = balance.townHalfSize,
                     NestCount = balance.nestCount,
                     MinNestDistanceFromTown = balance.minNestDistanceFromTown,
+                    InnerHalfSize = balance.innerHalfSize,
+                    InnerNestCount = balance.innerNestCount,
                 });
                 var assignment = EcosystemManager.AssignSpecies(db.monsters, map.Nests, new GameRandom(seed));
                 for (int i = 0; i < assignment.Count; i++)
@@ -118,6 +120,33 @@ namespace GuildMaster.Tests
             }
             Object.DestroyImmediate(balance);
             foreach (var s in db.monsters) Assert.That(seen, Does.Contain(s.id), $"{s.id} never got a nest");
+        }
+
+        [Test]
+        public void On512Map_HalfTheNestsStayOnTheOld256Map()
+        {
+            // P4-81 (user decision 2026-10-16): 64 nests in all; spread evenly only 16 would be near the town.
+            var balance = ScriptableObject.CreateInstance<Session.GameBalance>();
+            try
+            {
+                Assert.That(balance.mapWidth, Is.EqualTo(512));
+                var map = MapGenerator.Generate(new MapGenSettings
+                {
+                    Width = balance.mapWidth, Height = balance.mapHeight, Seed = 7, TownHalfSize = balance.townHalfSize,
+                    NestCount = balance.nestCount, MinNestDistanceFromTown = balance.minNestDistanceFromTown,
+                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount,
+                });
+                var c = map.TownCenter;
+                int inner = map.Nests.Count(n => Mathf.Abs(n.Cell.x - c.x) <= balance.innerHalfSize && Mathf.Abs(n.Cell.y - c.y) <= balance.innerHalfSize);
+                Assert.That(map.Nests.Count, Is.EqualTo(balance.nestCount));
+                Assert.That(inner, Is.EqualTo(balance.innerNestCount));
+                Assert.That(map.Nests.Max(n => (n.Cell - c).magnitude), Is.GreaterThan(Ecosystem.EcosystemManager.InnerEdge + 60f),
+                            "the outer land has nests far out (bosses and towns go there next)");
+            }
+            finally
+            {
+                Object.DestroyImmediate(balance);
+            }
         }
 
         [Test]

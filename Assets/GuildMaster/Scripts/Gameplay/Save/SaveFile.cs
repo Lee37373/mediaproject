@@ -10,8 +10,11 @@ namespace GuildMaster.Save
     [Serializable]
     public class SaveFile
     {
-        /// <summary>Raised only for changes old saves cannot be read under; new sections are not one.</summary>
-        public const int CurrentVersion = 1;
+        /// <summary>
+        /// Raised only for changes old saves cannot be read under; new sections are not one.
+        /// 2: the map grew to 512 (P4-81) — a seed no longer makes the map a version-1 save was played on.
+        /// </summary>
+        public const int CurrentVersion = 2;
 
         public int version = CurrentVersion;
         public int seed;

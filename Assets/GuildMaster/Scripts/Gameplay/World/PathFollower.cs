@@ -45,6 +45,11 @@ namespace GuildMaster.World
         /// <summary>How many times terrain it discovered made this walker redraw its route.</summary>
         public int RouteCorrections { get; private set; }
 
+        /// <summary>Where the walk stands (debug, AnomalyWatch): the waypoint it heads for, of how many, and the plan's last change.</summary>
+        public string DebugPlan => IsMoving && _index < _waypoints.Count
+            ? $"wp {_index}/{_waypoints.Count} → {_waypoints[_index]} bumped={_bumped.Count} noShortcut={_noShortcut} corrections={RouteCorrections}"
+            : $"wp -/{_waypoints.Count} corrections={RouteCorrections}";
+
         /// <summary>Seconds between checks of the plan against what has been seen since.</summary>
         const float RecheckSeconds = 0.25f;
         /// <summary>How far along the plan a correction looks (further ahead is still guesswork).</summary>

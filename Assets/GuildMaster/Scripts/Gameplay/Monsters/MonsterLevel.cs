@@ -15,8 +15,13 @@ namespace GuildMaster.Monsters
     public static class MonsterLevel
     {
         public const int MaxLevel = 30;
-        /// <summary>Levels added at the outermost nest site (the innermost one breeds level 1).</summary>
+        /// <summary>Levels added at the inner land's edge (the innermost nest site breeds level 1).</summary>
         public const int EdgeBirthBonus = 14;
+        /// <summary>
+        /// P4-81 (user decision 2026-10-16): levels added again across the new outer land, from the inner
+        /// edge (15) to the outermost nest site (25).
+        /// </summary>
+        public const int OuterBirthBonus = 10;
         /// <summary>Monsters of the same pack this close share a kill's EXP (as adventurers do).</summary>
         public const float ExpShareRadius = 8f;
         /// <summary>Levels per step of combat tier above the species' own.</summary>
@@ -25,8 +30,12 @@ namespace GuildMaster.Monsters
         public const int MediumDangerLevel = 5;
         public const int HighDangerLevel = 10;
 
-        /// <summary>Birth level at a site, 0 = innermost .. 1 = outermost nest distance.</summary>
-        public static int BirthLevel(float distance01) => 1 + Mathf.RoundToInt(Mathf.Clamp01(distance01) * EdgeBirthBonus);
+        /// <summary>
+        /// Birth level at a site by its depth (<see cref="Ecosystem.EcosystemManager.Depth"/>): 0 = innermost
+        /// nest site .. 1 = the inner land's edge (as the whole 256 map was) .. 2 = outermost nest site.
+        /// </summary>
+        public static int BirthLevel(float depth)
+            => 1 + Mathf.RoundToInt(Mathf.Clamp01(depth) * EdgeBirthBonus) + Mathf.RoundToInt(Mathf.Clamp01(depth - 1f) * OuterBirthBonus);
 
         /// <summary>EXP to go from this level to the next (adventurers: 30 + 25 per level).</summary>
         public static int ExpToNext(int level) => 20 + 20 * level;

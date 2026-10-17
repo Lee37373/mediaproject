@@ -27,7 +27,19 @@ namespace GuildMaster.World
         readonly RouteRisk _risk;
         int _currentStamp;
 
+        /// <summary>Nodes a search may expand at the least (short searches for an unreachable goal stop here).</summary>
         public int MaxExpandedNodes { get; set; } = 20000;
+
+        /// <summary>
+        /// P4-81: and this many per cell of straight distance, so long walks on the 512 map are not cut
+        /// short — a forest-loving band's 137-cell trip needed 20,554 nodes, just over the old flat cap,
+        /// and failed every time. 360 cells (half the map's diagonal) → 72,000.
+        /// </summary>
+        public const float NodesPerCellOfDistance = 200f;
+
+        /// <summary>The cap of the search in progress.</summary>
+        int _cap;
+
         public int LastExpanded { get; private set; }
 
         /// <summary><paramref name="risk"/> is shared with the rest of the world (P4-63); alone it bakes its own.</summary>
@@ -90,6 +102,7 @@ namespace GuildMaster.World
                 if (!LastFound) { FailedSearches++; FailedExpanded += LastExpanded; }
                 Searches++;
                 TotalExpanded += LastExpanded;
+                if (!LastFound && LastExpanded > _cap) RecordCapped(start, goal, unknown != null, passesGates);
                 return LastFound;
             }
         }
@@ -97,6 +110,39 @@ namespace GuildMaster.World
         static readonly Unity.Profiling.ProfilerMarker s_marker = new("Pathfinder.FindPath");
         public bool LastFound { get; private set; }
         public static long Searches, FailedSearches, TotalExpanded, FailedExpanded;
+
+        /// <summary>A search that gave up at <see cref="MaxExpandedNodes"/>, and who asked (debug, P4-81).</summary>
+        public struct CappedSearch
+        {
+            public Vector2Int Start, Goal;
+            public bool Exploring, PassesGates;
+            public string Caller;
+        }
+
+        public static readonly List<CappedSearch> RecentCapped = new();
+        public static readonly Dictionary<string, int> CappedByCaller = new();
+
+        static void RecordCapped(Vector2Int start, Vector2Int goal, bool exploring, bool passesGates)
+        {
+            // The first frames outside the path code name the caller (rare: only searches that give up).
+            var frames = new System.Diagnostics.StackTrace(2, false).GetFrames();
+            var sb = new System.Text.StringBuilder();
+            int named = 0;
+            if (frames != null)
+                foreach (var f in frames)
+                {
+                    var m = f.GetMethod();
+                    var type = m?.DeclaringType?.Name ?? "?";
+                    if (type is nameof(Pathfinder) or nameof(PathFollower) or nameof(WorldService)) continue;
+                    if (named++ > 0) sb.Append(" < ");
+                    sb.Append(type).Append('.').Append(m?.Name);
+                    if (named == 3) break;
+                }
+            string caller = sb.ToString();
+            CappedByCaller[caller] = CappedByCaller.TryGetValue(caller, out int n) ? n + 1 : 1;
+            if (RecentCapped.Count >= 40) RecentCapped.RemoveAt(0);
+            RecentCapped.Add(new CappedSearch { Start = start, Goal = goal, Exploring = exploring, PassesGates = passesGates, Caller = caller });
+        }
 
         bool Search(Vector2Int start, Vector2Int goal, List<Vector2Int> result, bool passesGates,
             System.Func<int, int, bool> believedShut, float caution, System.Func<int, int, bool> unknown)
@@ -116,6 +162,7 @@ namespace GuildMaster.World
             if (!_grid.IsWalkable(goal) && !Unknown(goal.x, goal.y) && !_grid.TryFindNearestWalkable(goal, 6, out goal)) return false;
             if (!_grid.IsWalkable(start)) _grid.TryFindNearestWalkable(start, 3, out start);
             if (start == goal) { result.Add(goal); return true; }
+            _cap = Mathf.Max(MaxExpandedNodes, Mathf.RoundToInt(NodesPerCellOfDistance * Vector2Int.Distance(start, goal)));
 
             int w = _grid.Width;
             _currentStamp++;
@@ -133,7 +180,7 @@ namespace GuildMaster.World
                 if (_closed[current]) continue;
                 _closed[current] = true;
                 if (current == goalIdx) { Reconstruct(goalIdx, w, result); return true; }
-                if (++LastExpanded > MaxExpandedNodes) break;
+                if (++LastExpanded > _cap) break;
 
                 int cx = current % w, cy = current / w;
                 for (int d = 0; d < 8; d++)

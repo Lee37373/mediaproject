@@ -12,6 +12,12 @@ namespace GuildMaster.Monsters
     public class MonsterRegroupState : State<Monster>
     {
         const float Timeout = 8f;
+        /// <summary>
+        /// Mates and homes farther than this cannot be reached before <see cref="Timeout"/> (at the regroup
+        /// pace), so they are not fallen back to. P4-81: on the 512 map a homeless kind took a "mate"
+        /// 490 cells away (same kind, no nest) and searched the whole map for it twice a second.
+        /// </summary>
+        public const float MaxDistance = 32f;
         const float ArriveDistance = 2f;
         const float RallyRadius = 6f;
         const float RepathSeconds = 0.5f;

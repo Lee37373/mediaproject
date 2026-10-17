@@ -123,7 +123,7 @@ namespace GuildMaster.Ecosystem
         public const float ArrivalChancePerHour = 0.6f; // 0.3 left 17 of 64 sites empty after five days (user: more)
         /// <summary>At most this many newcomer bands on their way in at once.</summary>
         public const int MaxArrivals = 3;
-        /// <summary>Sites at least this far out (0 innermost .. 1 outermost) count as outer: newcomers settle there.</summary>
+        /// <summary>Sites at least this deep (<see cref="EcosystemManager.Depth"/>: 0 innermost .. 1 inner edge .. 2 outermost) count as outer: newcomers settle there.</summary>
         public const float OuterSites = 0.5f;
         const float TickInterval = 0.5f;
 
@@ -246,7 +246,7 @@ namespace GuildMaster.Ecosystem
             if (_bands.Count(b => b.Arrival) >= MaxArrivals || _world.Map.EdgeSpawnCells.Count == 0) return false;
             if (target == null)
             {
-                var free = _eco.Nests.Where(n => n.IsEmpty && _eco.Distance01(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)).ToList();
+                var free = _eco.Nests.Where(n => n.IsEmpty && _eco.Depth(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)).ToList();
                 if (free.Count == 0) return false;
                 target = free[GameRandom.Shared.Range(0, free.Count)];
             }

@@ -74,6 +74,24 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void OnlyABandThatTakesTheInnerEdge_GoesIntoTheOuterLand()
+        {
+            // P4-81: the 512 map's land past the inner edge is born 15 → 25.
+            var db = DefaultContent.Build();
+            const float outermost = 350f;
+            float Reach(params CombatStats[] band) => FreeHunt.RoamRadius(band, null, db.monsters, outermost);
+            float founders = Reach(Member(AdventurerClass.Warrior, 1), Member(AdventurerClass.Ranger, 1),
+                                   Member(AdventurerClass.Priest, 1), Member(AdventurerClass.Mage, 1));
+            float legends = Reach(Member(AdventurerClass.Warrior, 30, 3), Member(AdventurerClass.Ranger, 30, 3),
+                                  Member(AdventurerClass.Priest, 30, 3), Member(AdventurerClass.Mage, 30, 3));
+            Assert.That(founders, Is.EqualTo(FreeHunt.RoamRadius(new[] { Member(AdventurerClass.Warrior, 1), Member(AdventurerClass.Ranger, 1),
+                                   Member(AdventurerClass.Priest, 1), Member(AdventurerClass.Mage, 1) }, null, db.monsters)),
+                        "the early game reaches as far as on the 256 map");
+            Assert.That(legends, Is.GreaterThan(FreeHunt.MaxRadius));
+            Assert.That(legends, Is.LessThanOrEqualTo(outermost));
+        }
+
+        [Test]
         public void TheHuntGoesWhereTheFightsAre()
         {
             // P4-40, user report 2026-09-21: 55% of the time hunting, 3% fighting.

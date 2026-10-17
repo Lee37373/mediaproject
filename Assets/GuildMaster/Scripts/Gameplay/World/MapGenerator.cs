@@ -12,6 +12,12 @@ namespace GuildMaster.World
         public int TownHalfSize;
         public int NestCount;
         public int MinNestDistanceFromTown;
+        /// <summary>
+        /// P4-81: the first <see cref="InnerNestCount"/> nests go within this many cells of the town
+        /// along x and y, the rest outside it (then anywhere, if the outside runs out). 0 = spread evenly.
+        /// </summary>
+        public int InnerHalfSize;
+        public int InnerNestCount;
     }
 
     /// <summary>
@@ -193,21 +199,16 @@ namespace GuildMaster.World
                 candidates.Add(new Vector2Int(x, y));
             }
             rng.Shuffle(candidates);
-            foreach (var cell in candidates)
+            // P4-81: on the 512 map an even spread put a quarter of the nests on the old 256 map round
+            // the town; the inner ones are placed first, then the outer land, then anywhere left.
+            bool split = s.InnerHalfSize > 0 && s.InnerNestCount > 0;
+            bool Inner(Vector2Int cell) => Mathf.Abs(cell.x - c.x) <= s.InnerHalfSize && Mathf.Abs(cell.y - c.y) <= s.InnerHalfSize;
+            if (split)
             {
-                if (map.Nests.Count >= s.NestCount) break;
-                bool tooClose = false;
-                foreach (var n in map.Nests)
-                    if ((n.Cell - cell).sqrMagnitude < 15 * 15) { tooClose = true; break; }
-                if (tooClose) continue;
-                map.Nests.Add(new NestSite
-                {
-                    Cell = cell,
-                    Biome = ClassifyBiome(map, cell),
-                    Region = map.RegionOf(cell.x, cell.y),
-                    DistanceFromTown = dist[map.Index(cell.x, cell.y)],
-                });
+                PlaceNests(map, candidates, Mathf.Min(s.InnerNestCount, s.NestCount), dist, Inner);
+                PlaceNests(map, candidates, s.NestCount, dist, cell => !Inner(cell));
             }
+            PlaceNests(map, candidates, s.NestCount, dist, null);
 
             // 5. Edge spawn cells for raid waves.
             for (int y = 0; y < s.Height; y++)
@@ -224,6 +225,30 @@ namespace GuildMaster.World
             FillPockets(map, dist);
 
             return map;
+        }
+
+        /// <summary>
+        /// Adds nest sites from the shuffled candidates (those <paramref name="where"/> allows) until the
+        /// map has <paramref name="upTo"/>; sites keep 15 cells apart.
+        /// </summary>
+        static void PlaceNests(MapData map, List<Vector2Int> candidates, int upTo, int[] dist, System.Func<Vector2Int, bool> where)
+        {
+            foreach (var cell in candidates)
+            {
+                if (map.Nests.Count >= upTo) break;
+                if (where != null && !where(cell)) continue;
+                bool tooClose = false;
+                foreach (var n in map.Nests)
+                    if ((n.Cell - cell).sqrMagnitude < 15 * 15) { tooClose = true; break; }
+                if (tooClose) continue;
+                map.Nests.Add(new NestSite
+                {
+                    Cell = cell,
+                    Biome = ClassifyBiome(map, cell),
+                    Region = map.RegionOf(cell.x, cell.y),
+                    DistanceFromTown = dist[map.Index(cell.x, cell.y)],
+                });
+            }
         }
 
         /// <summary>Turns each walkable patch <paramref name="dist"/> never reached into the blocking ground that surrounds it most.</summary>

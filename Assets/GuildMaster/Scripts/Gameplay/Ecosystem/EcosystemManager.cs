@@ -143,22 +143,42 @@ namespace GuildMaster.Ecosystem
         /// ring is what a growing guild hunts, the strong kinds out at the edge fill up slowly and
         /// creep in over the days (P4-56). A strong band that settles close in breeds fast there —
         /// by then the guild has grown into it. 1 at the innermost site, <see cref="EdgeGrowthFactor"/>
-        /// at the outermost (pure, tested).
+        /// at <paramref name="outermost"/> and beyond (pure, tested; the game passes <see cref="InnerEdge"/>, P4-81).
         /// </summary>
         public static float GrowthFactor(float distance, float innermost, float outermost)
             => Mathf.Lerp(1f, EdgeGrowthFactor, Mathf.InverseLerp(innermost, outermost, distance));
+
+        /// <summary>
+        /// P4-81 (user decision 2026-10-16): the inner land keeps the 256 map's rules out to this distance
+        /// from the town (about its farthest nest, where the slime king lived): levels 1 → 15, breeding
+        /// 1 → <see cref="EdgeGrowthFactor"/>. The 512 map's land beyond is new: levels go on rising to the
+        /// outermost site, breeding stays at the edge rate.
+        /// </summary>
+        public const float InnerEdge = 180f;
 
         float _innermost, _outermost;
         Vector2 _town;
 
         /// <summary>Breeding factor of a site at this position (the rule is public; the guild may use it).</summary>
-        public float GrowthFactorAt(Vector2 p) => GrowthFactor(Vector2.Distance(p, _town), _innermost, _outermost);
+        public float GrowthFactorAt(Vector2 p) => GrowthFactor(Vector2.Distance(p, _town), _innermost, InnerEdge);
 
-        /// <summary>0 at the innermost nest site's distance from the town, 1 at the outermost.</summary>
-        public float Distance01(Vector2 p) => Mathf.InverseLerp(_innermost, _outermost, Vector2.Distance(p, _town));
+        /// <summary>Farthest nest site from the town (cells).</summary>
+        public float OutermostDistance => _outermost;
+
+        /// <summary>
+        /// How deep into the wilds a spot lies: 0 at the innermost nest site's distance from the town,
+        /// 1 at <see cref="InnerEdge"/>, 2 at the outermost site (pure rule, <see cref="DepthAt"/>).
+        /// </summary>
+        public float Depth(Vector2 p) => DepthAt(Vector2.Distance(p, _town), _innermost, _outermost);
+
+        public static float DepthAt(float distance, float innermost, float outermost)
+        {
+            if (distance <= InnerEdge) return Mathf.InverseLerp(innermost, InnerEdge, distance);
+            return 1f + Mathf.InverseLerp(InnerEdge, Mathf.Max(outermost, InnerEdge + 1f), distance);
+        }
 
         /// <summary>The level monsters are born at around this spot (P4-58: the level is the strength).</summary>
-        public int BirthLevelAt(Vector2 p) => MonsterLevel.BirthLevel(Distance01(p));
+        public int BirthLevelAt(Vector2 p) => MonsterLevel.BirthLevel(Depth(p));
 
         /// <summary>Species that exist in the game (newcomers from beyond the edge are drawn from these).</summary>
         internal IReadOnlyList<MonsterDefinition> AllSpecies => _db.monsters;
@@ -186,7 +206,7 @@ namespace GuildMaster.Ecosystem
                 var nest = go.AddComponent<Nest>();
                 nest.Init(this, $"N_{i + 1:00}", assignment[i], map.Nests[i]);
                 nest.GrowthFactor = GrowthFactorAt(nest.WorldPosition);
-                nest.BirthLevel = MonsterLevel.BirthLevel(Distance01(nest.WorldPosition));
+                nest.BirthLevel = MonsterLevel.BirthLevel(Depth(nest.WorldPosition));
                 _nests.Add(nest);
                 // A loaded game brings its own monsters back (P5-4).
                 if (Session.GameSettings.RestoresSection(SaveKey)) continue;

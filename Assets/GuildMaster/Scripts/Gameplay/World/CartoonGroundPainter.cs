@@ -169,9 +169,11 @@ namespace GuildMaster.World
         }
 
         /// <summary>Fills a block of tiles [tx0, tx0+tilesW) × [ty0, ty0+tilesH) into pixels (row-major, bottom row first).</summary>
-        public void Paint(int tx0, int ty0, int tilesW, int tilesH, Color32[] pixels)
+        public void Paint(int tx0, int ty0, int tilesW, int tilesH, Color32[] pixels) => Paint(tx0, ty0, tilesW, tilesH, pixels, PixelsPerTile);
+
+        /// <summary>The same at another resolution (P4-81: the whole map's low-detail backdrop); shapes are in cells, so they match.</summary>
+        public void Paint(int tx0, int ty0, int tilesW, int tilesH, Color32[] pixels, int ppt)
         {
-            int ppt = PixelsPerTile;
             int pw = tilesW * ppt, ph = tilesH * ppt;
             for (int py = 0; py < ph; py++)
             {
