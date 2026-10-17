@@ -75,6 +75,8 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Reports.DailyReportClosedEvent>(OnDailyReport);
             EventBus.Subscribe<Disasters.DisasterSightedEvent>(OnDisasterSighted);
             EventBus.Subscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
+            EventBus.Subscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
+            EventBus.Subscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
         }
 
         public void Dispose()
@@ -93,6 +95,8 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Reports.DailyReportClosedEvent>(OnDailyReport);
             EventBus.Unsubscribe<Disasters.DisasterSightedEvent>(OnDisasterSighted);
             EventBus.Unsubscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
+            EventBus.Unsubscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
+            EventBus.Unsubscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
         }
 
         // ---------------- Natural disasters (P4-72): only those the guild has seen ----------------
@@ -174,6 +178,21 @@ namespace GuildMaster.Notifications
                 _center.Post(NotificationKind.Warning, "의뢰 실패", NotificationTexts.QuestFailed(e.Quest.Title),
                     "quest-failed:" + e.Quest.Id, NotificationLink.QuestBoard());
         }
+
+        // ---------------- Region lords (P4-83) ----------------
+
+        void OnBossSighted(Ecosystem.BossSightedEvent e)
+        {
+            if (e.Boss == null || !e.Boss.IsRegionLord) return;
+            _center.PostOnce("lord-seen:" + e.Boss.Def.id, NotificationKind.Danger, "지대 군주 발견",
+                $"{Monsters.RegionLords.RegionName(e.Boss.Def.lordRegion)}의 군주 {e.Boss.DisplayName}(Lv.{e.Boss.Level})을(를) 발견했습니다. 마을이 토벌 의뢰를 올립니다.",
+                NotificationLink.Location(e.Boss.Position));
+        }
+
+        void OnRegionCleansed(Ecosystem.RegionCleansedEvent e)
+            => _center.Post(NotificationKind.Success, "지대 정화",
+                $"{e.Lord.displayName}이(가) 쓰러졌습니다. {Monsters.RegionLords.RegionName(e.Region)} 바깥 땅에 더는 새 몬스터가 나타나지 않습니다. ({e.Fallen}/{e.Total})",
+                "cleansed:" + e.Lord.id, NotificationLink.Location(e.Position));
 
         // ---------------- Guild members ----------------
 

@@ -122,6 +122,7 @@ namespace GuildMaster.Quests
             EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Subscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
+            EventBus.Subscribe<RegionCleansedEvent>(OnRegionCleansed);
         }
 
         void OnDestroy()
@@ -129,6 +130,24 @@ namespace GuildMaster.Quests
             EventBus.Unsubscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Unsubscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
+            EventBus.Unsubscribe<RegionCleansedEvent>(OnRegionCleansed);
+        }
+
+        /// <summary>Why the board took a lord's quest down: someone else, or something else, got there first.</summary>
+        public const string LordFellReason = "군주가 쓰러졌습니다";
+
+        /// <summary>
+        /// The guild learned a region lord fell (P4-83): its quest is done if a group was on it (they were there or on
+        /// the way), else it comes down — there is nothing left to do.
+        /// </summary>
+        void OnRegionCleansed(RegionCleansedEvent e)
+        {
+            foreach (var q in _quests.ToList())
+            {
+                if (!q.IsActive || q.Type != QuestType.Hunt || q.Species != e.Lord) continue;
+                if (q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, LordFellReason);
+                else Complete(q);
+            }
         }
 
         // ---------------- Posting ----------------
@@ -529,6 +548,8 @@ namespace GuildMaster.Quests
         /// <summary>Seen since the posting with nobody of the quest's kind living there.</summary>
         public static bool SeenGone(Quest q, GuildIntel intel)
         {
+            // A lord's quest is settled by its fall (OnRegionCleansed): its lair is its guards' kind (P4-83).
+            if (q.Species != null && q.Species.isRegionLord) return false;
             var seen = intel.Get(q.TargetNest);
             if (!seen.Observed || seen.LastSeenHour <= q.PostedAtHour) return false;
             return seen.LastCount <= 0 || intel.SpeciesOf(q.TargetNest) != q.Species;

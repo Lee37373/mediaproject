@@ -275,7 +275,7 @@ namespace GuildMaster.Session
             float power = LeaderPower();
             int maxParty = Mathf.Min(4, Mathf.Max(1, _roster.Members.Count));
             return _board.Quests.Count(q => q.Status == QuestStatus.Open && q.Assignees.Count == 0
-                                            && QuestRisk.Margin(power, Mathf.Min(maxParty, q.MaxParty), q.Danger) >= SafeMargin);
+                                            && QuestRisk.Margin(power, Mathf.Min(maxParty, q.MaxParty), q) >= SafeMargin);
         }
 
         /// <summary>

@@ -17,7 +17,26 @@ namespace GuildMaster.Adventurers
 
         /// <summary>Party strength (leader power × 1.6 per extra member) over the danger's requirement.</summary>
         public static float Margin(float leaderPower, int partySize, DangerLevel danger)
-            => leaderPower * (1f + 0.6f * (Mathf.Max(1, partySize) - 1)) / RuleBasedDecisionMaker.DangerRequirement(danger);
+            => MarginAgainst(leaderPower, partySize, RuleBasedDecisionMaker.DangerRequirement(danger));
+
+        /// <summary>Party strength over a given requirement (a region lord's is beyond the danger steps, P4-83).</summary>
+        public static float MarginAgainst(float leaderPower, int partySize, float requirement)
+            => leaderPower * (1f + 0.6f * (Mathf.Max(1, partySize) - 1)) / Mathf.Max(0.01f, requirement);
+
+        /// <summary>
+        /// What a quest asks for: its danger's requirement, or a region lord's own (P4-83) — for the lord's quest, and
+        /// for a hunt on a lair whose living lord the guild has seen there (its guards fight beside it).
+        /// </summary>
+        public static float Requirement(Quests.Quest q)
+        {
+            bool lord = q.Species != null && q.Species.isRegionLord
+                        || q.TargetNest != null && q.TargetNest.IsLair && Core.Services.TryGet<Ecosystem.GuildIntel>(out var intel) && intel.KnownLordAt(q.TargetNest) != null;
+            return lord ? Monsters.RegionLords.RiskRequirement : RuleBasedDecisionMaker.DangerRequirement(q.Danger);
+        }
+
+        /// <summary>The margin for this quest (its own requirement, see <see cref="Requirement"/>).</summary>
+        public static float Margin(float leaderPower, int partySize, Quests.Quest q)
+            => MarginAgainst(leaderPower, partySize, Requirement(q));
 
         public static string Label(float margin)
             => margin >= 2f ? Easy : margin >= 1f ? Fair : margin >= 0.8f ? Risky : Reckless;

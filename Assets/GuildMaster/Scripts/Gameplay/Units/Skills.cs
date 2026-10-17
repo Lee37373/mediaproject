@@ -47,6 +47,8 @@ namespace GuildMaster.Units
         public virtual float AreaRadius => 0f;
         /// <summary>True if the area is centred on the user rather than the target.</summary>
         public virtual bool AreaOnSelf => false;
+        /// <summary>A heroic user keeps this area skill for when several foes stand in it (a region lord's strike is never kept, P4-83).</summary>
+        public virtual bool SavedForGroups => true;
         /// <summary>Helps allies instead of hurting enemies; usable outside fights too (target may be null).</summary>
         public virtual bool IsSupport => false;
         public virtual void Tick(Unit self, float dt) { }
@@ -548,7 +550,10 @@ namespace GuildMaster.Units
         public override string Description
             => $"주변(반경 {Radius})에 공격력 120% 피해. 맞는 땅이면 낮은 확률로 {Disasters.DisasterRules.NameOf(_kind)}이(가) 일어납니다.";
 
-        public override Color Color => _kind switch
+        public override Color Color => ColorOf(_kind);
+
+        /// <summary>The colour of an element's strike (the lords' strikes share it, P4-83).</summary>
+        public static Color ColorOf(Disasters.DisasterKind kind) => kind switch
         {
             Disasters.DisasterKind.Wildfire => new Color(1f, 0.45f, 0.15f),
             Disasters.DisasterKind.PoisonFog => new Color(0.65f, 0.35f, 0.9f),
@@ -568,6 +573,93 @@ namespace GuildMaster.Units
             if (OnSelf) ShakeIfVisible(point, 0.2f);
             Announce(self);
             EventBus.Publish(new HazardStrikeEvent { User = self, Point = point, Kind = _kind });
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// A region lord's strike (P4-83, user decision 2026-10-17: its region's skill, stronger): the same element as
+    /// the region's disaster monsters, telegraphed — a wide ring shows for a second before it lands — at twice the
+    /// attack over a much bigger area. It may start the region's disaster like theirs (<see cref="HazardStrikeEvent"/>).
+    /// </summary>
+    public class LordStrikeSkill : Skill
+    {
+        const float Radius = 3f;
+        const float Range = 6f;
+        const float Windup = 1f;
+        readonly Disasters.DisasterKind _kind;
+        float _channelUntil;
+
+        public LordStrikeSkill(Disasters.DisasterKind kind)
+        {
+            _kind = kind;
+            Cooldown = 7f;
+        }
+
+        bool OnSelf => _kind is Disasters.DisasterKind.Avalanche or Disasters.DisasterKind.Quake;
+        public override float AreaRadius => Radius;
+        public override bool AreaOnSelf => OnSelf;
+        // Its signature blow: swung as soon as it is ready, not saved for a crowd (a heroic unit would hold it).
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override string Name => _kind switch
+        {
+            Disasters.DisasterKind.PoisonFog => "독늪 범람",
+            Disasters.DisasterKind.Avalanche => "혹한의 포효",
+            Disasters.DisasterKind.Sandstorm => "모래 폭풍",
+            Disasters.DisasterKind.Quake => "대지 붕괴",
+            _ => "화염 폭발",
+        };
+
+        public override string Description
+            => $"1초 예고 뒤 넓은 범위(반경 {Radius})에 공격력 200% 피해. 맞는 땅이면 {Disasters.DisasterRules.NameOf(_kind)}이(가) 일어날 수 있습니다.";
+
+        public override Color Color => HazardStrikeSkill.ColorOf(_kind);
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (target == null || Combat.Distance(self, target) > (OnSelf ? Radius - 0.5f : Range)) return false;
+            if (!OnSelf && !World.HasLineOfSight(self.Position, target.Position, 1)) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            var point = OnSelf ? self.Position : target.Position;
+            self.Mover.Stop();
+            _channelUntil = Time.time + Windup;
+            telegraphs.Create(self, point, Radius, Windup, () =>
+            {
+                foreach (var u in HostilesAround(self, point, Radius).ToArray()) Damage(self, u, 2f);
+                Fx?.Ring(point, Radius, Color, 0.5f);
+                Fx?.Spark(point, Color, 1.6f, 0.4f);
+                ShakeIfVisible(point, 0.4f);
+                EventBus.Publish(new HazardStrikeEvent { User = self, Point = point, Kind = _kind });
+            });
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// A region lord calls its guards (P4-83): once, the first time its health falls below
+    /// <see cref="Monsters.RegionLords.CallBelowHp"/>, more of its lair's kind come out beside it and every guard
+    /// of the lair turns on its foe. The cooldown is the whole game (it is saved with the other cooldowns).
+    /// </summary>
+    public class LordCallSkill : Skill
+    {
+        public LordCallSkill() { Cooldown = 1e6f; }
+        public override string Name => "호위 부르기";
+        public override string Description => $"체력이 절반 아래로 처음 떨어지면 거처의 호위 {Monsters.RegionLords.CalledEscorts}마리를 더 불러내고 모든 호위가 함께 공격합니다(한 번만).";
+        public override Color Color => new(1f, 0.85f, 0.35f);
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (target == null || self is not Monsters.Monster lord || !lord.IsRegionLord || lord.Home == null) return false;
+            if (lord.HpRatio > Monsters.RegionLords.CallBelowHp || !Services.TryGet<Ecosystem.EcosystemManager>(out var eco)) return false;
+            for (int i = 0; i < Monsters.RegionLords.CalledEscorts; i++) eco.Spawn(lord.Home, lord.Position);
+            foreach (var m in lord.Home.MemberList.ToArray())
+                if (m != lord && m.IsAlive) m.ForceTarget(target);
+            Fx?.Ring(self.Position, 4f, Color, 0.8f);
+            ShakeIfVisible(self.Position, 0.3f);
+            Announce(self);
             return true;
         }
     }
@@ -594,6 +686,12 @@ namespace GuildMaster.Units
             "frost_roar" => new HazardStrikeSkill(Disasters.DisasterKind.Avalanche),
             "sand_whirl" => new HazardStrikeSkill(Disasters.DisasterKind.Sandstorm),
             "quake_stomp" => new HazardStrikeSkill(Disasters.DisasterKind.Quake),
+            // Region lords (P4-83).
+            "lord_toxic_spit" => new LordStrikeSkill(Disasters.DisasterKind.PoisonFog),
+            "lord_frost_roar" => new LordStrikeSkill(Disasters.DisasterKind.Avalanche),
+            "lord_sand_whirl" => new LordStrikeSkill(Disasters.DisasterKind.Sandstorm),
+            "lord_quake_stomp" => new LordStrikeSkill(Disasters.DisasterKind.Quake),
+            "lord_call" => new LordCallSkill(),
             _ => null,
         };
 

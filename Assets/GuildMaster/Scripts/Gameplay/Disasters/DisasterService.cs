@@ -220,6 +220,8 @@ namespace GuildMaster.Disasters
         {
             if (_active.Count >= DisasterRules.MaxActive) return false;
             var p = GridMap.CellToWorld(cell);
+            // Cleansed land (P4-83): the region's disasters went with its lord.
+            if (Services.TryGet<Ecosystem.RegionLordService>(out var lords) && lords.IsSealedAt(p)) return false;
             return _active.All(d => Vector2.Distance(d.WorldOrigin, p) >= DisasterRules.MinSpacing);
         }
 
@@ -340,7 +342,7 @@ namespace GuildMaster.Disasters
         /// <summary>Snow or a crack opens under someone: hurt and thrown clear.</summary>
         void Bury(Vector2Int c)
         {
-            UnitRegistry.Collect(GridMap.CellToWorld(c), 1f, u => u.IsAlive && GridMap.WorldToCell(u.Position) == c, s_units);
+            UnitRegistry.Collect(GridMap.CellToWorld(c), 1f, u => u.IsAlive && u is not Monsters.Monster { IsRegionLord: true } && GridMap.WorldToCell(u.Position) == c, s_units);
             foreach (var u in s_units)
             {
                 u.ReceiveDamage(Mathf.Round(u.Stats.MaxHp * DisasterRules.BuriedDamage), null, false);
@@ -552,7 +554,8 @@ namespace GuildMaster.Disasters
             s_units.AddRange(UnitRegistry.All);
             foreach (var u in s_units)
             {
-                if (u == null || !u.IsAlive) continue;
+                // A region lord is at home in its region's disasters (P4-83): it sets them off itself.
+                if (u == null || !u.IsAlive || u is Monsters.Monster { IsRegionLord: true }) continue;
                 var cell = GridMap.WorldToCell(u.Position);
                 var k = Grid.HazardAt(cell);
                 if (!Hazards.Hurts(k)) continue;

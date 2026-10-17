@@ -225,7 +225,7 @@ namespace GuildMaster.Town
             Services.TryGet<MigrationService>(out var migration);
             foreach (var nest in _eco.Nests)
             {
-                if (!nest.Species.canRaid || nest.IsEmpty || IsRaiding(nest)) continue;
+                if (!nest.Species.canRaid || nest.IsEmpty || nest.IsLair || IsRaiding(nest)) continue;
                 if (migration != null && migration.IsMigrating(nest)) continue;
                 int level = LevelOf(nest);
                 if (level <= 0 || GameRandom.Shared.Value >= level * _cfg.ChancePerLevelPerHour) continue;

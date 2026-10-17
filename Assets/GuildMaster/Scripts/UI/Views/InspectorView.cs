@@ -295,6 +295,8 @@ namespace GuildMaster.UI
             {
                 lines.Add($"성격 {d.mbti} · 가치관 {d.values} · 전투 {CombatTiers.Label(a.Tier)}");
                 lines.Add($"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}");
+                // Titles (P4-83): a region lord's fall, for those who were there.
+                if (d.titles.Count > 0) lines.Add($"{Muted("칭호:")} {UIBuilder.Colored(string.Join(" · ", d.titles), UITheme.Accent)}");
             }
             lines.Add($"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}");
             lines.Add($"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}");
@@ -316,7 +318,7 @@ namespace GuildMaster.UI
         void ShowMonster(Monster m)
         {
             var d = m.Def;
-            _title.text = $"{(m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(m.Danger), UITheme.Danger(m.Danger))}";
+            _title.text = $"{(m.IsRegionLord ? UIBuilder.Colored("[지대 군주] ", UITheme.Accent) : m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(m.Danger), UITheme.Danger(m.Danger))}";
             string prey = d.prey.Count == 0 ? "-" : string.Join(", ", d.prey.Select(p => p.displayName));
             string rivals = d.rivals.Count == 0 ? "-" : string.Join(", ", d.rivals.Select(p => p.displayName));
             _body.text =

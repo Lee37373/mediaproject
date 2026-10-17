@@ -52,6 +52,13 @@ namespace GuildMaster.Quests
         public static int HuntReward(DangerLevel danger, int count, float distance, float factor = 1f)
             => RoundGold(DangerGold(danger) * Mathf.Max(1, count) / (float)HuntKills * FarFactor(distance) * factor);
 
+        /// <summary>
+        /// A region lord's quest (P4-83, user decision 2026-10-17: priced like any den): the lair as a hunt of 높음
+        /// danger, by the residents last seen there (at least five) and the walk; <paramref name="factor"/> as above.
+        /// </summary>
+        public static int LordReward(int seenResidents, float distance, float factor = 1f)
+            => HuntReward(DangerLevel.High, Mathf.Max(HuntKills, seenResidents), distance, factor);
+
         /// <summary>EXP the client adds to a gold reward (the members get it whole).</summary>
         public static int RewardExp(int gold) => Mathf.Max(5, Mathf.RoundToInt(gold * 0.6f / 5f) * 5);
 

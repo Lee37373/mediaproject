@@ -226,7 +226,9 @@ namespace GuildMaster.UI
                 var d = a.Data;
                 string hpColor = UITheme.Hex(a.HpRatio > 0.6f ? UITheme.Good : a.HpRatio > 0.3f ? UITheme.Warn : UITheme.Bad);
                 string star = leader ? UIBuilder.Colored("★ ", UITheme.Accent) : "";
-                _main.text = $"{star}{d.name} {InspectorView.GradeTag(d.grade)}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
+                // Titles (P4-83): one for each region lord this member helped bring down.
+                string titles = d.titles.Count > 0 ? " " + UIBuilder.Colored($"[군주 토벌 {d.titles.Count}]", UITheme.Accent) : "";
+                _main.text = $"{star}{d.name} {InspectorView.GradeTag(d.grade)}{titles}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
                              $"<color=#{hpColor}>HP {a.Hp:0}/{a.Stats.MaxHp:0}</color>  {UIBuilder.Colored(a.StateLabel, UITheme.Accent)}";
                 string quest = a.CurrentQuest != null ? $" · 의뢰 {a.CurrentQuest.Title}" : "";
                 var level = Welfare.StressRules.LevelOf(d.stress);

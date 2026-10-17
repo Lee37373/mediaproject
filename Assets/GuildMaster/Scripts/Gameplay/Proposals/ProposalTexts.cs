@@ -15,7 +15,7 @@ namespace GuildMaster.Proposals
 
         public static string KindLabel(QuestType type) => "토벌";
 
-        public static string FallbackTitle(ProposalPlan p) => $"{p.Target.Label} 토벌 x{p.Count}";
+        public static string FallbackTitle(ProposalPlan p) => p.Target.IsLord ? $"[지대 군주] {p.Target.Label} 토벌" : $"{p.Target.Label} 토벌 x{p.Count}";
 
         static readonly string[] SafePitch =
         {

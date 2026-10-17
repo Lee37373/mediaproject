@@ -82,6 +82,14 @@ namespace GuildMaster.Data
         [Tooltip("Art of the boss; the species' own art (drawn bigger) when empty or missing.")]
         public string bossArtKey;
 
+        [Header("Region lord (P4-83)")]
+        [Tooltip("One of the four final bosses: lives only in its lair (no habitat), see Monsters/RegionLords.")]
+        public bool isRegionLord;
+        [Tooltip("The outer region whose lair it holds; killing it cleanses that region's outer land.")]
+        public Region lordRegion;
+        [Tooltip("The kind that guards its lair (and breeds there while the lord lives).")]
+        public MonsterDefinition lairEscort;
+
         [Header("Ecosystem")]
         [Tooltip("Terrain regions this species lives in (P4-58, user decision: habitat by terrain only). " +
                  "Nests, newcomers, migrations and roaming packs keep to them.")]

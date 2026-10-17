@@ -184,6 +184,10 @@ namespace GuildMaster.Session
             intel.Init(eco, fog, clock, world);
             Services.Register(intel);
             save.Register(intel);
+            // The four region lords (P4-83): who fell, the cleansed land, titles, the victory.
+            var lords = new RegionLordService(eco, world, clock);
+            Services.Register(lords);
+            save.Register(lords);
             // Fog memory (P4-23): grey last-seen copies of what the fog swallowed.
             var ghosts = AddSystem<Fog.FogGhostService>();
             ghosts.Init(pool, fog, clock, eco);

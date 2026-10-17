@@ -64,7 +64,7 @@ namespace GuildMaster.Persuasion
                 list.Add(a);
             }
             return list
-                .OrderByDescending(a => QuestRisk.Margin(AdventurerStats.Power(a.Data), 1, q.Danger))
+                .OrderByDescending(a => QuestRisk.Margin(AdventurerStats.Power(a.Data), 1, q))
                 .ThenBy(a => a.Data.name, StringComparer.Ordinal)
                 .ToList();
         }

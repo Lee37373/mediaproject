@@ -117,7 +117,7 @@ namespace GuildMaster.Adventurers
             if (Welfare.GuildWelfare.QuestRefusal(a, q.Danger) != null) return 0f;
             int partySize = q.Assignees.Count + 1;
             // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused.
-            float margin = QuestRisk.Margin(AdventurerStats.Power(d), partySize, q.Danger);
+            float margin = QuestRisk.Margin(AdventurerStats.Power(d), partySize, q);
             if (QuestRisk.Label(margin) == QuestRisk.Reckless) return 0f;
 
             float value = q.RewardGold / (float)partySize + q.RewardExp * 1.2f / partySize;

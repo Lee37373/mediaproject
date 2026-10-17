@@ -104,6 +104,9 @@ namespace GuildMaster.Quests
 
         bool Post(Nest n)
         {
+            // A lair whose lord the guild has seen gets the lord's own quest (P4-83, user decision: priced like a den);
+            // until then, or once it fell, the lair is a den of its guards like any other.
+            if (_intel.KnownLordAt(n) is { } lord) return PostLord(n, lord.Def);
             var species = _intel.SpeciesOf(n);
             int count = QuestPricing.HuntCount(_intel.Get(n).LastCount);
             var point = n.WorldPosition;
@@ -122,6 +125,27 @@ namespace GuildMaster.Quests
                 MaxParty = QuestPricing.PartyFor(danger),
             };
             if (!_board.TryPostRequest(draft, QuestClient.Town, out _, out _, n)) return false;
+            Posted++;
+            return true;
+        }
+
+        /// <summary>The lord itself (one kill), for the lair's size and the walk; two parties may go (RegionLords.QuestParty).</summary>
+        bool PostLord(Nest lair, Data.MonsterDefinition lord)
+        {
+            int gold = QuestPricing.LordReward(_intel.Get(lair).LastCount, Vector2.Distance(lair.WorldPosition, _world.TownCenterWorld));
+            var draft = new QuestDraft
+            {
+                Type = QuestType.Hunt,
+                Species = lord,
+                Count = 1,
+                Point = lair.WorldPosition,
+                HasPoint = true,
+                Radius = QuestBoard.HuntRadius,
+                RewardGold = gold,
+                RewardExp = QuestPricing.RewardExp(gold),
+                MaxParty = Monsters.RegionLords.QuestParty,
+            };
+            if (!_board.TryPostRequest(draft, QuestClient.Town, out _, out _, lair)) return false;
             Posted++;
             return true;
         }

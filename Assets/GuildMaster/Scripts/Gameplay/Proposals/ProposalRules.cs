@@ -35,6 +35,8 @@ namespace GuildMaster.Proposals
         public object Source;
         /// <summary>The den (a <c>Nest</c>) the hunt is for (handed back untouched; null in tests).</summary>
         public object Den;
+        /// <summary>A region lord's lair with its lord (P4-83): one kill, weighed against the lord's own requirement.</summary>
+        public bool IsLord;
     }
 
     /// <summary>One candidate quest on the proposal list: what would be posted, and how it is described.</summary>
@@ -114,11 +116,15 @@ namespace GuildMaster.Proposals
         /// "적당" for balanced, "위험" for bold — or the largest allowed.
         /// </summary>
         public static int PartyFor(ProposalStyle style, float power, DangerLevel danger, int maxParty)
+            => PartyFor(style, power, RuleBasedDecisionMaker.DangerRequirement(danger), Mathf.Min(maxParty, 4));
+
+        /// <summary>As above, against a given requirement (a region lord's, P4-83: up to two parties).</summary>
+        public static int PartyFor(ProposalStyle style, float power, float requirement, int maxParty)
         {
-            maxParty = Mathf.Clamp(maxParty, 1, 4);
+            maxParty = Mathf.Clamp(maxParty, 1, Monsters.RegionLords.QuestParty);
             float want = style switch { ProposalStyle.Safe => 2f, ProposalStyle.Balanced => 1f, _ => 0.8f };
             for (int size = 1; size <= maxParty; size++)
-                if (QuestRisk.Margin(power, size, danger) >= want) return size;
+                if (QuestRisk.MarginAgainst(power, size, requirement) >= want) return size;
             return maxParty;
         }
 
@@ -126,6 +132,7 @@ namespace GuildMaster.Proposals
 
         static ProposalPlan MakePlan(ProposalTarget t, ProposalStyle style, float power, int maxParty)
         {
+            if (t.IsLord) return MakeLordPlan(t, style, power, maxParty);
             // Never ask for more than the guild has seen, when it has seen any.
             int count = t.Type == QuestType.Hunt ? QuestPricing.HuntCount(t.Observed, HuntCount(style)) : 1;
             var danger = EffectiveDanger(t.Type, t.Danger, count);
@@ -144,6 +151,25 @@ namespace GuildMaster.Proposals
             };
         }
 
+        /// <summary>A region lord (P4-83): one kill, priced like its lair, weighed against the lord's own requirement.</summary>
+        static ProposalPlan MakeLordPlan(ProposalTarget t, ProposalStyle style, float power, int maxParty)
+        {
+            float need = Monsters.RegionLords.RiskRequirement;
+            int party = PartyFor(style, power, need, maxParty);
+            int gold = QuestPricing.LordReward(t.Observed, t.Distance, StyleFactor(style));
+            return new ProposalPlan
+            {
+                Target = t,
+                Style = style,
+                Danger = DangerLevel.High,
+                Count = 1,
+                Party = party,
+                RewardGold = gold,
+                RewardExp = RewardExp(gold),
+                Risk = QuestRisk.Label(QuestRisk.MarginAgainst(power, party, need)),
+            };
+        }
+
         /// <summary>
         /// Plans for every target in every style, minus the ones that are reckless for the guild's strongest member;
         /// then a varied <see cref="PoolSize"/> of them, numbered P1, P2... A <paramref name="rng"/> shuffles
@@ -154,10 +180,11 @@ namespace GuildMaster.Proposals
             var all = new List<ProposalPlan>();
             if (targets == null || members <= 0) return all;
             int maxParty = Mathf.Clamp(members, 1, 4);
+            int lordParty = Mathf.Clamp(members, 1, Monsters.RegionLords.QuestParty);
             foreach (var t in targets)
             foreach (var style in Styles)
             {
-                var plan = MakePlan(t, style, power, maxParty);
+                var plan = MakePlan(t, style, power, t.IsLord ? lordParty : maxParty);
                 if (plan.Risk == QuestRisk.Reckless) continue;
                 all.Add(plan);
             }

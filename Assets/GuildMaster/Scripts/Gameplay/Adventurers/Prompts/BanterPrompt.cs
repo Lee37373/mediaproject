@@ -52,6 +52,8 @@ namespace GuildMaster.Adventurers.Prompts
             sb.Append($"[{tag}] {d.name} ({AdventurerData.ClassLabel(d.cls)}, 레벨 {d.level})");
             if (x.IsVisitor) sb.Append(" — 아직 길드에 들어오지 않은 방문자");
             sb.Append('\n');
+            // Titles (P4-83): the fall of a region lord is what a guild talks about.
+            if (d.titles.Count > 0) sb.Append("칭호: ").Append(string.Join(", ", d.titles)).Append('\n');
             sb.Append(NpcVoice.Sheet(x)).Append('\n');
             sb.Append("상태: ").Append(NpcVoice.Condition(x)).Append('\n');
             var memories = AdventurerMemory.SelectForPrompt(d.memories, 3).Select(m => m.Format()).ToList();

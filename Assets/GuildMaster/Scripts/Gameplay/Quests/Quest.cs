@@ -138,7 +138,8 @@ namespace GuildMaster.Quests
             RequiredCount = Mathf.Max(1, d.Count);
             RewardGold = Mathf.Max(0, d.RewardGold);
             RewardExp = Mathf.Max(0, d.RewardExp);
-            MaxParty = Mathf.Clamp(d.MaxParty, 1, 4);
+            // Four at most, but a region lord's quest takes two parties (P4-83, RegionLords.QuestParty).
+            MaxParty = Mathf.Clamp(d.MaxParty, 1, d.Species != null && d.Species.isRegionLord ? Monsters.RegionLords.QuestParty : 4);
             MaxHours = d.Type == QuestType.Escort ? Mathf.Clamp(d.Hours, 1, 24) : 0;
             PayGold = RewardGold;
             PayExp = RewardExp;
@@ -148,6 +149,7 @@ namespace GuildMaster.Quests
 
         public string Title => Type switch
         {
+            QuestType.Hunt when Species != null && Species.isRegionLord => $"[지대 군주] {Species.displayName} 토벌 ({QuestBoard.DescribeArea(Point)})",
             QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
             QuestType.Escort => $"길드 마스터 호위 (최대 {MaxHours}시간)",
             QuestType.Defend => "마을 방어",

@@ -23,8 +23,37 @@ namespace GuildMaster.Ecosystem
         public Biome Biome { get; private set; }
         /// <summary>Terrain region of the site (P4-58: species live by region).</summary>
         public Region Region { get; private set; }
-        /// <summary>Whether a species can live here (P4-58).</summary>
-        public bool Suits(MonsterDefinition species) => species != null && species.LivesAt(Region, Biome);
+        /// <summary>
+        /// Whether a species can live here (P4-58) — and may move in: a region lord's lair is its own, and cleansed
+        /// land takes nobody new (P4-83). Every move into a site (migration, newcomers, roaming packs, flight
+        /// from a disaster) asks this.
+        /// </summary>
+        public bool Suits(MonsterDefinition species) => species != null && !IsLair && !Sealed && species.LivesAt(Region, Biome);
+
+        /// <summary>The lair of a region lord (P4-83): its guards breed here while it lives; nobody leaves or moves in.</summary>
+        public bool IsLair { get; private set; }
+        /// <summary>The lord this lair was dealt (it may be dead now).</summary>
+        public MonsterDefinition Lord { get; private set; }
+        /// <summary>Cleansed land (P4-83): nothing is born here or moves in any more.</summary>
+        public bool Sealed { get; internal set; }
+
+        internal void MakeLair(MonsterDefinition lord)
+        {
+            IsLair = true;
+            Lord = lord;
+            name = $"Nest {NestId} (lair of {lord.id})";
+        }
+
+        /// <summary>The lord, alive and at home.</summary>
+        public Monster LivingLord
+        {
+            get
+            {
+                if (!IsLair) return null;
+                foreach (var m in _members) if (m != null && m.IsAlive && m.IsRegionLord) return m;
+                return null;
+            }
+        }
         public int Capacity { get; private set; }
         public float GrowthAccumulator { get; set; }
         /// <summary>Breeding factor of this site by its distance from the town (<see cref="EcosystemManager.GrowthFactor"/>).</summary>
@@ -165,8 +194,11 @@ namespace GuildMaster.Ecosystem
             _renderer.enabled = false;
         }
 
-        /// <summary>A new member at the nest, or at <paramref name="at"/> (newcomers walking in from the map edge); <paramref name="boss"/> = the pack's boss (P4-57).</summary>
-        public Monster SpawnMember(Vector2? at = null, bool boss = false)
+        /// <summary>
+        /// A new member at the nest, or at <paramref name="at"/> (newcomers walking in from the map edge); <paramref name="boss"/> = the pack's boss (P4-57).
+        /// <paramref name="kind"/> is another kind than the nest's own: a lair's lord (P4-83).
+        /// </summary>
+        public Monster SpawnMember(Vector2? at = null, bool boss = false, MonsterDefinition kind = null)
         {
             var pool = Services.Get<PoolService>();
             var world = Services.Get<WorldService>();
@@ -174,7 +206,7 @@ namespace GuildMaster.Ecosystem
             world.Grid.TryRandomWalkableNear(at.HasValue ? GridMap.WorldToCell(at.Value) : Cell, 2, rng, out var cell);
             var pos = GridMap.CellToWorld(cell) + rng.InsideUnitCircle() * 0.3f;
             var monster = pool.Spawn<Monster>(Monster.PoolKey, pos);
-            monster.Setup(Species, this, boss);
+            monster.Setup(kind ?? Species, this, boss);
             _members.Add(monster);
             return monster;
         }

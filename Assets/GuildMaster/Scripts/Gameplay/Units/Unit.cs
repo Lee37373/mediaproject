@@ -191,7 +191,7 @@ namespace GuildMaster.Units
         /// </summary>
         bool HoldAreaSkill(Skill s, Unit target)
         {
-            if (Tier < CombatTier.Heroic || s.AreaRadius <= 0f || target == null) return false;
+            if (Tier < CombatTier.Heroic || s.AreaRadius <= 0f || target == null || !s.SavedForGroups) return false;
             var center = s.AreaOnSelf ? Position : target.Position;
             int inBlast = UnitRegistry.CountInRadius(center, s.AreaRadius, u => u != this && IsHostileTo(u));
             int nearby = UnitRegistry.CountInRadius(Position, 6f, u => u != this && IsHostileTo(u));

@@ -380,6 +380,8 @@ namespace GuildMaster.Adventurers
                     var s = intel.SpeciesOf(n);
                     int count = ExpectedAt(intel, n);
                     if (s == null || count <= 0) continue;
+                    // A region lord's lair is gone to on its quest, not on a whim (P4-83): it is far beyond a den's danger.
+                    if (intel.KnownLordAt(n) != null) continue;
                     if (Vector2.Distance(n.WorldPosition, town) > _reach) continue;
                     if (Vector2.Distance(n.WorldPosition, a.Position) < SpotReached * 2f) continue;
                     if (avoid != null && Vector2.Distance(n.WorldPosition, avoid.Value) <= _reach * 0.3f) continue;

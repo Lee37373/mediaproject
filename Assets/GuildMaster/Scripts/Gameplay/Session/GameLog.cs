@@ -200,7 +200,16 @@ namespace GuildMaster.Session
                                : $"{e.Monster.DisplayName}이(가) {e.Item.displayName}을(를) 주워 착용했습니다.", LogCategory.Ecosystem);
             });
             // Pack bosses (P4-57): seen for the first time, and killed where the guild could see it.
-            EventBus.Subscribe<BossSightedEvent>(e => Add($"[보스] {e.Boss.DisplayName}(Lv.{e.Boss.Level})이(가) 이끄는 {e.Boss.Def.displayName} 무리를 발견했습니다!", LogCategory.Danger));
+            EventBus.Subscribe<BossSightedEvent>(e => Add(e.Boss.IsRegionLord
+                ? $"[지대 군주] {Monsters.RegionLords.RegionName(e.Boss.Def.lordRegion)}의 군주 {e.Boss.DisplayName}(Lv.{e.Boss.Level})을(를) 발견했습니다! 거처를 {e.Boss.Def.lairEscort?.displayName} 무리가 지키고 있습니다."
+                : $"[보스] {e.Boss.DisplayName}(Lv.{e.Boss.Level})이(가) 이끄는 {e.Boss.Def.displayName} 무리를 발견했습니다!", LogCategory.Danger));
+            // Region lords (P4-83): a fall the guild learned of, and the four of them down.
+            EventBus.Subscribe<RegionCleansedEvent>(e =>
+            {
+                string who = e.Participants != null && e.Participants.Count > 0 ? $" (함께한 길드원: {string.Join(", ", e.Participants)})" : "";
+                Add($"[지대 정화] {e.Lord.displayName}이(가) 쓰러졌습니다 — {Monsters.RegionLords.RegionName(e.Region)} 바깥 땅에 더는 새 몬스터가 나타나지 않습니다. ({e.Fallen}/{e.Total}){who}", LogCategory.Quest);
+            });
+            EventBus.Subscribe<AllLordsSlainEvent>(e => Add($"[승리] 지대 군주 {e.Lords}을 모두 쓰러뜨렸습니다! ({e.Day}일차)", LogCategory.Quest));
             EventBus.Subscribe<Units.UnitDiedEvent>(e =>
             {
                 if (e.Victim is not Monsters.Monster { IsBoss: true } boss || !Services.TryGet<Fog.FogOfWar>(out var fog) || !fog.IsVisibleRaw(boss.Position)) return;

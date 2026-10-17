@@ -187,7 +187,8 @@ namespace GuildMaster.Ecosystem
 
         void Abandon(Nest nest, List<Monster> residents, MonsterDefinition drivenBy, Vector2 threat, Nest drivenFrom, string cause = null)
         {
-            if (residents.Count == 0) return;
+            // A lord never leaves its lair (P4-83): it and its guards stand, whatever comes.
+            if (residents.Count == 0 || nest.IsLair) return;
             Services.TryGet<MigrationService>(out var migration);
             if (migration != null && migration.IsMigrating(nest)) return; // the pack is already on its way elsewhere
             var pack = nest.Members.Where(m => m != null && m.IsAlive).ToList();

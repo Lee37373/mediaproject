@@ -161,6 +161,8 @@ namespace GuildMaster.Tests
             ((System.Collections.Generic.HashSet<Data.MonsterDefinition>)known.GetValue(Services.Get<Ecosystem.GuildIntel>()))
                 .Add(System.Linq.Enumerable.First(eco.Species, s => s.id == "slime"));
             string questId = DebugCommands.PostHunt("slime", 3, 30, 10, 2);
+            // A region lord down (P4-83): its land sealed, a member with its title.
+            DebugCommands.KillLord(0, 0);
             DebugCommands.ForceAccept(questId, 2);
             DebugCommands.SpawnVisitor();
             DebugCommands.MerchantVisit();

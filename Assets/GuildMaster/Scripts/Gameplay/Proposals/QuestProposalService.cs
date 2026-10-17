@@ -69,6 +69,7 @@ namespace GuildMaster.Proposals
             public Vector2 target_point;
             public string species;
             public int target_nest = -1;
+            public bool target_lord;
             public ProposalStyle style;
             public DangerLevel danger;
             public int count, party, reward_gold, reward_exp;
@@ -102,7 +103,7 @@ namespace GuildMaster.Proposals
                 {
                     id = p.Id, target_key = p.Target.Key, target_type = p.Target.Type, target_danger = p.Target.Danger, target_label = p.Target.Label,
                     target_area = p.Target.Area, target_distance = p.Target.Distance, target_observed = p.Target.Observed, target_point = p.Target.Point,
-                    species = (p.Target.Source as MonsterDefinition)?.id, target_nest = p.Target.Den is Nest n ? nests.IndexOf(n) : -1,
+                    species = (p.Target.Source as MonsterDefinition)?.id, target_nest = p.Target.Den is Nest n ? nests.IndexOf(n) : -1, target_lord = p.Target.IsLord,
                     style = p.Style, danger = p.Danger, count = p.Count, party = p.Party,
                     reward_gold = p.RewardGold, reward_exp = p.RewardExp, risk = p.Risk, title = p.Title, pitch = p.Pitch, from_llm = p.FromLlm,
                 });
@@ -130,7 +131,7 @@ namespace GuildMaster.Proposals
                     {
                         Key = p.target_key, Type = p.target_type, Danger = p.target_danger, Label = p.target_label, Area = p.target_area,
                         Distance = p.target_distance, Observed = p.target_observed, Point = p.target_point, Source = db.Monster(p.species),
-                        Den = p.target_nest >= 0 && p.target_nest < nests.Count ? nests[p.target_nest] : null,
+                        Den = p.target_nest >= 0 && p.target_nest < nests.Count ? nests[p.target_nest] : null, IsLord = p.target_lord,
                     },
                     Style = p.style, Danger = p.danger, Count = p.count, Party = p.party, RewardGold = p.reward_gold, RewardExp = p.reward_exp,
                     Risk = p.risk, Title = p.title, Pitch = p.pitch, FromLlm = p.from_llm,
@@ -196,10 +197,14 @@ namespace GuildMaster.Proposals
                 if (species == null || !seen.Observed || seen.LastCount <= 0 || _board.HasActiveHuntOn(nest)) continue;
                 var point = nest.WorldPosition;
                 if (QuestBoard.HuntPointError(point) != null) continue;
+                // A lair whose lord the guild has seen is asked for as the lord itself (P4-83).
+                var lord = _intel.KnownLordAt(nest);
+                if (lord != null) species = lord.Def;
                 list.Add(new ProposalTarget
                 {
                     Key = $"nest:{nest.Cell.x},{nest.Cell.y}",
                     Type = QuestType.Hunt,
+                    IsLord = lord != null,
                     // Rated as the board rates the posted hunt (P4-58: the level the spot breeds, plus
                     // seen gear), not by the species' old danger field, which now only sets how rare
                     // it is when nests are handed out — a slime den far out read "낮음" (P4-69).

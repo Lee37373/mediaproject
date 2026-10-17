@@ -210,7 +210,8 @@ namespace GuildMaster.Ecosystem
         /// </summary>
         public bool TryLaunch(Nest nest)
         {
-            if (_bands.Count >= MaxBands || IsMigrating(nest)) return false;
+            // A lord never leaves its lair, nor do its guards (P4-83).
+            if (_bands.Count >= MaxBands || IsMigrating(nest) || nest.IsLair) return false;
             var home = nest.Members.Where(m => m != null && m.IsAlive).ToList();
             if (home.Any(m => m.DefaultStateOverride != null)) return false;
             if (home.Count == 0) return false;
@@ -246,7 +247,8 @@ namespace GuildMaster.Ecosystem
             if (_bands.Count(b => b.Arrival) >= MaxArrivals || _world.Map.EdgeSpawnCells.Count == 0) return false;
             if (target == null)
             {
-                var free = _eco.Nests.Where(n => n.IsEmpty && _eco.Depth(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)).ToList();
+                // Not a lair, nor cleansed land (P4-83: nothing new comes there).
+                var free = _eco.Nests.Where(n => n.IsEmpty && !n.IsLair && !n.Sealed && _eco.Depth(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)).ToList();
                 if (free.Count == 0) return false;
                 target = free[GameRandom.Shared.Range(0, free.Count)];
             }

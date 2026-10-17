@@ -33,6 +33,8 @@ namespace GuildMaster.Adventurers
         /// <summary>Skills known right now (P4-34); starts as the class skills, at most SkillCatalog.MaxSkills.</summary>
         public List<string> skillIds = new();
         public List<MemoryEntry> memories = new();
+        /// <summary>Titles earned (P4-83: "모래 폭군 카르샤를 쓰러뜨린 자" for taking part in a region lord's fall).</summary>
+        public List<string> titles = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>
         public List<RelationEntry> relations = new();
         /// <summary>Conversation history (recruit talks, small talk), see DialogueLog.</summary>

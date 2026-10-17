@@ -860,6 +860,90 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-83 (user decisions 2026-10-17): a region lord holds the farthest site of each outer region with a pack of
+        /// that region's kind — one pack of two kinds — at level 35 with fifteen times the health, and never leaves. Once
+        /// the guild has seen it the town posts its own quest (two parties may go). Its fall seals its region's outer
+        /// land (nothing new comes there), gives those who fought it a title, drops its trophy, and the fourth fall
+        /// is the victory: the game holds on the victory screen until "계속하기".
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RegionLords_HoldTheirLairs_TheirFallSealsTheLand_AndAllFourAreTheVictory()
+        {
+            yield return Boot();
+            var lords = Services.Get<RegionLordService>();
+            var eco = Services.Get<EcosystemManager>();
+            var world = Services.Get<World.WorldService>();
+            Assume.That(lords.Lords.Count, Is.EqualTo(4), "the test map reaches all four outer regions past the inner edge");
+            foreach (var l in lords.Lords)
+            {
+                var lord = l.Lair.LivingLord;
+                Assert.That(lord, Is.Not.Null, l.Def.id);
+                Assert.That((lord.Level, lord.IsBoss, lord.Def), Is.EqualTo((RegionLords.Level, true, l.Def)));
+                Assert.That(Vector2.Distance(l.Lair.WorldPosition, world.TownCenterWorld), Is.GreaterThan(EcosystemManager.InnerEdge));
+                Assert.That(l.Lair.Species, Is.EqualTo(l.Def.lairEscort), "its lair is its guards' den");
+                var guards = l.Lair.Members.Where(m => m.IsAlive && !m.IsRegionLord).ToList();
+                Assert.That(guards, Has.Count.EqualTo(RegionLords.InitialEscorts));
+                Assert.That(guards.All(g => g.IsPackMate(lord) && lord.IsPackMate(g) && !g.IsHostileTo(lord) && !lord.IsHostileTo(g)), Is.True, "lord and guards are one pack");
+                Assert.That(l.Lair.Suits(l.Lair.Species), Is.False, "nobody moves into a lair");
+                Assert.That(Services.Get<MigrationService>().TryLaunch(l.Lair), Is.False, "and it never moves out");
+            }
+            var first = lords.Lords[0];
+            var firstLord = first.Lair.LivingLord;
+            Assert.That(firstLord.Stats.MaxHp, Is.EqualTo(Combat.ScaledHp(first.Def.maxHp) * RegionLords.HpMultiplier * MonsterLevel.HpScale(RegionLords.Level)).Within(1f));
+
+            var board = Services.Get<QuestBoard>();
+            var intel = Services.Get<GuildIntel>();
+            var avatar = Services.Get<PlayerAvatar>();
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                // Seen: the town posts the lord's own quest.
+                avatar.Mover.Stop();
+                world.Grid.TryFindNearestWalkable(first.Lair.Cell + new Vector2Int(3, 0), 4, out var stand);
+                avatar.transform.position = World.GridMap.CellToWorld(stand);
+                yield return WaitFor(() => intel.KnownLordAt(first.Lair) != null, 10f);
+                Assume.That(intel.KnownLordAt(first.Lair), Is.Not.Null, "the master standing by the lair sees its lord");
+                TownQuestPoster.Enabled = true;
+                Services.Get<TownQuestPoster>().Check();
+                var quest = board.Quests.FirstOrDefault(q => q.IsActive && q.TargetNest == first.Lair);
+                Assert.That(quest, Is.Not.Null);
+                Assert.That((quest.Species, quest.RequiredCount, quest.MaxParty), Is.EqualTo((first.Def, 1, RegionLords.QuestParty)));
+                Assert.That(quest.Title, Does.StartWith("[지대 군주]"));
+                Assert.That(intel.NameOf(first.Lair), Is.EqualTo($"{first.Def.displayName}의 거처"));
+
+                // It falls to a member standing by: the region's outer land is sealed, the member carries its title.
+                var hero = Roster.Members.First(a => a.IsAlive);
+                hero.Mover.Stop();
+                hero.transform.position = avatar.transform.position;
+                firstLord.ReceiveDamage(firstLord.Hp + 1e6f, hero, false);
+                Assert.That((first.Slain, first.Known), Is.EqualTo((true, true)));
+                foreach (var n in eco.Nests)
+                {
+                    bool outer = n.Region == first.Region && Vector2.Distance(n.WorldPosition, world.TownCenterWorld) > EcosystemManager.InnerEdge;
+                    Assert.That(n.Sealed, Is.EqualTo(outer), $"{n.NestId} {n.Region}");
+                }
+                Assert.That(lords.IsSealedAt(first.Lair.WorldPosition), Is.True);
+                Assert.That(lords.IsSealedAt(world.TownCenterWorld), Is.False);
+                Assert.That(eco.Nests.Where(n => n.Sealed).All(n => !n.Suits(n.Species)), Is.True, "nothing new moves into cleansed land");
+                Assert.That(hero.Data.titles, Does.Contain(RegionLords.Title(first.Def.displayName)));
+                Assert.That(first.Participants, Does.Contain(hero.Data.name));
+                Assert.That(quest.Status, Is.EqualTo(QuestStatus.Cancelled), "nobody had taken its quest: it comes down");
+                var trophy = first.Def.loot.First(e => e.item.uniqueEffect == "lord_trophy").item;
+                Assert.That(Services.Get<Items.GroundItemService>().Items.Any(g => g.Item == trophy), Is.True, "its trophy lies where it fell");
+
+                // The other three: the victory, and the game holds until the player carries on.
+                for (int i = 1; i < lords.Lords.Count; i++) DebugCommands.KillLord(i, 0);
+                Assert.That(lords.Victory, Is.True);
+                var view = UnityEngine.Object.FindFirstObjectByType<VictoryView>(FindObjectsInactive.Include);
+                Assert.That(view, Is.Not.Null);
+                Assert.That(Clock.IsHeld, Is.True, "the victory screen holds the game");
+                typeof(VictoryView).GetMethod("Continue", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, null);
+                Assert.That(Clock.IsHeld, Is.False, "and play goes on");
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+        }
+
+        /// <summary>
         /// P4-32: the clear-nest quest is gone. A hunt finishes on its kill count, or as soon as
         /// the nest inside its marked area is wiped out, whichever comes first.
         /// </summary>
@@ -3024,8 +3108,15 @@ namespace GuildMaster.Tests
             // Hurt enough to run: a retreat is a hurry, and a hurry takes the short way (caution 0).
             int index = Roster.Members.ToList().IndexOf(walker);
             DebugCommands.Hurt(index, walker.Stats.MaxHp * (1f - walker.RetreatThreshold * 0.5f));
-            yield return WaitFor(() => !walker.IsAlive || walker.StateLabel.Contains("후퇴") || walker.StateLabel.Contains("귀환"), 20f);
+            yield return WaitFor(() => !walker.IsAlive || walker.StateLabel.Contains("후퇴") || walker.StateLabel.Contains("귀환") || walker.StateLabel.Contains("야영"), 20f);
             Assert.That(walker.IsAlive, Is.True, "still alive to run home");
+            // P4-71: with no enemy in sight a party may mend together at a fire instead of running (the world
+            // decides; a seeded map change flipped it, P4-83). The run itself is what is measured here.
+            if (!walker.StateLabel.Contains("후퇴") && !walker.StateLabel.Contains("귀환"))
+            {
+                walker.ReturnState.RequestRetreat();
+                walker.ChangeState(walker.ReturnState);
+            }
             yield return WaitFor(() => walker.Mover.IsMoving, 10f);
             Assert.That(walker.Mover.RouteCaution, Is.EqualTo(RouteChoice.Hurried).Within(0.001f),
                 "running home takes no detour");

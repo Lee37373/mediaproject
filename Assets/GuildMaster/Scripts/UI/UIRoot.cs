@@ -119,6 +119,8 @@ namespace GuildMaster.UI
             toasts.MenuButton = notificationButton;
             toasts.Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
+            // All four region lords down (P4-83): the victory; play goes on.
+            HudLayer.gameObject.AddComponent<VictoryView>().Build(HudLayer);
             // Menus (P4-10): pause (ESC) and title over the world, settings above both.
             _pause = HudLayer.gameObject.AddComponent<PauseMenuView>();
             _title = HudLayer.gameObject.AddComponent<TitleView>();

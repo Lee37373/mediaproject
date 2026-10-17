@@ -35,6 +35,7 @@ namespace GuildMaster.UI
         static readonly Color RaiderColor = new(1f, 0.2f, 0.85f);
         static readonly Color NestColor = new(0.85f, 0.45f, 0.15f);
         static readonly Color EmptyNestColor = new(0.55f, 0.5f, 0.45f);
+        static readonly Color LairColor = new(0.85f, 0.2f, 0.6f);
         /// <summary>Last-seen monsters under the fog (P4-23), grey so they read as memory.</summary>
         static readonly Color GhostColor = new(0.62f, 0.66f, 0.74f);
         static readonly Color FrameColor = new(1f, 1f, 1f, 0.85f);
@@ -197,6 +198,8 @@ namespace GuildMaster.UI
                 foreach (var n in intel.KnownNests)
                 {
                     var info = intel.Get(n);
+                    // A region lord's lair (P4-83), once the guild has seen its lord there: bigger, in its own colour.
+                    if (intel.KnownLordAt(n) != null) { Dot(n.WorldPosition, LairColor, 11f, square: true); continue; }
                     Dot(n.WorldPosition, info.Observed && info.LastCount == 0 ? EmptyNestColor : NestColor, 7f, square: true);
                 }
 

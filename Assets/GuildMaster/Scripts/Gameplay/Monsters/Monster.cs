@@ -118,8 +118,9 @@ namespace GuildMaster.Monsters
             Home = home;
             Roaming = null;
             UnitId = id;
-            IsBoss = boss;
-            DisplayName = boss ? MonsterBoss.Name(def.displayName, def.bossName) : def.displayName;
+            // A region lord (P4-83) is always its lair's boss, under its own name.
+            IsBoss = boss || def.isRegionLord;
+            DisplayName = def.isRegionLord ? def.displayName : boss ? MonsterBoss.Name(def.displayName, def.bossName) : def.displayName;
             name = $"{def.displayName}[{UnitId}]";
             Stats = new CombatStats
             {
@@ -135,7 +136,13 @@ namespace GuildMaster.Monsters
                 Stats.AttackCooldown *= 1.2f;
                 if (!string.IsNullOrEmpty(def.rangedVariantName)) DisplayName = def.rangedVariantName;
             }
-            if (boss)
+            if (def.isRegionLord)
+            {
+                Stats.MaxHp *= RegionLords.HpMultiplier;
+                Stats.Attack *= RegionLords.AttackMultiplier;
+                Stats.Defense += RegionLords.DefenseBonus;
+            }
+            else if (boss)
             {
                 Stats.MaxHp *= MonsterBoss.HpMultiplier;
                 Stats.Attack *= MonsterBoss.AttackMultiplier;
@@ -148,7 +155,9 @@ namespace GuildMaster.Monsters
             // P4-21: base stats kept apart from gear; some spawn already wearing something.
             // Own level (user decision 2026-09-22): born higher the farther out the nest lies.
             _unlevelledStats = Stats;
-            Level = Mathf.Min(MonsterLevel.MaxLevel, (home != null ? home.BirthLevel : 1) + (boss ? MonsterBoss.LevelBonus : 0));
+            // A lord is born beyond the ordinary cap (P4-83), and never grows (it is already past the cap).
+            Level = def.isRegionLord ? RegionLords.Level
+                : Mathf.Min(MonsterLevel.MaxLevel, (home != null ? home.BirthLevel : 1) + (boss ? MonsterBoss.LevelBonus : 0));
             _lastFightTime = float.NegativeInfinity;
             Exp = 0;
             TierExp = 0;
@@ -202,6 +211,8 @@ namespace GuildMaster.Monsters
         public bool IsRangedVariant { get; private set; }
         /// <summary>The pack's boss (P4-57, <see cref="MonsterBoss"/>): bigger, tougher, leads the pack.</summary>
         public bool IsBoss { get; private set; }
+        /// <summary>One of the four region lords (P4-83, <see cref="RegionLords"/>); always also its lair's boss.</summary>
+        public bool IsRegionLord => Def != null && Def.isRegionLord;
         /// <summary>Drawn size: the species' scale, bigger for a boss.</summary>
         public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : 1f);
         public Color ProjectileColor => new(0.8f, 0.7f, 0.45f);
@@ -259,7 +270,8 @@ namespace GuildMaster.Monsters
         }
         public int ExpToNext => MonsterLevel.ExpToNext(Level);
         /// <summary>What killing this one is worth.</summary>
-        public int ExpWorth => Def == null ? 0 : MonsterLevel.ExpWorth(Def.expValue, Level) * (IsBoss ? MonsterBoss.ExpMultiplier : 1);
+        public int ExpWorth => Def == null ? 0
+            : MonsterLevel.ExpWorth(Def.expValue, Level) * (IsRegionLord ? RegionLords.ExpMultiplier : IsBoss ? MonsterBoss.ExpMultiplier : 1);
         CombatStats _unlevelledStats;
 
         /// <summary>Base stats = the species (and ranged variant) scaled by level; gear goes on top.</summary>
@@ -436,7 +448,9 @@ namespace GuildMaster.Monsters
             // walked past each other). Same-species packs only clash over territory (above).
             // Raiders on the march do not start fights on the way; hit, they still hit back. A band
             // on the move to a new home fights whatever it meets (P4-56, user decision 2026-09-22).
-            if (other is Monster m) return m.Def != Def && (DefaultStateOverride == null || DefaultStateOverride == MigrateState || DefaultStateOverride == RoamState);
+            // A region lord and its guards share a lair (P4-83): one pack, though of two kinds.
+            if (other is Monster m) return m.Def != Def && !(Home != null && m.Home == Home)
+                                           && (DefaultStateOverride == null || DefaultStateOverride == MigrateState || DefaultStateOverride == RoamState);
             return other.Faction == Faction.Guild && Def.aggressiveToHumans;
         }
 
@@ -485,7 +499,8 @@ namespace GuildMaster.Monsters
         static readonly System.Collections.Generic.List<float> s_bearings = new();
 
         /// <summary>Another living member of the same pack: same species and nest (or both nest-less).</summary>
-        public bool IsPackMate(Monster o) => o != null && o != this && o.IsAlive && o.Def == Def && o.Home == Home && o.Roaming == Roaming;
+        public bool IsPackMate(Monster o) => o != null && o != this && o.IsAlive && o.Home == Home && o.Roaming == Roaming
+                                             && (o.Def == Def || Home != null && (IsRegionLord || o.IsRegionLord)); // a lord and its guards (P4-83)
 
         /// <summary>Who calls the pack's target: the crown holder / pack leader, else the first member of the nest.</summary>
         Monster CallingLeader
@@ -778,7 +793,8 @@ namespace GuildMaster.Monsters
         {
             // P4-21: everything falls to the ground (worn gear always, the loot table when killed);
             // a killing adventurer still gets the kill and its EXP, but must pick the loot up.
-            if (killer != null) MonsterEquipment.BuildDrops(Def, Equipment.Worn, GameRandom.Shared, s_loot, IsBoss ? MonsterBoss.LootRolls : 1);
+            // A lord's table is rolled once: its trophy is certain, and one of it is the point (P4-83).
+            if (killer != null) MonsterEquipment.BuildDrops(Def, Equipment.Worn, GameRandom.Shared, s_loot, IsBoss && !IsRegionLord ? MonsterBoss.LootRolls : 1);
             else MonsterEquipment.BuildDrops(null, Equipment.Worn, GameRandom.Shared, s_loot);
             if (s_loot.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, s_loot);
             Equipment.Clear();
@@ -984,7 +1000,7 @@ namespace GuildMaster.Monsters
             var pool = Services.Get<PoolService>();
             var m = pool.Spawn<Monster>(PoolKey, new Vector2(s.unit.x, s.unit.y));
             m.Prepare(def, home, s.boss, s.ranged, s.id);
-            m.Level = Mathf.Clamp(s.level, 1, MonsterLevel.MaxLevel);
+            m.Level = Mathf.Clamp(s.level, 1, def.isRegionLord ? RegionLords.Level : MonsterLevel.MaxLevel);
             m.Exp = s.exp;
             m.TierExp = s.tier_exp;
             m.ApplyLevel();

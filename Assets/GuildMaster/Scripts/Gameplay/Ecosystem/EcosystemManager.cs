@@ -199,6 +199,15 @@ namespace GuildMaster.Ecosystem
             _innermost = map.Nests.Count == 0 ? 0f : map.Nests.Min(s => Vector2.Distance(GridMap.CellToWorld(s.Cell), _town));
             _outermost = map.Nests.Count == 0 ? 1f : map.Nests.Max(s => Vector2.Distance(GridMap.CellToWorld(s.Cell), _town));
             var assignment = AssignSpecies(db.monsters, map.Nests, rng);
+            // Region lords (P4-83): the farthest site of each outer region is a lord's lair, held by its guards' kind.
+            var lairs = new Dictionary<int, MonsterDefinition>();
+            foreach (var kv in RegionLords.PickLairs(map.Nests, _town, InnerEdge))
+            {
+                var lord = db.monsters.FirstOrDefault(m => m.isRegionLord && m.lordRegion == kv.Key && m.lairEscort != null);
+                if (lord == null) continue;
+                lairs[kv.Value] = lord;
+                assignment[kv.Value] = lord.lairEscort;
+            }
             for (int i = 0; i < map.Nests.Count; i++)
             {
                 var go = new GameObject();
@@ -207,9 +216,18 @@ namespace GuildMaster.Ecosystem
                 nest.Init(this, $"N_{i + 1:00}", assignment[i], map.Nests[i]);
                 nest.GrowthFactor = GrowthFactorAt(nest.WorldPosition);
                 nest.BirthLevel = MonsterLevel.BirthLevel(Depth(nest.WorldPosition));
+                lairs.TryGetValue(i, out var lairLord);
+                if (lairLord != null) nest.MakeLair(lairLord);
                 _nests.Add(nest);
                 // A loaded game brings its own monsters back (P5-4).
                 if (Session.GameSettings.RestoresSection(SaveKey)) continue;
+                if (lairLord != null)
+                {
+                    // The lord leads its guards (it is their boss, so the first one born).
+                    Spawn(nest, null, true, lairLord);
+                    for (int k = 0; k < RegionLords.InitialEscorts; k++) Spawn(nest);
+                    continue;
+                }
                 // A founded pack may have a boss (P4-57): the first one born.
                 bool boss = GameRandom.Shared.Chance(MonsterBoss.Chance);
                 for (int k = 0; k < assignment[i].initialPopulation; k++) Spawn(nest, null, boss && k == 0);
@@ -289,11 +307,14 @@ namespace GuildMaster.Ecosystem
             return result.ToList();
         }
 
-        /// <summary>Adds one member to the nest and updates the population count (also used by debug tools).</summary>
-        internal Monster Spawn(Nest nest, Vector2? at = null, bool boss = false)
+        /// <summary>
+        /// Adds one member to the nest and updates the population count (also used by debug tools). <paramref name="kind"/>:
+        /// another kind than the nest's own (a lair's lord, P4-83); counts are kept by each monster's own kind.
+        /// </summary>
+        internal Monster Spawn(Nest nest, Vector2? at = null, bool boss = false, MonsterDefinition kind = null)
         {
-            var m = nest.SpawnMember(at, boss);
-            ChangePopulation(nest.Species, +1);
+            var m = nest.SpawnMember(at, boss, kind);
+            ChangePopulation(m.Def, +1);
             return m;
         }
 
@@ -302,7 +323,7 @@ namespace GuildMaster.Ecosystem
 
         internal void NotifyMemberDied(Nest nest, Monster m, Unit killer)
         {
-            ChangePopulation(nest.Species, -1);
+            ChangePopulation(m.Def, -1);
             if (nest.IsEmpty) EventBus.Publish(new NestClearedEvent { Nest = nest, Killer = killer });
         }
 
@@ -333,6 +354,8 @@ namespace GuildMaster.Ecosystem
                     continue;
                 }
                 nest.EmptyHours = 0;
+                // Cleansed land breeds nothing (P4-83); a lair breeds its guards back only while its lord lives.
+                if (nest.Sealed || nest.IsLair && nest.LivingLord == null) continue;
                 var s = nest.Species;
                 int pop = nest.Population;
                 float food = FoodFactor(s);

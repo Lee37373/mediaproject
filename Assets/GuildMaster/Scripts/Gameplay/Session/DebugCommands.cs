@@ -61,6 +61,96 @@ namespace GuildMaster.Session
             return ok ? q.Id : err;
         }
 
+        /// <summary>The region lords (P4-83): lair, the lord's state and its guards, who fell, the cleansed land (real values, debug).</summary>
+        public static string Lords()
+        {
+            var svc = Services.Get<RegionLordService>();
+            var eco = Services.Get<EcosystemManager>();
+            var town = Services.Get<World.WorldService>().TownCenterWorld;
+            var intel = Services.Get<GuildIntel>();
+            var sb = new StringBuilder($"lords {svc.Lords.Count}, known fallen {svc.KnownFallen}, victory {svc.Victory}, sealed nests {eco.Nests.Count(n => n.Sealed)}\n");
+            for (int i = 0; i < svc.Lords.Count; i++)
+            {
+                var l = svc.Lords[i];
+                var lord = l.Lair.LivingLord;
+                int guards = l.Lair.Members.Count(m => m != null && m.IsAlive && !m.IsRegionLord);
+                string state = lord != null ? $"alive Lv{lord.Level} hp {lord.Hp:0}/{lord.Stats.MaxHp:0} atk {lord.Stats.Attack:0.#} def {lord.Stats.Defense:0.#} tier {lord.Tier} at {lord.Position.x:0},{lord.Position.y:0}" : "dead";
+                sb.AppendLine($"  [{i}] {RegionLords.RegionName(l.Region)} {l.Def.displayName} lair {l.Lair.NestId} @{Vector2.Distance(l.Lair.WorldPosition, town):0} lv{l.Lair.BirthLevel} " +
+                              $"guards {guards}/{l.Lair.Capacity} ({l.Lair.Species.id}) {state} seen {intel.IsKnown(l.Def)} slain {l.Slain} known {l.Known} by [{string.Join(",", l.Participants)}]");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Kills a region lord as if <paramref name="memberIndex"/> had struck it down (debug: cleansing, titles, victory).</summary>
+        public static string KillLord(int index, int memberIndex = 0)
+        {
+            var svc = Services.Get<RegionLordService>();
+            if (index < 0 || index >= svc.Lords.Count) return "no lord " + index;
+            var lord = svc.Lords[index].Lair.LivingLord;
+            if (lord == null) return "already dead";
+            var members = Services.Get<GuildRoster>().Members;
+            var by = memberIndex >= 0 && memberIndex < members.Count ? members[memberIndex] : null;
+            lord.ReceiveDamage(lord.Hp + 1e6f, by, false);
+            return Lords();
+        }
+
+        /// <summary>
+        /// A test fight against a region lord (debug, tuning): <paramref name="members"/> members (recruited up to it) set to
+        /// <paramref name="level"/> and gear tier <paramref name="gear"/>, put on the lord's quest a few cells from its lair, at
+        /// midday so no camp breaks it off. Read the fight with <see cref="Lords"/> (or <c>LordFightStatus</c>).
+        /// </summary>
+        public static string LordFight(int index, int members, int level, int gear)
+        {
+            var svc = Services.Get<RegionLordService>();
+            if (index < 0 || index >= svc.Lords.Count) return "no lord " + index;
+            var lair = svc.Lords[index].Lair;
+            var lord = lair.LivingLord;
+            if (lord == null) return "already dead";
+            var clock = Services.Get<GameClock>();
+            typeof(GameClock).GetField("_totalHours", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?.SetValue(clock, Mathf.Floor(clock.TotalHours / 24f) * 24f + 9f);
+            var roster = Services.Get<GuildRoster>();
+            var world = Services.Get<World.WorldService>();
+            while (roster.Members.Count < members) roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), world.TownCenterWorld);
+            Services.Get<GuildIntel>().MarkKnown(lord.Def);
+            var board = Services.Get<QuestBoard>();
+            board.TryPostRequest(new QuestDraft
+            {
+                Type = QuestType.Hunt, Species = lord.Def, Count = 1, Point = lair.WorldPosition, HasPoint = true, Radius = QuestBoard.HuntRadius,
+                RewardGold = 1000, RewardExp = 600, MaxParty = members,
+            }, QuestClient.Town, out var q, out var err, lair);
+            if (q == null) return "not posted: " + err;
+            var stand = lair.WorldPosition + (world.TownCenterWorld - lair.WorldPosition).normalized * 12f;
+            // Every class at least once before the second of any.
+            var team = roster.Members.Where(a => a.IsAlive).OrderBy(a => roster.Members.Where(b => b.Data.cls == a.Data.cls).ToList().IndexOf(a)).Take(members).ToList();
+            for (int i = 0; i < team.Count; i++)
+            {
+                var a = team[i];
+                a.Data.level = level;
+                a.Data.gearTier = gear;
+                a.Data.potions = 3;
+                a.RecalculateStats(fullHeal: true);
+                world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(stand + new Vector2(i % 3, i / 3)), 4, out var cell);
+                a.Mover.Stop();
+                a.transform.position = World.GridMap.CellToWorld(cell);
+                if (!board.TryAccept(q, a, invited: i > 0)) continue;
+                a.CurrentQuest = q;
+                a.ChangeState(a.TravelState);
+            }
+            Services.Get<Fog.FogOfWar>().Reveal(lair.WorldPosition, 20f);
+            Services.Get<CameraControl.CameraController>().JumpTo(lair.WorldPosition);
+            return $"{q.Id}: {string.Join(", ", team.Select(a => $"{a.Data.name}({a.Data.cls} {a.Stats.MaxHp:0}hp {a.Stats.Attack:0.#}atk)"))} vs {lord.DisplayName} {lord.Hp:0}hp";
+        }
+
+        /// <summary>Moves the camera to a lair (debug: the lords are deep in the fog).</summary>
+        public static string JumpToLair(int index)
+        {
+            var svc = Services.Get<RegionLordService>();
+            if (index < 0 || index >= svc.Lords.Count) return "no lord " + index;
+            Services.Get<CameraControl.CameraController>().JumpTo(svc.Lords[index].Lair.WorldPosition);
+            return svc.Lords[index].Lair.NestId;
+        }
+
         /// <summary>The town's postings (P4-82): what it posted, and why each known den is or is not on the board.</summary>
         public static string TownQuests(bool checkNow = false)
         {

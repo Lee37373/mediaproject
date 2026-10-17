@@ -422,7 +422,25 @@ namespace GuildMaster.Ecosystem
         public MonsterDefinition SpeciesOf(Nest n) => n == null ? null : Get(n).Species;
 
         /// <summary>Guild-facing nest name, e.g. "고블린 둥지 #04", by the last seen owners.</summary>
-        public string NameOf(Nest n) => n == null ? "" : n.NameFor(SpeciesOf(n));
+        public string NameOf(Nest n)
+        {
+            if (n == null) return "";
+            // A region lord's lair is named for its lord once the guild has seen the lord (P4-83).
+            if (n.IsLair && n.Lord != null && _known.Contains(n.Lord)) return $"{n.Lord.displayName}의 거처";
+            return n.NameFor(SpeciesOf(n));
+        }
+
+        /// <summary>
+        /// The region lord of this lair as the guild knows it: seen, and not seen dying since (P4-83). Null when the
+        /// guild has not seen it, or it is dead.
+        /// </summary>
+        public Monster KnownLordAt(Nest n)
+        {
+            if (n == null || !n.IsLair) return null;
+            foreach (var b in _bossesSeen)
+                if (b != null && b.IsAlive && b.IsRegionLord && b.Home == n) return b;
+            return null;
+        }
 
         /// <summary>Sum of the last observed counts of the species' discovered nests.</summary>
         public int ObservedPopulation(MonsterDefinition species)
