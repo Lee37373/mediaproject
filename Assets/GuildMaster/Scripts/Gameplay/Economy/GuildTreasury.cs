@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace GuildMaster.Economy
 {
-    public struct TreasuryChangedEvent { public int Gold; public int Exp; }
+    public struct TreasuryChangedEvent { public int Gold; }
     public struct InventoryChangedEvent { public string ItemId; public int Count; }
 
     /// <summary>
@@ -36,11 +36,14 @@ namespace GuildMaster.Economy
         public const string Repair = "repair";
         /// <summary>The recruitment notice (P4-38), and its refund.</summary>
         public const string Recruit = "recruit";
+        /// <summary>The guild's fee on a client's quest (P4-82).</summary>
+        public const string Commission = "commission";
     }
 
     /// <summary>
-    /// The player's guild funds: gold, the hourly EXP pool used for quest rewards,
-    /// and the stockpile of materials/goods. All mutations publish change events.
+    /// The player's guild funds: gold and the stockpile of materials/goods. All mutations publish change
+    /// events. P4-82 (user decision 2026-10-17): there is no guild EXP any more — quest EXP comes from the
+    /// clients, and members train in town at the training ground.
     /// </summary>
     public class GuildTreasury : ISaveable
     {
@@ -52,11 +55,8 @@ namespace GuildMaster.Economy
         class SaveData
         {
             public int gold;
-            public int exp;
-            public float exp_per_hour;
             public int daily_tax;
             public float tax_cut_today;
-            public float exp_fraction;
             public List<Data.ItemStack> stock = new();
         }
 
@@ -64,11 +64,7 @@ namespace GuildMaster.Economy
 
         public string Capture()
         {
-            var s = new SaveData
-            {
-                gold = Gold, exp = Exp, exp_per_hour = ExpPerHour, daily_tax = DailyTax,
-                tax_cut_today = TaxCutToday, exp_fraction = _expFraction,
-            };
+            var s = new SaveData { gold = Gold, daily_tax = DailyTax, tax_cut_today = TaxCutToday };
             var ids = new List<string>(_stock.Keys);
             ids.Sort(System.StringComparer.Ordinal); // the same order every time, whatever was added first
             foreach (var id in ids) s.stock.Add(new Data.ItemStack { itemId = id, count = _stock[id] });
@@ -79,22 +75,16 @@ namespace GuildMaster.Economy
         {
             var s = JsonUtility.FromJson<SaveData>(json);
             Gold = s.gold;
-            Exp = s.exp;
-            ExpPerHour = s.exp_per_hour;
             DailyTax = s.daily_tax;
             TaxCutToday = s.tax_cut_today;
-            _expFraction = s.exp_fraction;
             _stock.Clear();
             foreach (var st in s.stock) _stock[st.itemId] = st.count;
             Notify();
         }
 
         public int Gold { get; private set; }
-        public int Exp { get; private set; }
         public IReadOnlyDictionary<string, int> Stock => _stock;
 
-        /// <summary>EXP generated per game hour (modified by buildings in later phases).</summary>
-        public float ExpPerHour { get; set; }
         public int DailyTax { get; set; }
 
         /// <summary>Share of today's tax lost (P4-72: a disaster at the walls); reset when the tax comes in.</summary>
@@ -103,34 +93,11 @@ namespace GuildMaster.Economy
         /// <summary>Today's tax is cut by this share (the largest cut of the day holds).</summary>
         public void CutTodaysTax(float share) => TaxCutToday = Mathf.Clamp01(Mathf.Max(TaxCutToday, share));
 
-        float _expFraction;
-
-        public GuildTreasury(int gold, int exp, float expPerHour, int dailyTax)
+        public GuildTreasury(int gold, int dailyTax)
         {
             Gold = gold;
-            Exp = exp;
-            ExpPerHour = expPerHour;
             DailyTax = dailyTax;
-            EventBus.Subscribe<HourPassedEvent>(OnHour);
             EventBus.Subscribe<DayPassedEvent>(OnDay);
-        }
-
-        /// <summary>
-        /// The hourly EXP is the guild hall's: none comes while it lies in ruins, until it is stood up again
-        /// (P4-78, user decision 2026-10-10 — as crafting and the training ground stop, P4-74·76).
-        /// Without a town (EditMode tests) it always flows.
-        /// </summary>
-        public bool ExpStopped
-            => Services.TryGet<Town.TownService>(out var town) && town.Get(Town.BuildingType.GuildHall) is { IsDestroyed: true };
-
-        void OnHour(HourPassedEvent e)
-        {
-            if (ExpStopped) return;
-            _expFraction += ExpPerHour;
-            int whole = Mathf.FloorToInt(_expFraction);
-            if (whole <= 0) return;
-            _expFraction -= whole;
-            AddExp(whole);
         }
 
         void OnDay(DayPassedEvent e)
@@ -140,7 +107,7 @@ namespace GuildMaster.Economy
             if (tax > 0) AddGold(tax, GoldReason.Tax);
         }
 
-        public bool CanAfford(int gold, int exp = 0) => Gold >= gold && Exp >= exp;
+        public bool CanAfford(int gold) => Gold >= gold;
 
         public void AddGold(int amount, string reason = null)
         {
@@ -156,23 +123,6 @@ namespace GuildMaster.Economy
             Gold -= amount;
             Notify();
             if (amount > 0) EventBus.Publish(new GoldFlowEvent { Amount = -amount, Reason = reason });
-            return true;
-        }
-
-        public void AddExp(int amount)
-        {
-            if (amount == 0) return;
-            Exp += amount;
-            Notify();
-        }
-
-        public bool TrySpend(int gold, int exp, string reason = null)
-        {
-            if (gold < 0 || exp < 0 || !CanAfford(gold, exp)) return false;
-            Gold -= gold;
-            Exp -= exp;
-            Notify();
-            if (gold > 0) EventBus.Publish(new GoldFlowEvent { Amount = -gold, Reason = reason });
             return true;
         }
 
@@ -194,6 +144,6 @@ namespace GuildMaster.Economy
             return true;
         }
 
-        void Notify() => EventBus.Publish(new TreasuryChangedEvent { Gold = Gold, Exp = Exp });
+        void Notify() => EventBus.Publish(new TreasuryChangedEvent { Gold = Gold });
     }
 }

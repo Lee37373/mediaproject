@@ -23,7 +23,7 @@ namespace GuildMaster.Tests
         [Test]
         public void Scarcity_FollowsSpeciesAbundance_GoodsAreNeutral()
         {
-            var t = new GuildTreasury(0, 0, 0, 0);
+            var t = new GuildTreasury(0, 0);
             float? earAbundance = 1f;
             var market = new MerchantMarket(t, _db, item => item.id == "goblin_ear" ? earAbundance : null);
             var ear = _db.Item("goblin_ear");
@@ -37,7 +37,7 @@ namespace GuildMaster.Tests
         [Test]
         public void Sell_ConvertsStockToGold_AndLowersNextPrice()
         {
-            var t = new GuildTreasury(0, 0, 0, 0);
+            var t = new GuildTreasury(0, 0);
             var market = new MerchantMarket(t, _db, _ => 0.5f);
             var ore = _db.Item("iron_ore");
             t.AddStock(ore.id, 5);
@@ -58,7 +58,7 @@ namespace GuildMaster.Tests
         [Test]
         public void SoldVolume_FadesDaily()
         {
-            var t = new GuildTreasury(0, 0, 0, 0);
+            var t = new GuildTreasury(0, 0);
             var market = new MerchantMarket(t, _db, _ => null);
             t.AddStock("goblin_ear", 20);
             market.Sell("goblin_ear", 20);

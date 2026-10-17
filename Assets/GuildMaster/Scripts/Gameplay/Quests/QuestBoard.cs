@@ -22,7 +22,8 @@ namespace GuildMaster.Quests
     public struct QuestRewardRaisedEvent { public Quest Quest; public int Gold; }
 
     /// <summary>
-    /// The quest board: posts quests with escrowed rewards, lets adventurers accept/abandon them,
+    /// The quest board: posts quests — a client's (P4-82: the town, a patron; the client pays and the guild
+    /// keeps a fee) or the guild's own escort (gold escrowed) — lets adventurers accept/abandon them,
     /// tracks progress from game events, and pays out contribution-weighted rewards on turn-in.
     /// </summary>
     public class QuestBoard : MonoBehaviour, ISaveable, ISaveLink
@@ -132,11 +133,25 @@ namespace GuildMaster.Quests
 
         // ---------------- Posting ----------------
 
-        public string Validate(QuestDraft d)
+        /// <summary>Why the guild cannot post this itself (escrowing the gold), or null.</summary>
+        public string Validate(QuestDraft d) => Validate(d, QuestClient.Guild);
+
+        /// <summary>
+        /// Why this quest cannot be posted for that client, or null. P4-82 (user decision 2026-10-17): the guild
+        /// itself only hires escorts and pays them in gold — it has no EXP to give; every other quest is a
+        /// client's, who pays the whole reward, so the treasury is not asked.
+        /// </summary>
+        public string Validate(QuestDraft d, QuestClient client)
         {
             if (d.RewardGold < 0 || d.RewardExp < 0) return "보상은 0 이상이어야 합니다.";
-            if (d.RewardGold == 0 && d.RewardExp == 0) return "골드 또는 EXP 보상을 설정하세요.";
-            if (!_treasury.CanAfford(d.RewardGold, d.RewardExp)) return "길드 자금(골드/EXP)이 부족합니다.";
+            if (client == QuestClient.Guild)
+            {
+                if (d.Type != QuestType.Escort) return "길드가 직접 올리는 의뢰는 호위뿐입니다.";
+                if (d.RewardGold <= 0) return "호위 보상(골드)을 정하세요.";
+                if (d.RewardExp > 0) return "길드는 골드로만 보상합니다.";
+                if (!_treasury.CanAfford(d.RewardGold)) return "길드 자금이 부족합니다.";
+            }
+            else if (d.RewardGold == 0 && d.RewardExp == 0) return "골드 또는 EXP 보상을 설정하세요.";
             switch (d.Type)
             {
                 case QuestType.Hunt:
@@ -180,17 +195,28 @@ namespace GuildMaster.Quests
             return $"마을 {dirs[(i + 8) % 8]} {dist}칸";
         }
 
+        /// <summary>The guild posts a quest of its own (an escort): the gold reward leaves the treasury now, held until it is paid or refunded.</summary>
         public bool TryPost(QuestDraft draft, out Quest quest, out string error)
         {
             quest = null;
             error = Validate(draft);
             if (error != null) return false;
-            if (!_treasury.TrySpend(draft.RewardGold, draft.RewardExp)) { error = "길드 자금이 부족합니다."; return false; }
-            quest = new Quest($"Q_{_nextId++}", draft, _clock.TotalHours);
-            quest.Danger = EvaluateDanger(quest);
-            if (quest.Type == QuestType.Hunt) quest.TargetNest = OccupiedNestInArea(quest);
-            _quests.Add(quest);
-            EventBus.Publish(new QuestPostedEvent { Quest = quest });
+            if (!_treasury.TrySpendGold(draft.RewardGold)) { error = "길드 자금이 부족합니다."; return false; }
+            quest = Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours));
+            return true;
+        }
+
+        /// <summary>
+        /// A client's quest (P4-82): <see cref="QuestDraft.RewardGold"/> is everything the client pays; the guild's
+        /// fee (<see cref="QuestPricing.Split"/>) comes off it and the members share the rest. Nothing leaves the
+        /// treasury. <paramref name="target"/> is the den a hunt is for (else the one the guild saw in its area).
+        /// </summary>
+        public bool TryPostRequest(QuestDraft draft, QuestClient client, out Quest quest, out string error, Nest target = null)
+        {
+            quest = null;
+            error = client == QuestClient.Guild ? "의뢰처가 없습니다." : Validate(draft, client);
+            if (error != null) return false;
+            quest = PostRequest(draft, client, target);
             return true;
         }
 
@@ -199,12 +225,30 @@ namespace GuildMaster.Quests
         /// decision 2026-10-03): the town pays, so nothing leaves the treasury.
         /// </summary>
         public Quest PostTownQuest(QuestDraft draft, Disasters.Disaster disaster)
+            => PostRequest(draft, QuestClient.Town, null, disaster);
+
+        Quest PostRequest(QuestDraft draft, QuestClient client, Nest target, Disasters.Disaster disaster = null)
         {
-            var quest = new Quest($"Q_{_nextId++}", draft, _clock.TotalHours) { TownFunded = true, Disaster = disaster };
+            var (members, fee) = QuestPricing.Split(draft.RewardGold);
+            draft.RewardGold = members;
+            return Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours) { Client = client, FeeGold = fee, Disaster = disaster }, target);
+        }
+
+        Quest Add(Quest quest, Nest target = null)
+        {
             quest.Danger = EvaluateDanger(quest);
+            if (quest.Type == QuestType.Hunt) quest.TargetNest = target ?? OccupiedNestInArea(quest);
             _quests.Add(quest);
             EventBus.Publish(new QuestPostedEvent { Quest = quest });
             return quest;
+        }
+
+        /// <summary>An active hunt is already out on this den (the town and the proposals post one per den).</summary>
+        public bool HasActiveHuntOn(Nest n)
+        {
+            foreach (var q in _quests)
+                if (q.IsActive && q.Type == QuestType.Hunt && q.TargetNest == n) return true;
+            return false;
         }
 
         /// <summary>
@@ -251,15 +295,33 @@ namespace GuildMaster.Quests
             return true;
         }
 
+        /// <summary>Why the board says a quest was taken down by the guild master (P4-82).</summary>
+        public const string RemovedReason = "길드가 게시판에서 내렸습니다";
+
         /// <summary>
-        /// Takes a quest off the board. Nobody on it yet: the escrow comes back. Someone already
+        /// Whether the guild master may take this quest down now. A client's quest only while nobody has
+        /// taken it (P4-82: once taken the work is the members' and the client's), and never a disaster
+        /// (the town's emergency, P4-72). The guild's own (an escort) at any time.
+        /// </summary>
+        public static bool CanTakeDown(Quest q)
+            => q != null && q.IsActive && (!q.FundedByClient || (q.Assignees.Count == 0 && q.Type != QuestType.Disaster));
+
+        /// <summary>
+        /// Takes a quest off the board. A client's quest nobody took simply comes down (the town will not post
+        /// that den again, <see cref="TownQuestPoster"/>; user decision 2026-10-17: no cap and no expiry, the
+        /// player clears the board). The guild's own, nobody on it yet: the escrow comes back. Someone already
         /// took it: they are paid as if they had finished it, so the player cannot let adventurers
         /// do the work and pull the reward back at the last moment (2026-09-20 user report).
         /// Escorts pay for the hours actually escorted, which is what they were posted to pay.
         /// </summary>
         public bool Cancel(Quest q)
         {
-            if (!q.IsActive || q.TownFunded) return false; // the town's quest is not the guild's to take down
+            if (!CanTakeDown(q)) return false;
+            if (q.FundedByClient)
+            {
+                Close(q, QuestStatus.Cancelled, refund: true, RemovedReason);
+                return true;
+            }
             if (q.Assignees.Count == 0)
             {
                 Close(q, QuestStatus.Cancelled, refund: true);
@@ -417,7 +479,6 @@ namespace GuildMaster.Quests
             var (gold, exp) = EscortPay(q.RewardGold, q.RewardExp, q.EscortHours, q.MaxHours);
             q.SetPayout(gold, exp);
             _treasury.AddGold(q.RewardGold - q.PayGold);
-            _treasury.AddExp(q.RewardExp - q.PayExp);
             foreach (var kv in shares) q.AddContribution(kv.Key, Mathf.RoundToInt(kv.Value * 10f));
             Complete(q);
         }
@@ -550,8 +611,8 @@ namespace GuildMaster.Quests
                 if (q.Status == QuestStatus.Completed)
                 {
                     q.RemoveAssignee(t);
-                    // A share nobody will collect goes back to whoever paid it (the town keeps its own).
-                    if (q.TryTakePayout(t, out var g, out var x) && !q.TownFunded) { _treasury.AddGold(g); _treasury.AddExp(x); }
+                    // A share nobody will collect goes back to whoever paid it (a client keeps its own).
+                    if (q.TryTakePayout(t, out var g, out _) && !q.FundedByClient) _treasury.AddGold(g);
                     if (q.PendingPayouts == 0) Close(q, QuestStatus.TurnedIn, refund: false);
                 }
                 else Abandon(q, t);
@@ -564,12 +625,14 @@ namespace GuildMaster.Quests
             q.Status = QuestStatus.Completed;
             q.CompletedAtHour = _clock.TotalHours;
             q.ComputePayouts();
+            // The client pays the guild its fee once the work is done (P4-82), whoever turns in afterwards.
+            if (q.FundedByClient && q.FeeGold > 0) _treasury.AddGold(q.FeeGold, GoldReason.Commission);
             EventBus.Publish(new QuestCompletedEvent { Quest = q });
         }
 
         void Close(Quest q, QuestStatus status, bool refund, string reason = null)
         {
-            if (refund && q.TownFunded)
+            if (refund && q.FundedByClient)
             {
                 // Only what the guild itself added (negotiation) was guild gold.
                 int left = q.RewardGold;
@@ -578,17 +641,8 @@ namespace GuildMaster.Quests
             }
             else if (refund)
             {
-                if (q.Status == QuestStatus.Completed)
-                {
-                    var (g, x) = q.DrainRemainingPayouts();
-                    _treasury.AddGold(g);
-                    _treasury.AddExp(x);
-                }
-                else
-                {
-                    _treasury.AddGold(q.RewardGold);
-                    _treasury.AddExp(q.RewardExp);
-                }
+                // The guild's own quest: its escrowed gold comes back (it never paid in EXP).
+                _treasury.AddGold(q.Status == QuestStatus.Completed ? q.DrainRemainingPayouts().gold : q.RewardGold);
             }
             q.Status = status;
             _quests.Remove(q);

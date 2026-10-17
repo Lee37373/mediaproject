@@ -377,7 +377,7 @@ namespace GuildMaster.Tests
         [Test]
         public void Bonus_IsItsOwnExpenseInTheDailyReport()
         {
-            var treasury = new GuildTreasury(500, 0, 0f, 0);
+            var treasury = new GuildTreasury(500, 0);
             var ledger = new DailyLedger(treasury, 1, 8f);
             try
             {

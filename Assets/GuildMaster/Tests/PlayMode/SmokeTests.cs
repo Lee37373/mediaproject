@@ -59,6 +59,7 @@ namespace GuildMaster.Tests
             GameSettings.ShowTitle = true;
             MenuState.Reset();
             GameSettings.PaintGround = true;
+            TownQuestPoster.Enabled = true;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
             if (_scene.IsValid() && _scene.isLoaded) yield return SceneManager.UnloadSceneAsync(_scene);
@@ -83,6 +84,9 @@ namespace GuildMaster.Tests
             // off and changes the world under tests that measure something else.
             DisasterService.ChanceOverride = 0f;
             DisasterService.SpreadScale = 1f;
+            // Nor the town's own hunts (P4-82) unless a test asks: they would fill the board and pull members
+            // off the quests a test posts itself.
+            TownQuestPoster.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -409,23 +413,7 @@ namespace GuildMaster.Tests
             Assert.That(treasury.Gold, Is.EqualTo(gold - rebuild));
             Assert.That(Services.Get<Economy.CraftingService>().CannotCraftReason(potion), Is.Not.EqualTo("제작 건물이 없습니다."), "and works again");
             Assert.That(town.CannotRepairReason(apothecary), Is.EqualTo("손상이 없습니다"));
-
-            // P4-78 (user decision 2026-10-10): a fallen guild hall brings in no hourly EXP until it stands again.
-            var hall = town.Get(Town.BuildingType.GuildHall);
-            hall.Damage(hall.MaxHp);
-            Assert.That(treasury.ExpStopped, Is.True);
-            int exp = treasury.Exp;
-            float hour = Mathf.Floor(Clock.TotalHours);
-            Clock.SetSpeed(4);
-            yield return WaitFor(() => Clock.TotalHours >= hour + 2f, 10f);
-            Assert.That(treasury.Exp, Is.EqualTo(exp), "no EXP from a fallen guild hall");
-            treasury.AddGold(town.RepairCost(hall));
-            Assert.That(town.TryRepair(hall), Is.True, town.CannotRepairReason(hall));
-            Assert.That(treasury.ExpStopped, Is.False);
-            hour = Mathf.Floor(Clock.TotalHours);
-            yield return WaitFor(() => Clock.TotalHours >= hour + 2f, 10f);
-            Clock.SetSpeed(1);
-            Assert.That(treasury.Exp, Is.GreaterThan(exp), "it flows again once the hall stands");
+            // (P4-78's "a fallen guild hall makes no hourly EXP" went with the guild EXP itself, P4-82.)
         }
 
         [UnityTest]
@@ -759,6 +747,119 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-82 (user decisions 2026-10-17): the player posts no hunts. The town posts a paid hunt on every den the
+        /// guild has seen occupied, one per den, and the guild keeps a fifth of the gold when the work is done. The
+        /// guild master takes down what the guild should not bother with: the town leaves that den alone, and it
+        /// comes back only as a proposal card (another client's request). A taken quest cannot be taken down. The
+        /// guild's own quest is the escort: gold only, escrowed and refunded.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TownPostsEverySeenDen_TheGuildKeepsItsFee_AndARemovedDenComesBackOnlyAsACard()
+        {
+            yield return Boot();
+            var board = Services.Get<QuestBoard>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+
+            // The guild's own quest: an escort, paid in gold from the treasury and refunded when nobody took it.
+            int gold = treasury.Gold;
+            var escort = board.FindById(DebugCommands.PostEscort(10, 3, 1));
+            Assert.That(escort, Is.Not.Null);
+            Assert.That((escort.Client, escort.RewardGold, escort.RewardExp, escort.FeeGold), Is.EqualTo((QuestClient.Guild, 30, 0, 0)));
+            Assert.That(treasury.Gold, Is.EqualTo(gold - 30), "escrowed");
+            Assert.That(board.Validate(new QuestDraft { Type = QuestType.Escort, Hours = 2, RewardGold = 10, RewardExp = 4, MaxParty = 1 }), Is.Not.Null, "the guild has no EXP to pay");
+            Assert.That(board.Validate(new QuestDraft { Type = QuestType.Hunt, Count = 2, RewardGold = 10, MaxParty = 1 }), Is.Not.Null, "nor does it post hunts itself");
+            Assert.That(board.Cancel(escort), Is.True);
+            Assert.That(treasury.Gold, Is.EqualTo(gold), "and refunded");
+
+            TownQuestPoster.Enabled = true;
+            var poster = Services.Get<TownQuestPoster>();
+            var intel = Services.Get<GuildIntel>();
+            var eco = Services.Get<EcosystemManager>();
+            var avatar = Services.Get<PlayerAvatar>();
+            var world = Services.Get<World.WorldService>();
+            var grid = world.Grid;
+            // From here on the guild's gold moves only by tax, members' keep and fees: no escrow (no reason), no refund.
+            int escrow = 0;
+            Action<Economy.GoldFlowEvent> onEscrow = e => { if (e.Reason == null) escrow += e.Amount; };
+            EventBus.Subscribe(onEscrow);
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                IEnumerator Watch(Nest n)
+                {
+                    avatar.Mover.Stop();
+                    grid.TryFindNearestWalkable(n.Cell, 4, out var stand);
+                    avatar.transform.position = World.GridMap.CellToWorld(stand);
+                    yield return WaitFor(() => intel.KnownNests.Contains(n) && intel.Get(n).VisibleNow && intel.Get(n).LastCount > 0 && intel.SpeciesOf(n) == n.Species, 10f);
+                    Assume.That(intel.Get(n).LastCount > 0 && intel.SpeciesOf(n) == n.Species, Is.True, $"the guild sees {n.DisplayName} occupied");
+                }
+                // The two dens nearest town: easy enough for the starting members to be offered as a card.
+                var dens = eco.Nests.Where(n => n.Population >= 2 && !grid.IsInTown(n.Cell))
+                                    .OrderBy(n => Vector2.Distance(n.WorldPosition, world.TownCenterWorld)).Take(2).ToList();
+                Assume.That(dens.Count, Is.EqualTo(2));
+                foreach (var n in dens) yield return Watch(n);
+
+                // Seen: the town posts one hunt on each, at its price, with the guild's fee off the top.
+                poster.Check();
+                var first = board.Quests.FirstOrDefault(q => q.IsActive && q.TargetNest == dens[0]);
+                var second = board.Quests.FirstOrDefault(q => q.IsActive && q.TargetNest == dens[1]);
+                Assert.That(first, Is.Not.Null, poster.SkipReason(dens[0]));
+                Assert.That(second, Is.Not.Null, poster.SkipReason(dens[1]));
+                Assert.That(first.Client, Is.EqualTo(QuestClient.Town));
+                int total = first.RewardGold + first.FeeGold;
+                Assert.That(total, Is.EqualTo(QuestPricing.HuntReward(first.Danger, first.RequiredCount, Vector2.Distance(first.Point, world.TownCenterWorld))));
+                Assert.That(first.FeeGold, Is.EqualTo(QuestPricing.Split(total).fee).And.GreaterThan(0));
+                Assert.That(first.RewardExp, Is.GreaterThan(0), "the town pays EXP too");
+                Assert.That(first.MaxParty, Is.EqualTo(QuestPricing.PartyFor(first.Danger)));
+                Assert.That(escrow, Is.EqualTo(0), "posting costs the guild nothing");
+                int open = board.Quests.Count(q => q.IsActive);
+                poster.Check();
+                Assert.That(board.Quests.Count(q => q.IsActive), Is.EqualTo(open), "one hunt per den");
+
+                // Taken down while untaken: the town does not post that den again...
+                Assert.That(QuestBoard.CanTakeDown(second), Is.True);
+                Assert.That(board.Cancel(second), Is.True);
+                Assert.That(second.Status, Is.EqualTo(QuestStatus.Cancelled));
+                poster.Check();
+                Assert.That(board.HasActiveHuntOn(dens[1]), Is.False, "the town leaves a den the guild master took down");
+                Assert.That(poster.WasRemoved(dens[1]), Is.True);
+
+                // ...but another client's request can bring it back.
+                var proposals = Services.Get<Proposals.QuestProposalService>();
+                Assert.That(proposals.Reroll(out var why), Is.True, why);
+                yield return WaitFor(() => !proposals.Generating, 5f);
+                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[0]), Is.False, "a den on the board is not offered");
+                var card = proposals.Current.FirstOrDefault(p => p.Target.Den == dens[1]);
+                Assert.That(card, Is.Not.Null, $"a card for the den taken down ({proposals.EmptyReason})");
+                Assert.That(proposals.Choose(card, out var message), Is.True, message);
+                var patron = board.Quests.First(q => q.IsActive && q.TargetNest == dens[1]);
+                Assert.That(patron.Client, Is.EqualTo(QuestClient.Patron));
+                Assert.That(patron.RewardGold + patron.FeeGold, Is.EqualTo(card.RewardGold));
+                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[1]), Is.False, "the other cards on that den go with it");
+                Assert.That(escrow, Is.EqualTo(0), "the client pays, and a den taken down refunds nothing");
+
+                // Taken: not the guild master's to take down. Done: the guild gets its fee.
+                var taker = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
+                Assert.That(board.TryAccept(first, taker), Is.True);
+                taker.CurrentQuest = first;
+                Assert.That(board.Cancel(first), Is.False);
+                int fees = 0;
+                Action<Economy.GoldFlowEvent> onFlow = e => { if (e.Reason == Economy.GoldReason.Commission) fees += e.Amount; };
+                EventBus.Subscribe(onFlow);
+                foreach (var m in dens[0].Members.ToList()) if (m.IsAlive) m.Perish();
+                yield return WaitFor(() => first.Status is QuestStatus.Completed or QuestStatus.TurnedIn, 5f);
+                EventBus.Unsubscribe(onFlow);
+                Assert.That(first.Status is QuestStatus.Completed or QuestStatus.TurnedIn, Is.True, $"the emptied den finishes the hunt (was {first.Status})");
+                Assert.That(fees, Is.EqualTo(first.FeeGold), "the fee comes in when the work is done");
+            }
+            finally
+            {
+                EventBus.Unsubscribe(onEscrow);
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+            }
+        }
+
+        /// <summary>
         /// P4-32: the clear-nest quest is gone. A hunt finishes on its kill count, or as soon as
         /// the nest inside its marked area is wiped out, whichever comes first.
         /// </summary>
@@ -812,7 +913,7 @@ namespace GuildMaster.Tests
                 bool Outside(Nest n) => n != nest && n.Population >= 2 && !grid.IsInTown(n.Cell);
                 Clock.SetSpeed(3);
 
-                // Killed off before anyone took it: taken down, the reward back in the treasury.
+                // Killed off before anyone took it: taken down. It was the town's (P4-82), so nothing comes back to the treasury.
                 var open = eco.Nests.First(Outside);
                 yield return Watch(open);
                 MakeKnown(open.Species);
@@ -820,7 +921,7 @@ namespace GuildMaster.Tests
                 Assert.That(unclaimed.TargetNest, Is.EqualTo(open),
                     $"the den it was posted against (seen as {intel.SpeciesOf(open)?.id}, count {intel.Get(open).LastCount}, visible {intel.Get(open).VisibleNow}, real {open.Species.id}x{open.Population})");
                 int gold = treasury.Gold;
-                // Tax, meals and lodging may come in meanwhile (the clock runs fast): the refund is the rest.
+                // Tax, meals and lodging may come in meanwhile (the clock runs fast): nothing else may.
                 int otherIncome = 0;
                 Action<Economy.GoldFlowEvent> onFlow = e => { if (e.Reason != null) otherIncome += e.Amount; };
                 EventBus.Subscribe(onFlow);
@@ -828,7 +929,7 @@ namespace GuildMaster.Tests
                 yield return WaitFor(() => unclaimed.Status == QuestStatus.Cancelled, 10f);
                 EventBus.Unsubscribe(onFlow);
                 Assert.That(unclaimed.Status, Is.EqualTo(QuestStatus.Cancelled), "an open hunt on a den seen empty comes down");
-                Assert.That(treasury.Gold - otherIncome, Is.EqualTo(gold + unclaimed.RewardGold), "with a full refund");
+                Assert.That(treasury.Gold - otherIncome, Is.EqualTo(gold), "the town's reward is not the guild's to get back");
 
                 // Moved out while a group is on it (no death, so no NestClearedEvent): done.
                 var moved = eco.Nests.First(n => Outside(n) && n != open && eco.Nests.Any(o => o != n && o.Species == n.Species));
@@ -852,10 +953,11 @@ namespace GuildMaster.Tests
 
         /// <summary>
         /// 2026-09-20 user reports: a quest is worked by one group (a lone adventurer counts as
-        /// one), and taking a quest off the board after someone accepted it still pays them.
+        /// one). P4-82: a client's quest cannot be taken off the board once someone accepted it
+        /// (before, cancelling it then still paid them out of the guild's escrow).
         /// </summary>
         [UnityTest]
-        public IEnumerator Quest_IsClaimedByOneGroup_AndCancellingStillPaysTheTaker()
+        public IEnumerator Quest_IsClaimedByOneGroup_AndCannotBeTakenDownOnceTaken()
         {
             yield return Boot();
             var board = Services.Get<QuestBoard>();
@@ -876,12 +978,12 @@ namespace GuildMaster.Tests
             Assert.That(board.TryAccept(solo, free[1]), Is.False, "and cannot be joined uninvited");
             Assert.That(solo.Assignees.Count, Is.EqualTo(1));
 
-            // Cancelling now must not claw the reward back.
+            // P4-82: a client's quest someone took is theirs and the client's — the guild master cannot take it down.
             int goldBefore = treasury.Gold;
-            Assert.That(board.Cancel(solo), Is.True);
-            Assert.That(solo.Status, Is.EqualTo(QuestStatus.Completed), "paid out, not cancelled");
-            Assert.That(treasury.Gold, Is.EqualTo(goldBefore), "the escrow does not come back to the guild");
-            Assert.That(solo.PendingPayouts, Is.EqualTo(1), "the taker has a reward waiting");
+            Assert.That(QuestBoard.CanTakeDown(solo), Is.False);
+            Assert.That(board.Cancel(solo), Is.False);
+            Assert.That(solo.Status, Is.EqualTo(QuestStatus.InProgress), "still being worked");
+            Assert.That(treasury.Gold, Is.EqualTo(goldBefore));
 
             // Invitations still fill a party: accepting a three-person quest pulls companions in.
             var group = board.FindById(DebugCommands.PostHunt("slime", 2, 60, 20, party: 3));
@@ -1056,7 +1158,12 @@ namespace GuildMaster.Tests
             // Done together, each warms to the other (P4-77: counted as each was paid, and the board takes a
             // member off the quest as it pays them, so only the first to report warmed to the rest).
             int toMate = Relationships.Get(leader, mate), toLeader = Relationships.Get(mate, leader);
-            Assert.That(board.Cancel(q), Is.True, "taken: cancelling pays it out as done");
+            // The leader kills what it was posted for (P4-82: a taken quest is no longer cancelled into a payout).
+            for (int i = 0; i < q.RequiredCount; i++)
+            {
+                var slime = SpawnMonster("slime", q.Point);
+                slime.ReceiveDamage(slime.Hp + 999f, leader, false);
+            }
             Assert.That(q.Status, Is.EqualTo(QuestStatus.Completed));
             Assert.That(Relationships.Get(leader, mate), Is.EqualTo(toMate + RelationshipRecorder.SharedRewardBonus), "the leader to the mate");
             Assert.That(Relationships.Get(mate, leader), Is.EqualTo(toLeader + RelationshipRecorder.SharedRewardBonus), "the mate to the leader");
@@ -1315,7 +1422,8 @@ namespace GuildMaster.Tests
                 var quest = fire.Quest;
                 Assert.That(quest, Is.Not.Null);
                 Assert.That(quest.Type, Is.EqualTo(QuestType.Disaster));
-                Assert.That(quest.TownFunded, Is.True);
+                Assert.That(quest.Client, Is.EqualTo(QuestClient.Town));
+                Assert.That(quest.FeeGold, Is.GreaterThan(0), "the guild keeps its fee on the town's quest too (P4-82)");
                 Assert.That(treasury.Gold, Is.EqualTo(gold), "the town pays, not the guild");
                 Assert.That(board.Cancel(quest), Is.False, "and the guild cannot take the town's quest down");
 
@@ -1607,7 +1715,7 @@ namespace GuildMaster.Tests
                 Type = QuestType.Hunt, Species = species, Count = 1, RewardGold = 10, RewardExp = 5, MaxParty = 1,
                 Point = World.GridMap.CellToWorld(wet), HasPoint = true, Radius = QuestBoard.HuntRadius,
             };
-            Assert.That(board.TryPost(draft, out var pond, out var error), Is.True, error);
+            Assert.That(board.TryPostRequest(draft, QuestClient.Town, out var pond, out var error), Is.True, error);
             var walker = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
             Assert.That(board.TryAccept(pond, walker), Is.True);
             walker.CurrentQuest = pond;

@@ -9,6 +9,15 @@ namespace GuildMaster.Quests
     public enum QuestType { Hunt, Escort, Defend, Disaster }
     public enum QuestStatus { Open, InProgress, Completed, TurnedIn, Cancelled, Failed }
 
+    /// <summary>
+    /// Who posts the quest and pays for it (P4-82). <see cref="Guild"/>: the guild itself, which escrows the gold
+    /// (escorts only). <see cref="Town"/>: our town (its hunts on the dens the guild has seen, and disasters).
+    /// <see cref="Patron"/>: another client whose request the guild master took from the proposal cards.
+    /// Every client but the guild pays the whole reward and the guild keeps a fee (<see cref="QuestPricing"/>).
+    /// New clients (other villages P4-84, events P4-85) go at the end: saves keep the number.
+    /// </summary>
+    public enum QuestClient { Guild, Town, Patron }
+
     /// <summary>Anyone who can take quests (adventurers).</summary>
     public interface IQuestTaker
     {
@@ -63,12 +72,26 @@ namespace GuildMaster.Quests
         /// </summary>
         public Nest TargetNest { get; internal set; }
 
-        // ---- Natural disasters (P4-72) ----
+        // ---- Client and fee (P4-82) ----
+        public QuestClient Client { get; internal set; }
         /// <summary>
-        /// Posted and paid for by the town: no guild gold was escrowed, so nothing of the reward goes
+        /// Paid for by its client, not the guild: no guild gold was escrowed, so nothing of the reward goes
         /// back to the treasury (only gold the guild itself added in a negotiation).
         /// </summary>
-        public bool TownFunded { get; internal set; }
+        public bool FundedByClient => Client != QuestClient.Guild;
+        /// <summary>The guild's cut of the client's gold, paid to the treasury when the work is done. <see cref="RewardGold"/> is what is left for the members.</summary>
+        public int FeeGold { get; internal set; }
+
+        public string ClientLabel => ClientName(Client);
+
+        public static string ClientName(QuestClient c) => c switch
+        {
+            QuestClient.Guild => "길드",
+            QuestClient.Town => "우리 마을",
+            _ => "의뢰인",
+        };
+
+        // ---- Natural disasters (P4-72) ----
         /// <summary>The disaster to deal with.</summary>
         public Disasters.Disaster Disaster { get; internal set; }
         /// <summary>Cells (or cores) the workers have dealt with so far.</summary>
@@ -245,7 +268,10 @@ namespace GuildMaster.Quests
             public float completed;
             public DangerLevel danger;
             public int target_nest = -1;
+            /// <summary>Read only from saves made before P4-82 (a disaster quest was the town's).</summary>
             public bool town_funded;
+            public QuestClient client;
+            public int fee_gold;
             public int disaster = -1;
             public int worked;
             public int max_hours;
@@ -268,7 +294,7 @@ namespace GuildMaster.Quests
                 id = Id, type = Type, species = Species != null ? Species.id : null, point = Point, radius = Radius, required = RequiredCount,
                 progress = Progress, reward_gold = RewardGold, bonus_gold = BonusGold, reward_exp = RewardExp, max_party = MaxParty,
                 status = Status, posted = PostedAtHour, completed = CompletedAtHour, danger = Danger,
-                target_nest = TargetNest != null ? IndexOf(nests, TargetNest) : -1, town_funded = TownFunded,
+                target_nest = TargetNest != null ? IndexOf(nests, TargetNest) : -1, client = Client, fee_gold = FeeGold,
                 disaster = Disaster != null ? Disaster.Id : -1, worked = Worked, max_hours = MaxHours, escort_hours = EscortHours,
                 escort_left = EscortLeftTown, pay_gold = PayGold, pay_exp = PayExp,
             };
@@ -307,7 +333,8 @@ namespace GuildMaster.Quests
             CompletedAtHour = s.completed;
             Danger = s.danger;
             TargetNest = s.target_nest >= 0 && s.target_nest < nests.Count ? nests[s.target_nest] : null;
-            TownFunded = s.town_funded;
+            Client = s.client == QuestClient.Guild && s.town_funded ? QuestClient.Town : s.client;
+            FeeGold = s.fee_gold;
             Worked = s.worked;
             MaxHours = s.max_hours;
             EscortHours = s.escort_hours;

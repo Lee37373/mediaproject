@@ -300,13 +300,14 @@ namespace GuildMaster.Data
                 return b;
             }
 
-            // P4-69: level 1 is what the game actually starts with (P5-1 set 5 EXP an hour, 90G tax); the old
-            // 8 / 60 here never applied, so the town hall's level 2 (90G) was an upgrade that paid nothing.
-            // Levels 2 and 3 keep their old steps (user decision 2026-09-27).
+            // P4-69: level 1 is what the game actually starts with (P5-1 set 90G tax); the old 60 here never
+            // applied, so the town hall's level 2 (90G) was an upgrade that paid nothing. Levels 2 and 3 keep
+            // their old steps (user decision 2026-09-27). P4-82 (user decision 2026-10-17): the guild hall no
+            // longer makes EXP — quest EXP comes from the clients.
             B(Town.BuildingType.GuildHall,
-                new BuildingLevel { expPerHour = 5, rosterCapacity = 6, visitorLevelBonus = 0, effectText = "EXP 시간당 5 · 정원 6명" },
-                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, expPerHour = 11, rosterCapacity = 9, visitorLevelBonus = 1, effectText = "EXP 시간당 11 · 정원 9명 · 방문자 레벨 +1" },
-                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, expPerHour = 19, rosterCapacity = 12, visitorLevelBonus = 2, effectText = "EXP 시간당 19 · 정원 12명 · 방문자 레벨 +2" });
+                new BuildingLevel { rosterCapacity = 6, visitorLevelBonus = 0, effectText = "정원 6명" },
+                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, rosterCapacity = 9, visitorLevelBonus = 1, effectText = "정원 9명 · 방문자 레벨 +1" },
+                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, rosterCapacity = 12, visitorLevelBonus = 2, effectText = "정원 12명 · 방문자 레벨 +2" });
 
             B(Town.BuildingType.Blacksmith,
                 new BuildingLevel { craftTier = 1, effectText = "1등급 장비 제작" },

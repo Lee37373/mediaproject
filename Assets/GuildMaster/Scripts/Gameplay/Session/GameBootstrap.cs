@@ -110,10 +110,9 @@ namespace GuildMaster.Session
             // --- Content & economy ---
             var db = GameDatabase.Load();
             Services.Register(db);
-            // Hourly EXP and daily tax start at the halls' level 1; upgrades raise them (UpgradeService).
-            var guildHall = db.Building(BuildingType.GuildHall)?.Level(1);
+            // The daily tax starts at the town hall's level 1; upgrades raise it (UpgradeService).
             var townHall = db.Building(BuildingType.TownHall)?.Level(1);
-            var treasury = new GuildTreasury(Balance.startingGold, Balance.startingExp, guildHall?.expPerHour ?? 0f, townHall?.dailyTax ?? 0);
+            var treasury = new GuildTreasury(Balance.startingGold, townHall?.dailyTax ?? 0);
             treasury.AddStock(DefaultContent.Potion, Balance.startingPotions);
             Services.Register(treasury);
             save.Register(treasury);
@@ -196,6 +195,10 @@ namespace GuildMaster.Session
             Services.Register(board);
             save.Register(board);
             AddSystem<QuestAreaMarkers>().Init();
+            // The town posts a paid hunt on every den the guild has seen occupied (P4-82); the guild keeps a fee.
+            var townQuests = new TownQuestPoster(board, intel, eco, clock, world);
+            Services.Register(townQuests);
+            save.Register(townQuests);
 
             // Natural disasters (P4-72): set off by monsters' skills, dealt with through town quests.
             var disasters = AddSystem<Disasters.DisasterService>();

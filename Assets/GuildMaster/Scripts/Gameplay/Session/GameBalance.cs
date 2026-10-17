@@ -66,10 +66,8 @@ namespace GuildMaster.Session
         /// and gear sales, so the guild needs a float to work with before that loop spins up.
         /// </summary>
         public int startingGold = 800;
-        public int startingExp = 120;
-        // The hourly EXP and the daily tax are the guild hall's and the town hall's level 1 (building data,
-        // P4-69): kept here too they drifted apart and a town hall upgrade paid nothing. P5-1's values
-        // (5 EXP, 90G) live there now.
+        // The daily tax is the town hall's level 1 (building data, P4-69): kept here too it drifted apart and
+        // a town hall upgrade paid nothing. P5-1's 90G lives there now. There is no guild EXP (P4-82).
         public int startingPotions = 6;
         [Range(0.3f, 2f)] public float lootBuyRate = 1f;
         [Range(1f, 2f)] public float goodsSellRate = 1.2f;

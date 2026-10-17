@@ -31,7 +31,7 @@ namespace GuildMaster.Reports
         public DailyLedger(GuildTreasury treasury, int day, float startHour)
         {
             _treasury = treasury;
-            Current = new DailyReport(day, startHour, treasury.Gold, treasury.Exp);
+            Current = new DailyReport(day, startHour, treasury.Gold);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
             EventBus.Subscribe<TreasuryChangedEvent>(OnTreasuryChanged);
             EventBus.Subscribe<GoldFlowEvent>(OnGoldFlow);
@@ -76,7 +76,7 @@ namespace GuildMaster.Reports
             public int day;
             public float start;
             public bool closed;
-            public int gold_start, gold_end, exp_start, exp_end;
+            public int gold_start, gold_end;
             public int posted, completed, failed, cancelled, quest_paid, crafted, raids;
             public List<string> recruited = new(), departed = new(), deaths = new(), level_ups = new(), buildings_lost = new();
             public List<int> amounts = new();
@@ -95,8 +95,8 @@ namespace GuildMaster.Reports
         {
             var s = new SavedReport
             {
-                day = r.Day, start = r.StartHour, closed = r.Closed, gold_start = r.GoldStart, gold_end = r.GoldEnd, exp_start = r.ExpStart,
-                exp_end = r.ExpEnd, posted = r.QuestsPosted, completed = r.QuestsCompleted, failed = r.QuestsFailed,
+                day = r.Day, start = r.StartHour, closed = r.Closed, gold_start = r.GoldStart, gold_end = r.GoldEnd,
+                posted = r.QuestsPosted, completed = r.QuestsCompleted, failed = r.QuestsFailed,
                 cancelled = r.QuestsCancelled, quest_paid = r.QuestPaidGold, crafted = r.Crafted, raids = r.Raids,
             };
             s.recruited.AddRange(r.Recruited);
@@ -110,9 +110,9 @@ namespace GuildMaster.Reports
 
         static DailyReport RestoreReport(SavedReport s)
         {
-            var r = new DailyReport(s.day, s.start, s.gold_start, s.exp_start)
+            var r = new DailyReport(s.day, s.start, s.gold_start)
             {
-                Closed = s.closed, GoldEnd = s.gold_end, ExpEnd = s.exp_end, QuestsPosted = s.posted, QuestsCompleted = s.completed,
+                Closed = s.closed, GoldEnd = s.gold_end, QuestsPosted = s.posted, QuestsCompleted = s.completed,
                 QuestsFailed = s.failed, QuestsCancelled = s.cancelled, QuestPaidGold = s.quest_paid, Crafted = s.crafted, Raids = s.raids,
             };
             r.Recruited.AddRange(s.recruited);
@@ -157,19 +157,14 @@ namespace GuildMaster.Reports
             if (e.Day <= Current.Day) return;
             var closed = Current;
             closed.GoldEnd = _treasury.Gold;
-            closed.ExpEnd = _treasury.Exp;
             closed.Closed = true;
             _reports.Add(closed);
             if (_reports.Count > MaxReports) _reports.RemoveRange(0, _reports.Count - MaxReports);
-            Current = new DailyReport(e.Day, 0f, _treasury.Gold, _treasury.Exp);
+            Current = new DailyReport(e.Day, 0f, _treasury.Gold);
             EventBus.Publish(new DailyReportClosedEvent { Report = closed });
         }
 
-        void OnTreasuryChanged(TreasuryChangedEvent e)
-        {
-            Current.GoldEnd = e.Gold;
-            Current.ExpEnd = e.Exp;
-        }
+        void OnTreasuryChanged(TreasuryChangedEvent e) => Current.GoldEnd = e.Gold;
 
         // ---------------- Gold ----------------
 

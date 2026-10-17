@@ -135,7 +135,7 @@ namespace GuildMaster.UI
 
             var netColor = r.Net > 0 ? UITheme.Good : r.Net < 0 ? UITheme.Bad : UITheme.Text;
             _headline.text = $"순이익 {UIBuilder.Colored(DailyReportTexts.SignedMoney(r.Net), netColor)}";
-            _subline.text = $"골드 {DailyReportTexts.Money(r.GoldStart)} → {DailyReportTexts.Money(r.GoldEnd)}   ·   EXP {r.ExpStart:N0} → {r.ExpEnd:N0}";
+            _subline.text = $"골드 {DailyReportTexts.Money(r.GoldStart)} → {DailyReportTexts.Money(r.GoldEnd)}";
 
             _incomeTotal.text = r.Income == 0 ? "0G" : "+" + DailyReportTexts.Money(r.Income);
             _expenseTotal.text = r.Expense == 0 ? "0G" : "-" + DailyReportTexts.Money(r.Expense);

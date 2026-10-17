@@ -70,16 +70,22 @@ namespace GuildMaster.Session
         {
             _clock = clock;
             _db = db;
-            EventBus.Subscribe<QuestPostedEvent>(e => Add($"의뢰 등록: {e.Quest.Title} (보상 {e.Quest.RewardGold}G / {e.Quest.RewardExp}EXP)", LogCategory.Quest));
+            // P4-82: a client's quest says who posted it and the guild's fee; only the guild's own escrow is refunded.
+            EventBus.Subscribe<QuestPostedEvent>(e => Add(e.Quest.FundedByClient
+                ? $"의뢰 등록({e.Quest.ClientLabel}): {e.Quest.Title} (보상 {e.Quest.RewardGold}G / {e.Quest.RewardExp}EXP · 수수료 {e.Quest.FeeGold}G)"
+                : $"의뢰 등록: {e.Quest.Title} (보상 {e.Quest.RewardGold}G 예치)", LogCategory.Quest));
             EventBus.Subscribe<QuestAcceptedEvent>(e => Add($"{e.Taker.TakerName}이(가) '{e.Quest.Title}' 의뢰를 수락했습니다.", LogCategory.Quest));
             EventBus.Subscribe<QuestAbandonedEvent>(e => Add($"{e.Taker.TakerName}이(가) '{e.Quest.Title}' 의뢰를 포기했습니다.", LogCategory.Quest));
-            EventBus.Subscribe<QuestCompletedEvent>(e => Add($"의뢰 달성: {e.Quest.Title}", LogCategory.Quest));
+            EventBus.Subscribe<QuestCompletedEvent>(e => Add(e.Quest.FundedByClient && e.Quest.FeeGold > 0
+                ? $"의뢰 달성: {e.Quest.Title} (수수료 {e.Quest.FeeGold}G 받음)"
+                : $"의뢰 달성: {e.Quest.Title}", LogCategory.Quest));
             EventBus.Subscribe<QuestRewardPaidEvent>(e => Add($"{e.Taker.TakerName}에게 보상 지급: {e.Gold}G, {e.Exp}EXP", LogCategory.Quest));
             EventBus.Subscribe<QuestClosedEvent>(e =>
             {
-                if (e.Status == QuestStatus.Cancelled && e.Reason != null) Add($"의뢰 철회: {e.Quest.Title} — {e.Reason} (보상 환불)", LogCategory.Quest);
-                else if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
-                else if (e.Status == QuestStatus.Failed) Add($"의뢰 실패: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
+                string refund = e.Quest.FundedByClient ? "" : " (보상 환불)";
+                if (e.Status == QuestStatus.Cancelled && e.Reason != null) Add($"의뢰 철회: {e.Quest.Title} — {e.Reason}{refund}", LogCategory.Quest);
+                else if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title}{refund}", LogCategory.Quest);
+                else if (e.Status == QuestStatus.Failed) Add($"의뢰 실패: {e.Quest.Title}{refund}", LogCategory.Quest);
             });
             // Camps out in the wild (P4-66). Guild members are always in the guild's sight.
             EventBus.Subscribe<CampPitchedEvent>(e =>

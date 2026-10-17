@@ -74,7 +74,6 @@ namespace GuildMaster.Town
             switch (b.Type)
             {
                 case BuildingType.GuildHall:
-                    _treasury.ExpPerHour = lv.expPerHour;
                     _roster.Capacity = lv.rosterCapacity;
                     break;
                 case BuildingType.TownHall:

@@ -42,6 +42,9 @@ namespace GuildMaster.Adventurers
                 return RuleBasedDecisionMaker.Decide(a, available);
             }
 
+            // The rules below still weigh every quest; the model only sees the few this member would weigh most.
+            var all = available;
+            available = Shortlist(a, all);
             var result = await _gateway.RequestAsync(DecisionPrompt.BuildRequest(a, available), ct);
             // The adventurer may have died or left while the model was thinking.
             if (a == null || !a.IsAlive) { Note(result, "무시: 모험가 없음"); return AdventurerDecision.Idle(); }
@@ -51,23 +54,23 @@ namespace GuildMaster.Adventurers
                 Note(result, "취소: 다른 행동(파티 초대 등)으로 대체");
                 return AdventurerDecision.Idle();
             }
-            if (!result.Ok) return Fallback(a, available, result.Error, result);
+            if (!result.Ok) return Fallback(a, all, result.Error, result);
             if (!LlmJson.TryParse<DecisionPrompt.ResponseDto>(result.Text, out var dto))
-                return Fallback(a, available, "parse", result);
+                return Fallback(a, all, "parse", result);
 
             var ids = available.Select(q => q.Id).ToList();
             if (!TryInterpret(dto, a.HpRatio, ids, DecisionPrompt.ShopUseful(a), out var decision, out var reject))
-                return Fallback(a, available, reject, result);
+                return Fallback(a, all, reject, result);
 
             if (decision.Action == AdventurerAction.AcceptQuest)
             {
                 var quest = available.FirstOrDefault(q => q.Id == decision.QuestId);
                 if (quest != null && !RecklessAllowed(DecisionPrompt.RiskLabel(a, quest), a.Traits?.DangerAversion ?? 0f,
                         a.Data.values, quest.Assignees.Count > 0))
-                    return Fallback(a, available, "reckless", result);
+                    return Fallback(a, all, "reckless", result);
                 // F-2: too stressed for a quest this dangerous.
                 if (quest != null && Welfare.GuildWelfare.QuestRefusal(a, quest.Danger) != null)
-                    return Fallback(a, available, "stress", result);
+                    return Fallback(a, all, "stress", result);
             }
 
             LlmDecisions++;
@@ -76,6 +79,20 @@ namespace GuildMaster.Adventurers
                       $"→ {dto.action} {dto.quest_id} | {decision.Reason} | \"{decision.Say}\" ({result.Seconds:0.0}s)");
             return decision;
         }
+
+        /// <summary>Quests shown to the model at most (P4-82: the town's postings can fill the board with dozens).</summary>
+        public const int MaxPromptQuests = 6;
+
+        /// <summary>
+        /// The quests this member would weigh most by the rules (<see cref="RuleBasedDecisionMaker.Score"/>), at most
+        /// <paramref name="max"/>, so the prompt stays short however full the board is. All of them when they fit.
+        /// </summary>
+        public static List<Quest> Shortlist(Adventurer a, IReadOnlyList<Quest> available, int max = MaxPromptQuests)
+            => available.Count <= max
+                ? available.ToList()
+                : available.Select(q => (q, score: RuleBasedDecisionMaker.Score(a, q)))
+                           .OrderByDescending(x => x.score).ThenBy(x => x.q.Id, System.StringComparer.Ordinal)
+                           .Take(max).Select(x => x.q).ToList();
 
         /// <summary>
         /// Semantic validation of a model response. Returns false with a reason when the

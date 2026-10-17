@@ -124,13 +124,18 @@ namespace GuildMaster.Notifications
             CheckCrises();
         }
 
-        /// <summary>A quest left untaken long enough that the guild master can negotiate (P4-24/25). Announced once per quest.</summary>
+        /// <summary>
+        /// A quest left untaken long enough that the guild master can negotiate (P4-24/25). Announced once per quest,
+        /// and only for the ones the guild master chose to take on (a patron's request, an escort): the town posts a
+        /// hunt on every den the guild has seen (P4-82), so most of its far ones wait untaken and would flood the list.
+        /// They can still be negotiated from the board.
+        /// </summary>
         void CheckNegotiable()
         {
             if (_board == null || !Services.TryGet<PersuasionService>(out var persuasion)) return;
             foreach (var q in _board.Quests)
             {
-                if (!persuasion.IsOpen(q)) continue;
+                if (q.Client == QuestClient.Town || !persuasion.IsOpen(q)) continue;
                 int waited = Mathf.FloorToInt(_clock.TotalHours - q.PostedAtHour);
                 _center.PostOnce(NegotiableKey(q), NotificationKind.Quest, "협상 가능",
                     NotificationTexts.Negotiable(q.Title, waited), NotificationLink.Negotiation(q.Id));

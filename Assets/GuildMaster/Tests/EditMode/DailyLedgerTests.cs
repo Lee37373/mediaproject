@@ -19,7 +19,7 @@ namespace GuildMaster.Tests
         public void SetUp()
         {
             EventBus.Clear();
-            _treasury = new GuildTreasury(500, 20, 0f, 0);
+            _treasury = new GuildTreasury(500, 0);
             _ledger = new DailyLedger(_treasury, 1, 8f);
             _closedEvents = 0;
             EventBus.Subscribe<DailyReportClosedEvent>(_ => _closedEvents++);
@@ -44,7 +44,7 @@ namespace GuildMaster.Tests
             EventBus.Subscribe<GoldFlowEvent>(flows.Add);
             _treasury.AddGold(10, GoldReason.Goods);
             _treasury.TrySpendGold(4, GoldReason.Loot);
-            _treasury.TrySpend(6, 0);
+            _treasury.TrySpendGold(6);
             _treasury.AddGold(0);
             _treasury.TrySpendGold(0);
             _treasury.TrySpendGold(99999);
@@ -121,7 +121,7 @@ namespace GuildMaster.Tests
         [Test]
         public void QuestEscrowAndRefunds_HaveNoReason_ButAreStillTold()
         {
-            _treasury.TrySpend(120, 5);
+            _treasury.TrySpendGold(120);
             _treasury.AddGold(50);
             Assert.That(_ledger.Current.Amount(GoldCategory.QuestEscrow), Is.EqualTo(120));
             Assert.That(_ledger.Current.Amount(GoldCategory.QuestRefund), Is.EqualTo(50));
@@ -130,7 +130,7 @@ namespace GuildMaster.Tests
         [Test]
         public void RaisedReward_MovesFromEscrowToTheNegotiationLine()
         {
-            _treasury.TrySpend(100, 0);
+            _treasury.TrySpendGold(100);
             _treasury.TrySpendGold(30);
             EventBus.Publish(new QuestRewardRaisedEvent { Quest = null, Gold = 30 });
 
@@ -157,12 +157,13 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void Exp_IsTrackedAsStartAndEnd()
+        public void Commission_IsIncomeOnItsOwnLine()
         {
-            _treasury.AddExp(15);
-            _treasury.TrySpend(0, 5);
-            Assert.That(_ledger.Current.ExpStart, Is.EqualTo(20));
-            Assert.That(_ledger.Current.ExpEnd, Is.EqualTo(30));
+            Assert.That(GoldCategories.Classify(GoldReason.Commission, 20), Is.EqualTo(GoldCategory.Commission));
+            Assert.That(GoldCategories.IsIncome(GoldCategory.Commission), Is.True);
+            _treasury.AddGold(20, GoldReason.Commission);
+            Assert.That(_ledger.Current.Amount(GoldCategory.Commission), Is.EqualTo(20));
+            Assert.That(_ledger.Current.Income, Is.EqualTo(20));
         }
 
         // ---------------- Days ----------------
@@ -286,7 +287,7 @@ namespace GuildMaster.Tests
         [Test]
         public void Summary_NamesTheDayAndTheResult()
         {
-            var r = new DailyReport(3, 0f, 100, 0);
+            var r = new DailyReport(3, 0f, 100);
             r.Add(GoldCategory.Tax, 100);
             r.Add(GoldCategory.Crafting, 40);
             r.GoldEnd = 160;
@@ -301,11 +302,11 @@ namespace GuildMaster.Tests
         [Test]
         public void ActivityLines_OmitEmptyThings_AndSayWhenNothingHappened()
         {
-            var quiet = DailyReportTexts.ActivityLines(new DailyReport(1, 8f, 0, 0));
+            var quiet = DailyReportTexts.ActivityLines(new DailyReport(1, 8f, 0));
             Assert.That(quiet, Has.Count.EqualTo(1));
             Assert.That(quiet[0].Tone, Is.EqualTo(LineTone.Muted));
 
-            var r = new DailyReport(2, 0f, 0, 0) { QuestsPosted = 2, QuestsCompleted = 1, QuestPaidGold = 45 };
+            var r = new DailyReport(2, 0f, 0) { QuestsPosted = 2, QuestsCompleted = 1, QuestPaidGold = 45 };
             r.Deaths.Add("노아");
             r.Recruited.Add("라일");
             var lines = DailyReportTexts.ActivityLines(r);

@@ -14,7 +14,7 @@ namespace GuildMaster.UI
     {
         Text _time;
         Text _gold;
-        Text _exp;
+        Text _quests;
         Text _materials;
         Text _members;
         Text _monsters;
@@ -43,7 +43,7 @@ namespace GuildMaster.UI
             }
             UIBuilder.Rect(bar.transform, "Spacer").Size(-1, -1, 1);
             _gold = UIBuilder.Label(bar.transform, "", 17).Size(150);
-            _exp = UIBuilder.Label(bar.transform, "", 17).Size(190);
+            _quests = UIBuilder.Label(bar.transform, "", 17).Size(190);
             _materials = UIBuilder.Label(bar.transform, "", 17).Size(120);
             _members = UIBuilder.Label(bar.transform, "", 17).Size(130);
             _monsters = UIBuilder.Label(bar.transform, "", 17).Size(130);
@@ -63,9 +63,18 @@ namespace GuildMaster.UI
 
             var t = Services.Get<GuildTreasury>();
             _gold.text = $"{UIBuilder.Colored("골드", UITheme.Accent)} {t.Gold:N0}";
-            // A fallen guild hall brings in no EXP until it is stood up again (P4-78).
-            string perHour = t.ExpStopped ? UIBuilder.Colored("(홀 무너짐)", UITheme.Bad) : UIBuilder.Colored($"(+{t.ExpPerHour:0.#}/h)", UITheme.TextMuted);
-            _exp.text = $"{UIBuilder.Colored("EXP", UITheme.Exp)} {t.Exp:N0} {perHour}";
+            // P4-82: no guild EXP any more; the slot shows the board instead, which the town now fills by itself.
+            if (Services.TryGet<Quests.QuestBoard>(out var board))
+            {
+                int open = 0, waiting = 0;
+                foreach (var q in board.Quests)
+                {
+                    if (!q.IsActive) continue;
+                    open++;
+                    if (q.Assignees.Count == 0) waiting++;
+                }
+                _quests.text = $"{UIBuilder.Colored("의뢰", UITheme.Exp)} {open}건 {UIBuilder.Colored($"(대기 {waiting})", UITheme.TextMuted)}";
+            }
             var db = Services.Get<GameDatabase>();
             int mats = t.Stock.Where(kv => db.Item(kv.Key)?.category == ItemCategory.Material).Sum(kv => kv.Value);
             _materials.text = $"재료 {mats}";

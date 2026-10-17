@@ -93,7 +93,7 @@ namespace GuildMaster.Tests
         [Test]
         public void ADisasterAtTheWalls_CutsThatDaysTaxOnly()
         {
-            var t = new GuildTreasury(0, 0, 0f, 100);
+            var t = new GuildTreasury(0, 100);
             t.CutTodaysTax(DisasterRules.TaxCut);
             t.CutTodaysTax(0.1f); // a smaller cut later that day does not undo the larger one
             EventBus.Publish(new DayPassedEvent { Day = 2 });

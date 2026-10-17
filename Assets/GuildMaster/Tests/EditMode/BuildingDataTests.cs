@@ -58,7 +58,8 @@ namespace GuildMaster.Tests
             Assert.That(new[] { hall.Level(1).dailyTax, hall.Level(2).dailyTax, hall.Level(3).dailyTax }, Is.EqualTo(new[] { 90, 120, 160 }), "level 1 is the tax the game starts with (P4-69)");
             var guild = db.Building(BuildingType.GuildHall);
             Assert.That(new[] { guild.Level(1).rosterCapacity, guild.Level(2).rosterCapacity, guild.Level(3).rosterCapacity }, Is.EqualTo(new[] { 6, 9, 12 }));
-            Assert.That(new[] { guild.Level(1).expPerHour, guild.Level(2).expPerHour, guild.Level(3).expPerHour }, Is.EqualTo(new[] { 5f, 11f, 19f }), "level 1 is the EXP the game starts with (P4-69)");
+            // P4-82: the guild hall makes no EXP any more, so its text must not promise any.
+            for (int lv = 1; lv <= 3; lv++) Assert.That(guild.Level(lv).effectText, Does.Not.Contain("EXP"));
         }
     }
 }

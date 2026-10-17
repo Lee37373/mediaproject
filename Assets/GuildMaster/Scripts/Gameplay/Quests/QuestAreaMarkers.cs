@@ -5,8 +5,9 @@ using UnityEngine;
 namespace GuildMaster.Quests
 {
     /// <summary>
-    /// Draws the hunting area of every active hunt quest on the map (a faint ring around the point the
-    /// player marked), above the fog so the player's own marks stay readable.
+    /// Draws the hunting area of every hunt someone has taken (a faint ring around its den), above the fog so it
+    /// stays readable. P4-82: the town posts a hunt on every den the guild has seen, so rings for untaken ones
+    /// would cover the map; a ring now shows where a group is headed.
     /// </summary>
     public class QuestAreaMarkers : MonoBehaviour
     {
@@ -20,7 +21,8 @@ namespace GuildMaster.Quests
 
         public void Init()
         {
-            EventBus.Subscribe<QuestPostedEvent>(OnPosted);
+            EventBus.Subscribe<QuestAcceptedEvent>(OnAccepted);
+            EventBus.Subscribe<QuestAbandonedEvent>(OnAbandoned);
             EventBus.Subscribe<QuestClosedEvent>(OnClosed);
             EventBus.Subscribe<QuestCompletedEvent>(OnCompleted);
             EventBus.Subscribe<Save.GameLoadedEvent>(OnLoaded);
@@ -28,25 +30,32 @@ namespace GuildMaster.Quests
 
         void OnDestroy()
         {
-            EventBus.Unsubscribe<QuestPostedEvent>(OnPosted);
+            EventBus.Unsubscribe<QuestAcceptedEvent>(OnAccepted);
+            EventBus.Unsubscribe<QuestAbandonedEvent>(OnAbandoned);
             EventBus.Unsubscribe<QuestClosedEvent>(OnClosed);
             EventBus.Unsubscribe<QuestCompletedEvent>(OnCompleted);
             EventBus.Unsubscribe<Save.GameLoadedEvent>(OnLoaded);
         }
 
-        /// <summary>A loaded game posts nothing: mark the hunts still being worked (P5-4).</summary>
+        /// <summary>A loaded game takes nothing: mark the hunts still being worked (P5-4).</summary>
         void OnLoaded(Save.GameLoadedEvent e)
         {
             if (!Services.TryGet<QuestBoard>(out var board)) return;
             foreach (var q in board.Quests)
-                if (q.IsActive && q.Status != QuestStatus.Completed) Add(q);
+                if (q.Status == QuestStatus.InProgress) Add(q);
         }
 
-        void OnPosted(QuestPostedEvent e) => Add(e.Quest);
+        void OnAccepted(QuestAcceptedEvent e) => Add(e.Quest);
+
+        // Everyone gave it up: back on the board untaken.
+        void OnAbandoned(QuestAbandonedEvent e)
+        {
+            if (e.Quest.Status == QuestStatus.Open) Remove(e.Quest);
+        }
 
         void Add(Quest q)
         {
-            if (q.Type != QuestType.Hunt || _markers.ContainsKey(q)) return;
+            if (q.Type != QuestType.Hunt || q.Status != QuestStatus.InProgress || _markers.ContainsKey(q)) return;
             var go = new GameObject($"HuntArea {q.Id}");
             go.transform.SetParent(transform, false);
             go.transform.position = q.Point;

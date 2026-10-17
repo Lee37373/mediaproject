@@ -22,7 +22,7 @@ namespace GuildMaster.Session
             var sb = new StringBuilder();
             var clock = Services.Get<GameClock>();
             var t = Services.Get<GuildTreasury>();
-            sb.AppendLine($"[{clock.FormatTime()}] gold={t.Gold} exp={t.Exp} stock={string.Join(",", t.Stock.Where(kv => kv.Value > 0).Select(kv => kv.Key + ":" + kv.Value))}");
+            sb.AppendLine($"[{clock.FormatTime()}] gold={t.Gold} stock={string.Join(",", t.Stock.Where(kv => kv.Value > 0).Select(kv => kv.Key + ":" + kv.Value))}");
             var eco = Services.Get<EcosystemManager>();
             sb.AppendLine("pop: " + string.Join(" ", eco.Species.Select(s => $"{s.id}={eco.GetPopulation(s)}")));
             foreach (var a in Services.Get<GuildRoster>().Members)
@@ -34,8 +34,9 @@ namespace GuildMaster.Session
         }
 
         /// <summary>
-        /// Posts a hunt around (x, y). Without a point it uses the nearest known nest of the species,
-        /// or (debug only, ignoring the information rule) the nearest living one.
+        /// Posts a hunt around (x, y) as the town's quest (P4-82: the guild no longer posts hunts; <paramref name="gold"/>
+        /// is what the town pays, the guild's fee included). Without a point it uses the nearest known nest of the
+        /// species, or (debug only, ignoring the information rule) the nearest living one.
         /// </summary>
         public static string PostHunt(string speciesId, int count, int gold, int exp, int party = 1, float x = -1f, float y = -1f)
         {
@@ -52,12 +53,28 @@ namespace GuildMaster.Session
                 else if (any != null) point = any.Position;
                 else return "no " + speciesId + " to hunt";
             }
-            var ok = Services.Get<QuestBoard>().TryPost(new QuestDraft
+            var ok = Services.Get<QuestBoard>().TryPostRequest(new QuestDraft
             {
                 Type = QuestType.Hunt, Species = species, Count = count, RewardGold = gold, RewardExp = exp, MaxParty = party,
                 Point = point, HasPoint = true, Radius = QuestBoard.HuntRadius,
-            }, out var q, out var err);
+            }, QuestClient.Town, out var q, out var err);
             return ok ? q.Id : err;
+        }
+
+        /// <summary>The town's postings (P4-82): what it posted, and why each known den is or is not on the board.</summary>
+        public static string TownQuests(bool checkNow = false)
+        {
+            var poster = Services.Get<TownQuestPoster>();
+            var intel = Services.Get<GuildIntel>();
+            var town = Services.Get<World.WorldService>().TownCenterWorld;
+            var sb = new StringBuilder();
+            if (checkNow) sb.AppendLine($"checked now: +{poster.Check()}");
+            sb.AppendLine($"town posted {poster.Posted} (enabled {TownQuestPoster.Enabled}), treasury {Services.Get<GuildTreasury>().Gold}G");
+            foreach (var q in Services.Get<QuestBoard>().Quests)
+                sb.AppendLine($"  {q.Id} [{q.ClientLabel}] {q.Title} {q.Status} pay {q.RewardGold}G+fee {q.FeeGold}G /{q.RewardExp}EXP party {q.Assignees.Count}/{q.MaxParty} {Quest.DangerLabel(q.Danger)}");
+            foreach (var n in intel.KnownNests)
+                sb.AppendLine($"  den {intel.NameOf(n)} @{Vector2.Distance(n.WorldPosition, town):0} seen {intel.Get(n).LastCount}: {poster.SkipReason(n) ?? "would post"}");
+            return sb.ToString();
         }
 
         public static void SetSpeed(int index) => Services.Get<GameClock>().SetSpeed(index);
@@ -211,11 +228,11 @@ namespace GuildMaster.Session
             if (Services.TryGet<GuildIntel>(out var intel)) { intel.MarkKnown(species); intel.MarkKnown(questSpecies); }
             // The board only takes spots the guild has seen.
             if (Services.TryGet<Fog.FogOfWar>(out var fog)) fog.Reveal(guildAt, 6f);
-            board.TryPost(new QuestDraft
+            board.TryPostRequest(new QuestDraft
             {
                 Type = QuestType.Hunt, Species = questSpecies, Count = count, RewardGold = 10, RewardExp = 5, MaxParty = Mathf.Max(1, members.Count),
                 Point = guildAt, HasPoint = true, Radius = QuestBoard.HuntRadius,
-            }, out var quest, out var questError);
+            }, QuestClient.Town, out var quest, out var questError);
             if (quest == null) return "quest not posted: " + questError;
             foreach (var a in members)
             {
@@ -320,11 +337,12 @@ namespace GuildMaster.Session
 
         // ---------------- Guild master & escort (P3-4a) ----------------
 
-        public static string PostEscort(int goldPerHour, int expPerHour, int hours, int party)
+        /// <summary>Hires an escort (the guild's own quest; gold only since P4-82).</summary>
+        public static string PostEscort(int goldPerHour, int hours, int party)
         {
             var ok = Services.Get<QuestBoard>().TryPost(new QuestDraft
             {
-                Type = QuestType.Escort, Hours = hours, RewardGold = goldPerHour * hours, RewardExp = expPerHour * hours,
+                Type = QuestType.Escort, Hours = hours, RewardGold = goldPerHour * hours,
                 MaxParty = party, Point = Services.Get<Player.PlayerAvatar>().Position,
             }, out var q, out var err);
             return ok ? q.Id : err;
@@ -369,7 +387,7 @@ namespace GuildMaster.Session
             var m = Services.Get<Player.PlayerAvatar>();
             var world = Services.Get<World.WorldService>();
             var t = Services.Get<GuildTreasury>();
-            var sb = new StringBuilder($"master ({m.Position.x:0.0},{m.Position.y:0.0}) hp={m.Hp:0}/{m.Stats.MaxHp:0} inTown={world.Grid.IsInTown(m.Position)} moving={m.Mover.IsMoving} gold={t.Gold} exp={t.Exp}\n");
+            var sb = new StringBuilder($"master ({m.Position.x:0.0},{m.Position.y:0.0}) hp={m.Hp:0}/{m.Stats.MaxHp:0} inTown={world.Grid.IsInTown(m.Position)} moving={m.Mover.IsMoving} gold={t.Gold}\n");
             foreach (var q in Services.Get<QuestBoard>().Quests.Concat(Services.Get<QuestBoard>().History).Where(q => q.Type == QuestType.Escort))
                 sb.AppendLine($"  {q.Id} {q.Status} {q.ProgressText} escrow={q.RewardGold}/{q.RewardExp} pay={q.PayGold}/{q.PayExp} assignees={string.Join(",", q.Assignees.Select(x => x.TakerName))}");
             foreach (var a in Services.Get<GuildRoster>().Members)

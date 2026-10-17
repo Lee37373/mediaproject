@@ -72,7 +72,7 @@ namespace GuildMaster.Session
             _species = _eco.Species.ToArray();
 
             _rows.Clear();
-            _deaths = _joins = _left = _levelUps = 0;
+            _deaths = _joins = _left = _levelUps = _commission = 0;
             _questsPosted = _questsCompleted = _questsFailed = _questsCancelled = 0;
             _raidsSighted = _raidersKilled = _gearBought = _nestsCleared = _recolonized = _bandsSettled = 0;
             _firstRaid = null;
@@ -91,6 +91,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<AdventurerGearUpgradedEvent>(OnGear);
             EventBus.Subscribe<QuestPostedEvent>(OnPosted);
             EventBus.Subscribe<QuestClosedEvent>(OnClosed);
+            EventBus.Subscribe<Economy.GoldFlowEvent>(OnGoldFlow);
             EventBus.Subscribe<RaidSightedEvent>(OnRaidSighted);
             EventBus.Subscribe<RaidEndedEvent>(OnRaidEnded);
             EventBus.Subscribe<Ecosystem.BandSettledEvent>(OnBandSettled);
@@ -113,6 +114,7 @@ namespace GuildMaster.Session
             EventBus.Unsubscribe<AdventurerGearUpgradedEvent>(OnGear);
             EventBus.Unsubscribe<QuestPostedEvent>(OnPosted);
             EventBus.Unsubscribe<QuestClosedEvent>(OnClosed);
+            EventBus.Unsubscribe<Economy.GoldFlowEvent>(OnGoldFlow);
             EventBus.Unsubscribe<RaidSightedEvent>(OnRaidSighted);
             EventBus.Unsubscribe<RaidEndedEvent>(OnRaidEnded);
             EventBus.Unsubscribe<Ecosystem.BandSettledEvent>(OnBandSettled);
@@ -133,6 +135,10 @@ namespace GuildMaster.Session
         void OnLeft(AdventurerLeftEvent e) => _left++;
         void OnLevelUp(AdventurerLevelUpEvent e) => _levelUps++;
         void OnGear(AdventurerGearUpgradedEvent e) => _gearBought++;
+
+        /// <summary>The guild's fees from clients' quests so far (P4-82; the column that held the old guild EXP).</summary>
+        int _commission;
+        void OnGoldFlow(Economy.GoldFlowEvent e) { if (e.Reason == Economy.GoldReason.Commission) _commission += e.Amount; }
         void OnPosted(QuestPostedEvent e) => _questsPosted++;
         void OnRaidSighted(RaidSightedEvent e) { _raidsSighted++; _firstRaid ??= $"day {_clock.Day} {_clock.Hour}h"; }
         void OnBandSettled(Ecosystem.BandSettledEvent e) => _bandsSettled++;
@@ -166,7 +172,7 @@ namespace GuildMaster.Session
         static string Header(IEnumerable<MonsterDefinition> species)
         {
             var sb = new StringBuilder(
-                "day,hour,gold,guild_exp,members,avg_level,max_level,avg_gear,avg_fatigue," +
+                "day,hour,gold,commission,members,avg_level,max_level,avg_gear,avg_fatigue," +
                 "deaths,joins,level_ups,posted,completed,failed,cancelled," +
                 "raids_sighted,raiders_killed,gear_bought,nests_cleared,recolonized," +
                 "open_quests,potions,townhall_hp,master_hp,known_nests,total_pop,nests," +
@@ -205,7 +211,7 @@ namespace GuildMaster.Session
             _sb.Clear();
             var c = CultureInfo.InvariantCulture;
             _sb.Append(_clock.Day).Append(',').Append(_clock.Hour).Append(',')
-               .Append(_treasury.Gold).Append(',').Append(_treasury.Exp).Append(',')
+               .Append(_treasury.Gold).Append(',').Append(_commission).Append(',')
                .Append(members.Count).Append(',')
                .Append(avgLevel.ToString("0.00", c)).Append(',').Append(maxLevel).Append(',')
                .Append(avgGear.ToString("0.00", c)).Append(',').Append(avgFatigue.ToString("0.0", c)).Append(',')
@@ -245,7 +251,7 @@ namespace GuildMaster.Session
             var sb = new StringBuilder();
             float days = (_clock.TotalHours - _startHour) / 24f;
             sb.AppendLine($"[balance] day {_startDay}..{_clock.Day} ({days:0.0}d, {_rows.Count} samples) running={Running}");
-            sb.AppendLine($"  gold={_treasury.Gold} guildExp={_treasury.Exp} potions={_treasury.GetStock(DefaultContent.Potion)}");
+            sb.AppendLine($"  gold={_treasury.Gold} commission={_commission} potions={_treasury.GetStock(DefaultContent.Potion)}");
             sb.AppendLine($"  members={_roster.Members.Count} joins={_joins} left={_left} deaths={_deaths} levelUps={_levelUps} gearBought={_gearBought}");
             if (Services.TryGet<LivingCosts>(out var keep))
                 sb.AppendLine($"  living: received={keep.TotalReceived} owed={keep.Outstanding} (meal {keep.MealGold}G/day, lodging {keep.LodgingGoldPerHour}G/h)");
