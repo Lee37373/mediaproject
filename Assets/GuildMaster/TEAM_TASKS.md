@@ -89,7 +89,7 @@
 | P4-79 | 사용자 결정 2026-10-10: 파티 리더는 휴식 중·길드 카운터에 있는 파티원을 기다렸다가 함께 나감(휴가·중상·한계 스트레스는 기다리지 않음). 리더가 서 있던 사람만 데리고 나가 남은 파티원이 14시간 마을 대기하던 문제 | 이재혁 | 완료 | Adventurers/Party(GuildParties)·AdventurerStates(TownIdleState) | 18b04fb |
 | P4-80 | 버그 수정 이어서(사용자 요청 2026-10-11): 긴 측정 7회로 추적 — 자율 사냥이 본 바위에 갇힌 안개로 2시간 정지, 균열 속 전리품·줍기 포기 무효, 저장 반올림·일시정지 중 행동(저장 왕복 테스트 흔들림), 지도의 바위 속 구멍(레인저 열흘 갇힘), 못 걷는 칸 진입·부딪히면 재계획. AnomalyWatch 보강(이력·교전 집계) | 이재혁 | 완료 | Adventurers/ExplorationRoute·FreeHuntState·AdventurerLooting·Adventurer·TownGuardState, Monsters/Monster, Core/Saving, Units/Unit, World/MapGenerator·PathFollower, Session/AnomalyWatch, Tests | c096e07, 3e579f8, 6f29c9d, 6eeefb1, 489bdd0 |
 | P4-81 | 맵 512×512(사용자 결정 2026-10-16): 땅 그림 메모리(지금 방식이면 약 1GB)·그리기 시간, 몬스터 수, 맵 크기를 따르는 거리 값 조정 | 이재혁 | 완료 | World/MapRenderer·MapGenerator·TerrainRegions·Pathfinder, Core/Bc1Encoder(신규), Fog/FogOfWar, Ecosystem/EcosystemManager, Monsters/MonsterLevel·MigrateState·Monster, Adventurers/FreeHunt, UI/Views/MinimapView, Session/GameBalance·GameBootstrap | c9a5cdf |
-| P4-82 | 의뢰 구조 개편(사용자 결정 2026-10-16): 플레이어가 직접 올리는 의뢰를 없애고, 의뢰는 마을 자동 게시·돌발 이벤트·LLM 제안·호위로만. 보상은 의뢰처(시스템)가 내고 길드는 수수료를 받음. **KMS의 F-8(제안 보상 조절)·P4-59(협상 보상 인상)·F-5(의뢰 확장)에 영향 — 시작 전에 조율** | 이재혁 | 예정 | Quests/Quest·QuestBoard, UI/Views/QuestBoardView, Proposals, Persuasion, Economy/GuildTreasury, Session/BalanceAutoPlayer | |
+| P4-82 | 의뢰 구조 개편(사용자 결정 2026-10-16): 플레이어가 직접 올리는 의뢰를 없애고, 의뢰는 마을 자동 게시·돌발 이벤트·LLM 제안·호위로만. 보상은 의뢰처(시스템)가 내고 길드는 수수료를 받음. **KMS의 F-8(제안 보상 조절)·P4-59(협상 보상 인상)·F-5(의뢰 확장)에 영향(2026-10-17 사용자: 다른 사람 작업은 참고만 — 결정대로 바꿈)** | 이재혁 | 진행 중 | Quests/Quest·QuestBoard·TownQuestPoster(신규), UI/Views/QuestBoardView·QuestProposalView, Proposals, Persuasion, Economy/GuildTreasury, Town/UpgradeService, Session/BalanceAutoPlayer | |
 | P4-83 | 지대 최종 보스 4종(사막·설원·늪지·황무지, 보스 전용 새 종): 잡으면 그 지대에 새 몬스터가 안 생기고, 넷 다 잡으면 승리 화면(계속 플레이 가능). **KMS의 F-4(승리 목표)와 조율** | 이재혁 | 예정 | Data/DefaultContent, Monsters, Ecosystem/EcosystemManager·MigrationService·RoamingPackService, Disasters, UI(승리 화면) | |
 | P4-84 | 다른 마을(지도 아이콘): 지대마다 듬성듬성, 길드 마스터가 직접 가서 영입, 몬스터가 공격하면 그 마을이 방어 의뢰를 올림, 무너지면 영구 소멸하고 확률로 다른 곳에 새 마을 | 이재혁 | 예정 | Villages(신규), World/MapGenerator, Recruitment, Quests, Monsters, UI | |
 | P4-85 | 돌발 이벤트 4종(여행자·상인 구출, 희귀 몬스터 출현, 유적·보물 발견, 대규모 무리 접근) → 의뢰. **F-5와 겹침** | 이재혁 | 예정 | Events(신규), Quests, Monsters, Ecosystem/MigrationService | |
@@ -124,8 +124,8 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: 없음
-- **예정**: P4-82 ~ P4-87 추가 기획(2026-10-16: 의뢰 구조 개편, 지대 최종 보스, 다른 마을, 돌발 이벤트, 마을 넓히기, 내실 건물), P5-5 Windows 빌드(맨 마지막)
+- **진행 중**: P4-82 의뢰 구조 개편
+- **예정**: P4-83 ~ P4-87 추가 기획(2026-10-16: 의뢰 구조 개편, 지대 최종 보스, 다른 마을, 돌발 이벤트, 마을 넓히기, 내실 건물), P5-5 Windows 빌드(맨 마지막)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-81, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
