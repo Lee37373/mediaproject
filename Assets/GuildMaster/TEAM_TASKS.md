@@ -90,7 +90,7 @@
 | P4-80 | 버그 수정 이어서(사용자 요청 2026-10-11): 긴 측정 7회로 추적 — 자율 사냥이 본 바위에 갇힌 안개로 2시간 정지, 균열 속 전리품·줍기 포기 무효, 저장 반올림·일시정지 중 행동(저장 왕복 테스트 흔들림), 지도의 바위 속 구멍(레인저 열흘 갇힘), 못 걷는 칸 진입·부딪히면 재계획. AnomalyWatch 보강(이력·교전 집계) | 이재혁 | 완료 | Adventurers/ExplorationRoute·FreeHuntState·AdventurerLooting·Adventurer·TownGuardState, Monsters/Monster, Core/Saving, Units/Unit, World/MapGenerator·PathFollower, Session/AnomalyWatch, Tests | c096e07, 3e579f8, 6f29c9d, 6eeefb1, 489bdd0 |
 | P4-81 | 맵 512×512(사용자 결정 2026-10-16): 땅 그림 메모리(지금 방식이면 약 1GB)·그리기 시간, 몬스터 수, 맵 크기를 따르는 거리 값 조정 | 이재혁 | 완료 | World/MapRenderer·MapGenerator·TerrainRegions·Pathfinder, Core/Bc1Encoder(신규), Fog/FogOfWar, Ecosystem/EcosystemManager, Monsters/MonsterLevel·MigrateState·Monster, Adventurers/FreeHunt, UI/Views/MinimapView, Session/GameBalance·GameBootstrap | c9a5cdf |
 | P4-82 | 의뢰 구조 개편(사용자 결정 2026-10-16): 플레이어가 직접 올리는 의뢰를 없애고, 의뢰는 마을 자동 게시·돌발 이벤트·LLM 제안·호위로만. 보상은 의뢰처(시스템)가 내고 길드는 수수료를 받음. **KMS의 F-8(제안 보상 조절)·P4-59(협상 보상 인상)·F-5(의뢰 확장)에 영향(2026-10-17 사용자: 다른 사람 작업은 참고만 — 결정대로 바꿈)** | 이재혁 | 완료 | Quests/Quest·QuestBoard·QuestPricing(신규)·TownQuestPoster(신규), UI/Views/QuestBoardView·QuestProposalView·HudView, Proposals, Economy/GuildTreasury, Reports, Town/UpgradeService, Session/BalanceAutoPlayer | c7b8e68 |
-| P4-83 | 지대 최종 보스 4종(사막·설원·늪지·황무지, 보스 전용 새 종): 잡으면 그 지대에 새 몬스터가 안 생기고, 넷 다 잡으면 승리 화면(계속 플레이 가능). KMS의 F-4(승리 목표)와 겹침(참고만, 2026-10-17 사용자) | 이재혁 | 진행 중 | Data/DefaultContent, Monsters, Ecosystem/EcosystemManager·MigrationService·RoamingPackService, Disasters, UI(승리 화면) | |
+| P4-83 | 지대 최종 보스 4종(사막·설원·늪지·황무지, 보스 전용 새 종): 잡으면 그 지대에 새 몬스터가 안 생기고, 넷 다 잡으면 승리 화면(계속 플레이 가능). KMS의 F-4(승리 목표)와 겹침(참고만, 2026-10-17 사용자) | 이재혁 | 완료 | Data/DefaultContent·MonsterDefinition, Monsters/RegionLords(신규)·Monster, Ecosystem/RegionLordService(신규)·EcosystemManager·Nest·MigrationService·TerritoryService·GuildIntel, Units/Skills, Quests, Disasters, UI/Views/VictoryView(신규)·EcologyView | 8d091f6 |
 | P4-84 | 다른 마을(지도 아이콘): 지대마다 듬성듬성, 길드 마스터가 직접 가서 영입, 몬스터가 공격하면 그 마을이 방어 의뢰를 올림, 무너지면 영구 소멸하고 확률로 다른 곳에 새 마을 | 이재혁 | 예정 | Villages(신규), World/MapGenerator, Recruitment, Quests, Monsters, UI | |
 | P4-85 | 돌발 이벤트 4종(여행자·상인 구출, 희귀 몬스터 출현, 유적·보물 발견, 대규모 무리 접근) → 의뢰. **F-5와 겹침** | 이재혁 | 예정 | Events(신규), Quests, Monsters, Ecosystem/MigrationService | |
 | P4-86 | 마을 넓히기: 골드·재료로 성벽을 단계별로 밀어냄(성문 이동, 땅 다시 그리기) | 이재혁 | 예정 | Town/TownService·GateService, World/MapGenerator·MapRenderer·GridMap, Adventurers/DefenseCoordinator | |
@@ -124,14 +124,14 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-83 지대 최종 보스
-- **예정**: P4-84 ~ P4-87 추가 기획(2026-10-16: 의뢰 구조 개편, 지대 최종 보스, 다른 마을, 돌발 이벤트, 마을 넓히기, 내실 건물), P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-82, P5-1 ~ P5-4 (위 표 참고)
+- **진행 중**: 없음
+- **예정**: P4-84 ~ P4-87 추가 기획(2026-10-16: 다른 마을, 돌발 이벤트, 마을 넓히기, 내실 건물), P5-5 Windows 빌드(맨 마지막)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-83, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
 - **예정**: F-4(명성·길드 등급·승리 목표), F-7(개발용 검증 명령). F-5(의뢰 종류·보상 확장)는 `QuestBoard.cs`를 건드려야 해서 P4-22와 조율이 필요합니다
-- **바뀐 점 알림(2026-10-17, P4-82 완료 c7b8e68)**: 사용자 결정으로 의뢰 구조가 바뀌었습니다. 플레이어는 토벌을 직접 올리지 않고, 우리 마을이 길드가 본 둥지마다 토벌을 올립니다. 보상은 의뢰처가 내고 길드는 20%를 수수료로 받으며, 길드 EXP는 없어졌습니다. **F-8 제안 카드**: 게시판에 없는 둥지에 대한 "다른 의뢰인의 요청"이 되었고, 보상 조절 버튼과 금고 잔액 제한을 없앴습니다(고르기만, `ProposalRules.BuildPool(targets, power, members, rng)`). **P4-59 협상**: 그대로 길드 금고에서 얹습니다. F-5(의뢰 확장)를 할 때는 `QuestClient`·`QuestPricing`·`QuestBoard.TryPostRequest`를 쓰면 됩니다. P4-83(지대 보스 넷을 잡으면 승리)은 F-4의 승리 목표와 겹칩니다
+- **바뀐 점 알림(2026-10-17, P4-82 완료 c7b8e68)**: 사용자 결정으로 의뢰 구조가 바뀌었습니다. 플레이어는 토벌을 직접 올리지 않고, 우리 마을이 길드가 본 둥지마다 토벌을 올립니다. 보상은 의뢰처가 내고 길드는 20%를 수수료로 받으며, 길드 EXP는 없어졌습니다. **F-8 제안 카드**: 게시판에 없는 둥지에 대한 "다른 의뢰인의 요청"이 되었고, 보상 조절 버튼과 금고 잔액 제한을 없앴습니다(고르기만, `ProposalRules.BuildPool(targets, power, members, rng)`). **P4-59 협상**: 그대로 길드 금고에서 얹습니다. F-5(의뢰 확장)를 할 때는 `QuestClient`·`QuestPricing`·`QuestBoard.TryPostRequest`를 쓰면 됩니다. P4-83(8d091f6)으로 지대 군주 넷을 잡으면 승리 화면이 뜹니다(`AllLordsSlainEvent`) — F-4의 승리 목표는 여기에 얹으면 됩니다
 - **완료**: F-1, F-2, F-3, F-6, F-8, P4-59 (자세한 내용은 `WORK_SUMMARY.md`, `FEATURE_IDEAS.md`, `NEGOTIATION.md`)
 
 ## 공용 파일 (충돌 주의)
