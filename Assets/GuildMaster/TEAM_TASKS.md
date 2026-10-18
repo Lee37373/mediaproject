@@ -2,7 +2,7 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-10-17
+- 마지막 갱신: 2026-10-18
 - 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-88**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
@@ -91,7 +91,7 @@
 | P4-81 | 맵 512×512(사용자 결정 2026-10-16): 땅 그림 메모리(지금 방식이면 약 1GB)·그리기 시간, 몬스터 수, 맵 크기를 따르는 거리 값 조정 | 이재혁 | 완료 | World/MapRenderer·MapGenerator·TerrainRegions·Pathfinder, Core/Bc1Encoder(신규), Fog/FogOfWar, Ecosystem/EcosystemManager, Monsters/MonsterLevel·MigrateState·Monster, Adventurers/FreeHunt, UI/Views/MinimapView, Session/GameBalance·GameBootstrap | c9a5cdf |
 | P4-82 | 의뢰 구조 개편(사용자 결정 2026-10-16): 플레이어가 직접 올리는 의뢰를 없애고, 의뢰는 마을 자동 게시·돌발 이벤트·LLM 제안·호위로만. 보상은 의뢰처(시스템)가 내고 길드는 수수료를 받음. **KMS의 F-8(제안 보상 조절)·P4-59(협상 보상 인상)·F-5(의뢰 확장)에 영향(2026-10-17 사용자: 다른 사람 작업은 참고만 — 결정대로 바꿈)** | 이재혁 | 완료 | Quests/Quest·QuestBoard·QuestPricing(신규)·TownQuestPoster(신규), UI/Views/QuestBoardView·QuestProposalView·HudView, Proposals, Economy/GuildTreasury, Reports, Town/UpgradeService, Session/BalanceAutoPlayer | c7b8e68 |
 | P4-83 | 지대 최종 보스 4종(사막·설원·늪지·황무지, 보스 전용 새 종): 잡으면 그 지대에 새 몬스터가 안 생기고, 넷 다 잡으면 승리 화면(계속 플레이 가능). KMS의 F-4(승리 목표)와 겹침(참고만, 2026-10-17 사용자) | 이재혁 | 완료 | Data/DefaultContent·MonsterDefinition, Monsters/RegionLords(신규)·Monster, Ecosystem/RegionLordService(신규)·EcosystemManager·Nest·MigrationService·TerritoryService·GuildIntel, Units/Skills, Quests, Disasters, UI/Views/VictoryView(신규)·EcologyView | 8d091f6 |
-| P4-84 | 다른 마을(지도 아이콘): 지대마다 듬성듬성, 길드 마스터가 직접 가서 영입, 몬스터가 공격하면 그 마을이 방어 의뢰를 올림, 무너지면 영구 소멸하고 확률로 다른 곳에 새 마을 | 이재혁 | 예정 | Villages(신규), World/MapGenerator, Recruitment, Quests, Monsters, UI | |
+| P4-84 | 다른 마을(지도 아이콘): 지대마다 듬성듬성, 길드 마스터가 직접 가서 영입, 몬스터가 공격하면 그 마을이 방어 의뢰를 올림, 무너지면 영구 소멸하고 확률로 다른 곳에 새 마을 | 이재혁 | 진행 중 | Villages(신규), World/MapGenerator, Recruitment, Quests, Monsters, UI | |
 | P4-85 | 돌발 이벤트 4종(여행자·상인 구출, 희귀 몬스터 출현, 유적·보물 발견, 대규모 무리 접근) → 의뢰. **F-5와 겹침** | 이재혁 | 예정 | Events(신규), Quests, Monsters, Ecosystem/MigrationService | |
 | P4-86 | 마을 넓히기: 골드·재료로 성벽을 단계별로 밀어냄(성문 이동, 땅 다시 그리기) | 이재혁 | 예정 | Town/TownService·GateService, World/MapGenerator·MapRenderer·GridMap, Adventurers/DefenseCoordinator | |
 | P4-87 | 내실 건물: 길드원 전원 상시 스탯 버프, 길드원이 때린 적 약화, 정원 제한을 없애는 건물 | 이재혁 | 예정 | Town/ConstructionService·Building, Data/DefaultContent, Units/Unit·Combat, Recruitment/VisitorService | |
