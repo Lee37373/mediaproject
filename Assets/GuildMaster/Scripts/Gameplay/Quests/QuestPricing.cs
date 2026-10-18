@@ -59,6 +59,13 @@ namespace GuildMaster.Quests
         public static int LordReward(int seenResidents, float distance, float factor = 1f)
             => HuntReward(DangerLevel.High, Mathf.Max(HuntKills, seenResidents), distance, factor);
 
+        /// <summary>
+        /// A village's defence against a raid the guild saw (P4-84): a hunt of the raiders seen, priced from the
+        /// village's distance like any hunt and raised for being urgent (<see cref="Villages.VillageRules.DefenceRewardFactor"/>).
+        /// </summary>
+        public static int DefenceReward(DangerLevel danger, int raiders, float distance)
+            => HuntReward(danger, raiders, distance, Villages.VillageRules.DefenceRewardFactor);
+
         /// <summary>EXP the client adds to a gold reward (the members get it whole).</summary>
         public static int RewardExp(int gold) => Mathf.Max(5, Mathf.RoundToInt(gold * 0.6f / 5f) * 5);
 

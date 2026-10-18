@@ -77,6 +77,10 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
             EventBus.Subscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
             EventBus.Subscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
+            EventBus.Subscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
+            EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
+            EventBus.Subscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
+            EventBus.Subscribe<RefugeeArrivedEvent>(OnRefugee);
         }
 
         public void Dispose()
@@ -97,6 +101,10 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
             EventBus.Unsubscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
             EventBus.Unsubscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
+            EventBus.Unsubscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
+            EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
+            EventBus.Unsubscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
+            EventBus.Unsubscribe<RefugeeArrivedEvent>(OnRefugee);
         }
 
         // ---------------- Natural disasters (P4-72): only those the guild has seen ----------------
@@ -210,6 +218,32 @@ namespace GuildMaster.Notifications
             if (e.Adventurer == null) return;
             _center.Post(NotificationKind.Success, "레벨 업", NotificationTexts.LevelUp(e.Adventurer.Data.name, e.Level),
                 "levelup:" + e.Adventurer.Data.id, NotificationLink.Adventurer(e.Adventurer.Data.id));
+        }
+
+        // ---------------- Other villages (P4-84): only what the guild has seen ----------------
+
+        void OnVillageFound(Villages.VillageDiscoveredEvent e)
+            => _center.Post(NotificationKind.Info, "새 마을 발견",
+                $"{e.Village.DisplayName}({Monsters.RegionLords.RegionName(e.Village.Region)}, {QuestBoard.DescribeArea(e.Village.WorldPosition)}). 길드 마스터가 직접 가면 영입 후보를 만날 수 있습니다.",
+                "village:" + e.Village.Id, NotificationLink.Location(e.Village.WorldPosition));
+
+        void OnVillageRaid(Villages.VillageRaidSightedEvent e)
+            => _center.Post(NotificationKind.Danger, "마을 습격",
+                $"{e.Village.DisplayName}이(가) {e.Species?.displayName} {e.Raiders}마리에게 습격받고 있습니다. 마을이 방어 의뢰를 냈습니다.",
+                "village_raid:" + e.Village.Id, NotificationLink.Location(e.Village.WorldPosition));
+
+        void OnVillageRuins(Villages.VillageRuinsSeenEvent e)
+            => _center.Post(NotificationKind.Warning, "마을 소멸",
+                e.SawItFall ? $"{e.Village.DisplayName}이(가) 무너졌습니다. 다시 세워지지 않습니다." : $"{e.Village.DisplayName}이(가) 무너져 폐허만 남았습니다.",
+                "village_fell:" + e.Village.Id, NotificationLink.Location(e.Village.WorldPosition));
+
+        void OnRefugee(RefugeeArrivedEvent e)
+        {
+            if (e.Visitor == null) return;
+            var d = e.Visitor.Data;
+            _center.Post(NotificationKind.Info, "피난민 도착",
+                $"{e.From}에서 피난 온 {d.name}({AdventurerData.ClassLabel(d.cls)} Lv.{d.level})이(가) 광장에 있습니다. 말을 걸어 영입해 보세요.",
+                "refugee:" + d.id, NotificationLink.Adventurer(d.id));
         }
 
         void OnVisitor(Recruitment.VisitorArrivedEvent e)

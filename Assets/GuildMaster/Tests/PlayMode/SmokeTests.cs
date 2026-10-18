@@ -944,6 +944,117 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// The other villages (P4-84, user decisions 2026-10-18): hidden until seen, nobody walks in; the guild master meets
+        /// their candidates in person and one who joins walks home alone; a raid the guild sees there brings the village's
+        /// defence quest; a pack passing by turns on it and then goes its way; near the end its people flee to our town
+        /// (monsters may fall on them), and once fallen it is gone for good — its open quests with it — and a new one may rise.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator OtherVillages_AreMetInPerson_PostTheirDefence_SufferPassingPacks_AndFallForGood()
+        {
+            yield return Boot();
+            var villages = Services.Get<Villages.VillageService>();
+            var raids = Services.Get<Villages.VillageRaids>();
+            var world = Services.Get<World.WorldService>();
+            var board = Services.Get<QuestBoard>();
+            var avatar = Services.Get<PlayerAvatar>();
+            Assert.That(villages.Villages.Count, Is.EqualTo(8), "two in each outer region");
+            foreach (var v in villages.Villages)
+            {
+                Assert.That(v.Known, Is.False, "the fog hides them at the start");
+                Assert.That(world.Grid.IsWalkable(v.Cell), Is.False, "nobody walks into a village");
+            }
+            var byTown = villages.Villages.Where(v => v.Inner).OrderBy(v => Vector2.Distance(v.WorldPosition, world.TownCenterWorld)).ToList();
+            var village = byTown[0];
+            int index = villages.Villages.ToList().IndexOf(village);
+            var goblin = Services.Get<EcosystemManager>().Species.First(s => s.id == "goblin");
+            MakeKnown(goblin);
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                // Found by sight; its two candidates come out to meet the guild master.
+                Assert.That(DebugCommands.JumpToVillage(index), Does.Contain(village.Name));
+                yield return WaitFor(() => village.Known && villages.CandidatesOut(village).Count() == Villages.VillageRules.CandidateCount, 10f);
+                Assert.That(village.Known, Is.True);
+                var met = villages.CandidatesOut(village).ToList();
+                Assert.That(met, Has.Count.EqualTo(Villages.VillageRules.CandidateCount));
+                Assert.That(met.All(a => a.IsVisitor && !a.IsGuildMember && a.Fsm.Current == a.VillageCandidateState && !a.ExposedToMonsters), Is.True);
+
+                // One joins there: one of the guild, and home on its own.
+                var recruit = met[0];
+                Assert.That(Roster.AddExisting(recruit), Is.True);
+                Assert.That(recruit.Fsm.Current, Is.EqualTo(recruit.ReturnState));
+                Assert.That(recruit.TryGetComponent<Fog.FogHideable>(out _), Is.False, "the guild's own are always on the map");
+                Assert.That(village.Candidates, Has.Count.EqualTo(1));
+
+                // Raided where the guild sees it: its people go back in and it posts its defence (it pays, the guild keeps a fee).
+                Assert.That(DebugCommands.RaidVillage(index, "goblin", 3, 9f), Does.Contain("raid of 3"));
+                yield return WaitFor(() => board.Quests.Any(q => q.IsVillageDefence && q.Village == village) && !villages.CandidatesOut(village).Any(), 10f);
+                var defence = board.Quests.FirstOrDefault(q => q.IsVillageDefence && q.Village == village);
+                Assert.That(defence, Is.Not.Null, "seen attacked: the village asks for help");
+                Assert.That((defence.Client, defence.ClientLabel, defence.Species, defence.RequiredCount), Is.EqualTo((QuestClient.Village, village.DisplayName, goblin, 3)));
+                Assert.That(defence.Title, Does.StartWith("[방어]"));
+                Assert.That(defence.FeeGold, Is.EqualTo(QuestPricing.Split(defence.RewardGold + defence.FeeGold).fee));
+                Assert.That(villages.CandidatesOut(village).Any(), Is.False, "they wait it out inside");
+                // Driven off: the raid is over, and nobody had taken the quest, so it comes down.
+                foreach (var m in UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.DefaultStateOverride == m.VillageRaidState && m.VillageRaidState.Target == village).ToList())
+                    m.ReceiveDamage(m.Hp + 1e6f, recruit, false);
+                Assert.That(raids.IsUnderAttack(village), Is.False);
+                Assert.That(defence.Status, Is.EqualTo(QuestStatus.Cancelled));
+
+                // A roaming pack of a raiding kind passing by turns on the next village, and goes its way when it gives up.
+                var other = byTown[1];
+                var eco = Services.Get<EcosystemManager>();
+                int den = eco.Nests.ToList().FindIndex(n => n.Species.canRaid && n.Species.aggressiveToHumans && !n.IsLair && n.Population >= 3);
+                Assume.That(den, Is.GreaterThanOrEqualTo(0), "a raiding den to drive onto the road");
+                var pack = Services.Get<RoamingPackService>().SendOnTheRoad(eco.Nests[den], null);
+                Assume.That(pack, Is.Not.Null);
+                int k = 0;
+                foreach (var m in pack.Members)
+                {
+                    world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(other.WorldPosition + new Vector2(5f, 0.5f * k++)), 4, out var c);
+                    m.Mover.Stop();
+                    m.transform.position = World.GridMap.CellToWorld(c);
+                }
+                yield return WaitFor(() => raids.IsUnderAttack(other), 5f);
+                Assert.That(raids.Report().Any(r => r.village == other && r.passing), Is.True);
+                Assert.That(pack.Members.All(m => !m.IsAlive || m.DefaultStateOverride == m.VillageRaidState), Is.True);
+                // Six hours on, for the raids only (a whole hour's tick would roll new raids and moves elsewhere).
+                var clock = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+                clock.SetValue(Clock, (float)clock.GetValue(Clock) + Villages.VillageRules.RaidMaxHours + 0.1f);
+                typeof(Villages.VillageRaids).GetMethod("OnHour", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(raids, new object[] { new HourPassedEvent() });
+                Assert.That(raids.IsUnderAttack(other), Is.False, "it gives up after a while");
+                Assert.That(pack.Members.Where(m => m.IsAlive).All(m => m.DefaultStateOverride == m.RoamState), Is.True, "and takes to the road again");
+
+                // Near the end its people flee to our town; out there monsters may fall on them.
+                var owed = board.TryPostRequest(new QuestDraft
+                {
+                    Type = QuestType.Hunt, Species = goblin, Count = 2, Point = village.WorldPosition + Vector2.right * 20f, HasPoint = true,
+                    Radius = QuestBoard.HuntRadius, RewardGold = 100, RewardExp = 30, MaxParty = 2,
+                }, QuestClient.Village, out var villageHunt, out var error, null, village);
+                Assert.That(owed, Is.True, error);
+                village.Damage(village.Hp - village.MaxHp * 0.2f, null, Clock.TotalHours);
+                var refugee = Services.Get<Recruitment.VisitorService>().Visitors.FirstOrDefault(v => v.Fsm.Current == v.RefugeeState);
+                Assert.That(refugee, Is.Not.Null, "its last candidate takes to the road");
+                Assert.That((refugee.ExposedToMonsters, village.Candidates.Count), Is.EqualTo((true, 0)));
+                var hunter = pack.Members.First(m => m.IsAlive);
+                Assert.That(hunter.Def.aggressiveToHumans && hunter.IsHostileTo(refugee), Is.True, "a refugee on the road is fair game");
+
+                // Fallen: gone for good, its unclaimed quest comes down, the ground is open, and the guild saw it happen.
+                village.Damage(village.MaxHp, null, Clock.TotalHours);
+                yield return null;
+                Assert.That((village.IsDestroyed, village.SeenRuined), Is.EqualTo((true, true)));
+                Assert.That(world.Grid.IsWalkable(village.Cell), Is.True);
+                Assert.That(villageHunt.Status, Is.EqualTo(QuestStatus.Cancelled));
+                Assert.That(board.TryPostRequest(new QuestDraft { Type = QuestType.Hunt, Species = goblin, Count = 2, Point = village.WorldPosition + Vector2.right * 20f, HasPoint = true, RewardGold = 100 },
+                    QuestClient.Village, out _, out _, null, village), Is.False, "a fallen village posts nothing");
+                Assert.That(villages.TryFound(out var risen), Is.True, "a new village may rise elsewhere");
+                Assert.That((risen.IsDestroyed, risen.Known, villages.Villages.Count, villages.Standing.Count()), Is.EqualTo((false, false, 9, 8)));
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+        }
+
+        /// <summary>
         /// P4-32: the clear-nest quest is gone. A hunt finishes on its kill count, or as soon as
         /// the nest inside its marked area is wiped out, whichever comes first.
         /// </summary>

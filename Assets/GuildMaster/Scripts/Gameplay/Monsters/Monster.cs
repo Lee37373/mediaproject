@@ -43,6 +43,8 @@ namespace GuildMaster.Monsters
         internal float NextLureTime;
         internal MonsterReturnState ReturnState;
         internal RaidState RaidState;
+        /// <summary>On a raid against another village (P4-84).</summary>
+        internal VillageRaidState VillageRaidState;
         internal MigrateState MigrateState;
         internal RoamState RoamState;
         /// <summary>The roaming pack it walks with when its pack has no nest (P4-58), else null.</summary>
@@ -73,6 +75,7 @@ namespace GuildMaster.Monsters
             LureState = new MonsterLureState();
             ReturnState = new MonsterReturnState();
             RaidState = new RaidState();
+            VillageRaidState = new VillageRaidState();
             MigrateState = new MigrateState();
             RoamState = new RoamState();
             PickupState = new MonsterPickupState();
@@ -451,7 +454,7 @@ namespace GuildMaster.Monsters
             // A region lord and its guards share a lair (P4-83): one pack, though of two kinds.
             if (other is Monster m) return m.Def != Def && !(Home != null && m.Home == Home)
                                            && (DefaultStateOverride == null || DefaultStateOverride == MigrateState || DefaultStateOverride == RoamState);
-            return other.Faction == Faction.Guild && Def.aggressiveToHumans;
+            return (other.Faction == Faction.Guild || other.ExposedToMonsters) && Def.aggressiveToHumans;
         }
 
         /// <summary>Lives in a nest and is not away raiding (raiders do not guard their home).</summary>
@@ -958,7 +961,7 @@ namespace GuildMaster.Monsters
         State<Monster>[] AllStates => _allStates ??= new State<Monster>[]
         {
             WanderState, EngageState, FleeState, LureState, ReturnState, RaidState, MigrateState, RoamState,
-            PickupState, RegroupState, GateBreakState,
+            PickupState, RegroupState, GateBreakState, VillageRaidState,
         };
 
         internal State<Monster> StateNamed(string name)

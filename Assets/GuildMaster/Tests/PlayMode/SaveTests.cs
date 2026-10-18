@@ -193,6 +193,14 @@ namespace GuildMaster.Tests
             foreach (var nest in eco.Nests)
                 if (!Services.Get<Town.WaveManager>().IsRaiding(nest) && migration.TryLaunch(nest)) break;
             Assert.That(migration.Bands.Count, Is.GreaterThan(0), "a band migrating");
+            // Other villages (P4-84): one the guild master stands by (seen, its candidates out), one under attack,
+            // one fallen with its people on the road to our town, and a new one.
+            var villages = Services.Get<Villages.VillageService>();
+            DebugCommands.JumpToVillage(0);
+            Assert.That(DebugCommands.RaidVillage(1, "goblin", 3, 9f), Does.Contain("raid of"));
+            DebugCommands.HurtVillage(2, villages.Villages[2].MaxHp * 0.8f);
+            DebugCommands.HurtVillage(2, villages.Villages[2].MaxHp);
+            Assert.That(villages.TryFound(out _), Is.True, "a new village");
 
             clock.SetSpeed(3);
             float start = clock.TotalHours;
@@ -208,7 +216,10 @@ namespace GuildMaster.Tests
             int camps = Services.Get<Adventurers.CampService>().Camps.Count;
             int raidCount = Services.Get<Town.WaveManager>().RaidCount;
             int active = disasters.Active.Count;
-            Debug.Log($"[SaveTests] busy save: quests {quests} takers {takers} visitors {visitors} merchant {merchant} camps {camps} raids {raidCount} disasters {active} ground {Services.Get<Items.GroundItemService>().Items.Count}");
+            bool villageAttacked = Services.Get<Villages.VillageRaids>().IsUnderAttack(villages.Villages[1]);
+            int villageCount = villages.Villages.Count;
+            Debug.Log($"[SaveTests] busy save: quests {quests} takers {takers} visitors {visitors} merchant {merchant} camps {camps} raids {raidCount} disasters {active} ground {Services.Get<Items.GroundItemService>().Items.Count} villages {villageCount} village raid {villageAttacked}");
+            Assert.That(villageAttacked, Is.True, "a village under attack");
             Assert.That(takers, Is.GreaterThan(0), "the hunt was taken");
             Assert.That(visitors, Is.GreaterThan(0), "a visitor in town");
             Assert.That(merchant, Is.True, "the merchant in town");
@@ -226,6 +237,10 @@ namespace GuildMaster.Tests
             Assert.That(Services.Get<Adventurers.CampService>().Camps.Count, Is.EqualTo(camps), "camps");
             Assert.That(Services.Get<Town.WaveManager>().RaidCount, Is.EqualTo(raidCount), "raids");
             Assert.That(Services.Get<Disasters.DisasterService>().Active.Count, Is.EqualTo(active), "disasters");
+            villages = Services.Get<Villages.VillageService>();
+            Assert.That(villages.Villages.Count, Is.EqualTo(villageCount), "villages, ruins and the new one");
+            Assert.That(Services.Get<Villages.VillageRaids>().IsUnderAttack(villages.Villages[1]), Is.True, "the village raid");
+            Assert.That(villages.Villages[2].IsDestroyed && Services.Get<World.WorldService>().Grid.IsWalkable(villages.Villages[2].Cell), Is.True, "the ruins are open ground");
 
             yield return new WaitForSecondsRealtime(1f);
             AssertSameSections(a, Saves.Capture());
@@ -238,11 +253,13 @@ namespace GuildMaster.Tests
             var marching = new System.Collections.Generic.List<Monsters.Monster>();
             foreach (var band in migration.Bands) marching.AddRange(band.Members);
             bool raiding = waves.RaidActive;
+            var villageRaids = Services.Get<Villages.VillageRaids>();
             foreach (var u in System.Linq.Enumerable.ToList(Units.UnitRegistry.All))
-                if (u is Monsters.Monster m && m.IsAlive && m.DefaultStateOverride == m.RaidState) m.Perish();
+                if (u is Monsters.Monster m && m.IsAlive && (m.DefaultStateOverride == m.RaidState || m.DefaultStateOverride == m.VillageRaidState)) m.Perish();
             foreach (var m in marching) m.Perish();
             yield return null;
             if (raiding) Assert.That(waves.RaidActive, Is.False, "a loaded raid ends when its last raider falls");
+            Assert.That(System.Linq.Enumerable.Any(villageRaids.Report()), Is.False, "so does a loaded raid on a village");
             Assert.That(migration.Bands.Count, Is.EqualTo(0), "a loaded band is gone when its members are");
             foreach (var m in marching) Assert.That(migration.TryGetBand(m, out _), Is.False, "the fallen are out of the band");
         }

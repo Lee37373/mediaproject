@@ -69,6 +69,10 @@ namespace GuildMaster.Adventurers
         internal DeadState DeadState;
         internal VisitorWanderState VisitorWanderState;
         internal VisitorLeaveState VisitorLeaveState;
+        /// <summary>Out in front of another village as one of its candidates (P4-84).</summary>
+        internal VillageCandidateState VillageCandidateState;
+        /// <summary>Fleeing a falling village to our town (P4-84).</summary>
+        internal RefugeeState RefugeeState;
         internal LureState LureState;
         internal TownGuardState TownGuardState;
         /// <summary>Sent out to bring a fallen comrade's relics home (F-6).</summary>
@@ -143,6 +147,8 @@ namespace GuildMaster.Adventurers
             DeadState = new DeadState();
             VisitorWanderState = new VisitorWanderState();
             VisitorLeaveState = new VisitorLeaveState();
+            VillageCandidateState = new VillageCandidateState();
+            RefugeeState = new RefugeeState();
             LureState = new LureState();
             TownGuardState = new TownGuardState();
             RetrievalState = new Legacy.RelicRetrievalState();
@@ -167,6 +173,9 @@ namespace GuildMaster.Adventurers
             VisitorLeaveAtHour = leaveAtHour;
             ChangeState(VisitorWanderState);
         }
+
+        /// <summary>A refugee on its way to our town (P4-84): monsters that go for people fall on it.</summary>
+        public override bool ExposedToMonsters => IsVisitor && Fsm != null && Fsm.Current == RefugeeState;
 
         /// <summary>Visitor accepted the guild's offer. Call through <see cref="GuildRoster.AddExisting"/>.</summary>
         internal void JoinGuild()
@@ -591,7 +600,7 @@ namespace GuildMaster.Adventurers
         {
             IdleState, DecidingState, TravelState, HuntState, FreeHuntState, EscortState, GatherState, DefendState,
             ReturnState, VisitState, RestState, CampState, DeadState, VisitorWanderState, VisitorLeaveState, LureState,
-            TownGuardState, RetrievalState,
+            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState,
         };
 
         /// <summary>One of this member's states by class name (saved states refer to each other this way), or null.</summary>

@@ -124,9 +124,21 @@ namespace GuildMaster.Quests
                 RewardExp = QuestPricing.RewardExp(gold),
                 MaxParty = QuestPricing.PartyFor(danger),
             };
-            if (!_board.TryPostRequest(draft, QuestClient.Town, out _, out _, n)) return false;
+            if (!PostFor(draft, n)) return false;
             Posted++;
             return true;
+        }
+
+        /// <summary>
+        /// Posts a den's hunt for whoever it troubles (P4-84): a village the guild knows by the den, if it is nearer to
+        /// it than our town, else our town. Same price either way (the walk is the guild's, from our town).
+        /// </summary>
+        bool PostFor(QuestDraft draft, Nest den)
+        {
+            var village = Services.TryGet<Villages.VillageService>(out var villages) ? villages.ClientFor(den.WorldPosition, _world.TownCenterWorld) : null;
+            return village != null
+                ? _board.TryPostRequest(draft, QuestClient.Village, out _, out _, den, village)
+                : _board.TryPostRequest(draft, QuestClient.Town, out _, out _, den);
         }
 
         /// <summary>The lord itself (one kill), for the lair's size and the walk; two parties may go (RegionLords.QuestParty).</summary>
@@ -145,7 +157,7 @@ namespace GuildMaster.Quests
                 RewardExp = QuestPricing.RewardExp(gold),
                 MaxParty = Monsters.RegionLords.QuestParty,
             };
-            if (!_board.TryPostRequest(draft, QuestClient.Town, out _, out _, lair)) return false;
+            if (!PostFor(draft, lair)) return false;
             Posted++;
             return true;
         }

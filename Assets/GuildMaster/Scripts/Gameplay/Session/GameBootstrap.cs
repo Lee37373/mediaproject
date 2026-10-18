@@ -188,6 +188,11 @@ namespace GuildMaster.Session
             var lords = new RegionLordService(eco, world, clock);
             Services.Register(lords);
             save.Register(lords);
+            // The other villages (P4-84): placed with the map (their own random stream), found by sight, raided, recruited at.
+            var villages = AddSystem<Villages.VillageService>();
+            villages.Init(world, eco, clock, Seed);
+            Services.Register(villages);
+            save.Register(villages);
             // Fog memory (P4-23): grey last-seen copies of what the fog swallowed.
             var ghosts = AddSystem<Fog.FogGhostService>();
             ghosts.Init(pool, fog, clock, eco);
@@ -337,6 +342,15 @@ namespace GuildMaster.Session
             }, clock, eco, world);
             Services.Register(waves);
             save.Register(waves);
+            // Raids on the other villages (P4-84): dens by them and packs passing; the village posts its defence.
+            var villageRaids = AddSystem<Villages.VillageRaids>();
+            villageRaids.Init(new RaidSettings
+            {
+                ChancePerLevelPerHour = Balance.raidChancePerLevelPerHour, SendFraction = Balance.raidSendFraction, MinParty = Balance.raidMinParty,
+                MaxHours = Balance.raidMaxHours,
+            }, clock, eco, villages);
+            Services.Register(villageRaids);
+            save.Register(villageRaids);
             AddSystem<DefenseCoordinator>().Init(waves, roster, world, Balance.raidDefendRadius);
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());
 

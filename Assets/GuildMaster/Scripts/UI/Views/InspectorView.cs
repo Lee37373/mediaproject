@@ -205,6 +205,12 @@ namespace GuildMaster.UI
             if (nest != null) return nest;
             if (Services.TryGet<GateService>(out var gates) && gates.GateAt(p) is TownGate gate) return gate;
             var cell = World.GridMap.WorldToCell(p);
+            // Another village the guild has seen (P4-84): its icon and a little round it.
+            if (Services.TryGet<Villages.VillageService>(out var villages))
+            {
+                var village = villages.Known.FirstOrDefault(v => Vector2.Distance(v.WorldPosition, p) <= Villages.VillageRules.Size * 0.5f + 0.5f);
+                if (village != null) return village;
+            }
             return Services.Get<TownService>().Buildings.FirstOrDefault(b => b.Footprint.Contains(cell));
         }
 
@@ -218,6 +224,7 @@ namespace GuildMaster.UI
                 case Nest n: pos = n.WorldPosition; scale = 1.4f; break;
                 case FogGhost g: pos = g.Position + new Vector2(0, -0.28f); break;
                 case TownGate gate: pos = gate.Center; scale = 2.4f; break;
+                case Villages.Village v: pos = v.WorldPosition + new Vector2(0f, -1.2f); scale = 3f; break;
                 default: _ring.gameObject.SetActive(false); return;
             }
             _ring.gameObject.SetActive(true);
@@ -234,6 +241,7 @@ namespace GuildMaster.UI
                 case Nest n: ShowNest(n); break;
                 case Building b: ShowBuilding(b); break;
                 case TownGate g: ShowGate(g); break;
+                case Villages.Village v: ShowVillage(v); break;
                 case Merchant m: ShowMerchant(m); break;
                 case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
@@ -398,8 +406,50 @@ namespace GuildMaster.UI
             RefreshRepairButton();
         }
 
+        /// <summary>
+        /// Another village (P4-84): what the guild saw of it, its quests on the board, and its candidates — only when the
+        /// guild master stands there (they are met in person; escorts may come along).
+        /// </summary>
+        void ShowVillage(Villages.Village v)
+        {
+            var villages = Services.Get<Villages.VillageService>();
+            bool visible = villages.IsVisible(v);
+            string where = $"{Monsters.RegionLords.RegionName(v.Region)} · {(v.Inner ? "안쪽 땅" : "바깥 땅")} · {QuestBoard.DescribeArea(v.WorldPosition)}";
+            _title.text = $"{v.DisplayName}  {Muted("다른 마을")}";
+            string state;
+            if (visible ? v.IsDestroyed : v.SeenRuined) state = UIBuilder.Colored("무너졌습니다 — 다시 세워지지 않습니다", UITheme.Bad);
+            else if (visible)
+            {
+                bool attacked = Services.TryGet<Villages.VillageRaids>(out var raids) && raids.IsUnderAttack(v);
+                state = $"내구도 {v.Hp:0}/{v.MaxHp:0}" + (attacked ? "  " + UIBuilder.Colored("습격받는 중!", UITheme.Bad) : "");
+            }
+            else
+            {
+                float ago = Services.Get<GameClock>().TotalHours - v.SeenAtHour;
+                state = Muted($"{(ago < 1f ? "방금" : $"{ago:0}시간 전")} 봤을 때 내구도 약 {Mathf.RoundToInt(v.SeenHpRatio * 20f) * 5}%");
+            }
+            int quests = Services.TryGet<QuestBoard>(out var board) ? board.Quests.Count(q => q.IsActive && q.Village == v) : 0;
+            var out_ = villages.CandidatesOut(v).ToList();
+            string candidates = (visible ? v.IsDestroyed : v.SeenRuined) ? ""
+                : out_.Count > 0
+                    ? "영입 후보: " + string.Join(", ", out_.Select(a => $"{a.Data.name}({AdventurerData.ClassLabel(a.Data.cls)} Lv.{a.Data.level})"))
+                      + "\n" + Muted("후보를 눌러 영입 대화를 하세요. 영입하면 혼자 우리 마을로 걸어옵니다.")
+                    : Muted("영입 후보는 길드 마스터가 직접 가야 만날 수 있습니다. (호위를 데려갈 수 있습니다)");
+            _body.text = $"{where}\n{state}" + (quests > 0 ? $" · 이 마을의 의뢰 {quests}건" : "") + "\n" + candidates;
+            RefreshRepairButton();
+        }
+
         void RefreshRepairButton()
         {
+            if (_selected is Villages.Village village)
+            {
+                // The village corner holds "go there": the guild master walks to its doorstep.
+                _repairButton.gameObject.SetActive(true);
+                bool here = Services.TryGet<PlayerAvatar>(out var master) && Vector2.Distance(master.Position, village.WorldPosition) <= Villages.VillageRules.MeetRadius;
+                _repairButton.interactable = !here && master != null && master.IsAlive;
+                _repairButton.SetLabel(here ? "마을에 와 있음" : "길드 마스터 보내기");
+                return;
+            }
             var gate = _selected as TownGate;
             _repairButton.gameObject.SetActive(gate != null);
             if (gate == null || !Services.TryGet<GateService>(out var gates)) return;
@@ -412,6 +462,8 @@ namespace GuildMaster.UI
 
         void OnRepairClicked()
         {
+            if (_selected is Villages.Village village && Services.TryGet<PlayerAvatar>(out var master))
+                master.MoveTo(village.Doorstep, null, 0.6f);
             if (_selected is TownGate gate && Services.TryGet<GateService>(out var gates)) gates.TryRepair(gate);
             RefreshText();
             RefreshRepairButton();

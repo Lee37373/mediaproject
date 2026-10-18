@@ -230,13 +230,29 @@ namespace GuildMaster.Quests
         /// fee (<see cref="QuestPricing.Split"/>) comes off it and the members share the rest. Nothing leaves the
         /// treasury. <paramref name="target"/> is the den a hunt is for (else the one the guild saw in its area).
         /// </summary>
-        public bool TryPostRequest(QuestDraft draft, QuestClient client, out Quest quest, out string error, Nest target = null)
+        public bool TryPostRequest(QuestDraft draft, QuestClient client, out Quest quest, out string error, Nest target = null,
+                                   Villages.Village village = null, bool villageDefence = false)
         {
             quest = null;
-            error = client == QuestClient.Guild ? "의뢰처가 없습니다." : Validate(draft, client);
+            error = client == QuestClient.Guild ? "의뢰처가 없습니다."
+                  : client == QuestClient.Village && (village == null || village.IsDestroyed) ? "의뢰처 마을이 없습니다."
+                  : Validate(draft, client);
             if (error != null) return false;
-            quest = PostRequest(draft, client, target);
+            quest = PostRequest(draft, client, target, null, village, villageDefence);
             return true;
+        }
+
+        /// <summary>Why the board took a village's quest down: the village is gone (P4-84).</summary>
+        public const string VillageFellReason = "의뢰처 마을이 무너졌습니다";
+
+        /// <summary>
+        /// A village fell (P4-84): its quests nobody took come down — there is nobody left to pay. The ones under way
+        /// go on (the gold was put up when they were posted); a defence is settled with its raid.
+        /// </summary>
+        public void WithdrawFromVillage(Villages.Village v)
+        {
+            foreach (var q in _quests.ToList())
+                if (q.IsActive && q.Village == v && q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, VillageFellReason);
         }
 
         /// <summary>
@@ -246,17 +262,22 @@ namespace GuildMaster.Quests
         public Quest PostTownQuest(QuestDraft draft, Disasters.Disaster disaster)
             => PostRequest(draft, QuestClient.Town, null, disaster);
 
-        Quest PostRequest(QuestDraft draft, QuestClient client, Nest target, Disasters.Disaster disaster = null)
+        Quest PostRequest(QuestDraft draft, QuestClient client, Nest target, Disasters.Disaster disaster = null,
+                          Villages.Village village = null, bool villageDefence = false)
         {
             var (members, fee) = QuestPricing.Split(draft.RewardGold);
             draft.RewardGold = members;
-            return Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours) { Client = client, FeeGold = fee, Disaster = disaster }, target);
+            return Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours)
+            {
+                Client = client, FeeGold = fee, Disaster = disaster, Village = village, IsVillageDefence = villageDefence,
+            }, target);
         }
 
         Quest Add(Quest quest, Nest target = null)
         {
             quest.Danger = EvaluateDanger(quest);
-            if (quest.Type == QuestType.Hunt) quest.TargetNest = target ?? OccupiedNestInArea(quest);
+            // A village's defence is about its raiders, wherever their den is (P4-84).
+            if (quest.Type == QuestType.Hunt && !quest.IsVillageDefence) quest.TargetNest = target ?? OccupiedNestInArea(quest);
             _quests.Add(quest);
             EventBus.Publish(new QuestPostedEvent { Quest = quest });
             return quest;

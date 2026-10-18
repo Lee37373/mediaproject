@@ -46,6 +46,11 @@ namespace GuildMaster.Units
         public string UnitId { get; protected set; }
         public string DisplayName { get; protected set; }
         public Faction Faction { get; protected set; }
+        /// <summary>
+        /// Not of the guild, but out on the road where monsters that go for people fall on it (P4-84: a refugee
+        /// from another village). Visitors in town and the merchant stay untouched.
+        /// </summary>
+        public virtual bool ExposedToMonsters => false;
         public CombatStats Stats;
         public float Hp { get; protected set; }
         public bool IsAlive => !_dead && Hp > 0f;

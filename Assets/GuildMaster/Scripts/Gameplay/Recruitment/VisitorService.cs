@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
 using GuildMaster.World;
@@ -30,6 +31,8 @@ namespace GuildMaster.Recruitment
         public const float NoticeMaxHours = 3f;
 
         readonly List<Adventurer> _visitors = new();
+        /// <summary>Visitors who came as refugees from another village (P4-84): outside the cap, no sight of their own until they join.</summary>
+        readonly HashSet<string> _refugees = new();
         GameClock _clock;
         GuildRoster _roster;
         WorldService _world;
@@ -68,6 +71,7 @@ namespace GuildMaster.Recruitment
             public float next_visit;
             public float notice;
             public List<Adventurer.AdventurerSave> visitors = new();
+            public List<string> refugees = new();
         }
 
         readonly List<(Adventurer visitor, Adventurer.AdventurerSave saved)> _restoring = new();
@@ -79,6 +83,8 @@ namespace GuildMaster.Recruitment
         {
             var s = new SaveData { next_visit = _nextVisitHour, notice = _noticeHour };
             foreach (var v in _visitors) if (v != null && v.IsAlive) s.visitors.Add(v.CaptureSave());
+            foreach (var v in _visitors) if (v != null && v.IsAlive && _refugees.Contains(v.Data.id)) s.refugees.Add(v.Data.id);
+            s.refugees.Sort(System.StringComparer.Ordinal);
             return JsonUtility.ToJson(s);
         }
 
@@ -88,11 +94,30 @@ namespace GuildMaster.Recruitment
             _nextVisitHour = s.next_visit;
             _noticeHour = s.notice;
             _restoring.Clear();
+            _refugees.Clear();
+            foreach (var id in s.refugees) _refugees.Add(id);
             foreach (var saved in s.visitors)
             {
                 var v = Adventurer.RestoreSave(saved, transform, ctx);
+                if (_refugees.Contains(v.Data.id)) Unsighted(v, true);
                 _visitors.Add(v);
                 _restoring.Add((v, saved));
+            }
+        }
+
+        /// <summary>
+        /// One of another village's people (P4-84: a candidate, a refugee) is not the guild's eyes and hides in the fog like a
+        /// monster; joining the guild gives it both back — shown at once, wherever it stands.
+        /// </summary>
+        public static void Unsighted(Adventurer a, bool on)
+        {
+            if (a.TryGetComponent<Fog.VisionSource>(out var eyes)) eyes.enabled = !on;
+            bool hidden = a.TryGetComponent<Fog.FogHideable>(out var hide);
+            if (on && !hidden) a.gameObject.AddComponent<Fog.FogHideable>();
+            else if (!on && hidden)
+            {
+                hide.SetFogVisible(true);
+                DestroyImmediate(hide);
             }
         }
 
@@ -124,8 +149,17 @@ namespace GuildMaster.Recruitment
             EventBus.Unsubscribe<AdventurerJoinedEvent>(OnJoined);
         }
 
-        void OnLeft(VisitorLeftTownEvent e) => _visitors.Remove(e.Visitor);
-        void OnJoined(AdventurerJoinedEvent e) => _visitors.Remove(e.Adventurer);
+        void OnLeft(VisitorLeftTownEvent e)
+        {
+            _visitors.Remove(e.Visitor);
+            if (e.Visitor != null) _refugees.Remove(e.Visitor.Data.id);
+        }
+
+        void OnJoined(AdventurerJoinedEvent e)
+        {
+            _visitors.Remove(e.Adventurer);
+            if (e.Adventurer != null && _refugees.Remove(e.Adventurer.Data.id)) Unsighted(e.Adventurer, false);
+        }
 
         void Update()
         {
@@ -141,9 +175,24 @@ namespace GuildMaster.Recruitment
             if (_clock.TotalHours < _nextVisitHour) return;
             _nextVisitHour = _clock.TotalHours + GameRandom.Shared.Range(MinIntervalHours, MaxIntervalHours);
             _visitors.RemoveAll(v => v == null);
-            if (_roster.IsFull || _visitors.Count >= MaxConcurrent) return;
+            if (_roster.IsFull || RegularVisitors >= MaxConcurrent) return;
             SpawnVisitor();
         }
+
+        /// <summary>
+        /// A refugee from another village on its way here (P4-84): kept and saved with the visitors from now on, but not
+        /// counted against <see cref="MaxConcurrent"/> (user decision 2026-10-18: they come whoever else is in town).
+        /// </summary>
+        public void Adopt(Adventurer refugee)
+        {
+            if (refugee == null || _visitors.Contains(refugee)) return;
+            refugee.transform.SetParent(transform, true);
+            _visitors.Add(refugee);
+            _refugees.Add(refugee.Data.id);
+        }
+
+        /// <summary>Visitors who count against the cap: everyone but refugees.</summary>
+        int RegularVisitors => _visitors.Count(v => v != null && !_refugees.Contains(v.Data.id));
 
         /// <summary>Spawns a visitor at a random gate now (also used by debug commands).</summary>
         public Adventurer SpawnVisitor()

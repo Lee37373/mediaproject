@@ -223,15 +223,18 @@ namespace GuildMaster.Town
                 if (_clock.TotalHours - raid.StartedAtHour >= _cfg.MaxHours) GiveUp(raid);
 
             Services.TryGet<MigrationService>(out var migration);
+            Services.TryGet<Villages.VillageRaids>(out var villageRaids);
             foreach (var nest in _eco.Nests)
             {
                 if (!nest.Species.canRaid || nest.IsEmpty || nest.IsLair || IsRaiding(nest)) continue;
                 if (migration != null && migration.IsMigrating(nest)) continue;
+                if (villageRaids != null && villageRaids.IsRaiding(nest)) continue;
                 int level = LevelOf(nest);
                 if (level <= 0 || GameRandom.Shared.Value >= level * _cfg.ChancePerLevelPerHour) continue;
-                // Only a nest by the town sends its band against the walls; the others move their
-                // home a step closer instead (P4-56, user decision 2026-09-22).
+                // Only a nest by the town sends its band against the walls; one by another village raids
+                // that (P4-84); the others move their home a step closer instead (P4-56, user decision 2026-09-22).
                 if (migration == null || IsByTheTown(nest)) Launch(nest);
+                else if (villageRaids != null && villageRaids.TryLaunch(nest)) { }
                 else migration.TryLaunch(nest); // the whole nest moves (user decision 2026-09-22)
             }
         }

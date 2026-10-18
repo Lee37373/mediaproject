@@ -14,9 +14,10 @@ namespace GuildMaster.Quests
     /// (escorts only). <see cref="Town"/>: our town (its hunts on the dens the guild has seen, and disasters).
     /// <see cref="Patron"/>: another client whose request the guild master took from the proposal cards.
     /// Every client but the guild pays the whole reward and the guild keeps a fee (<see cref="QuestPricing"/>).
-    /// New clients (other villages P4-84, events P4-85) go at the end: saves keep the number.
+    /// <see cref="Village"/>: another village (P4-84) — hunts on the dens by it, and its defence when the guild sees it attacked.
+    /// New clients (events P4-85) go at the end: saves keep the number.
     /// </summary>
-    public enum QuestClient { Guild, Town, Patron }
+    public enum QuestClient { Guild, Town, Patron, Village }
 
     /// <summary>Anyone who can take quests (adventurers).</summary>
     public interface IQuestTaker
@@ -82,14 +83,21 @@ namespace GuildMaster.Quests
         /// <summary>The guild's cut of the client's gold, paid to the treasury when the work is done. <see cref="RewardGold"/> is what is left for the members.</summary>
         public int FeeGold { get; internal set; }
 
-        public string ClientLabel => ClientName(Client);
+        public string ClientLabel => Client == QuestClient.Village && Village != null ? Village.DisplayName : ClientName(Client);
 
         public static string ClientName(QuestClient c) => c switch
         {
             QuestClient.Guild => "길드",
             QuestClient.Town => "우리 마을",
+            QuestClient.Village => "다른 마을",
             _ => "의뢰인",
         };
+
+        // ---- Other villages (P4-84) ----
+        /// <summary>The village that posted and pays for it (<see cref="QuestClient.Village"/>), else null.</summary>
+        public Villages.Village Village { get; internal set; }
+        /// <summary>Its village's defence against a raid the guild saw: settled with the raid, not by a den.</summary>
+        public bool IsVillageDefence { get; internal set; }
 
         // ---- Natural disasters (P4-72) ----
         /// <summary>The disaster to deal with.</summary>
@@ -149,6 +157,7 @@ namespace GuildMaster.Quests
 
         public string Title => Type switch
         {
+            QuestType.Hunt when IsVillageDefence && Village != null => $"[방어] {Village.DisplayName} 습격 {Species?.displayName} x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
             QuestType.Hunt when Species != null && Species.isRegionLord => $"[지대 군주] {Species.displayName} 토벌 ({QuestBoard.DescribeArea(Point)})",
             QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
             QuestType.Escort => $"길드 마스터 호위 (최대 {MaxHours}시간)",
@@ -274,6 +283,8 @@ namespace GuildMaster.Quests
             public bool town_funded;
             public QuestClient client;
             public int fee_gold;
+            public int village = -1;
+            public bool village_defence;
             public int disaster = -1;
             public int worked;
             public int max_hours;
@@ -297,6 +308,7 @@ namespace GuildMaster.Quests
                 progress = Progress, reward_gold = RewardGold, bonus_gold = BonusGold, reward_exp = RewardExp, max_party = MaxParty,
                 status = Status, posted = PostedAtHour, completed = CompletedAtHour, danger = Danger,
                 target_nest = TargetNest != null ? IndexOf(nests, TargetNest) : -1, client = Client, fee_gold = FeeGold,
+                village = Village != null ? Village.Id : -1, village_defence = IsVillageDefence,
                 disaster = Disaster != null ? Disaster.Id : -1, worked = Worked, max_hours = MaxHours, escort_hours = EscortHours,
                 escort_left = EscortLeftTown, pay_gold = PayGold, pay_exp = PayExp,
             };
@@ -337,6 +349,7 @@ namespace GuildMaster.Quests
             TargetNest = s.target_nest >= 0 && s.target_nest < nests.Count ? nests[s.target_nest] : null;
             Client = s.client == QuestClient.Guild && s.town_funded ? QuestClient.Town : s.client;
             FeeGold = s.fee_gold;
+            IsVillageDefence = s.village_defence;
             Worked = s.worked;
             MaxHours = s.max_hours;
             EscortHours = s.escort_hours;
@@ -352,6 +365,7 @@ namespace GuildMaster.Quests
         {
             foreach (var id in s.assignees) if (ctx.Find<IQuestTaker>(id) is { } t) _assignees.Add(t);
             if (s.disaster >= 0) Disaster = ctx.Find<Disasters.Disaster>(Disasters.Disaster.SaveKeyOf(s.disaster));
+            if (s.village >= 0) Village = ctx.Find<Villages.Village>(Villages.Village.SaveKeyOf(s.village));
         }
     }
 }

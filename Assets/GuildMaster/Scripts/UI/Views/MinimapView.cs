@@ -36,6 +36,8 @@ namespace GuildMaster.UI
         static readonly Color NestColor = new(0.85f, 0.45f, 0.15f);
         static readonly Color EmptyNestColor = new(0.55f, 0.5f, 0.45f);
         static readonly Color LairColor = new(0.85f, 0.2f, 0.6f);
+        static readonly Color VillageColor = new(0.95f, 0.9f, 0.6f);
+        static readonly Color VillageRuinColor = new(0.4f, 0.38f, 0.36f);
         /// <summary>Last-seen monsters under the fog (P4-23), grey so they read as memory.</summary>
         static readonly Color GhostColor = new(0.62f, 0.66f, 0.74f);
         static readonly Color FrameColor = new(1f, 1f, 1f, 0.85f);
@@ -201,6 +203,14 @@ namespace GuildMaster.UI
                     // A region lord's lair (P4-83), once the guild has seen its lord there: bigger, in its own colour.
                     if (intel.KnownLordAt(n) != null) { Dot(n.WorldPosition, LairColor, 11f, square: true); continue; }
                     Dot(n.WorldPosition, info.Observed && info.LastCount == 0 ? EmptyNestColor : NestColor, 7f, square: true);
+                }
+
+            // Other villages the guild has seen (P4-84), as last seen: ruins greyed out.
+            if (Services.TryGet<Villages.VillageService>(out var villages))
+                foreach (var v in villages.Known)
+                {
+                    bool ruined = fog != null && villages.IsVisible(v) ? v.IsDestroyed : v.SeenRuined;
+                    Dot(v.WorldPosition, ruined ? VillageRuinColor : VillageColor, 10f, square: true);
                 }
 
             // Monsters only where the guild currently sees; raiders drawn larger in their own colour.

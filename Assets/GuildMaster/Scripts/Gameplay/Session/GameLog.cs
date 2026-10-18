@@ -215,6 +215,33 @@ namespace GuildMaster.Session
                 if (e.Victim is not Monsters.Monster { IsBoss: true } boss || !Services.TryGet<Fog.FogOfWar>(out var fog) || !fog.IsVisibleRaw(boss.Position)) return;
                 Add(e.Killer != null ? $"[보스] {e.Killer.DisplayName}이(가) {boss.DisplayName}을(를) 쓰러뜨렸습니다!" : $"[보스] {boss.DisplayName}이(가) 쓰러졌습니다.", LogCategory.Ecosystem);
             });
+            // Other villages (P4-84): what the guild saw of them, and the rumour of a new one.
+            EventBus.Subscribe<Villages.VillageDiscoveredEvent>(e => Add(
+                $"[마을] 새 마을 발견: {e.Village.DisplayName} ({Monsters.RegionLords.RegionName(e.Village.Region)}, {Quests.QuestBoard.DescribeArea(e.Village.WorldPosition)}). 길드 마스터가 직접 가면 영입 후보를 만날 수 있습니다.", LogCategory.Info));
+            EventBus.Subscribe<Villages.VillageRaidSightedEvent>(e => Add(
+                $"[마을] {e.Village.DisplayName}이(가) {e.Species?.displayName} {e.Raiders}마리에게 습격받고 있습니다! 마을이 방어 의뢰를 냈습니다.", LogCategory.Danger));
+            EventBus.Subscribe<Villages.VillageRaidEndedEvent>(e =>
+            {
+                if (e.Sighted && !e.Fell) Add($"[마을] {e.Village.DisplayName} 습격이 끝났습니다. (처치 {e.Killed}, 물러남 {e.Withdrawn})", LogCategory.Danger);
+            });
+            EventBus.Subscribe<Villages.VillageRuinsSeenEvent>(e => Add(e.SawItFall
+                ? $"[마을] {e.Village.DisplayName}이(가) 무너졌습니다! 다시 세워지지 않습니다."
+                : $"[마을] {e.Village.DisplayName}이(가) 무너져 폐허만 남은 것을 확인했습니다.", LogCategory.Danger));
+            EventBus.Subscribe<Villages.VillageFoundedEvent>(e => Add(
+                $"[마을] {Monsters.RegionLords.RegionName(e.Village.Region)} 어딘가에 새 마을이 생겼다는 소문이 들립니다.", LogCategory.Info));
+            EventBus.Subscribe<Villages.VillagerJoinedEvent>(e => Add(
+                $"{e.Adventurer.Data.name}이(가) {e.Village.DisplayName}에서 길드에 들어와 혼자 우리 마을로 향합니다.", LogCategory.Info));
+            EventBus.Subscribe<Villages.VillageRefugeesFledEvent>(e =>
+            {
+                if (e.Seen) Add($"[마을] {e.Village.DisplayName} 사람 {e.Count}명이 우리 마을로 피난을 떠납니다.", LogCategory.Danger);
+            });
+            EventBus.Subscribe<RefugeeArrivedEvent>(e => Add(
+                $"피난민 {e.Visitor.Data.name}({AdventurerData.ClassLabel(e.Visitor.Data.cls)} Lv.{e.Visitor.Data.level})이(가) {e.From}에서 우리 마을에 왔습니다. 말을 걸어 영입해 보세요.", LogCategory.Info));
+            EventBus.Subscribe<Units.UnitDiedEvent>(e =>
+            {
+                if (e.Victim is not Adventurer { IsVisitor: true } refugee || !Services.TryGet<Fog.FogOfWar>(out var fog) || !fog.IsVisibleRaw(refugee.Position)) return;
+                Add($"피난 가던 {refugee.Data.name}이(가) {(e.Killer != null ? e.Killer.DisplayName + "에게 " : "")}쓰러졌습니다.", LogCategory.Danger);
+            });
             EventBus.Subscribe<DayPassedEvent>(e => Add($"{e.Day}일차가 밝았습니다.", LogCategory.Info));
         }
 

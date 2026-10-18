@@ -167,6 +167,87 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        // ---------------- Other villages (P4-84) ----------------
+
+        /// <summary>Every village, real values: where, durability, fallen, what the guild knows, candidates, raids on it.</summary>
+        public static string Villages()
+        {
+            var svc = Services.Get<GuildMaster.Villages.VillageService>();
+            var raids = Services.Get<GuildMaster.Villages.VillageRaids>();
+            var town = Services.Get<World.WorldService>().TownCenterWorld;
+            var sb = new StringBuilder($"villages {svc.Villages.Count} (standing {svc.Standing.Count()}, started with {svc.InitialCount}), raids so far {raids.RaidCount}\n");
+            for (int i = 0; i < svc.Villages.Count; i++)
+            {
+                var v = svc.Villages[i];
+                sb.AppendLine($"  [{i}] #{v.Id} {v.DisplayName} {v.Region} {(v.Inner ? "inner" : "outer")} @{v.Cell} {Vector2.Distance(v.WorldPosition, town):0} cells " +
+                              $"hp {v.Hp:0}/{v.MaxHp:0}{(v.IsDestroyed ? $" FELL@{v.FellAtHour:0.0}" : "")} known={v.Known} seenRuined={v.SeenRuined} seenHp={v.SeenHpRatio:0.00} " +
+                              $"candidates={(v.CandidatesDrawn ? string.Join(",", v.Candidates.Select(c => $"{c.data.name} Lv{c.data.level}")) : "(not drawn)")} " +
+                              $"out={svc.CandidatesOut(v).Count()} refugeesSent={v.RefugeesSent} underAttack={raids.IsUnderAttack(v)}");
+            }
+            foreach (var r in raids.Report())
+                sb.AppendLine($"  raid on {r.village.DisplayName}: {r.raiders} raiders sighted={r.sighted} passing={r.passing} {r.hours:0.0}h");
+            return sb.ToString();
+        }
+
+        /// <summary>Puts the guild master (and the camera) at a village's doorstep: its candidates come out.</summary>
+        public static string JumpToVillage(int index)
+        {
+            var svc = Services.Get<GuildMaster.Villages.VillageService>();
+            if (index < 0 || index >= svc.Villages.Count) return "no village " + index;
+            var v = svc.Villages[index];
+            var master = Services.Get<Player.PlayerAvatar>();
+            var world = Services.Get<World.WorldService>();
+            if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(v.Doorstep + Vector2.down * 1.5f), 4, out var cell)) return "no ground";
+            master.Mover.Stop();
+            master.transform.position = World.GridMap.CellToWorld(cell);
+            Services.Get<CameraControl.CameraController>().JumpTo(v.WorldPosition);
+            return $"{v.DisplayName} at {cell}";
+        }
+
+        /// <summary>A raid on a village: from the nearest den within reach, or <paramref name="count"/> monsters of a kind spawned beside it.</summary>
+        public static string RaidVillage(int index, string speciesId = null, int count = 4, float distance = 10f)
+        {
+            var svc = Services.Get<GuildMaster.Villages.VillageService>();
+            var raids = Services.Get<GuildMaster.Villages.VillageRaids>();
+            if (index < 0 || index >= svc.Villages.Count) return "no village " + index;
+            var v = svc.Villages[index];
+            if (string.IsNullOrEmpty(speciesId))
+            {
+                var nest = Services.Get<EcosystemManager>().Nests
+                    .Where(n => !n.IsLair && n.Species.canRaid && !n.IsEmpty && Vector2.Distance(n.WorldPosition, v.WorldPosition) <= GuildMaster.Villages.VillageRules.RaidRadius)
+                    .OrderBy(n => Vector2.Distance(n.WorldPosition, v.WorldPosition)).FirstOrDefault();
+                if (nest == null) return "no raiding den within reach; pass a species";
+                return $"raid from {nest.DisplayName}: {raids.Launch(nest, v)}";
+            }
+            var species = Services.Get<EcosystemManager>().Species.FirstOrDefault(s => s.id == speciesId);
+            if (species == null) return "unknown species: " + speciesId;
+            var world = Services.Get<World.WorldService>();
+            var group = new List<Monster>();
+            for (int i = 0; i < count; i++)
+            {
+                var p = v.WorldPosition + GameRandom.Shared.InsideUnitCircle().normalized * distance;
+                if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(p), 3, out var c)) continue;
+                var mon = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(c));
+                mon.Setup(species, null);
+                group.Add(mon);
+            }
+            return $"raid of {raids.LaunchGroup(group, v)} {species.displayName}";
+        }
+
+        /// <summary>Knocks a village down by <paramref name="amount"/> (a negative amount does nothing).</summary>
+        public static string HurtVillage(int index, float amount)
+        {
+            var svc = Services.Get<GuildMaster.Villages.VillageService>();
+            if (index < 0 || index >= svc.Villages.Count) return "no village " + index;
+            var v = svc.Villages[index];
+            v.Damage(amount, null, Services.Get<GameClock>().TotalHours);
+            return $"{v.DisplayName} hp {v.Hp:0}/{v.MaxHp:0}{(v.IsDestroyed ? " fell" : "")}";
+        }
+
+        /// <summary>Founds a new village now (as the midnight roll would).</summary>
+        public static string FoundVillage()
+            => Services.Get<GuildMaster.Villages.VillageService>().TryFound(out var v) ? $"#{v.Id} {v.DisplayName} {v.Region} @{v.Cell}" : "no room";
+
         public static void SetSpeed(int index) => Services.Get<GameClock>().SetSpeed(index);
 
         /// <summary>

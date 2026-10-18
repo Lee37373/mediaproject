@@ -335,6 +335,74 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
         }
 
+        // ---------------- Other villages (P4-84) ----------------
+
+        /// <summary>
+        /// Another village seen from afar (3×3 cells): two cottages behind a stake fence, roofs in the colours of
+        /// its region. Ruined, it is burnt stumps of wall and rubble.
+        /// </summary>
+        public static Sprite Village(World.Region region, bool ruined)
+        {
+            string key = $"c_village:{region}:{ruined}";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            const int S = 96;
+            var c = new Canvas(S, S);
+            var woodInk = Hex(0x4A2E17);
+            c.Shape(Ellipse(48, 22, 44, 16), new Color(0f, 0f, 0f, 0.18f), new Color(0f, 0f, 0f, 0.18f), 0f);
+            if (ruined)
+            {
+                var soot = Hex(0x3A3532);
+                c.Shape(Ellipse(48, 30, 36, 14), Hex(0x6E655E), Darker(Hex(0x6E655E), 0.6f), 2f);
+                c.Shape(RoundRect(18, 26, 40, 46, 2f), soot, Hex(0x1E1A18), 2.5f);
+                c.Shape(RoundRect(54, 24, 80, 40, 2f), soot, Hex(0x1E1A18), 2.5f);
+                for (int i = 0; i < 9; i++)
+                {
+                    float x = 10 + i * 9.5f, tall = 5f + (i * 5 % 4) * 2.5f;
+                    c.Shape(RoundRect(x - 2.5f, 12, x + 2.5f, 12 + tall, 1f), Hex(0x2E2622), Hex(0x161210), 1.5f);
+                }
+                for (int i = 0; i < 6; i++)
+                    c.Shape(Ellipse(22 + i * 10, 20 + (i % 2) * 6, 4.5f, 3f), Hex(0x8E8C94), Hex(0x3C3B45), 1.5f);
+                return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+            }
+            var roof = region switch
+            {
+                World.Region.Desert => Hex(0xD98E4A),
+                World.Region.Snow => Hex(0x6F8FB0),
+                World.Region.Swamp => Hex(0x6E8B4A),
+                World.Region.Wasteland => Hex(0x9A5A3C),
+                _ => Hex(0xB9854A),
+            };
+            var wall = region == World.Region.Desert ? Hex(0xEBD3A0) : Hex(0xF3E6C8);
+            // Back fence stakes, the two cottages, then the front stakes over their feet.
+            for (int i = 0; i < 9; i++)
+            {
+                float x = 9 + i * 9.8f;
+                c.Shape(RoundRect(x - 2.5f, 52, x + 2.5f, 70, 1.5f), Hex(0x9A6436), woodInk, 1.5f);
+            }
+            void Cottage(float x0, float y0, float w, float h)
+            {
+                var walls = RoundRect(x0, y0, x0 + w, y0 + h * 0.55f, 3f);
+                c.Shape(walls, wall, Ink, 2.5f);
+                c.Shape(RoundRect(x0 + w * 0.5f - 5, y0, x0 + w * 0.5f + 5, y0 + 13, 4f), Hex(0x9A6236), Ink, 2f);
+                var top = RoundRect(x0 - 3, y0 + h * 0.5f, x0 + w + 3, y0 + h, 5f);
+                c.Shape(top, roof, Ink, 2.5f);
+                c.ShapeClipped(RoundRect(x0, y0 + h * 0.5f + 6, x0 + w, y0 + h * 0.5f + 8, 1f), (x, y) => top(x, y) + 2.5f, Darker(roof, 0.8f));
+                if (region == World.Region.Snow)
+                    c.ShapeClipped(RoundRect(x0 - 3, y0 + h - 7, x0 + w + 3, y0 + h, 3f), (x, y) => top(x, y), Hex(0xF4F8FC));
+            }
+            Cottage(14, 34, 34, 40);
+            Cottage(50, 26, 32, 38);
+            for (int i = 0; i < 9; i++)
+            {
+                float x = 9 + i * 9.8f;
+                if (i is 4 or 5) continue; // the gateway
+                c.Shape(RoundRect(x - 2.5f, 8, x + 2.5f, 24, 1.5f), Hex(0xA8703C), woodInk, 1.5f);
+            }
+            c.Shape(RoundRect(6, 14, 43, 17, 1f), Hex(0x7A5230), woodInk, 1f);
+            c.Shape(RoundRect(57, 14, 90, 17, 1f), Hex(0x7A5230), woodInk, 1f);
+            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+        }
+
         // ---------------- Buildings ----------------
 
         public static Sprite Building(Town.BuildingType type, int tilesW, int tilesH)
