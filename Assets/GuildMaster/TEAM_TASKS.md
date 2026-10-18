@@ -92,7 +92,7 @@
 | P4-82 | 의뢰 구조 개편(사용자 결정 2026-10-16): 플레이어가 직접 올리는 의뢰를 없애고, 의뢰는 마을 자동 게시·돌발 이벤트·LLM 제안·호위로만. 보상은 의뢰처(시스템)가 내고 길드는 수수료를 받음. **KMS의 F-8(제안 보상 조절)·P4-59(협상 보상 인상)·F-5(의뢰 확장)에 영향(2026-10-17 사용자: 다른 사람 작업은 참고만 — 결정대로 바꿈)** | 이재혁 | 완료 | Quests/Quest·QuestBoard·QuestPricing(신규)·TownQuestPoster(신규), UI/Views/QuestBoardView·QuestProposalView·HudView, Proposals, Economy/GuildTreasury, Reports, Town/UpgradeService, Session/BalanceAutoPlayer | c7b8e68 |
 | P4-83 | 지대 최종 보스 4종(사막·설원·늪지·황무지, 보스 전용 새 종): 잡으면 그 지대에 새 몬스터가 안 생기고, 넷 다 잡으면 승리 화면(계속 플레이 가능). KMS의 F-4(승리 목표)와 겹침(참고만, 2026-10-17 사용자) | 이재혁 | 완료 | Data/DefaultContent·MonsterDefinition, Monsters/RegionLords(신규)·Monster, Ecosystem/RegionLordService(신규)·EcosystemManager·Nest·MigrationService·TerritoryService·GuildIntel, Units/Skills, Quests, Disasters, UI/Views/VictoryView(신규)·EcologyView | 8d091f6 |
 | P4-84 | 다른 마을(지도 아이콘): 지대마다 듬성듬성, 길드 마스터가 직접 가서 영입, 몬스터가 공격하면 그 마을이 방어 의뢰를 올림, 무너지면 영구 소멸하고 확률로 다른 곳에 새 마을 | 이재혁 | 완료 | Villages(신규), World/MapGenerator, Recruitment, Quests, Monsters, UI | 966d454 (정렬 버그 1e3bb65) |
-| P4-85 | 돌발 이벤트 4종(여행자·상인 구출, 희귀 몬스터 출현, 유적·보물 발견, 대규모 무리 접근) → 의뢰. **F-5와 겹침** | 이재혁 | 진행 중 | Events(신규), Quests, Monsters, Ecosystem/MigrationService | |
+| P4-85 | 돌발 이벤트 4종(여행자·상인 구출, 희귀 몬스터 출현, 유적·보물 발견, 대규모 무리 접근) → 의뢰. **F-5와 겹침** | 이재혁 | 완료 | Incidents(신규: 희귀 몬스터·대규모 무리·여행자 구출·유적 지하 미궁), World/Underground(지하 띠·입구 연결), Quests, Monsters, Ecosystem/MigrationService | f0fb857·0c26b14·6faae39·6703cf7·d397601 |
 | P4-86 | 마을 넓히기: 골드·재료로 성벽을 단계별로 밀어냄(성문 이동, 땅 다시 그리기) | 이재혁 | 예정 | Town/TownService·GateService, World/MapGenerator·MapRenderer·GridMap, Adventurers/DefenseCoordinator | |
 | P4-87 | 내실 건물: 길드원 전원 상시 스탯 버프, 길드원이 때린 적 약화, 정원 제한을 없애는 건물 | 이재혁 | 예정 | Town/ConstructionService·Building, Data/DefaultContent, Units/Unit·Combat, Recruitment/VisitorService | |
 | P4-88 | 측정 관찰 후속: 길드보다 강한 후보는 영입이 어려움, 마을 습격 빈도 절반, 약한 신입은 위험 의뢰를 잘 안 받음, 지대 군주 강화(공격 ×4·호위 8·강타 쿨 5초) | 이재혁 | 완료 | Recruitment, Villages, Adventurers/Decisions·RuleBasedDecisionMaker·PartyService, Monsters/RegionLords | db14b11 |
@@ -126,9 +126,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-85 돌발 이벤트 4종(2026-10-18 시작, 단계 a 이벤트 틀·소문·희귀 몬스터 → b 대규모 무리 → c 여행자 구출 → d 유적 지하 미궁)
+- **진행 중**: 없음
 - **예정**: P4-86·P4-87 추가 기획(마을 넓히기, 내실 건물), P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-83, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-85, P4-88, P4-89, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
