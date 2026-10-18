@@ -205,6 +205,16 @@ namespace GuildMaster.Tests
             var rare = Services.Get<Incidents.IncidentService>().StartRareMonster();
             Assert.That(rare, Is.Not.Null, "a rare monster out there");
             rare.RumourAtHour = clock.TotalHours;
+            // And a horde on the march (P4-85b) for a site emptied for it, out of the way of the hunt, the raid and the band.
+            var waveManager = Services.Get<Town.WaveManager>();
+            var questBoard = Services.Get<Quests.QuestBoard>();
+            var hordeSite = System.Linq.Enumerable.First(eco.Nests, n => !n.IsEmpty && !n.IsLair && !n.Sealed && !waveManager.IsRaiding(n)
+                && !migration.IsMigrating(n) && !migration.IsTarget(n) && !System.Linq.Enumerable.Any(questBoard.Quests, q => q.TargetNest == n)
+                && System.Linq.Enumerable.Any(eco.Species, s => s.canRaid && n.Suits(s)));
+            foreach (var m in System.Linq.Enumerable.ToList(hordeSite.Members)) m.Perish();
+            var horde = Services.Get<Incidents.IncidentService>().StartHorde(hordeSite, null, 10);
+            Assert.That(horde, Is.Not.Null, "a horde on the march");
+            horde.RumourAtHour = clock.TotalHours;
 
             clock.SetSpeed(3);
             float start = clock.TotalHours;
@@ -230,6 +240,9 @@ namespace GuildMaster.Tests
             Assert.That(camps, Is.GreaterThan(0), "a camp out in the wild");
             Assert.That(rare.Rumoured && rare.Quest != null && !rare.Over, Is.True, "the rare monster's hunt is up");
             string rareQuest = rare.Quest.Id;
+            Assert.That(horde.Rumoured && horde.Quest != null && !horde.Over, Is.True, "the horde's interception is up");
+            string hordeQuest = horde.Quest.Id;
+            int hordeLeft = horde.Members.Count;
 
             var a = Saves.Capture();
             yield return BootFrom(a);
@@ -251,6 +264,11 @@ namespace GuildMaster.Tests
             Assert.That(loadedRare?.Incident, Is.Not.Null, "the rare hunt knows its incident");
             Assert.That(loadedRare.TargetUnit != null && loadedRare.TargetUnit.IsRare && loadedRare.TargetUnit.IsAlive, Is.True, "and its monster, rare as it was");
             Assert.That(Services.Get<Incidents.IncidentService>().Active, Does.Contain(loadedRare.Incident));
+            var loadedHorde = board.FindById(hordeQuest)?.Incident;
+            Assert.That(loadedHorde, Is.Not.Null, "the horde's quest knows its incident");
+            Assert.That(loadedHorde.Members.Count, Is.EqualTo(hordeLeft), "its members");
+            Assert.That(loadedHorde.Band != null && System.Linq.Enumerable.Contains(Services.Get<Ecosystem.MigrationService>().Bands, loadedHorde.Band) && loadedHorde.Band.Horde,
+                        Is.True, "and its march");
 
             yield return new WaitForSecondsRealtime(1f);
             AssertSameSections(a, Saves.Capture());

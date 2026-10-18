@@ -179,6 +179,9 @@ namespace GuildMaster.Session
             {
                 var m = i.Target;
                 string target = m != null ? $" target {m.DisplayName} Lv{m.Level} hp {m.Hp:0}/{m.Stats.MaxHp:0} at {m.Position.x:0},{m.Position.y:0} {m.StateLabel} off-circle {Vector2.Distance(m.Position, i.RumourCentre) - i.RumourRadius:0.0}" : "";
+                if (i.Kind == GuildMaster.Incidents.IncidentKind.Horde)
+                    target = $" horde {i.SpeciesName} Lv{i.HordeLevel} {i.Members.Count}/{i.HordeSize} at {i.Spot.x:0},{i.Spot.y:0} ({QuestBoard.DescribeArea(i.Spot)}) → {i.Site?.DisplayName} {(i.Site != null ? QuestBoard.DescribeArea(i.Site.WorldPosition) : "")} " +
+                             $"marching {i.Band != null && Services.Get<MigrationService>().Bands.Contains(i.Band)} off-circle {Vector2.Distance(i.Spot, i.RumourCentre) - i.RumourRadius:0.0}";
                 var q = i.Quest;
                 string quest = q != null ? $" quest {q.Id} {q.Status} party {q.Assignees.Count}/{q.MaxParty} pay {q.RewardGold}+{q.FeeGold}G point {q.Point.x:0},{q.Point.y:0} r{q.Radius:0}" : "";
                 sb.AppendLine($"  #{i.Id} {i.Kind} {i.Outcome} spot {i.Spot.x:0},{i.Spot.y:0} ({QuestBoard.DescribeArea(i.Spot)}) rumour@{i.RumourAtHour:0.0} {(i.Rumoured ? $"({i.RumourCentre.x:0},{i.RumourCentre.y:0}) r{i.RumourRadius:0}" : "not yet")} " +
@@ -194,6 +197,18 @@ namespace GuildMaster.Session
             var kind = string.IsNullOrEmpty(speciesId) ? null : Services.Get<GameDatabase>().Monster(speciesId);
             var i = svc.StartRareMonster(float.IsNaN(x) ? null : new Vector2(x, y), kind);
             if (i == null) return "no spot found";
+            if (rumourNow) i.RumourAtHour = Services.Get<GameClock>().TotalHours;
+            return Incidents();
+        }
+
+        /// <summary>Sends a horde now (debug): to the empty site nearest the town (or nest <paramref name="nestIndex"/>), of <paramref name="size"/> (0 = by the rules).</summary>
+        public static string HordeNow(int nestIndex = -1, int size = 0, bool rumourNow = true)
+        {
+            var svc = Services.Get<GuildMaster.Incidents.IncidentService>();
+            var nests = Services.Get<EcosystemManager>().Nests;
+            var site = nestIndex >= 0 && nestIndex < nests.Count ? nests[nestIndex] : null;
+            var i = svc.StartHorde(site, null, size);
+            if (i == null) return "no site for a horde";
             if (rumourNow) i.RumourAtHour = Services.Get<GameClock>().TotalHours;
             return Incidents();
         }

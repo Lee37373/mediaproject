@@ -61,6 +61,23 @@ namespace GuildMaster.Incidents
         /// <summary>What it asks of a party (<see cref="IncidentRules.Requirement"/>), fixed when the rumour came.</summary>
         public float Requirement;
 
+        // ---- Horde ----
+        /// <summary>The horde's living members (the fallen are pruned every check; their pooled bodies are reused later).</summary>
+        public readonly System.Collections.Generic.List<Monsters.Monster> Members = new();
+        /// <summary>How many set out, its kind's name, and its level (for the rumour and the log).</summary>
+        public int HordeSize;
+        public string SpeciesName;
+        public int HordeLevel;
+        /// <summary>Its march (<see cref="Ecosystem.MigrationService.Band"/>) while it is on the way.</summary>
+        public Ecosystem.MigrationService.Band Band;
+        /// <summary>The site it is heading for (where it settles if nobody stops it). Not for the guild.</summary>
+        public Ecosystem.Nest Site;
+        /// <summary>Game hour the rumour is next brought up to date (a moving horde, while unseen).</summary>
+        public float NextRumourHour;
+
+        /// <summary>A monster this incident's quest is about: the rare one, or a member of the horde.</summary>
+        public bool IsTarget(Monsters.Monster m) => m != null && (m == Target || Members.Contains(m));
+
         /// <summary>Key under which a loaded incident is registered (quests point at it).</summary>
         public static string SaveKeyOf(int id) => "incident:" + id;
     }

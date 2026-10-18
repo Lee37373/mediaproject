@@ -154,6 +154,7 @@ namespace GuildMaster.Session
             });
             // Sudden incidents (P4-85): heard by rumour; the end only when the guild knew of it.
             EventBus.Subscribe<Incidents.IncidentRumouredEvent>(e => Add($"[소문] {Incidents.IncidentRules.RumourText(e.Incident)}", LogCategory.Danger));
+            EventBus.Subscribe<Incidents.IncidentRumourUpdatedEvent>(e => Add($"[소문] {Incidents.IncidentRules.RumourUpdateText(e.Incident)}", LogCategory.Danger));
             EventBus.Subscribe<Incidents.IncidentSightedEvent>(e => Add($"{Incidents.IncidentRules.Tag(e.Incident.Kind)} {Incidents.IncidentRules.SightedText(e.Incident)}", LogCategory.Danger));
             EventBus.Subscribe<Incidents.IncidentEndedEvent>(e =>
             {

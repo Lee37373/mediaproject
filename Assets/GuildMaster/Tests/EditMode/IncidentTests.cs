@@ -83,6 +83,26 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void Horde_IsBiggerThanADen_AsksForMostOfIt_AndAPartyAboveItsLevel()
+        {
+            var db = DefaultContent.Build();
+            foreach (var s in db.monsters)
+                if (s.canRaid && !s.isRegionLord) Assert.That(IncidentRules.HordeMin, Is.GreaterThanOrEqualTo(s.raidThreshold), $"{s.id}: a settled horde is a raiding den");
+            Assert.That(IncidentRules.HordeKills(10), Is.EqualTo(7));
+            Assert.That(IncidentRules.HordeKills(16), Is.EqualTo(12));
+            Assert.That(IncidentRules.RumouredCount(12), Is.EqualTo(10));
+            Assert.That(IncidentRules.RumouredCount(13), Is.EqualTo(15));
+            Assert.That(IncidentRules.HordeDanger(3, 12), Is.EqualTo(DangerLevel.Medium), "a big head count is a step worse than its level");
+
+            int level = 6, size = 12;
+            float need = IncidentRules.HordeRequirement(level, size);
+            Assert.That(QuestRisk.Label(QuestRisk.MarginAgainst(level, IncidentRules.HordeParty, need)), Is.EqualTo(QuestRisk.Risky).Or.EqualTo(QuestRisk.Reckless),
+                        "four of its own level against twelve is no fair fight");
+            Assert.That(QuestRisk.Label(QuestRisk.MarginAgainst(level * 1.3f, IncidentRules.HordeParty, need)), Is.EqualTo(QuestRisk.Fair), "four well above it is");
+            Assert.That(IncidentRules.HordeReward(level, size, 100f), Is.GreaterThan(QuestPricing.HuntReward(DangerLevel.High, size, 100f)), "urgent, like a defence");
+        }
+
+        [Test]
         public void RareVariant_DropsItsTrophy_AndGearByLevel()
         {
             var loot = new List<ItemStack>();

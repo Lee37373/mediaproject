@@ -3339,13 +3339,15 @@ namespace GuildMaster.Tests
                 // Killed by the hunter: the hunt is done, the spoils are certain.
                 var at = rare.Position;
                 rare.ReceiveDamage(rare.Hp + 1e6f, hunter, false);
-                yield return null;
-                Assert.That(quest.Status, Is.EqualTo(QuestStatus.Completed), "the hunt is done");
-                Assert.That(first.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Resolved));
-                Assert.That(first.Target, Is.Null, "its pooled body is let go");
+                // Before the hunter next to it picks them up.
                 var spoils = Services.Get<GroundItemService>().Items.Where(g => Vector2.Distance(g.Position, at) < 3f).Select(g => g.Item.id).ToList();
                 Assert.That(spoils, Does.Contain(RareMonster.TrophyId));
                 Assert.That(spoils, Does.Contain($"gear_t{RareMonster.GearTier(first.TargetLevel)}"));
+                yield return null;
+                Assert.That(quest.Status, Is.EqualTo(QuestStatus.Completed), "the hunt is done");
+                yield return WaitFor(() => first.Over, 2f);
+                Assert.That(first.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Resolved));
+                Assert.That(first.Target, Is.Null, "its pooled body is let go");
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
 
@@ -3363,6 +3365,95 @@ namespace GuildMaster.Tests
             Assert.That(gone.IsAlive, Is.False);
             Assert.That(unclaimed.Status, Is.EqualTo(QuestStatus.Cancelled), "its hunt came down");
             Assert.That(board.Quests.Contains(unclaimed), Is.False);
+        }
+
+        /// <summary>
+        /// A horde (P4-85): far more than a den holds walks in from a map edge for an empty site by the town, its rumour
+        /// posts an interception that counts only its members, later rumours move the circle with it; bringing down seven
+        /// in ten of it is the quest done. A second one nobody stops settles its site, and its quest comes down.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Horde_MarchesFromTheEdge_RumoursFollowIt_InterceptingMostOfItPays_AndOneLeftAloneSettles()
+        {
+            yield return Boot();
+            MigrationService.NoNewcomers = true;
+            try
+            {
+                var incidents = Services.Get<Incidents.IncidentService>();
+                var migration = Services.Get<MigrationService>();
+                var eco = Services.Get<EcosystemManager>();
+                var board = Services.Get<QuestBoard>();
+                var town = Services.Get<World.WorldService>().TownCenterWorld;
+                // An empty site by the town that a raiding kind lives at (the nearest occupied one, emptied).
+                var site = eco.Nests.Where(n => !n.IsEmpty && !n.IsLair && eco.Species.Any(s => s.canRaid && n.Suits(s)))
+                                    .OrderBy(n => Vector2.Distance(n.WorldPosition, town)).First();
+                foreach (var m in site.Members.ToList()) m.Perish();
+                yield return null;
+                Assert.That(site.IsEmpty, Is.True);
+
+                var horde = incidents.StartHorde(site, null, 12);
+                Assert.That(horde, Is.Not.Null, "a horde set out");
+                Assert.That(horde.HordeSize, Is.EqualTo(12));
+                Assert.That(horde.Band.Horde && migration.Bands.Contains(horde.Band), Is.True, "marching as a band");
+                Assert.That(horde.Members.All(m => m.Home == site && m.Def.canRaid), Is.True, "a raiding kind, for that site");
+                Assert.That(Vector2.Distance(horde.Spot, site.WorldPosition), Is.GreaterThan(80f), "from far off, at the edge");
+                Assert.That(horde.Members.Min(m => m.Level), Is.GreaterThanOrEqualTo(site.BirthLevel + Incidents.IncidentRules.HordeLevelBonus));
+
+                horde.RumourAtHour = Clock.TotalHours;
+                yield return WaitFor(() => horde.Rumoured, 3f);
+                var quest = horde.Quest;
+                Assert.That(quest, Is.Not.Null, "the rumour posted an interception");
+                Assert.That(quest.RequiredCount, Is.EqualTo(Incidents.IncidentRules.HordeKills(12)));
+                Assert.That(Vector2.Distance(quest.Point, horde.Spot), Is.LessThanOrEqualTo(quest.Radius), "the circle holds it");
+                Assert.That(quest.Counts(horde.Members[0]), Is.True);
+                var stranger = eco.Nests.SelectMany(n => n.Members).FirstOrDefault(m => m.IsAlive && m.Def == horde.Members[0].Def && !horde.Members.Contains(m));
+                if (stranger != null) Assert.That(quest.Counts(stranger), Is.False, "one of its kind from elsewhere does not count");
+
+                // A later rumour moves the circle along with it.
+                int updates = 0;
+                Action<Incidents.IncidentRumourUpdatedEvent> onUpdate = _ => updates++;
+                EventBus.Subscribe(onUpdate);
+                horde.NextRumourHour = Clock.TotalHours;
+                yield return WaitFor(() => updates > 0, 3f);
+                EventBus.Unsubscribe(onUpdate);
+                Assert.That(updates, Is.GreaterThan(0), "a new rumour of where it is");
+                Assert.That(Vector2.Distance(quest.Point, horde.Spot), Is.LessThanOrEqualTo(quest.Radius), "still around it");
+
+                // Seven in ten brought down by the one on it: intercepted.
+                foreach (var m in Roster.Members) m.Data.level = 30;
+                Assert.That(DebugCommands.ForceAccept(quest.Id, 1), Is.Not.Empty);
+                var hunter = Roster.Members.First(m => quest.IsAssigned(m));
+                foreach (var m in horde.Members.Take(quest.RequiredCount).ToList()) m.ReceiveDamage(m.Hp + 1e6f, hunter, false);
+                yield return null;
+                Assert.That(quest.Status, Is.EqualTo(QuestStatus.Completed), "intercepted");
+                yield return WaitFor(() => horde.Over, 2f);
+                Assert.That(horde.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Resolved));
+                Assert.That(migration.Bands.Contains(horde.Band), Is.True, "what is left still walks on");
+                foreach (var m in horde.Band.Members.ToList()) m.Perish();
+                yield return null;
+
+                // A second one nobody takes: it gets there and settles, its quest comes down.
+                Assert.That(site.IsEmpty, Is.True);
+                var second = incidents.StartHorde(site, null, 10);
+                Assert.That(second, Is.Not.Null);
+                second.RumourAtHour = Clock.TotalHours;
+                yield return WaitFor(() => second.Rumoured, 3f);
+                var unclaimed = second.Quest;
+                Assert.That(unclaimed, Is.Not.Null);
+                // It arrives (walking the whole way takes half a day).
+                var grid = Services.Get<World.WorldService>().Grid;
+                foreach (var m in second.Members)
+                {
+                    grid.TryRandomWalkableNear(site.Cell, 2, GameRandom.Shared, out var cell);
+                    m.Mover.Stop();
+                    m.transform.position = World.GridMap.CellToWorld(cell);
+                }
+                yield return WaitFor(() => second.Over, 5f);
+                Assert.That(second.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Expired), "it settled");
+                Assert.That(site.Members.Count(m => m.IsAlive), Is.EqualTo(10), "the site is theirs");
+                Assert.That(unclaimed.Status, Is.EqualTo(QuestStatus.Cancelled), "its quest came down");
+            }
+            finally { MigrationService.NoNewcomers = false; }
         }
 
         /// <summary>

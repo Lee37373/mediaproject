@@ -38,6 +38,7 @@ namespace GuildMaster.Ecosystem
             public bool resting;
             public string species;
             public bool arrival;
+            public bool horde;
         }
 
         [System.Serializable]
@@ -62,7 +63,7 @@ namespace GuildMaster.Ecosystem
                 var sb = new SavedBand
                 {
                     id = b.Id, from = NestIndex(b.From), target = NestIndex(b.Target), started_at = b.StartedAtHour, resting = b.Resting,
-                    species = b.Species != null ? b.Species.id : null, arrival = b.Arrival,
+                    species = b.Species != null ? b.Species.id : null, arrival = b.Arrival, horde = b.Horde,
                 };
                 foreach (var m in b.Members) if (m != null && m.IsAlive) sb.members.Add(m.UnitId);
                 foreach (var n in b.Refused) sb.refused.Add(NestIndex(n));
@@ -86,7 +87,7 @@ namespace GuildMaster.Ecosystem
                 var band = new Band
                 {
                     Id = sb.id, From = NestAt(sb.from), Target = NestAt(sb.target), StartedAtHour = sb.started_at, Resting = sb.resting,
-                    Species = db.Monster(sb.species), Arrival = sb.arrival,
+                    Species = db.Monster(sb.species), Arrival = sb.arrival, Horde = sb.horde,
                 };
                 foreach (var i in sb.refused) if (NestAt(i) is { } n) band.Refused.Add(n);
                 foreach (var id in sb.members)
@@ -139,6 +140,8 @@ namespace GuildMaster.Ecosystem
             public MonsterDefinition Species;
             /// <summary>Newcomers from beyond the edge heading for an empty outer site (their home already).</summary>
             public bool Arrival;
+            /// <summary>A sudden incident's horde (P4-85): newcomers far more than a den holds, heading for a site by the town.</summary>
+            public bool Horde;
         }
 
         EcosystemManager _eco;
@@ -279,6 +282,38 @@ namespace GuildMaster.Ecosystem
             Debug.Log($"[Migration] newcomers #{band.Id}: {size} {species.displayName} from the edge {edge} → {target.DisplayName}");
             return true;
         }
+
+        /// <summary>
+        /// A horde (P4-85, user decision 2026-10-18): a newcomer band of <paramref name="size"/> — far more than a den holds —
+        /// walks in from one of the map edges nearest <paramref name="target"/> (an empty site near the town), born at the
+        /// site's level + <paramref name="levelBonus"/>. Like any newcomers the site is theirs from the start; whoever stops
+        /// them on the way decides whether they get there. Null when the site cannot be had.
+        /// </summary>
+        public Band TryHorde(Nest target, MonsterDefinition species, int size, int levelBonus, GameRandom rng)
+        {
+            if (target == null || species == null || !target.IsEmpty || target.IsLair || target.Sealed || IsTarget(target)
+                || _world.Map.EdgeSpawnCells.Count == 0) return null;
+            target.ChangeSpecies(species);
+            // One of the nearer edges (a quarter of them), so it comes from a different side now and then.
+            var edges = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).ToList();
+            var edge = edges[rng.Range(0, Mathf.Max(1, edges.Count / 4))];
+            var band = new Band
+            {
+                Id = ++_count, From = target, Target = target, StartedAtHour = _clock.TotalHours, Species = species, Arrival = true, Horde = true,
+            };
+            bool boss = rng.Chance(MonsterBoss.Chance);
+            for (int i = 0; i < size; i++)
+            {
+                var m = _eco.Spawn(target, GridMap.CellToWorld(edge), boss && i == 0);
+                if (levelBonus > 0) m.SetLevel(m.Level + levelBonus);
+                Enlist(band, m);
+            }
+            _bands.Add(band);
+            Debug.Log($"[Migration] horde #{band.Id}: {size} {species.displayName} from the edge {edge} → {target.DisplayName}");
+            return band;
+        }
+
+        public Band BandById(int id) => _bands.FirstOrDefault(b => b.Id == id);
 
         void OnMemberDied(Units.Unit u)
         {

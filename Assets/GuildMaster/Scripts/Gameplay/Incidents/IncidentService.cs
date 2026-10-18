@@ -14,6 +14,8 @@ namespace GuildMaster.Incidents
 {
     /// <summary>The rumour of an incident reached the town (its quest is up).</summary>
     public struct IncidentRumouredEvent { public Incident Incident; }
+    /// <summary>A later rumour of where a moving incident (a horde) is now; its quest's area moved there.</summary>
+    public struct IncidentRumourUpdatedEvent { public Incident Incident; }
     /// <summary>The guild saw an incident with its own eyes for the first time.</summary>
     public struct IncidentSightedEvent { public Incident Incident; }
     /// <summary>An incident is over. <see cref="Known"/>: the guild had heard of it or seen it (else the UI stays silent).</summary>
@@ -60,17 +62,11 @@ namespace GuildMaster.Incidents
             _fog = fog;
         }
 
-        void OnEnable()
-        {
-            EventBus.Subscribe<HourPassedEvent>(OnHour);
-            EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
-        }
+        // Deaths are noticed on the next check (not on the death event): the board counts the kill on that event first,
+        // whatever order the two were subscribed in, and a pooled body is not reused within a check (its corpse lingers).
+        void OnEnable() => EventBus.Subscribe<HourPassedEvent>(OnHour);
 
-        void OnDisable()
-        {
-            EventBus.Unsubscribe<HourPassedEvent>(OnHour);
-            EventBus.Unsubscribe<UnitDiedEvent>(OnUnitDied);
-        }
+        void OnDisable() => EventBus.Unsubscribe<HourPassedEvent>(OnHour);
 
         void OnHour(HourPassedEvent e)
         {
@@ -79,11 +75,15 @@ namespace GuildMaster.Incidents
             if (e.Day >= IncidentRules.RareFirstDay && !_active.Any(i => i.Kind == IncidentKind.RareMonster)
                 && rng.Value < IncidentRules.RareChancePerHour)
                 StartRareMonster();
+            if (e.Day >= IncidentRules.HordeFirstDay && !_active.Any(i => i.Kind == IncidentKind.Horde)
+                && rng.Value < IncidentRules.HordeChancePerHour)
+                StartHorde();
         }
 
         void Update()
         {
-            if (_active.Count == 0) return;
+            // Paused: nothing moves (P4-80; a loaded game starts with the check due and would otherwise run it once).
+            if (_active.Count == 0 || Time.deltaTime <= 0f) return;
             _timer -= Time.deltaTime;
             if (_timer > 0f) return;
             _timer = TickInterval;
@@ -95,6 +95,7 @@ namespace GuildMaster.Incidents
             switch (i.Kind)
             {
                 case IncidentKind.RareMonster: TickRare(i); break;
+                case IncidentKind.Horde: TickHorde(i); break;
             }
             if (!i.Over && !i.Rumoured && Now >= i.RumourAtHour) SpreadRumour(i);
         }
@@ -181,7 +182,12 @@ namespace GuildMaster.Incidents
         void TickRare(Incident i)
         {
             var m = i.Target;
-            if (m == null || !m.IsAlive) return; // its death is handled by OnUnitDied
+            if (m == null) return;
+            if (!m.IsAlive)
+            {
+                RareFell(i);
+                return;
+            }
             bool visible = _fog != null && _fog.IsVisibleRaw(m.Position);
             if (visible)
             {
@@ -214,21 +220,163 @@ namespace GuildMaster.Incidents
         /// <summary>Why the board took a rare hunt down: someone else got it.</summary>
         public const string RareSlainReason = "다른 누군가가 쓰러뜨렸습니다";
 
-        void OnUnitDied(UnitDiedEvent e)
+        /// <summary>
+        /// The rare one fell. By the hunt's takers the board has already marked the hunt done; by anyone else the hunt is
+        /// done if someone was on it (as with a den that is gone) and comes down if not.
+        /// </summary>
+        void RareFell(Incident i)
         {
-            if (e.Victim is not Monster m) return;
-            foreach (var i in _active.ToList())
+            i.Target = null; // the pooled body will be someone else
+            bool byQuest = i.Quest != null && i.Quest.Status is QuestStatus.Completed or QuestStatus.TurnedIn;
+            End(i, byQuest ? IncidentOutcome.Resolved : IncidentOutcome.SettledByOthers);
+            SettleQuest(i, RareSlainReason);
+        }
+
+        /// <summary>The incident is over by other hands: a claimed quest is done, an unclaimed one comes down.</summary>
+        void SettleQuest(Incident i, string reason)
+        {
+            if (i.Quest == null || !i.Quest.IsActive) return;
+            if (i.Quest.Assignees.Count > 0) _board.SettleTownQuest(i.Quest, reason);
+            else _board.FailIncidentQuest(i.Quest, reason);
+        }
+
+        // ---------------- Horde ----------------
+
+        /// <summary>
+        /// A horde sets out from a map edge for the empty site nearest the town that a raiding kind can live at (else any
+        /// kind that lives there). Null when there is no such site. <paramref name="site"/>, <paramref name="kind"/> and
+        /// <paramref name="size"/> are for tests and debug.
+        /// </summary>
+        public Incident StartHorde(Nest site = null, MonsterDefinition kind = null, int size = 0)
+        {
+            if (!Services.TryGet<MigrationService>(out var migration)) return null;
+            var rng = GameRandom.Shared;
+            if (site == null && !PickHordeSite(migration, out site, out kind)) return null;
+            kind ??= PickHordeKind(site);
+            if (kind == null) return null;
+            if (size <= 0) size = rng.Range(IncidentRules.HordeMin, IncidentRules.HordeMax + 1);
+            var band = migration.TryHorde(site, kind, size, IncidentRules.HordeLevelBonus, rng);
+            if (band == null) return null;
+            var i = new Incident
             {
-                if (i.Target != m) continue;
-                i.Target = null; // the pooled body will be someone else
-                bool byQuest = i.Quest != null && e.Killer is IQuestTaker t && i.Quest.IsAssigned(t);
-                End(i, byQuest ? IncidentOutcome.Resolved : IncidentOutcome.SettledByOthers);
-                // The board counted a kill by one of its takers already (QuestBoard.OnUnitDied); anyone else's ends it here.
+                Id = _nextId++, Kind = IncidentKind.Horde, StartedHour = Now, RumourAtHour = Now + IncidentRules.RumourDelay(rng),
+                EndsAtHour = float.MaxValue, Band = band, Site = site, HordeSize = band.Members.Count, SpeciesName = kind.displayName,
+                HordeLevel = band.Members.Count > 0 ? band.Members.Max(m => m.Level) : 1,
+            };
+            i.Members.AddRange(band.Members);
+            i.Spot = Centroid(i.Members);
+            _active.Add(i);
+            Debug.Log($"[Incident] #{i.Id} horde of {i.HordeSize} {kind.displayName} Lv{i.HordeLevel} from ({i.Spot.x:0},{i.Spot.y:0}) → {site.DisplayName} {QuestBoard.DescribeArea(site.WorldPosition)}");
+            return i;
+        }
+
+        bool PickHordeSite(MigrationService migration, out Nest site, out MonsterDefinition kind)
+        {
+            var town = _world.TownCenterWorld;
+            foreach (var n in _eco.Nests.Where(n => n.IsEmpty && !n.IsLair && !n.Sealed && !migration.IsTarget(n)
+                                                    && Vector2.Distance(n.WorldPosition, town) >= IncidentRules.HordeMinDistance)
+                                        .OrderBy(n => Vector2.Distance(n.WorldPosition, town)))
+            {
+                var k = PickHordeKind(n);
+                if (k == null) continue;
+                site = n;
+                kind = k;
+                return true;
+            }
+            site = null;
+            kind = null;
+            return false;
+        }
+
+        /// <summary>A kind that lives at the site — a raiding kind if one does (the threat), by the map's own weights.</summary>
+        MonsterDefinition PickHordeKind(Nest site)
+        {
+            var kinds = _eco.AllSpecies.Where(s => s != null && !s.isRegionLord && site.Suits(s)).ToList();
+            if (kinds.Any(s => s.canRaid)) kinds = kinds.Where(s => s.canRaid).ToList();
+            if (kinds.Count == 0) return null;
+            float total = kinds.Sum(s => EcosystemManager.Fit(s, site.Region, site.Biome));
+            if (total <= 0f) return kinds[0];
+            float roll = GameRandom.Shared.Range(0f, total);
+            foreach (var s in kinds)
+            {
+                roll -= EcosystemManager.Fit(s, site.Region, site.Biome);
+                if (roll <= 0f) return s;
+            }
+            return kinds[^1];
+        }
+
+        static Vector2 Centroid(List<Monster> members)
+        {
+            var sum = Vector2.zero;
+            int n = 0;
+            foreach (var m in members) if (m != null && m.IsAlive) { sum += m.Position; n++; }
+            return n == 0 ? Vector2.zero : sum / n;
+        }
+
+        /// <summary>Why the board took a horde's quest down: it got where it was going.</summary>
+        public const string HordeSettledReason = "무리가 마을 근처에 자리를 잡았습니다";
+        /// <summary>Why the board took a horde's quest down: it is gone, by other hands.</summary>
+        public const string HordeGoneReason = "무리가 흩어졌습니다";
+        /// <summary>A horde is this spread out (the rumour's circle allows for it).</summary>
+        const float HordeSpread = 6f;
+
+        void TickHorde(Incident i)
+        {
+            i.Members.RemoveAll(m => m == null || !m.IsAlive);
+            // The quest is done (enough of it brought down): the incident is over; what is left walks on as any band.
+            if (i.Quest != null && i.Quest.Status is QuestStatus.Completed or QuestStatus.TurnedIn)
+            {
+                End(i, IncidentOutcome.Resolved);
+                return;
+            }
+            if (i.Members.Count == 0)
+            {
+                // Gone to the last one: with a group on it, it was their fight (others only finished it).
+                bool claimed = i.Quest != null && i.Quest.IsActive && i.Quest.Assignees.Count > 0;
+                End(i, claimed ? IncidentOutcome.Resolved : IncidentOutcome.SettledByOthers);
+                SettleQuest(i, HordeGoneReason);
+                return;
+            }
+            i.Spot = Centroid(i.Members);
+            // It got there (settled, or gave up walking and went "home" to its site all the same).
+            if (i.Band == null || !Services.TryGet<MigrationService>(out var migration) || !migration.Bands.Contains(i.Band))
+            {
+                End(i, IncidentOutcome.Expired);
+                _board.FailIncidentQuest(i.Quest, HordeSettledReason);
+                return;
+            }
+            // Seen: the area follows the members in sight.
+            var seen = Vector2.zero;
+            int visible = 0;
+            if (_fog != null)
+                foreach (var m in i.Members)
+                    if (_fog.IsVisibleRaw(m.Position)) { seen += m.Position; visible++; }
+            if (visible > 0)
+            {
+                i.LastSeen = seen / visible;
+                i.LastSeenHour = Now;
+                bool first = !i.Sighted;
+                i.Sighted = true;
+                if (!i.Rumoured) SpreadRumour(i);
                 if (i.Quest != null && i.Quest.IsActive)
                 {
-                    if (i.Quest.Assignees.Count > 0) _board.SettleTownQuest(i.Quest, RareSlainReason);
-                    else _board.FailIncidentQuest(i.Quest, RareSlainReason);
+                    i.Quest.Point = i.LastSeen;
+                    i.Quest.Radius = IncidentRules.SightedRadius;
                 }
+                // Rumours of it start again a while after the guild loses sight of it.
+                i.NextRumourHour = Now + IncidentRules.HordeRumourEvery;
+                if (first) EventBus.Publish(new IncidentSightedEvent { Incident = i });
+                return;
+            }
+            // Unseen: every while a new rumour of where it is now (it is on the move).
+            if (i.Rumoured && Now >= i.NextRumourHour && i.Quest != null && i.Quest.IsActive)
+            {
+                i.RumourCentre = IncidentRules.RumourCentre(i.Spot, IncidentRules.RumourOffset(HordeSpread), GameRandom.Shared);
+                i.RumourRadius = IncidentRules.RumourRadius;
+                i.NextRumourHour = Now + IncidentRules.HordeRumourEvery;
+                i.Quest.Point = i.RumourCentre;
+                i.Quest.Radius = i.RumourRadius;
+                EventBus.Publish(new IncidentRumourUpdatedEvent { Incident = i });
             }
         }
 
@@ -249,9 +397,11 @@ namespace GuildMaster.Incidents
             }
             else
             {
-                i.RumourCentre = IncidentRules.RumourCentre(i.Spot, IncidentRules.RumourOffset(IncidentRules.RareRoam), rng);
+                float roam = i.Kind == IncidentKind.Horde ? HordeSpread : IncidentRules.RareRoam;
+                i.RumourCentre = IncidentRules.RumourCentre(i.Spot, IncidentRules.RumourOffset(roam), rng);
                 i.RumourRadius = IncidentRules.RumourRadius;
             }
+            i.NextRumourHour = Now + IncidentRules.HordeRumourEvery;
             i.Quest = PostQuest(i);
             EventBus.Publish(new IncidentRumouredEvent { Incident = i });
         }
@@ -270,6 +420,19 @@ namespace GuildMaster.Incidents
                     {
                         Type = QuestType.Hunt, Species = species, Count = 1, Point = i.RumourCentre, HasPoint = true, Radius = i.RumourRadius,
                         RewardGold = gold, RewardExp = QuestPricing.RewardExp(gold), MaxParty = IncidentRules.RareParty,
+                    };
+                    return _board.PostIncidentQuest(draft, i);
+                }
+                case IncidentKind.Horde:
+                {
+                    var species = i.Members.Count > 0 ? i.Members[0].Def : null;
+                    if (species == null) return null;
+                    i.Requirement = IncidentRules.HordeRequirement(i.HordeLevel, i.HordeSize);
+                    int gold = IncidentRules.HordeReward(i.HordeLevel, i.HordeSize, Vector2.Distance(i.RumourCentre, _world.TownCenterWorld));
+                    var draft = new QuestDraft
+                    {
+                        Type = QuestType.Hunt, Species = species, Count = IncidentRules.HordeKills(i.HordeSize), Point = i.RumourCentre, HasPoint = true,
+                        Radius = i.RumourRadius, RewardGold = gold, RewardExp = QuestPricing.RewardExp(gold), MaxParty = IncidentRules.HordeParty,
                     };
                     return _board.PostIncidentQuest(draft, i);
                 }
@@ -312,6 +475,13 @@ namespace GuildMaster.Incidents
             public string target_name;
             public int target_level;
             public float requirement;
+            public List<string> members = new();
+            public int horde_size;
+            public string species_name;
+            public int horde_level;
+            public int band = -1;
+            public int site = -1;
+            public float next_rumour;
         }
 
         [System.Serializable]
@@ -327,14 +497,20 @@ namespace GuildMaster.Incidents
 
         public string SaveKey => "incidents";
 
-        static SavedIncident CaptureOne(Incident i) => new()
+        SavedIncident CaptureOne(Incident i)
         {
-            id = i.Id, kind = i.Kind, started = i.StartedHour, spot = i.Spot, rumour_at = i.RumourAtHour, ends_at = i.EndsAtHour,
-            rumoured = i.Rumoured, rumour_centre = i.RumourCentre, rumour_radius = i.RumourRadius, sighted = i.Sighted,
-            last_seen = i.LastSeen, last_seen_hour = i.LastSeenHour, outcome = i.Outcome, ended = i.EndedHour, quest = i.Quest?.Id,
-            target = i.Target != null && i.Target.IsAlive ? i.Target.UnitId : null, target_name = i.TargetName, target_level = i.TargetLevel,
-            requirement = i.Requirement,
-        };
+            var s = new SavedIncident
+            {
+                id = i.Id, kind = i.Kind, started = i.StartedHour, spot = i.Spot, rumour_at = i.RumourAtHour, ends_at = i.EndsAtHour,
+                rumoured = i.Rumoured, rumour_centre = i.RumourCentre, rumour_radius = i.RumourRadius, sighted = i.Sighted,
+                last_seen = i.LastSeen, last_seen_hour = i.LastSeenHour, outcome = i.Outcome, ended = i.EndedHour, quest = i.Quest?.Id,
+                target = i.Target != null && i.Target.IsAlive ? i.Target.UnitId : null, target_name = i.TargetName, target_level = i.TargetLevel,
+                requirement = i.Requirement, horde_size = i.HordeSize, species_name = i.SpeciesName, horde_level = i.HordeLevel,
+                band = i.Band != null && !i.Over ? i.Band.Id : -1, site = i.Site != null ? _eco.Nests.IndexOf(i.Site) : -1, next_rumour = i.NextRumourHour,
+            };
+            foreach (var m in i.Members) if (m != null && m.IsAlive) s.members.Add(m.UnitId);
+            return s;
+        }
 
         public string Capture()
         {
@@ -362,6 +538,8 @@ namespace GuildMaster.Incidents
                 Rumoured = s.rumoured, RumourCentre = s.rumour_centre, RumourRadius = s.rumour_radius, Sighted = s.sighted,
                 LastSeen = s.last_seen, LastSeenHour = s.last_seen_hour, Outcome = s.outcome, EndedHour = s.ended,
                 TargetName = s.target_name, TargetLevel = s.target_level, Requirement = s.requirement,
+                HordeSize = s.horde_size, SpeciesName = s.species_name, HordeLevel = s.horde_level, NextRumourHour = s.next_rumour,
+                Site = s.site >= 0 && s.site < _eco.Nests.Count ? _eco.Nests[s.site] : null,
             };
             ctx.Register(Incident.SaveKeyOf(i.Id), i);
             _restored.Add((i, s));
@@ -374,6 +552,9 @@ namespace GuildMaster.Incidents
             {
                 if (!string.IsNullOrEmpty(s.quest)) i.Quest = ctx.Find<Quest>(s.quest);
                 if (!string.IsNullOrEmpty(s.target)) i.Target = ctx.Find<Monster>(s.target);
+                foreach (var id in s.members) if (ctx.Find<Monster>(id) is { } m) i.Members.Add(m);
+                // The march was put back by the migration service's own Link (registered before this one).
+                if (s.band >= 0 && Services.TryGet<MigrationService>(out var migration)) i.Band = migration.BandById(s.band);
             }
             _restored.Clear();
             _restoring = null;

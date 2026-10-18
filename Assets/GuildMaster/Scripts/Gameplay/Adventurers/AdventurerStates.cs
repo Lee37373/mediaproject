@@ -347,9 +347,8 @@ namespace GuildMaster.Adventurers
         {
             var q = Owner.CurrentQuest;
             if (q == null || u is not Monster m) return false;
-            // A hunt for one monster (a rare variant, P4-85): that one only.
-            if (q.TargetUnit != null) return m == q.TargetUnit;
-            return m.Def == q.Species;
+            // A hunt for particular monsters (a rare variant, a horde, P4-85): those only.
+            return q.Counts(m);
         }
 
         System.Func<Unit, bool> _isAreaTarget; // made once (P5-2)
@@ -359,8 +358,8 @@ namespace GuildMaster.Adventurers
         {
             if (!IsQuestTarget(u)) return false;
             var q = Owner.CurrentQuest;
-            // The one monster is fought wherever it shows up (it does not keep to the rumour's circle).
-            return q.Type != QuestType.Hunt || q.TargetUnit != null || Vector2.Distance(u.Position, q.Point) <= q.Radius + AreaSlack;
+            // Particular monsters are fought wherever they show up (they do not keep to the rumour's circle).
+            return q.Type != QuestType.Hunt || q.HuntsParticularMonsters || Vector2.Distance(u.Position, q.Point) <= q.Radius + AreaSlack;
         }
 
         public override void Tick(float dt)

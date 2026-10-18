@@ -454,8 +454,8 @@ namespace GuildMaster.Quests
             foreach (var q in _quests)
             {
                 if (q.Status != QuestStatus.InProgress || !q.IsAssigned(taker)) continue;
-                // A hunt for one monster (a rare variant, P4-85) counts only that one.
-                if (q.Type == QuestType.Hunt && q.Species == m.Def && (q.TargetUnit == null || q.TargetUnit == m))
+                // A hunt for particular monsters (a rare variant, a horde, P4-85) counts only those.
+                if (q.Type == QuestType.Hunt && q.Counts(m))
                 {
                     q.Progress++;
                     q.AddContribution(taker, 1);
