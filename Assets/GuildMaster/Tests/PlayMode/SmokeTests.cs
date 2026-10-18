@@ -2616,6 +2616,47 @@ namespace GuildMaster.Tests
             Assert.That(member.Hp, Is.EqualTo(0f));
         }
 
+        /// <summary>
+        /// P4-89 ('귀환 중' stalls since P4-81): a walker that took a shortcut through the east gate and was then pushed off
+        /// it, below the gate outside the wall, walked into the wall for hours — it stepped back towards the middle of its
+        /// cell and the next frame towards the waypoint again, and the re-plan waited for it to stand still in the middle.
+        /// Reproduced as measured (same spot, same heading); it must get round and arrive.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PushedOffItsShortcutBesideAGate_AWalkerGoesRound_InsteadOfWalkingIntoTheWall()
+        {
+            yield return Boot();
+            var world = Services.Get<World.WorldService>();
+            var avatar = Services.Get<PlayerAvatar>();
+            var town = world.Map.TownRect;
+            var gate = new Vector2Int(town.xMax - 1, world.Map.TownCenter.y);
+            Assume.That(world.Map[gate.x, gate.y], Is.EqualTo(World.TileType.Gate), "the east gate in the middle of the east wall");
+            Assume.That(world.Map[gate.x, gate.y - 2], Is.EqualTo(World.TileType.Wall), "the wall just below it");
+            var goal = world.TownCenterWorld + new Vector2(-4f, 1f);
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            // Steps of a known size: the stall needed steps under half a cell (a big step crossed the edge from the middle
+            // in one go and so triggered the re-plan), so it came and went with the frame rate.
+            Time.captureFramerate = 60;
+            try
+            {
+                Clock.SetSpeed(1);
+                avatar.Mover.Stop();
+                avatar.transform.position = World.GridMap.CellToWorld(gate + Vector2Int.left);
+                Assert.That(avatar.MoveTo(goal), Is.True);
+                yield return null; // takes its shortcut into the town
+                yield return null;
+                // Pushed out below the gate, as the stalled members stood (268.05, 254.58 by a 256-centred town).
+                avatar.transform.position = World.GridMap.CellToWorld(new Vector2Int(gate.x + 1, gate.y - 2)) + new Vector2(-0.45f, 0.08f);
+                for (int frame = 0; frame < 600 && avatar.Mover.IsMoving; frame++) yield return null;
+                Assert.That(Vector2.Distance(avatar.Position, goal), Is.LessThan(0.5f), $"stuck at {avatar.Position}: {avatar.Mover.DebugPlan}");
+            }
+            finally
+            {
+                Time.captureFramerate = 0;
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+            }
+        }
+
         [UnityTest]
         public IEnumerator WalkingHome_BadlyHurt_TurnsIntoARetreat()
         {

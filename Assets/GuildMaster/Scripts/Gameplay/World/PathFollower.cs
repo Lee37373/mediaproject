@@ -47,7 +47,7 @@ namespace GuildMaster.World
 
         /// <summary>Where the walk stands (debug, AnomalyWatch): the waypoint it heads for, of how many, and the plan's last change.</summary>
         public string DebugPlan => IsMoving && _index < _waypoints.Count
-            ? $"wp {_index}/{_waypoints.Count} → {_waypoints[_index]} bumped={_bumped.Count} noShortcut={_noShortcut} corrections={RouteCorrections}"
+            ? $"wp {_index}/{_waypoints.Count} → {_waypoints[_index]} bumped={_bumped.Count} noShortcut={_noShortcut} recentring={_recentring} corrections={RouteCorrections}"
             : $"wp -/{_waypoints.Count} corrections={RouteCorrections}";
 
         /// <summary>Seconds between checks of the plan against what has been seen since.</summary>
@@ -68,6 +68,13 @@ namespace GuildMaster.World
         Func<int, int, bool> _planUnknown;
         /// <summary>No shortcuts until the next waypoint after running into something.</summary>
         bool _noShortcut;
+        /// <summary>
+        /// Ran into something: heading for the middle of its own cell, every frame until it is there, then a new route
+        /// (P4-89). It used to step back towards the middle and on the next frame head for the waypoint again; unless
+        /// one step from the middle crossed the cell edge (step ≥ half a cell) it never stood still in the middle, so
+        /// the re-plan never came — a walker pushed off its shortcut beside a gate walked into the wall for hours.
+        /// </summary>
+        bool _recentring;
 
         bool UnknownForPlan(int x, int y) => UnknownToMe(x, y) && (_bumped.Count == 0 || !_bumped.Contains(new Vector2Int(x, y)));
 
@@ -94,6 +101,7 @@ namespace GuildMaster.World
             _destination = target;
             _bumped.Clear();
             _noShortcut = false;
+            _recentring = false;
             _stopDistance = Mathf.Max(0.05f, stopDistance);
             RouteCaution = caution;
             _steerFrame = -10;
@@ -112,6 +120,7 @@ namespace GuildMaster.World
         public void Stop()
         {
             IsMoving = false;
+            _recentring = false;
             Velocity = Vector2.zero;
             _waypoints.Clear();
             _steerVelocity = Vector2.zero;
@@ -261,6 +270,31 @@ namespace GuildMaster.World
                 return;
             }
 
+            var cell = GridMap.WorldToCell(pos);
+            float cost = World.Grid.InBounds(cell) ? World.Grid.Cost(cell) : 1f;
+            if (float.IsInfinity(cost)) cost = 1f;
+            float step = speed * SpeedMultiplier * BuffMultiplier / cost * Time.deltaTime;
+
+            Vector2 next;
+            if (_recentring)
+            {
+                // Back to the middle of its own cell after running into something, then a new route from there:
+                // the plan's diagonal steps clip no corner from the middle (the A* cuts none).
+                var centre = GridMap.CellToWorld(cell);
+                next = Vector2.MoveTowards(pos, centre, step);
+                if ((next - centre).sqrMagnitude < 1e-8f)
+                {
+                    transform.position = new Vector3(next.x, next.y, transform.position.z);
+                    _recentring = false;
+                    RouteCorrections++;
+                    if (!BuildPath()) { Stop(); PathFailed?.Invoke(); }
+                    return;
+                }
+                Velocity = (next - pos) / Mathf.Max(Time.deltaTime, 1e-5f);
+                transform.position = new Vector3(next.x, next.y, transform.position.z);
+                return;
+            }
+
             // Lookahead smoothing: skip intermediate waypoints with a clear straight line.
             if (!_noShortcut)
                 for (int look = Mathf.Min(_waypoints.Count - 1, _index + 4); look > _index; look--)
@@ -268,30 +302,19 @@ namespace GuildMaster.World
                     if (World.HasClearLine(pos, _waypoints[look])) { _index = look; break; }
                 }
 
-            var cell = GridMap.WorldToCell(pos);
-            float cost = World.Grid.InBounds(cell) ? World.Grid.Cost(cell) : 1f;
-            if (float.IsInfinity(cost)) cost = 1f;
-            float step = speed * SpeedMultiplier * BuffMultiplier / cost * Time.deltaTime;
-
             Vector2 target = _waypoints[_index];
-            Vector2 next = Vector2.MoveTowards(pos, target, step);
+            next = Vector2.MoveTowards(pos, target, step);
             // Never into ground that cannot be walked (P4-80): a plan over unseen cells (P4-64) walked into
             // rock before the fog showed it (the fog looks every tenth of a real second, two or three
             // cells at ×8), and from inside the rock no path led out. Back to the middle of its own cell
-            // instead — from there the plan's diagonal steps clip no corner — and look again at once.
+            // instead (P4-89: all the way, see _recentring) and a new route from there.
             var nextCell = GridMap.WorldToCell(next);
             if (nextCell != cell && !Passable(nextCell) && Passable(cell))
             {
                 _bumped.Add(nextCell);
                 _noShortcut = true;
-                next = Vector2.MoveTowards(pos, GridMap.CellToWorld(cell), step);
-                if ((next - pos).sqrMagnitude < 1e-8f)
-                {
-                    // In the middle and still up against it: a new route round what it ran into.
-                    RouteCorrections++;
-                    if (!BuildPath()) { Stop(); PathFailed?.Invoke(); }
-                    return;
-                }
+                _recentring = true;
+                return;
             }
             Velocity = (next - pos) / Mathf.Max(Time.deltaTime, 1e-5f);
             if (Mathf.Abs(next.x - pos.x) > 0.0001f) FacingLeft = next.x < pos.x;
