@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-10-18
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-88**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-90**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -95,6 +95,8 @@
 | P4-85 | 돌발 이벤트 4종(여행자·상인 구출, 희귀 몬스터 출현, 유적·보물 발견, 대규모 무리 접근) → 의뢰. **F-5와 겹침** | 이재혁 | 예정 | Events(신규), Quests, Monsters, Ecosystem/MigrationService | |
 | P4-86 | 마을 넓히기: 골드·재료로 성벽을 단계별로 밀어냄(성문 이동, 땅 다시 그리기) | 이재혁 | 예정 | Town/TownService·GateService, World/MapGenerator·MapRenderer·GridMap, Adventurers/DefenseCoordinator | |
 | P4-87 | 내실 건물: 길드원 전원 상시 스탯 버프, 길드원이 때린 적 약화, 정원 제한을 없애는 건물 | 이재혁 | 예정 | Town/ConstructionService·Building, Data/DefaultContent, Units/Unit·Combat, Recruitment/VisitorService | |
+| P4-88 | 측정 관찰 후속: 길드보다 강한 후보는 영입이 어려움, 마을 습격 빈도 절반, 약한 신입은 위험 의뢰를 잘 안 받음, 지대 군주 강화(공격 ×4·호위 8·강타 쿨 5초) | 이재혁 | 진행 중 | Recruitment, Villages, Adventurers/Decisions·RuleBasedDecisionMaker·PartyService, Monsters/RegionLords | |
+| P4-89 | 귀환 중 정지 조사(성벽·성문 옆에서 이동 중인 채 몇 시간 제자리) | 이재혁 | 예정 | World/PathFollower, Adventurers/ReturnToTownState·PartyTactics | |
 | P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
