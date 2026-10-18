@@ -78,6 +78,8 @@ namespace GuildMaster.Adventurers
             timer -= dt;
             if (timer > 0f) return false;
             timer = CampCheckInterval;
+            // Not down in a ruin (P4-85): the night outside does not reach there.
+            if (Services.Get<WorldService>().Map.IsUnderground(GridMap.WorldToCell(a.Position))) return false;
             return Services.TryGet<CampService>(out var camps) && camps.TryNightCamp(a);
         }
 
@@ -347,8 +349,8 @@ namespace GuildMaster.Adventurers
         {
             var q = Owner.CurrentQuest;
             if (q == null || u is not Monster m) return false;
-            // A hunt for particular monsters (a rare variant, a horde, P4-85): those only.
-            return q.Counts(m);
+            // A hunt for particular monsters (a rare variant, a horde, a ruin's guardians, P4-85): those only.
+            return q.Fights(m);
         }
 
         System.Func<Unit, bool> _isAreaTarget; // made once (P5-2)
@@ -374,6 +376,12 @@ namespace GuildMaster.Adventurers
             if (a.CurrentQuest.Type == QuestType.Disaster)
             {
                 WorkTheDisaster(a, dt);
+                return;
+            }
+            // A ruin whose way down the guild has found (P4-85): down and through the halls to the treasure.
+            if (a.CurrentQuest.Incident is { Kind: Incidents.IncidentKind.Ruin, Sighted: true } ruin)
+            {
+                ExploreTheRuin(a, ruin, dt);
                 return;
             }
 
@@ -417,6 +425,37 @@ namespace GuildMaster.Adventurers
             var world = Services.Get<WorldService>();
             if (world.Grid.TryRandomWalkableNear(GridMap.WorldToCell(Area), Mathf.RoundToInt(AreaRadius), GameRandom.Shared, out var cell))
                 a.Mover.SetDestination(GridMap.CellToWorld(cell));
+        }
+
+        // ---------------- Ruins (P4-85) ----------------
+
+        float _chestTry;
+
+        /// <summary>
+        /// The party goes down the ruin's way (the route steps through it, <see cref="WorldService.FindPath"/>) and walks to
+        /// the treasure room, fighting the guardians it meets on the way (above); the leader opens the chest once none is
+        /// close to it. Party members follow their leader.
+        /// </summary>
+        void ExploreTheRuin(Adventurer a, Incidents.Incident ruin, float dt)
+        {
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out _)) return;
+                if (party.PaceLeader(a)) return;
+            }
+            if (!Services.TryGet<Incidents.IncidentService>(out var incidents)) return;
+            var chest = incidents.ChestOf(ruin);
+            if (Vector2.Distance(a.Position, chest) <= Incidents.IncidentService.ChestReach)
+            {
+                if (a.Mover.IsMoving) a.Mover.Stop();
+                _chestTry -= dt;
+                if (_chestTry > 0f) return;
+                _chestTry = 0.5f;
+                if (incidents.TryOpenChest(ruin, a)) a.Say("보물이다! 가져가자.");
+                return;
+            }
+            if (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, chest) > 0.5f)
+                a.Mover.SetDestination(chest, 0.8f);
         }
 
         // ---------------- Natural disasters (P4-72) ----------------

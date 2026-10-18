@@ -86,6 +86,8 @@ namespace GuildMaster.Session
                 InnerHalfSize = Balance.innerHalfSize,
                 InnerNestCount = Balance.innerNestCount,
             });
+            // The ruins' dungeons (P4-85): an underground band above the surface, from its own stream of the seed.
+            map = Underground.Extend(map, Seed);
             var world = new WorldService(map);
             Services.Register(world);
 
@@ -398,6 +400,8 @@ namespace GuildMaster.Session
             if (!camera.TryGetComponent<CameraController>(out var controller))
                 controller = camera.gameObject.AddComponent<CameraController>();
             controller.Configure(world.WorldBounds, Balance.cameraMinZoom, Balance.cameraMaxZoom, Balance.cameraPanSpeed);
+            // Looking into a ruin's dungeon (P4-85), the camera keeps to it.
+            controller.AreaBounds = world.UndergroundBoundsAt;
             controller.JumpTo(world.TownCenterWorld);
             return controller;
         }

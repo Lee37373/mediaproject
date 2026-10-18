@@ -211,6 +211,14 @@ namespace GuildMaster.UI
                 var village = villages.Known.FirstOrDefault(v => Vector2.Distance(v.WorldPosition, p) <= Villages.VillageRules.Size * 0.5f + 0.5f);
                 if (village != null) return village;
             }
+            // A ruin (P4-85): its way down once the guild has seen the ground there, or its steps up from inside.
+            if (Services.TryGet<World.WorldService>(out var world) && Services.TryGet<FogOfWar>(out var fog))
+            {
+                var ruin = world.Map.Ruins.FirstOrDefault(r =>
+                    fog.IsExplored(r.Entrance) && Vector2.Distance(World.GridMap.CellToWorld(r.Entrance), p) <= 1.2f
+                    || fog.IsExplored(r.Inside) && Vector2.Distance(World.GridMap.CellToWorld(r.Inside), p) <= 1.2f);
+                if (ruin != null) return ruin;
+            }
             return Services.Get<TownService>().Buildings.FirstOrDefault(b => b.Footprint.Contains(cell));
         }
 
@@ -225,6 +233,7 @@ namespace GuildMaster.UI
                 case FogGhost g: pos = g.Position + new Vector2(0, -0.28f); break;
                 case TownGate gate: pos = gate.Center; scale = 2.4f; break;
                 case Villages.Village v: pos = v.WorldPosition + new Vector2(0f, -1.2f); scale = 3f; break;
+                case World.RuinSite r: pos = RuinSpotInView(r); scale = 2f; break;
                 default: _ring.gameObject.SetActive(false); return;
             }
             _ring.gameObject.SetActive(true);
@@ -244,6 +253,7 @@ namespace GuildMaster.UI
                 case Villages.Village v: ShowVillage(v); break;
                 case Merchant m: ShowMerchant(m); break;
                 case Incidents.Traveller t: ShowTraveller(t); break;
+                case World.RuinSite r: ShowRuin(r); break;
                 case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
             }
@@ -453,8 +463,41 @@ namespace GuildMaster.UI
             RefreshRepairButton();
         }
 
+        /// <summary>The camera looks into the ruin's dungeon now (P4-85).</summary>
+        static bool CameraIsBelow(World.RuinSite r)
+            => Services.TryGet<CameraController>(out var cam) && Services.TryGet<World.WorldService>(out var world)
+               && world.Map.RuinAt(World.GridMap.WorldToCell(cam.transform.position)) == r;
+
+        /// <summary>Where the ruin is in the camera's view: its steps up from inside, else its way down.</summary>
+        static Vector2 RuinSpotInView(World.RuinSite r)
+            => World.GridMap.CellToWorld(CameraIsBelow(r) ? r.Inside : r.Entrance);
+
+        /// <summary>A ruin (P4-85): what the guild knows of it — word of it, its quest, whether its treasure is taken.</summary>
+        void ShowRuin(World.RuinSite r)
+        {
+            var incidents = Services.Get<Incidents.IncidentService>();
+            var talk = incidents.ActiveAt(r);
+            bool looted = incidents.IsLooted(r.Index);
+            string name = talk != null && (talk.Rumoured || talk.Sighted) || looted ? Incidents.IncidentRules.RuinName(r) : "오래된 유적";
+            _title.text = $"{name}  {Muted("(유적)")}";
+            string state = looted ? "보물은 이미 가져갔습니다."
+                : talk is { Rumoured: true } ? $"탐사 의뢰: {talk.Quest?.Title ?? "-"} · {Incidents.IncidentRules.RuinProgress(talk)}"
+                : "아직 알려진 이야기가 없습니다.";
+            _body.text = $"{Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(r.Entrance))}\n{state}\n" +
+                         Muted("땅 아래로 이어지는 입구입니다. 안은 길드원이 들어가야 보입니다.");
+            RefreshRepairButton();
+        }
+
         void RefreshRepairButton()
         {
+            if (_selected is World.RuinSite ruin)
+            {
+                // The ruin's corner: look down into its halls, or back up from them.
+                _repairButton.gameObject.SetActive(true);
+                _repairButton.interactable = true;
+                _repairButton.SetLabel(CameraIsBelow(ruin) ? "지상으로" : "내부 보기");
+                return;
+            }
             if (_selected is Villages.Village village)
             {
                 // The village corner holds "go there": the guild master walks to its doorstep.
@@ -479,6 +522,12 @@ namespace GuildMaster.UI
             if (_selected is Villages.Village village && Services.TryGet<PlayerAvatar>(out var master))
                 master.MoveTo(village.Doorstep, null, 0.6f);
             if (_selected is TownGate gate && Services.TryGet<GateService>(out var gates)) gates.TryRepair(gate);
+            if (_selected is World.RuinSite ruin && Services.TryGet<CameraController>(out var cam))
+            {
+                bool below = CameraIsBelow(ruin);
+                cam.Follow(null);
+                cam.JumpTo(World.GridMap.CellToWorld(below ? ruin.Entrance : ruin.Inside));
+            }
             RefreshText();
             RefreshRepairButton();
         }

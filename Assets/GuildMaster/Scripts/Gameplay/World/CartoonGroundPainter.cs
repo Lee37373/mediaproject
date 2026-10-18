@@ -212,6 +212,10 @@ namespace GuildMaster.World
             {
                 case TileType.Wall: return WallPixel(lx, ly, cx, cy);
                 case TileType.Gate: return GatePixel(lx, ly, cx, cy);
+                // The underground (P4-85): the dark between, and the ruins' halls.
+                case TileType.Void: return VoidColor;
+                case TileType.RuinFloor: return RuinFloorPixel(u, v);
+                case TileType.RuinWall: return RuinWallPixel(lx, ly, cx, cy);
             }
 
             bool town = _map.TownRect.Contains(new Vector2Int(cx, cy));
@@ -338,6 +342,39 @@ namespace GuildMaster.World
             float fx = bx - Mathf.Floor(bx), fy = ly * 2f - Mathf.Floor(ly * 2f);
             if (fx < 0.08f || fy < 0.08f) return WallLine;
             return Hash01(cx * 2 + Mathf.FloorToInt(bx), cy * 2 + Mathf.FloorToInt(ly * 2f)) < 0.35f ? WallTop : WallStone;
+        }
+
+        // ---------------- Ruins underground (P4-85) ----------------
+
+        static readonly Color32 VoidColor = new(6, 5, 9, 255);
+        static readonly Color32 RuinSlab = new(0x5C, 0x56, 0x52, 255);
+        static readonly Color32 RuinSlabAlt = new(0x52, 0x4C, 0x49, 255);
+        static readonly Color32 RuinGrout = new(0x34, 0x30, 0x2E, 255);
+        static readonly Color32 RuinMoss = new(0x4E, 0x5E, 0x3E, 255);
+        static readonly Color32 RuinBlock = new(0x3A, 0x36, 0x3F, 255);
+        static readonly Color32 RuinBlockTop = new(0x55, 0x50, 0x5C, 255);
+        static readonly Color32 RuinLine = new(0x22, 0x1F, 0x26, 255);
+
+        /// <summary>Big worn flagstones, a few mossy.</summary>
+        Color32 RuinFloorPixel(float u, float v)
+        {
+            int col = Mathf.FloorToInt(u), row = Mathf.FloorToInt(v);
+            float lx = u - col, ly = v - row;
+            if (lx < 0.06f || ly < 0.06f) return RuinGrout;
+            float h = Hash01(col, row);
+            if (h < 0.12f && Speck(u * 3f, v * 3f, 0.5f, 0.35f, 0.3f)) return RuinMoss;
+            return h < 0.45f ? RuinSlabAlt : RuinSlab;
+        }
+
+        /// <summary>Dark stone blocks with a lighter top edge where the floor is in front (below).</summary>
+        Color32 RuinWallPixel(float lx, float ly, int cx, int cy)
+        {
+            bool front = _map.InBounds(cx, cy - 1) && _map[cx, cy - 1] == TileType.RuinFloor;
+            if (front && ly < 0.18f) return RuinBlockTop;
+            float bx = lx * 2f + ((Mathf.FloorToInt(ly * 2f) & 1) == 1 ? 0.5f : 0f);
+            float fx = bx - Mathf.Floor(bx), fy = ly * 2f - Mathf.Floor(ly * 2f);
+            if (fx < 0.07f || fy < 0.07f) return RuinLine;
+            return RuinBlock;
         }
 
         Color32 GatePixel(float lx, float ly, int cx, int cy)

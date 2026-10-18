@@ -222,15 +222,22 @@ namespace GuildMaster.CameraControl
             transform.position = _basePosition + offset;
         }
 
+        /// <summary>
+        /// Smaller bounds where the camera looks at a place of its own (P4-85: a ruin's dungeon in the underground band),
+        /// or null for the map's bounds.
+        /// </summary>
+        public System.Func<Vector2, Bounds?> AreaBounds { get; set; }
+
         void Clamp()
         {
             if (!_hasBounds) return;
+            var bounds = AreaBounds?.Invoke(_basePosition) ?? _bounds;
             float halfH = _cam.orthographicSize;
             float halfW = halfH * _cam.aspect;
-            var min = _bounds.min;
-            var max = _bounds.max;
-            float x = halfW * 2 >= _bounds.size.x ? _bounds.center.x : Mathf.Clamp(_basePosition.x, min.x + halfW, max.x - halfW);
-            float y = halfH * 2 >= _bounds.size.y ? _bounds.center.y : Mathf.Clamp(_basePosition.y, min.y + halfH, max.y - halfH);
+            var min = bounds.min;
+            var max = bounds.max;
+            float x = halfW * 2 >= bounds.size.x ? bounds.center.x : Mathf.Clamp(_basePosition.x, min.x + halfW, max.x - halfW);
+            float y = halfH * 2 >= bounds.size.y ? bounds.center.y : Mathf.Clamp(_basePosition.y, min.y + halfH, max.y - halfH);
             _basePosition = new Vector3(x, y, _basePosition.z);
         }
 

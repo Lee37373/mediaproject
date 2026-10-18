@@ -219,6 +219,8 @@ namespace GuildMaster.Disasters
         bool CanStartAt(Vector2Int cell)
         {
             if (_active.Count >= DisasterRules.MaxActive) return false;
+            // Not down in a ruin (P4-85): a guardian's quake there brought the town's workers underground.
+            if (Grid.Data.IsUnderground(cell)) return false;
             var p = GridMap.CellToWorld(cell);
             // Cleansed land (P4-83): the region's disasters went with its lord.
             if (Services.TryGet<Ecosystem.RegionLordService>(out var lords) && lords.IsSealedAt(p)) return false;
@@ -479,7 +481,7 @@ namespace GuildMaster.Disasters
                 var next = d.Core + d.Drift * DisasterRules.StormDriftPerHour * dh;
                 var cell = GridMap.WorldToCell(next);
                 // Turns away from the map's edge (and wanders a little).
-                if (!Grid.InBounds(cell) || cell.x < 4 || cell.y < 4 || cell.x > Grid.Width - 5 || cell.y > Grid.Height - 5)
+                if (!Grid.InBounds(cell) || cell.x < 4 || cell.y < 4 || cell.x > Grid.Width - 5 || cell.y > Grid.Data.SurfaceHeight - 5)
                     d.Drift = -d.Drift;
                 else d.Core = next;
                 d.Drift = Quaternion.Euler(0f, 0f, GameRandom.Shared.Range(-20f, 20f) * dh) * d.Drift;

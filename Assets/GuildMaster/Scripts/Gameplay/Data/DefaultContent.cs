@@ -48,6 +48,8 @@ namespace GuildMaster.Data
             var royalJelly = Item("royal_jelly", "왕의 젤", ItemCategory.Material, 35, new Color(0.35f, 0.85f, 0.4f));
             // A rare variant's certain spoils (P4-85, Monsters.RareMonster.AddSpoils): no monster wears or swallows it.
             Item(Monsters.RareMonster.TrophyId, "빛나는 정수", ItemCategory.Material, 150, new Color(1f, 0.9f, 0.45f));
+            // A ruin's treasure (P4-85, Incidents.IncidentRules.AddTreasure).
+            Item(Incidents.IncidentRules.RelicId, "고대 유물", ItemCategory.Material, 250, new Color(0.8f, 0.7f, 0.95f));
 
             // Monster use (P4-21): what monsters wear when they find these, and the one unique item.
             rustyDagger.equipSlot = EquipSlot.Weapon; rustyDagger.monsterAttackBonus = 2f;

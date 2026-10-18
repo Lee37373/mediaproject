@@ -3525,6 +3525,79 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// A ruin (P4-85, user decision: a separate space you go down into): word of it fills its halls with guardians and
+        /// posts an exploration; seeing the way down pins the quest on it; the one on it walks down through the portal,
+        /// opens the chest once no guardian is near — the treasure spills, the quest is done, the ruin is looted for good —
+        /// and walks back up to the surface.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Ruin_WordOfItPostsAnExploration_TheExplorerGoesDownOpensTheChest_AndComesBackUp()
+        {
+            yield return Boot();
+            var incidents = Services.Get<Incidents.IncidentService>();
+            var world = Services.Get<World.WorldService>();
+            Assert.That(world.Map.Ruins.Count, Is.EqualTo(World.Underground.Count), "the map has its ruins");
+            var site = world.Map.Ruins.OrderBy(r => Vector2Int.Distance(r.Entrance, world.Map.TownCenter)).First();
+            var ruin = incidents.StartRuin(site.Index);
+            Assert.That(ruin, Is.Not.Null);
+            Assert.That(ruin.Members.Count, Is.EqualTo(Incidents.IncidentRules.GuardsPerRoom * (World.Underground.Rooms - 2) + Incidents.IncidentRules.TreasureGuards));
+            Assert.That(ruin.Members.All(m => world.Map.RuinAt(World.GridMap.WorldToCell(m.Position)) == site), Is.True, "the guardians are in its halls");
+
+            ruin.RumourAtHour = Clock.TotalHours;
+            yield return WaitFor(() => ruin.Rumoured, 3f);
+            var quest = ruin.Quest;
+            Assert.That(quest, Is.Not.Null, "word of it posted an exploration");
+            Assert.That(quest.Title, Does.StartWith("[유적 탐사]"));
+            Assert.That(quest.Fights(ruin.Members[0]) && !quest.Counts(ruin.Members[0]), Is.True, "its guardians are fought, but the treasure is the quest");
+
+            foreach (var m in Roster.Members) m.Data.level = 30;
+            var explorer = Roster.Members[0];
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                // At the way down: seen, the quest moves onto it.
+                explorer.Mover.Stop();
+                explorer.transform.position = World.GridMap.CellToWorld(site.Entrance) + new Vector2(1.5f, 0f);
+                yield return WaitFor(() => ruin.Sighted, 3f);
+                Assert.That(ruin.Sighted, Is.True, "the way down was seen");
+                Assert.That(Vector2.Distance(quest.Point, World.GridMap.CellToWorld(site.Entrance)), Is.LessThan(1f));
+
+                // The guardians are dealt with (the fight is not what this checks); the explorer takes the quest and goes down.
+                foreach (var m in ruin.Members.ToList()) m.ReceiveDamage(m.Hp + 1e6f, explorer, false);
+                Assert.That(quest.Status, Is.EqualTo(QuestStatus.Open), "killing the guardians is not the quest");
+                Assert.That(DebugCommands.ForceAccept(quest.Id, 1), Does.Contain(explorer.Data.name));
+                bool wentDown = false;
+                Clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+                yield return WaitFor(() =>
+                {
+                    wentDown |= world.LayerOf(World.GridMap.WorldToCell(explorer.Position)) == site.Index + 1;
+                    return ruin.ChestOpened;
+                }, 25f);
+                Assert.That(wentDown, Is.True, $"down through the way (at {explorer.Position}, {explorer.StateLabel})");
+                Assert.That(ruin.ChestOpened, Is.True, $"the chest was opened (at {explorer.Position}, {explorer.StateLabel}, chest {site.Chest})");
+                Assert.That(ruin.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Resolved));
+                Assert.That(quest.Status, Is.EqualTo(QuestStatus.Completed).Or.EqualTo(QuestStatus.TurnedIn));
+                Assert.That(incidents.IsLooted(site.Index), Is.True, "looted for good");
+                Assert.That(incidents.StartRuin(site.Index), Is.Null, "a looted ruin is not talked of again");
+                var chest = World.GridMap.CellToWorld(site.Chest);
+                // The treasure spilled (it may already be in the explorer's bag).
+                bool relic = Services.Get<GroundItemService>().Items.Any(g => g.Item.id == Incidents.IncidentRules.RelicId && Vector2.Distance(g.Position, chest) < 4f)
+                             || explorer.Data.loot.Any(l => l.itemId == Incidents.IncidentRules.RelicId);
+                Assert.That(relic, Is.True, "a relic from the chest");
+
+                // And back up to the surface on the way home.
+                yield return WaitFor(() => world.LayerOf(World.GridMap.WorldToCell(explorer.Position)) == 0, 20f);
+                Clock.SetSpeed(1);
+                Assert.That(world.LayerOf(World.GridMap.WorldToCell(explorer.Position)), Is.EqualTo(0), $"back on the surface (at {explorer.Position}, {explorer.StateLabel})");
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+                Clock.SetSpeed(1);
+            }
+        }
+
+        /// <summary>
         /// Walking country it has not seen (P4-64): a route drawn over unexplored ground goes
         /// straight at an unseen lake, and the walk redraws itself the moment the lake is seen.
         /// The same boot checks that a free hunt really walks in legs, not in one long plan.

@@ -232,6 +232,79 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.1f));
         }
 
+        // ---------------- Ruins (P4-85) ----------------
+
+        /// <summary>A ruin's way down: a broken stone arch over dark steps (looted: the opening caved in).</summary>
+        public static Sprite RuinEntrance(bool caved = false)
+        {
+            string key = "c_ruin_entrance:" + caved;
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(64, 60);
+            var stone = Hex(0x9C958A);
+            var ink = Hex(0x3A3632);
+            c.Shape(Ellipse(32, 7, 28, 5f), new Color(0f, 0f, 0f, 0.25f), new Color(0f, 0f, 0f, 0.25f), 0f);
+            // The dark way down, steps fading into it.
+            c.Shape(RoundRect(17, 6, 47, 40, 4f), Hex(0x14110F), ink, 2f);
+            if (!caved)
+                for (int s = 0; s < 3; s++)
+                    c.Shape(RoundRect(19 + s * 2, 8 + s * 6, 45 - s * 2, 12 + s * 6, 1f), Darker(stone, 0.55f - s * 0.12f), ink, 1f);
+            else
+            {
+                c.Shape(Circle(26, 16, 7f), Darker(stone, 0.8f), ink, 1.5f);
+                c.Shape(Circle(38, 13, 6f), stone, ink, 1.5f);
+                c.Shape(Circle(32, 24, 5f), Darker(stone, 0.9f), ink, 1.5f);
+            }
+            // Pillars and the arch over them, one corner broken off.
+            c.Shape(RoundRect(8, 6, 18, 46, 2f), stone, ink, 2f);
+            c.Shape(RoundRect(46, 6, 56, 40, 2f), Darker(stone, 0.92f), ink, 2f);
+            c.Shape(RoundRect(6, 42, 46, 52, 2f), Lighter(stone, 0.1f), ink, 2f);
+            c.Shape(Circle(51, 43, 3f), Darker(stone, 0.85f), ink, 1.5f);
+            // Moss.
+            c.ShapeClipped(Ellipse(14, 48, 7, 3f), RoundRect(6, 42, 46, 52, 2f), Hex(0x6E8E4A));
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
+        /// <summary>The steps up inside a ruin, back to its way down.</summary>
+        public static Sprite RuinStairsUp()
+        {
+            const string key = "c_ruin_stairs";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(40, 36);
+            var stone = Hex(0x8E877D);
+            var ink = Hex(0x2C2926);
+            for (int s = 0; s < 4; s++)
+                c.Shape(RoundRect(4 + s * 3, 4 + s * 7, 36 - s * 3, 12 + s * 7, 1.5f), Lighter(stone, s * 0.08f), ink, 1.5f);
+            c.Shape(Ellipse(20, 33, 9, 2.5f), new Color(1f, 0.95f, 0.75f, 0.35f), new Color(1f, 0.95f, 0.75f, 0.35f), 0f);
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
+        /// <summary>A treasure chest; open, with the gold showing.</summary>
+        public static Sprite TreasureChest(bool open)
+        {
+            string key = "c_chest:" + open;
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(40, 36);
+            var wood = Hex(0x8B5A2B);
+            var ink = Hex(0x3A2412);
+            var band = Hex(0xE2B84A);
+            c.Shape(Ellipse(20, 5, 17, 3.5f), new Color(0f, 0f, 0f, 0.25f), new Color(0f, 0f, 0f, 0.25f), 0f);
+            c.Shape(RoundRect(5, 4, 35, 20, 2f), wood, ink, 2f);
+            c.Shape(RoundRect(5, 11, 35, 14, 0f), band, Darker(band, 0.6f), 1f);
+            if (open)
+            {
+                c.Shape(Ellipse(20, 20, 13, 4f), band, Darker(band, 0.6f), 1.5f);
+                c.Shape(Circle(15, 22, 2.5f), Lighter(band, 0.4f), Darker(band, 0.6f), 1f);
+                c.Shape(Circle(24, 23, 2f), Lighter(band, 0.5f), Darker(band, 0.6f), 1f);
+                c.Shape(RoundRect(6, 22, 34, 33, 3f), Darker(wood, 0.85f), ink, 2f);
+            }
+            else
+            {
+                c.Shape(RoundRect(5, 18, 35, 28, 5f), Lighter(wood, 0.08f), ink, 2f);
+                c.Shape(RoundRect(17, 13, 23, 21, 1f), band, Darker(band, 0.55f), 1.5f);
+            }
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
         /// <summary>A campfire's ring of stones and crossed logs (P4-66); the flame is drawn on top.</summary>
         public static Sprite CampfireLogs(bool burntOut = false)
         {

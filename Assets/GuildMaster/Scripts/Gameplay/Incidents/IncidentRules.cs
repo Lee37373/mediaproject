@@ -144,12 +144,62 @@ namespace GuildMaster.Incidents
         /// <summary>What a traveller's cart spills when it falls.</summary>
         public static readonly Data.ItemStack[] Cargo = { new(Data.DefaultContent.Potion, 2), new("iron_ore", 2) };
 
+        // ---------------- Ruin ----------------
+
+        /// <summary>Chance per game hour that word of a ruin reaches the town (about once in three days).</summary>
+        public const float RuinChancePerHour = 1f / 80f;
+        public const int RuinFirstDay = 2;
+        /// <summary>At most this many ruins rumoured and not yet looted at once (a ruin waits for its explorers).</summary>
+        public const int MaxOpenRuins = 2;
+        /// <summary>Guardians in each room after the first, and in the treasure room.</summary>
+        public const int GuardsPerRoom = 2, TreasureGuards = 3;
+        /// <summary>Born this many levels above the land round the way down.</summary>
+        public const int GuardLevelBonus = 2;
+        /// <summary>The chest opens once no guardian is this close to it.</summary>
+        public const float ChestClearRadius = 6f;
+        public const int RuinParty = 4;
+        /// <summary>What the treasure is: relics (more of them from the outer land) and a piece of gear by the guardians' level.</summary>
+        public const string RelicId = "ancient_relic";
+
+        public static int RuinReward(int level, int guards, float distance)
+            => QuestPricing.HuntReward(QuestBoard.HuntDanger(level, guards), guards, distance);
+
+        public static float RuinRequirement(int level, int guards) => HordeRequirement(level, guards);
+
+        /// <summary>The chest's contents: relics (two from the outer land, one from the inner) and the guardians' tier of gear.</summary>
+        public static void AddTreasure(bool outer, int level, System.Collections.Generic.List<Data.ItemStack> loot)
+        {
+            loot.Add(new Data.ItemStack(RelicId, outer ? 2 : 1));
+            loot.Add(new Data.ItemStack($"gear_t{RareMonster.GearTier(level)}", 1));
+        }
+
+        static readonly System.Collections.Generic.Dictionary<World.Region, string[]> RuinNames = new()
+        {
+            { World.Region.Grassland, new[] { "잊힌 지하실", "풀숲 아래 신전" } },
+            { World.Region.Desert, new[] { "모래에 묻힌 신전", "태양의 지하묘지" } },
+            { World.Region.Snow, new[] { "얼어붙은 지하묘지", "서리 왕의 무덤" } },
+            { World.Region.Swamp, new[] { "가라앉은 사원", "이끼 낀 제단" } },
+            { World.Region.Wasteland, new[] { "잿빛 요새 터", "무너진 탑의 지하" } },
+        };
+
+        /// <summary>Its region's names in turn; past them, numbered ("모래에 묻힌 신전 2").</summary>
+        public static string RuinName(World.RuinSite site)
+        {
+            if (!RuinNames.TryGetValue(site.Region, out var names)) return "오래된 유적";
+            int k = site.RegionOrdinal;
+            return k < names.Length ? names[k] : $"{names[k % names.Length]} {k / names.Length + 1}";
+        }
+
+        public static string RuinProgress(Incident i)
+            => i.ChestOpened ? "보물 확보" : i.Sighted ? $"탐사 중 · 수호자 {i.Members.Count}마리 남음(추정)" : "입구 찾는 중";
+
         // ---------------- Every incident ----------------
 
         public static DangerLevel Danger(Incident i) => i.Kind switch
         {
             IncidentKind.Horde => HordeDanger(i.HordeLevel, i.HordeSize),
             IncidentKind.Rescue => QuestBoard.HuntDanger(i.TargetLevel, Mathf.Max(1, i.Members.Count)),
+            IncidentKind.Ruin => QuestBoard.HuntDanger(i.TargetLevel, Mathf.Max(1, i.Members.Count)),
             _ => DangerLevel.High,
         };
 
@@ -157,7 +207,7 @@ namespace GuildMaster.Incidents
         public static float? Requirement(Incident i) => IsPartyWork(i) && i.Requirement > 0f ? i.Requirement : null;
 
         /// <summary>Work for a whole party (the recommended level is per member of a full one).</summary>
-        public static bool IsPartyWork(Incident i) => i.Kind is IncidentKind.RareMonster or IncidentKind.Horde;
+        public static bool IsPartyWork(Incident i) => i.Kind is IncidentKind.RareMonster or IncidentKind.Horde or IncidentKind.Ruin;
 
         /// <summary>Who pays for an incident's quest.</summary>
         public static string ClientName(IncidentKind k) => k switch
@@ -188,6 +238,9 @@ namespace GuildMaster.Incidents
                 IncidentKind.Rescue => i.Sighted
                     ? $"{QuestBoard.DescribeArea(i.RumourCentre)}에서 {With(i.TargetName, "이", "가")} 몬스터에게 습격받고 있습니다. {client} 구해 달라는 의뢰를 냈습니다. 오래 버티지 못합니다."
                     : $"{QuestBoard.DescribeArea(i.RumourCentre)} 부근에서 {With(i.TargetName, "이", "가")} 몬스터에게 습격받고 있다는 소식입니다. {client} 구해 달라는 의뢰를 냈습니다. 오래 버티지 못합니다.",
+                IncidentKind.Ruin => i.Sighted
+                    ? $"{QuestBoard.DescribeArea(i.RumourCentre)}에서 '{i.TargetName}'의 입구를 찾았습니다. {client} 안을 탐사해 달라는 의뢰를 냈습니다."
+                    : $"{QuestBoard.DescribeArea(i.RumourCentre)} 부근에 '{i.TargetName}'(이)라는 오래된 유적이 있다는 소문입니다. {client} 안을 탐사해 달라는 의뢰를 냈습니다.",
                 _ => $"{QuestBoard.DescribeArea(i.RumourCentre)} 부근에서 무슨 일이 일어났다는 소문입니다.",
             };
         }
@@ -201,6 +254,7 @@ namespace GuildMaster.Incidents
             IncidentKind.RareMonster => $"{i.TargetName}(Lv.{i.TargetLevel}){Adventurers.MemoryRecorder.Josa(i.TargetName, "을", "를")} 직접 확인했습니다. 의뢰 구역을 그 자리로 옮깁니다.",
             IncidentKind.Horde => $"{i.SpeciesName} 무리(Lv.{i.HordeLevel}, {i.Members.Count}마리)를 직접 확인했습니다. 의뢰 구역이 무리를 따라갑니다.",
             IncidentKind.Rescue => $"습격받는 {With(i.TargetName, "을", "를")} 찾았습니다. {i.SpeciesName} {i.Members.Count}마리가 둘러싸고 있습니다.",
+            IncidentKind.Ruin => $"'{i.TargetName}'의 입구를 찾았습니다. 의뢰 구역을 입구로 옮깁니다.",
             _ => "소문의 현장을 확인했습니다.",
         };
 
@@ -216,6 +270,7 @@ namespace GuildMaster.Incidents
             (IncidentKind.Rescue, IncidentOutcome.Resolved) => $"{With(i.TargetName, "을", "를")} 구해 냈습니다!",
             (IncidentKind.Rescue, IncidentOutcome.SettledByOthers) => $"{With(i.TargetName, "이", "가")} 무사히 길을 떠났다는 소식입니다.",
             (IncidentKind.Rescue, IncidentOutcome.Expired) => $"{With(i.TargetName, "이", "가")} 끝내 목숨을 잃었다는 소식입니다.",
+            (IncidentKind.Ruin, IncidentOutcome.Resolved) => $"'{i.TargetName}'의 보물을 찾아냈습니다!",
             _ => null,
         };
 
@@ -237,6 +292,7 @@ namespace GuildMaster.Incidents
                 IncidentKind.RareMonster => $"[희귀 몬스터] {i.TargetName} 토벌 ({where})",
                 IncidentKind.Horde => $"[대규모 무리] {i.SpeciesName} 무리 요격 x{q.RequiredCount} ({where})",
                 IncidentKind.Rescue => $"[구출] {i.TargetName} 구출 ({where})",
+                IncidentKind.Ruin => $"[유적 탐사] {i.TargetName} ({where})",
                 _ => $"[돌발] {q.Species?.displayName} ({where})",
             };
         }

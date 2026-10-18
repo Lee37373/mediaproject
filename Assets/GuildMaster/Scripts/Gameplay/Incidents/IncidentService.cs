@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using GuildMaster.Adventurers;
 using GuildMaster.Core;
 using GuildMaster.Data;
 using GuildMaster.Ecosystem;
@@ -7,6 +8,7 @@ using GuildMaster.Fog;
 using GuildMaster.Monsters;
 using GuildMaster.Quests;
 using GuildMaster.Units;
+using GuildMaster.Visuals;
 using GuildMaster.World;
 using UnityEngine;
 
@@ -60,6 +62,7 @@ namespace GuildMaster.Incidents
             _eco = eco;
             _board = board;
             _fog = fog;
+            BuildRuinLooks();
         }
 
         // Deaths are noticed on the next check (not on the death event): the board counts the kill on that event first,
@@ -81,6 +84,9 @@ namespace GuildMaster.Incidents
             if (e.Day >= IncidentRules.RescueFirstDay && !_active.Any(i => i.Kind == IncidentKind.Rescue)
                 && rng.Value < IncidentRules.RescueChancePerHour)
                 StartRescue();
+            if (e.Day >= IncidentRules.RuinFirstDay && _active.Count(i => i.Kind == IncidentKind.Ruin) < IncidentRules.MaxOpenRuins
+                && rng.Value < IncidentRules.RuinChancePerHour)
+                StartRuin();
         }
 
         void Update()
@@ -101,6 +107,7 @@ namespace GuildMaster.Incidents
                 case IncidentKind.RareMonster: TickRare(i); break;
                 case IncidentKind.Horde: TickHorde(i); break;
                 case IncidentKind.Rescue: TickRescue(i); break;
+                case IncidentKind.Ruin: TickRuin(i); break;
             }
             if (!i.Over && !i.Rumoured && Now >= i.RumourAtHour) SpreadRumour(i);
         }
@@ -539,6 +546,153 @@ namespace GuildMaster.Incidents
             }
         }
 
+        // ---------------- Ruin ----------------
+
+        /// <summary>Ruins whose treasure the guild has taken (each is looted once, user decision: recommended "fixed, once").</summary>
+        readonly HashSet<int> _looted = new();
+        readonly Dictionary<int, SpriteRenderer> _chests = new();
+        readonly Dictionary<int, SpriteRenderer> _entrances = new();
+
+        /// <summary>A member of the quest this close to the chest may open it.</summary>
+        public const float ChestReach = 1.4f;
+
+        public bool IsLooted(int ruin) => _looted.Contains(ruin);
+
+        /// <summary>The ruin of an incident, or null.</summary>
+        public RuinSite RuinOf(Incident i) => i != null && i.RuinIndex >= 0 && i.RuinIndex < _world.Map.Ruins.Count ? _world.Map.Ruins[i.RuinIndex] : null;
+
+        public Vector2 ChestOf(Incident i) => RuinOf(i) is { } r ? GridMap.CellToWorld(r.Chest) : i.Spot;
+
+        /// <summary>The incident going on at a ruin, or null.</summary>
+        public Incident ActiveAt(RuinSite ruin) => ruin == null ? null : _active.FirstOrDefault(i => i.Kind == IncidentKind.Ruin && i.RuinIndex == ruin.Index);
+
+        /// <summary>
+        /// Word of a ruin: one not looted and not already talked of; its halls fill with guardians — a kind that lives round
+        /// the way down (one that goes for people if any), two levels above the land there — and the treasure waits in the
+        /// last room. <paramref name="index"/> is for tests and debug.
+        /// </summary>
+        public Incident StartRuin(int index = -1)
+        {
+            var map = _world.Map;
+            var free = map.Ruins.Where(r => !_looted.Contains(r.Index) && ActiveAt(r) == null).ToList();
+            if (free.Count == 0) return null;
+            var rng = GameRandom.Shared;
+            var site = index >= 0 ? free.FirstOrDefault(r => r.Index == index) : free[rng.Range(0, free.Count)];
+            if (site == null) return null;
+            var kind = PickKind(site.Entrance, rng, aggressive: true) ?? PickKind(site.Entrance, rng);
+            if (kind == null) return null;
+            var entrance = GridMap.CellToWorld(site.Entrance);
+            int level = Mathf.Min(MonsterLevel.MaxLevel, _eco.BirthLevelAt(entrance) + IncidentRules.GuardLevelBonus);
+            var i = new Incident
+            {
+                Id = _nextId++, Kind = IncidentKind.Ruin, StartedHour = Now, Spot = entrance, RumourAtHour = Now + IncidentRules.RumourDelay(rng),
+                EndsAtHour = float.MaxValue, RuinIndex = site.Index, TargetName = IncidentRules.RuinName(site), SpeciesName = kind.displayName,
+                TargetLevel = level,
+            };
+            var pool = Services.Get<PoolService>();
+            for (int r = 1; r < site.Rooms.Count; r++)
+            {
+                var room = site.Rooms[r];
+                int n = r == site.Rooms.Count - 1 ? IncidentRules.TreasureGuards : IncidentRules.GuardsPerRoom;
+                for (int k = 0; k < n; k++)
+                {
+                    var cell = new Vector2Int(rng.Range(room.xMin + 1, room.xMax - 1), rng.Range(room.yMin + 1, room.yMax - 1));
+                    var m = pool.Spawn<Monster>(Monster.PoolKey, GridMap.CellToWorld(cell));
+                    m.Setup(kind, null);
+                    m.SetLevel(level);
+                    i.Members.Add(m);
+                }
+            }
+            _active.Add(i);
+            ShowChest(site, open: false);
+            Debug.Log($"[Incident] #{i.Id} ruin '{i.TargetName}' #{site.Index} at ({site.Entrance.x},{site.Entrance.y}) {QuestBoard.DescribeArea(entrance)}: {i.Members.Count} {kind.displayName} Lv{level}");
+            return i;
+        }
+
+        void TickRuin(Incident i)
+        {
+            i.Members.RemoveAll(m => m == null || !m.IsAlive);
+            var site = RuinOf(i);
+            if (site == null || _fog == null || i.Sighted) return;
+            var entrance = GridMap.CellToWorld(site.Entrance);
+            if (!_fog.IsVisibleRaw(entrance)) return;
+            i.Sighted = true;
+            i.LastSeen = entrance;
+            i.LastSeenHour = Now;
+            if (!i.Rumoured) SpreadRumour(i);
+            if (i.Quest != null && i.Quest.IsActive)
+            {
+                i.Quest.Point = entrance;
+                i.Quest.Radius = IncidentRules.SightedRadius;
+            }
+            EventBus.Publish(new IncidentSightedEvent { Incident = i });
+        }
+
+        /// <summary>
+        /// Someone on the ruin's quest at the chest, and no guardian close to it: it opens — relics and gear spill out, the
+        /// quest is done, the ruin is looted for good, and the guardians left go their ways some hours on.
+        /// </summary>
+        public bool TryOpenChest(Incident i, Adventurer opener)
+        {
+            if (i == null || i.Over || i.ChestOpened || i.Kind != IncidentKind.Ruin || opener == null || !opener.IsAlive) return false;
+            if (i.Quest == null || !i.Quest.IsAssigned(opener)) return false;
+            var chest = ChestOf(i);
+            if (Vector2.Distance(opener.Position, chest) > ChestReach + 0.2f) return false;
+            if (i.Members.Any(m => m != null && m.IsAlive && Vector2.Distance(m.Position, chest) <= IncidentRules.ChestClearRadius)) return false;
+            i.ChestOpened = true;
+            var site = RuinOf(i);
+            var loot = new List<ItemStack>();
+            IncidentRules.AddTreasure(_eco.Depth(i.Spot) > 1f, i.TargetLevel, loot);
+            if (Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(chest + new Vector2(0f, -0.8f), loot);
+            _looted.Add(i.RuinIndex);
+            ShowChest(site, open: true);
+            ShowEntrance(site);
+            End(i, IncidentOutcome.Resolved);
+            SettleQuest(i, RuinLootedReason);
+            LeaveStragglers(i);
+            return true;
+        }
+
+        public const string RuinLootedReason = "유적의 보물을 찾았습니다";
+
+        // ---- Looks: the ways down on the surface, the steps up and the chests below ----
+
+        void BuildRuinLooks()
+        {
+            foreach (var site in _world.Map.Ruins)
+            {
+                ShowEntrance(site);
+                var up = Prop("RuinStairs", GridMap.CellToWorld(site.Inside) + new Vector2(0f, -0.4f), CartoonArt.RuinStairsUp());
+                up.transform.localScale = Vector3.one;
+            }
+        }
+
+        void ShowEntrance(RuinSite site)
+        {
+            if (!_entrances.TryGetValue(site.Index, out var sr) || sr == null)
+                _entrances[site.Index] = sr = Prop("RuinEntrance", GridMap.CellToWorld(site.Entrance) + new Vector2(0f, -0.45f), null);
+            sr.sprite = CartoonArt.RuinEntrance(_looted.Contains(site.Index));
+        }
+
+        void ShowChest(RuinSite site, bool open)
+        {
+            if (site == null) return;
+            if (!_chests.TryGetValue(site.Index, out var sr) || sr == null)
+                _chests[site.Index] = sr = Prop("RuinChest", GridMap.CellToWorld(site.Chest) + new Vector2(0f, -0.3f), null);
+            sr.sprite = CartoonArt.TreasureChest(open);
+        }
+
+        SpriteRenderer Prop(string name, Vector2 at, Sprite sprite)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(transform, false);
+            go.transform.position = at;
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = sprite;
+            sr.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(at.y * 8f) + 2;
+            return sr;
+        }
+
         // ---------------- Rumour, end ----------------
 
         /// <summary>
@@ -556,7 +710,7 @@ namespace GuildMaster.Incidents
             }
             else
             {
-                float roam = i.Kind == IncidentKind.Horde ? HordeSpread : IncidentRules.RareRoam;
+                float roam = i.Kind switch { IncidentKind.Horde => HordeSpread, IncidentKind.Ruin => 0f, _ => IncidentRules.RareRoam };
                 i.RumourCentre = IncidentRules.RumourCentre(i.Spot, IncidentRules.RumourOffset(roam), rng);
                 i.RumourRadius = IncidentRules.RumourRadius;
             }
@@ -592,6 +746,20 @@ namespace GuildMaster.Incidents
                     {
                         Type = QuestType.Hunt, Species = species, Count = i.Members.Count, Point = i.RumourCentre, HasPoint = true, Radius = i.RumourRadius,
                         RewardGold = gold, RewardExp = QuestPricing.RewardExp(gold), MaxParty = QuestPricing.PartyFor(danger),
+                    };
+                    return _board.PostIncidentQuest(draft, i);
+                }
+                case IncidentKind.Ruin:
+                {
+                    var species = i.Members.Count > 0 ? i.Members[0].Def : null;
+                    if (species == null) return null;
+                    int guards = i.Members.Count;
+                    i.Requirement = IncidentRules.RuinRequirement(i.TargetLevel, guards);
+                    int gold = IncidentRules.RuinReward(i.TargetLevel, guards, Vector2.Distance(i.Spot, _world.TownCenterWorld));
+                    var draft = new QuestDraft
+                    {
+                        Type = QuestType.Hunt, Species = species, Count = 1, Point = i.RumourCentre, HasPoint = true, Radius = i.RumourRadius,
+                        RewardGold = gold, RewardExp = QuestPricing.RewardExp(gold), MaxParty = IncidentRules.RuinParty,
                     };
                     return _board.PostIncidentQuest(draft, i);
                 }
@@ -660,6 +828,8 @@ namespace GuildMaster.Incidents
             public float traveller_max;
             public Traveller.Phase traveller_phase;
             public Vector2 destination;
+            public int ruin = -1;
+            public bool chest_opened;
         }
 
         [System.Serializable]
@@ -670,6 +840,7 @@ namespace GuildMaster.Incidents
             public List<SavedIncident> history = new();
             public List<string> stragglers = new();
             public List<float> straggler_hours = new();
+            public List<int> looted = new();
         }
 
         SaveData _restoring;
@@ -687,7 +858,7 @@ namespace GuildMaster.Incidents
                 target = i.Target != null && i.Target.IsAlive ? i.Target.UnitId : null, target_name = i.TargetName, target_level = i.TargetLevel,
                 requirement = i.Requirement, horde_size = i.HordeSize, species_name = i.SpeciesName, horde_level = i.HordeLevel,
                 band = i.Band != null && !i.Over ? i.Band.Id : -1, site = i.Site != null ? _eco.Nests.IndexOf(i.Site) : -1, next_rumour = i.NextRumourHour,
-                destination = i.Destination,
+                destination = i.Destination, ruin = i.RuinIndex, chest_opened = i.ChestOpened,
             };
             foreach (var m in i.Members) if (m != null && m.IsAlive) s.members.Add(m.UnitId);
             if (i.Traveller != null && i.Traveller.IsAlive)
@@ -708,6 +879,8 @@ namespace GuildMaster.Incidents
             foreach (var i in _history) s.history.Add(CaptureOne(i));
             foreach (var (m, hour) in _stragglers)
                 if (m != null && m.IsAlive) { s.stragglers.Add(m.UnitId); s.straggler_hours.Add(hour); }
+            s.looted.AddRange(_looted);
+            s.looted.Sort();
             return JsonUtility.ToJson(s);
         }
 
@@ -731,6 +904,7 @@ namespace GuildMaster.Incidents
                 TargetName = s.target_name, TargetLevel = s.target_level, Requirement = s.requirement,
                 HordeSize = s.horde_size, SpeciesName = s.species_name, HordeLevel = s.horde_level, NextRumourHour = s.next_rumour,
                 Site = s.site >= 0 && s.site < _eco.Nests.Count ? _eco.Nests[s.site] : null, Destination = s.destination,
+                RuinIndex = s.ruin, ChestOpened = s.chest_opened,
             };
             if (s.traveller)
             {
@@ -759,6 +933,15 @@ namespace GuildMaster.Incidents
             _stragglers.Clear();
             for (int k = 0; k < _restoring.stragglers.Count && k < _restoring.straggler_hours.Count; k++)
                 if (ctx.Find<Monster>(_restoring.stragglers[k]) is { } m) _stragglers.Add((m, _restoring.straggler_hours[k]));
+            // The ruins as they were: caved in and an open chest where looted, a closed one where explorers are awaited.
+            _looted.Clear();
+            foreach (int r in _restoring.looted) _looted.Add(r);
+            foreach (var site in _world.Map.Ruins)
+            {
+                ShowEntrance(site);
+                if (_looted.Contains(site.Index)) ShowChest(site, open: true);
+                else if (ActiveAt(site) != null) ShowChest(site, open: false);
+            }
             _restored.Clear();
             _restoring = null;
         }

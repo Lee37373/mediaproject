@@ -13,9 +13,10 @@ namespace GuildMaster.Visuals
         /// Order of something standing at y = 0; one cell further north is 8 lower. On the 512 map (P4-81) the north
         /// edge is 4096 lower, so this must stay above that plus the ground (0) and the telegraphs (6): at 2000 every
         /// unit and building front north of y = 250 — our town too — was drawn under the ground. The overlays (fog,
-        /// bars, effects) sit above the highest unit, see <see cref="Fog.FogOfWar.SortingOrder"/>.
+        /// bars, effects) sit above the highest unit, see <see cref="Fog.FogOfWar.SortingOrder"/>. P4-85: 4200 → 4800 —
+        /// the underground band above the surface reaches y = 588 (4704 lower), and the ruins' halls were under the ground.
         /// </summary>
-        public const int BaseSortingOrder = 4200;
+        public const int BaseSortingOrder = 4800;
 
         SpriteRenderer _body;
         SpriteRenderer _shadow;

@@ -116,10 +116,13 @@ namespace GuildMaster.Quests
         /// A hunt for particular monsters (an incident's: the rare one, a horde's members, P4-85): only they count, wherever
         /// they are seen. Any other hunt counts its species inside its area.
         /// </summary>
-        public bool HuntsParticularMonsters => Incident != null && Incident.Kind is Incidents.IncidentKind.RareMonster or Incidents.IncidentKind.Horde or Incidents.IncidentKind.Rescue;
+        public bool HuntsParticularMonsters => Incident != null;
 
-        /// <summary>Whether killing this monster counts for the hunt.</summary>
-        public bool Counts(Monsters.Monster m) => m != null && (HuntsParticularMonsters ? Incident.IsTarget(m) : m.Def == Species);
+        /// <summary>Whether the hunt fights this monster (wherever it is, for particular monsters).</summary>
+        public bool Fights(Monsters.Monster m) => m != null && (HuntsParticularMonsters ? Incident.IsTarget(m) : m.Def == Species);
+
+        /// <summary>Whether killing this monster counts for the hunt (a ruin's quest is done by its treasure, not its guardians).</summary>
+        public bool Counts(Monsters.Monster m) => Fights(m) && Incident is not { Kind: Incidents.IncidentKind.Ruin };
 
         // ---- Natural disasters (P4-72) ----
         /// <summary>The disaster to deal with.</summary>
@@ -192,6 +195,7 @@ namespace GuildMaster.Quests
 
         public string ProgressText => Type switch
         {
+            QuestType.Hunt when Incident is { Kind: Incidents.IncidentKind.Ruin } => Incidents.IncidentRules.RuinProgress(Incident),
             QuestType.Hunt => HuntProgressText,
             QuestType.Escort => $"{EscortHours:0.0}/{MaxHours}시간",
             // Only the guild's own work: how much is left out there is not known (P4-72 information rule).

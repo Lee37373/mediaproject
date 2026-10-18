@@ -58,7 +58,8 @@ namespace GuildMaster.Adventurers
             var center = _world.TownCenterWorld;
             foreach (var a in _roster.Members)
             {
-                if (!CanDefend(a) || Vector2.Distance(a.Position, center) > _radius) continue;
+                // Down in a ruin (P4-85), as far as its way down: the dungeon's coordinates are no measure of the walk.
+                if (!CanDefend(a) || Vector2.Distance(_world.OnTheSurface(a.Position), center) > _radius) continue;
                 a.ChangeState(a.DefendState);
             }
             AssignFronts();

@@ -202,7 +202,10 @@ namespace GuildMaster.Adventurers
             return null;
         }
 
-        float DistanceToTown(Vector2 p) => Vector2.Distance(p, _world.TownCenterWorld);
+        float DistanceToTown(Vector2 p) => Vector2.Distance(_world.OnTheSurface(p), _world.TownCenterWorld);
+
+        /// <summary>Down in a ruin (P4-85): nobody makes camp there — the band walks on out.</summary>
+        bool Underground(Adventurer a) => _world.Map.IsUnderground(GridMap.WorldToCell(a.Position));
 
         // ---------------- Deciding ----------------
 
@@ -212,7 +215,7 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public bool TryCampOnTheWay(Adventurer a)
         {
-            if (ComradesAtAFire(a) || !Quiet(a)) return false;
+            if (Underground(a) || ComradesAtAFire(a) || !Quiet(a)) return false;
             var group = Companions(a);
             bool alone = group.Count == 1;
             if (!CampRules.FarOut(DistanceToTown(a.Position), alone)) return false;
@@ -224,7 +227,7 @@ namespace GuildMaster.Adventurers
         /// <summary>Out on a quest or a hunt when night falls: the leader decides for the band.</summary>
         public bool TryNightCamp(Adventurer a)
         {
-            if (!_clock.IsNight) return false;
+            if (!_clock.IsNight || Underground(a)) return false;
             if (Services.TryGet<PartyTactics>(out var tactics) && tactics.LeaderOf(a) is { } leader && leader != a) return false;
             if (ComradesAtAFire(a) || !Quiet(a)) return false;
             var group = Companions(a);

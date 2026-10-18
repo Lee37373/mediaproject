@@ -86,7 +86,7 @@ namespace GuildMaster.UI
 
         void BuildTexture()
         {
-            int w = _mapData.Width, h = _mapData.Height;
+            int w = _mapData.Width, h = _mapData.SurfaceHeight;
             _texture = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
             _base = new Color32[w * h];
             _pixels = new Color32[w * h];
@@ -142,8 +142,8 @@ namespace GuildMaster.UI
         void DrawFog()
         {
             Services.TryGet<FogOfWar>(out var fog);
-            int w = _mapData.Width, h = _mapData.Height;
-            if (fog == null || fog.Width != w || fog.Height != h)
+            int w = _mapData.Width, h = _mapData.SurfaceHeight;
+            if (fog == null || fog.Width != w || fog.Height != _mapData.Height)
             {
                 PaintCells(null, 0, 0, w, h);
             }
@@ -273,8 +273,10 @@ namespace GuildMaster.UI
 
         Vector2 WorldToMap(Vector2 world)
         {
+            // Down in a ruin's dungeon (P4-85): shown at its way down (the minimap is the surface).
+            if (world.y >= _mapData.SurfaceHeight && _mapData.RuinAt(GridMap.WorldToCell(world)) is { } ruin) world = GridMap.CellToWorld(ruin.Entrance);
             var r = _map.rect;
-            return new Vector2(world.x / _mapData.Width * r.width, world.y / _mapData.Height * r.height);
+            return new Vector2(world.x / _mapData.Width * r.width, world.y / _mapData.SurfaceHeight * r.height);
         }
 
         void UpdateFrame()
@@ -307,7 +309,7 @@ namespace GuildMaster.UI
         {
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_map, e.position, e.pressEventCamera, out var local)) return;
             var r = _map.rect;
-            var world = new Vector2((local.x - r.xMin) / r.width * _mapData.Width, (local.y - r.yMin) / r.height * _mapData.Height);
+            var world = new Vector2((local.x - r.xMin) / r.width * _mapData.Width, (local.y - r.yMin) / r.height * _mapData.SurfaceHeight);
             if (!Services.TryGet<CameraController>(out var cam)) return;
             cam.Follow(null);
             cam.JumpTo(world);

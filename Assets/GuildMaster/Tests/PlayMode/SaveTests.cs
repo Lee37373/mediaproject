@@ -219,6 +219,10 @@ namespace GuildMaster.Tests
             var rescue = Services.Get<Incidents.IncidentService>().StartRescue();
             Assert.That(rescue, Is.Not.Null, "an ambush on the road");
             rescue.RumourAtHour = clock.TotalHours;
+            // And a ruin whose word has come (P4-85d): its guardians below, its chest shut.
+            var ruin = Services.Get<Incidents.IncidentService>().StartRuin();
+            Assert.That(ruin, Is.Not.Null, "a ruin talked of");
+            ruin.RumourAtHour = clock.TotalHours;
 
             clock.SetSpeed(3);
             float start = clock.TotalHours;
@@ -250,6 +254,9 @@ namespace GuildMaster.Tests
             Assert.That(rescue.Rumoured && rescue.Traveller != null && rescue.Traveller.IsAlive && !rescue.Over, Is.True, "the traveller holds out, its rescue is up");
             string rescueQuest = rescue.Quest.Id;
             int ambushersLeft = rescue.Members.Count;
+            Assert.That(ruin.Rumoured && ruin.Quest != null && !ruin.ChestOpened, Is.True, "the ruin's exploration is up");
+            string ruinQuest = ruin.Quest.Id;
+            int guardians = ruin.Members.Count;
 
             var a = Saves.Capture();
             yield return BootFrom(a);
@@ -281,6 +288,11 @@ namespace GuildMaster.Tests
             Assert.That(loadedRescue.Traveller.Current, Is.EqualTo(Incidents.Traveller.Phase.Crouching), "still crouching by its cart");
             Assert.That(loadedRescue.Members.Count, Is.EqualTo(ambushersLeft), "with its ambushers");
             Assert.That(System.Linq.Enumerable.Count(loadedRescue.Members, m => m.Engage.Target == loadedRescue.Traveller), Is.GreaterThan(0), "who are still at it");
+            var loadedRuin = board.FindById(ruinQuest)?.Incident;
+            Assert.That(loadedRuin?.RuinIndex, Is.EqualTo(ruin.RuinIndex), "the ruin's exploration knows its ruin");
+            Assert.That(loadedRuin.Members.Count, Is.EqualTo(guardians), "its guardians");
+            var loadedMap = Services.Get<World.WorldService>().Map;
+            Assert.That(System.Linq.Enumerable.All(loadedRuin.Members, m => loadedMap.RuinAt(World.GridMap.WorldToCell(m.Position)) != null), Is.True, "still down in its halls");
 
             yield return new WaitForSecondsRealtime(1f);
             AssertSameSections(a, Saves.Capture());

@@ -229,6 +229,45 @@ namespace GuildMaster.Session
             return Incidents();
         }
 
+        /// <summary>Word of a ruin now (debug): ruin <paramref name="index"/> (else a random one not looted nor talked of).</summary>
+        public static string RuinNow(int index = -1, bool rumourNow = true)
+        {
+            var svc = Services.Get<GuildMaster.Incidents.IncidentService>();
+            var i = svc.StartRuin(index);
+            if (i == null) return "no ruin left";
+            if (rumourNow) i.RumourAtHour = Services.Get<GameClock>().TotalHours;
+            return Ruins();
+        }
+
+        /// <summary>Every ruin, real values: where its way down is, its dungeon, looted, the incident on it.</summary>
+        public static string Ruins()
+        {
+            var world = Services.Get<World.WorldService>();
+            var svc = Services.Get<GuildMaster.Incidents.IncidentService>();
+            var fog = Services.Get<GuildMaster.Fog.FogOfWar>();
+            var sb = new StringBuilder($"ruins {world.Map.Ruins.Count}, map {world.Map.Width}x{world.Map.Height} (surface {world.Map.SurfaceHeight})\n");
+            foreach (var r in world.Map.Ruins)
+            {
+                var i = svc.ActiveAt(r);
+                string talk = i == null ? "" : $" incident #{i.Id} rumoured {i.Rumoured} sighted {i.Sighted} guards {i.Members.Count} {i.SpeciesName} Lv{i.TargetLevel} quest {i.Quest?.Id} {i.Quest?.Status} party {i.Quest?.Assignees.Count}";
+                int inside = UnitRegistry.All.Count(u => u.IsAlive && world.Map.RuinAt(World.GridMap.WorldToCell(u.Position)) == r && u.Faction == Faction.Guild);
+                sb.AppendLine($"  #{r.Index} {GuildMaster.Incidents.IncidentRules.RuinName(r)} {r.Region} way down {r.Entrance} ({QuestBoard.DescribeArea(World.GridMap.CellToWorld(r.Entrance))}) " +
+                              $"seen {fog.IsExplored(r.Entrance)} inside {r.Inside} chest {r.Chest} looted {svc.IsLooted(r.Index)} members inside {inside}{talk}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Points the camera into a ruin's dungeon (debug).</summary>
+        public static string ViewRuin(int index)
+        {
+            var map = Services.Get<World.WorldService>().Map;
+            if (index < 0 || index >= map.Ruins.Count) return "no ruin " + index;
+            var cam = Services.Get<CameraControl.CameraController>();
+            cam.Follow(null);
+            cam.JumpTo(World.GridMap.CellToWorld(map.Ruins[index].Inside));
+            return map.Ruins[index].Inside.ToString();
+        }
+
         /// <summary>Puts the rare monster's time up now (debug: it slips away once nobody sees it).</summary>
         public static string RareTimeUp()
         {

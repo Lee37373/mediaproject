@@ -295,6 +295,21 @@ namespace GuildMaster.World
                 return;
             }
 
+            // A ruin's portal (P4-85): the plan steps from a way down to its dungeon or back up — two cells far apart.
+            // Next to the portal the walker goes through; elsewhere it walks on to the portal first.
+            var ahead = GridMap.WorldToCell(_waypoints[_index]);
+            if (World.TryGetPortalExit(ahead, out var portal) && (ahead - cell).sqrMagnitude > 9
+                && Vector2.Distance(pos, GridMap.CellToWorld(portal)) <= 1.6f)
+            {
+                var through = GridMap.CellToWorld(ahead);
+                transform.position = new Vector3(through.x, through.y, transform.position.z);
+                Velocity = Vector2.zero;
+                _index++;
+                _noShortcut = false;
+                if (_index >= _waypoints.Count) Finish();
+                return;
+            }
+
             // Lookahead smoothing: skip intermediate waypoints with a clear straight line.
             if (!_noShortcut)
                 for (int look = Mathf.Min(_waypoints.Count - 1, _index + 4); look > _index; look--)

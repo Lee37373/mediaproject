@@ -81,7 +81,12 @@ namespace GuildMaster.Incidents
         /// <summary>Where it was going.</summary>
         public Vector2 Destination;
 
-        /// <summary>A monster this incident's quest is about: the rare one, a member of the horde, an ambusher.</summary>
+        // ---- Ruin (its guardians are in Members) ----
+        /// <summary>Which ruin (<see cref="World.MapData.Ruins"/>).</summary>
+        public int RuinIndex = -1;
+        public bool ChestOpened;
+
+        /// <summary>A monster this incident's quest is about: the rare one, a member of the horde, an ambusher, a guardian.</summary>
         public bool IsTarget(Monsters.Monster m) => m != null && (m == Target || Members.Contains(m));
 
         /// <summary>Key under which a loaded incident is registered (quests point at it).</summary>

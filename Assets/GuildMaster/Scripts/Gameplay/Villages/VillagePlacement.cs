@@ -89,7 +89,7 @@ namespace GuildMaster.Villages
             int m = VillageRules.EdgeMargin;
             for (int i = 0; i < Attempts; i++)
             {
-                var c = new Vector2Int(rng.Range(m, map.Width - m), rng.Range(m, map.Height - m));
+                var c = new Vector2Int(rng.Range(m, map.Width - m), rng.Range(m, map.SurfaceHeight - m));
                 if (map.RegionOf(c.x, c.y) != region) continue;
                 float d = Vector2.Distance(c, map.TownCenter);
                 if (d < minDist || d > maxDist) continue;
@@ -112,13 +112,16 @@ namespace GuildMaster.Villages
             for (int x = centre.x - half; x <= centre.x + half; x++)
             {
                 if (x < VillageRules.EdgeMargin || y < VillageRules.EdgeMargin
-                    || x >= map.Width - VillageRules.EdgeMargin || y >= map.Height - VillageRules.EdgeMargin) return false;
+                    || x >= map.Width - VillageRules.EdgeMargin || y >= map.SurfaceHeight - VillageRules.EdgeMargin) return false;
                 var t = map[x, y];
                 if (t is not (TileType.Grass or TileType.Sand or TileType.Road)) return false;
             }
             float nest2 = VillageRules.NestClearance * VillageRules.NestClearance;
             foreach (var n in map.Nests)
                 if ((n.Cell - centre).sqrMagnitude < nest2) return false;
+            // And of the ruins' ways down (P4-85), as of the dens.
+            foreach (var r in map.Ruins)
+                if ((r.Entrance - centre).sqrMagnitude < nest2) return false;
             float apart2 = VillageRules.Spacing * VillageRules.Spacing;
             foreach (var o in others)
                 if ((o.Cell - centre).sqrMagnitude < apart2) return false;
