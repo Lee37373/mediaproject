@@ -36,6 +36,7 @@ namespace GuildMaster.Adventurers.Prompts
             "감당할 수 있는 상대만 노리고 위험하면 돌아온다. 사제는 혼자 싸우지 못하니 동료가 함께 나갈 때만 의미가 있다.\n" +
             "- idle: 마을에서 기다린다(마음에 드는 의뢰가 없을 때).\n" +
             "risk_for_me가 '무모'인 의뢰는 대담한 성격(용감함, 가치관 명예·모험)만 혼자 맡는다. 다른 성격은 동료가 이미 맡았을 때(members가 있을 때)만 함께 가고, 겁 많거나 안전을 중시하면 맡지 않는다. 체력이 30% 미만이면 의뢰를 맡지 않는다.\n" +
+            "recommended_level은 그 의뢰를 감당할 만한 레벨이다. 내 레벨이 그보다 3 이상 낮고 risk_for_me가 '위험'이나 '무모'면 동료가 있어도 보통 맡지 않는다.\n" +
             "모험가는 의뢰를 해야 돈과 경험을 얻는다. 기다리기만 하면 돈이 줄고 성장하지 못한다. " +
             "risk_for_me가 '여유'나 '적당'인 의뢰가 있으면 그중 성격에 맞는 것을 맡는 것이 보통이고, " +
             "available_quests가 비어 있으면 보통 hunt를 골라 직접 사냥하러 나간다. 겁이 많거나 안전을 중시하거나 물약이 없으면 idle로 마을에 남아도 된다. " +
@@ -70,6 +71,8 @@ namespace GuildMaster.Adventurers.Prompts
             public int reward_gold;
             public int reward_exp;
             public string danger;
+            /// <summary>Level at which one pulls one's weight on it (P4-88, QuestRisk.RecommendedLevel).</summary>
+            public int recommended_level;
             /// <summary>Danger relative to this adventurer's power (여유/적당/위험/무모).</summary>
             public string risk_for_me;
             public int party_size;
@@ -139,6 +142,7 @@ namespace GuildMaster.Adventurers.Prompts
                     reward_gold = q.RewardGold,
                     reward_exp = q.RewardExp,
                     danger = Quest.DangerLabel(q.Danger),
+                    recommended_level = QuestRisk.RecommendedLevel(q),
                     risk_for_me = RiskLabel(a, q),
                     party_size = q.MaxParty,
                     members = q.Assignees.Select(t => t.TakerName).ToArray(),

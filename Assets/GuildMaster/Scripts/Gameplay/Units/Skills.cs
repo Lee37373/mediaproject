@@ -593,7 +593,7 @@ namespace GuildMaster.Units
         public LordStrikeSkill(Disasters.DisasterKind kind)
         {
             _kind = kind;
-            Cooldown = 7f;
+            Cooldown = Monsters.RegionLords.StrikeCooldown;
         }
 
         bool OnSelf => _kind is Disasters.DisasterKind.Avalanche or Disasters.DisasterKind.Quake;

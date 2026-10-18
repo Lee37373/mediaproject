@@ -68,6 +68,8 @@ namespace GuildMaster.Adventurers
                 if (quest != null && !RecklessAllowed(DecisionPrompt.RiskLabel(a, quest), a.Traits?.DangerAversion ?? 0f,
                         a.Data.values, quest.Assignees.Count > 0))
                     return Fallback(a, all, "reckless", result);
+                // P4-88: far under the quest's level, a 위험 quest is taken only now and then.
+                if (QuestRisk.HoldsBack(a, quest)) return Fallback(a, all, "too green", result);
                 // F-2: too stressed for a quest this dangerous.
                 if (quest != null && Welfare.GuildWelfare.QuestRefusal(a, quest.Danger) != null)
                     return Fallback(a, all, "stress", result);

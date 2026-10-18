@@ -21,6 +21,7 @@ namespace GuildMaster.Adventurers.Prompts
             "- 가치관이 '동료'이거나 사교적이면 대체로 함께 간다. 혼자 일하기를 좋아하면 대체로 거절한다.\n" +
             "- 체력이 낮거나(hp_percent 50 미만) 피로가 높으면(fatigue 70 이상) 거절한다.\n" +
             "- quest.risk_for_me가 '무모'면 겁 많거나 안전을 중시하는 성격은 거절한다.\n" +
+            "- quest.recommended_level(0이면 정해지지 않음)보다 내 레벨이 3 이상 낮고 risk_for_me가 '위험'이나 '무모'면 보통 거절한다.\n" +
             "- my_feeling_to_leader는 리더에 대한 네 감정이다(친함/호감/보통/껄끄러움/적대). 친하면 기꺼이 함께 가고, 껄끄럽거나 적대적이면 대체로 거절한다.\n" +
             "- 리더와 좋은 기억이 있으면 받아들이기 쉽고, 나쁜 기억이 있으면 망설인다.\n" +
             "say는 리더에게 직접 하는 짧은 한국어 대답 한 마디다(결정과 일치해야 한다). " +
@@ -43,6 +44,8 @@ namespace GuildMaster.Adventurers.Prompts
             public int my_share_gold;
             public int my_share_exp;
             public string danger;
+            /// <summary>Level at which one pulls one's weight on it (P4-88); 0 for a free hunt.</summary>
+            public int recommended_level;
             public string risk_for_me;
             public int party_size;
         }
@@ -83,6 +86,7 @@ namespace GuildMaster.Adventurers.Prompts
                 my_share_gold = q.RewardGold / partySize,
                 my_share_exp = q.RewardExp / partySize,
                 danger = Quest.DangerLabel(q.Danger),
+                recommended_level = QuestRisk.RecommendedLevel(q),
                 risk_for_me = DecisionPrompt.RiskLabel(c, q),
                 party_size = q.MaxParty,
             });

@@ -90,7 +90,10 @@ namespace GuildMaster.Villages
             var village = _villages.Standing
                 .Where(v => !IsUnderAttack(v) && Vector2.Distance(v.WorldPosition, nest.WorldPosition) <= VillageRules.RaidRadius)
                 .OrderBy(v => Vector2.Distance(v.WorldPosition, nest.WorldPosition)).FirstOrDefault();
-            return village != null && Launch(nest, village) > 0;
+            if (village == null) return false;
+            // Half as often as our town is raided (P4-88, user decision 2026-10-18): on the other half the den just stays home.
+            if (!GameRandom.Shared.Chance(VillageRules.DenRaidShare)) return true;
+            return Launch(nest, village) > 0;
         }
 
         /// <summary>Sends part of the den against the village now (also debug and tests). Returns raiders sent.</summary>

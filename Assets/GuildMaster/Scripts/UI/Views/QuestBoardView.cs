@@ -186,7 +186,9 @@ namespace GuildMaster.UI
                     QuestStatus.Completed => UIBuilder.Colored("보고 대기", UITheme.Good),
                     _ => q.Status.ToString(),
                 };
-                _title.text = $"[{q.Id}] {q.Title}  {status}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(q.Danger), UITheme.Danger(q.Danger))}";
+                // The level it asks of a member (P4-88): the ones far under it hold back from it.
+                string level = q.Type == QuestType.Escort ? "" : UIBuilder.Colored($" · 권장 Lv.{Adventurers.QuestRisk.RecommendedLevel(q)}", UITheme.TextMuted);
+                _title.text = $"[{q.Id}] {q.Title}  {status}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(q.Danger), UITheme.Danger(q.Danger))}{level}";
                 string members = q.Assignees.Count == 0 ? "없음" : string.Join(", ", q.Assignees.Select(a => a.TakerName));
                 // P4-82: who pays, and the guild's fee (the reward shown is what the members share). The progress goes
                 // last: with the den it names it is the longest part, and the line is cut where it runs out.

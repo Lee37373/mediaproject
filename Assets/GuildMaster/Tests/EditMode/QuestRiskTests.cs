@@ -37,5 +37,39 @@ namespace GuildMaster.Tests
             Assert.That(Quests.QuestBoard.HuntDanger(Monsters.MonsterLevel.HighDangerLevel, 1), Is.EqualTo(DangerLevel.High));
             Assert.That(Quests.QuestBoard.HuntDanger(15, 10), Is.EqualTo(DangerLevel.High), "capped at high");
         }
+
+        static Quests.Quest QuestOf(DangerLevel danger, MonsterDefinition species = null, int maxParty = 3)
+            => new("Q_1", new Quests.QuestDraft { Type = Quests.QuestType.Hunt, Species = species, Count = 1, RewardGold = 100, MaxParty = maxParty }, 0f) { Danger = danger };
+
+        [Test]
+        public void ARecommendedLevel_IsTheDangersSoloLevel_OrAFullPartysForALord()
+        {
+            Assert.That(QuestRisk.RecommendedLevel(QuestOf(DangerLevel.Low)), Is.EqualTo(1));
+            Assert.That(QuestRisk.RecommendedLevel(QuestOf(DangerLevel.Medium)), Is.EqualTo(5));
+            Assert.That(QuestRisk.RecommendedLevel(QuestOf(DangerLevel.High)), Is.EqualTo(9));
+            var lord = UnityEngine.ScriptableObject.CreateInstance<MonsterDefinition>();
+            lord.isRegionLord = true;
+            try
+            {
+                // 90 for eight: 90 / (1 + 0.6 × 7) = 17.3.
+                Assert.That(QuestRisk.RecommendedLevel(QuestOf(DangerLevel.High, lord, Monsters.RegionLords.QuestParty)), Is.EqualTo(18));
+            }
+            finally { UnityEngine.Object.DestroyImmediate(lord); }
+        }
+
+        [Test]
+        public void FarUnderItsLevel_ARiskyQuestIsTooGreen_ButAFairOneIsNot()
+        {
+            // P4-88 (user decision 2026-10-18): new members followed their party to far 위험 quests and died.
+            var medium = QuestOf(DangerLevel.Medium);
+            var rookie = new AdventurerData { level = 2 };
+            Assert.That(QuestRisk.TooGreen(rookie, medium, QuestRisk.Risky), Is.True);
+            Assert.That(QuestRisk.TooGreen(rookie, medium, QuestRisk.Reckless), Is.True);
+            Assert.That(QuestRisk.TooGreen(rookie, medium, QuestRisk.Fair), Is.False, "safe enough with this party: no holding back");
+            Assert.That(QuestRisk.TooGreen(new AdventurerData { level = 3 }, medium, QuestRisk.Risky), Is.False, "within three levels");
+            Assert.That(QuestRisk.TooGreen(new AdventurerData { level = 2, gearTier = 1 }, medium, QuestRisk.Risky), Is.False, "gear counts 1.5 levels");
+            Assert.That(QuestRisk.GreenDareChance(-0.5f), Is.GreaterThan(QuestRisk.GreenDareChance(0f)), "the bold dare more often");
+            Assert.That(QuestRisk.GreenDareChance(1f), Is.LessThan(0.2f));
+        }
     }
 }

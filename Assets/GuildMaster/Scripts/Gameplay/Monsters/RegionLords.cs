@@ -16,12 +16,18 @@ namespace GuildMaster.Monsters
     {
         public const int Level = 35;
         public const float HpMultiplier = 15f;
-        /// <summary>Tuned in play (2026-10-18): at x2 four level-24 members took one apart unhurt.</summary>
-        public const float AttackMultiplier = 3f;
+        /// <summary>
+        /// Tuned in play (2026-10-18): at ×2 four level-24 members took one apart unhurt, and at ×3 still lost nobody. P4-88
+        /// (user decision "much stronger"): ×4, eight guards, the strike every 5 s — four level-24s should lose someone or fall
+        /// back, eight should win.
+        /// </summary>
+        public const float AttackMultiplier = 4f;
         public const float DefenseBonus = 4f;
         public const int ExpMultiplier = 10;
         /// <summary>Guards the lair starts with (the lair's capacity is its guards' nest size).</summary>
-        public const int InitialEscorts = 5;
+        public const int InitialEscorts = 8;
+        /// <summary>Seconds between its strikes (<see cref="Units.LordStrikeSkill"/>), 7 before P4-88.</summary>
+        public const float StrikeCooldown = 5f;
         /// <summary>Guards the lord calls out once, when its health first drops below <see cref="CallBelowHp"/>.</summary>
         public const int CalledEscorts = 3;
         public const float CallBelowHp = 0.5f;

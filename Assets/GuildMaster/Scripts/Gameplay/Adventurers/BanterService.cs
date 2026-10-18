@@ -174,7 +174,7 @@ namespace GuildMaster.Adventurers
             if (visitor == null || !visitor.IsVisitor) return; // may have joined/left meanwhile
             int delta = BanterPrompt.ClampDelta(visitor == a ? aToB : bToA);
             var data = visitor.Data;
-            data.recruitAffinity = RecruitmentSession.NextRecruitAffinity(data.recruitAffinity, visitor.Traits, delta);
+            data.recruitAffinity = RecruitmentSession.NextRecruitAffinity(data.recruitAffinity, visitor.Traits, delta, RecruitmentSession.LevelsAboveGuild(visitor));
             if (data.recruitAffinity < RecruitmentSession.AutoJoinAffinity) return;
             if (!Services.TryGet<GuildRoster>(out var roster) || !roster.AddExisting(visitor)) return; // roster full
             EventBus.Publish(new RecruitmentEndedEvent { Visitor = visitor, Outcome = RecruitOutcome.Joined, Turns = data.recruitTurns });

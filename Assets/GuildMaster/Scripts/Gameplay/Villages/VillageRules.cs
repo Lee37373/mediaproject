@@ -44,6 +44,11 @@ namespace GuildMaster.Villages
         // ---- Raids (VillageRaids) ----
         /// <summary>Dens this close to a village raid it (as <see cref="Town.WaveManager.RaidRadius"/> for our town).</summary>
         public const float RaidRadius = 45f;
+        /// <summary>
+        /// Share of a den's raid rolls that come down on its village (P4-88, user decision 2026-10-18: half as often as our
+        /// town's raids). A den of a dozen goblins took a village in two days, three raids in a row.
+        /// </summary>
+        public const float DenRaidShare = 0.5f;
         /// <summary>A migrating or roaming pack passing this close attacks it.</summary>
         public const float PassingRadius = 8f;
         /// <summary>After a passing pack's attack, the next passing pack leaves the village alone this long.</summary>

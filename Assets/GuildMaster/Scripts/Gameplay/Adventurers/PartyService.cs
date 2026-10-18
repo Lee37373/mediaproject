@@ -304,7 +304,7 @@ namespace GuildMaster.Adventurers
             catch (Exception ex)
             {
                 Debug.LogException(ex);
-                (accept, say) = RuleDecide(c, g.Leader);
+                (accept, say) = RuleDecide(c, g.Leader, g.Quest);
             }
             Answer(g, c, accept, say, fromLlm);
         }
@@ -318,19 +318,29 @@ namespace GuildMaster.Adventurers
                     && PartyPrompt.TryInterpret(dto, c.HpRatio, DecisionPrompt.RiskLabel(c, g.Quest), c.Traits?.DangerAversion ?? 0f,
                         c.Data.values, out var accept, out var say))
                 {
+                    // P4-88: far under the quest's level, a 위험 quest is joined only now and then.
+                    if (accept && QuestRisk.HoldsBack(c, g.Quest)) (accept, say) = (false, TooGreenLine);
                     if (result.Exchange != null) result.Exchange.Note = $"채택: {(accept ? "합류" : "거절")}";
                     Debug.Log($"[LLM-PARTY] {c.Data.name} ← {g.Leader.Data.name} '{g.Quest.Title}': {dto.accept} | \"{say}\" ({result.Seconds:0.0}s)");
                     return (accept, say, true);
                 }
                 if (result.Exchange != null) result.Exchange.Note = "규칙 기반으로 대체: " + (result.Ok ? "parse" : result.Error);
             }
-            var (ra, rs) = RuleDecide(c, g.Leader);
+            var (ra, rs) = RuleDecide(c, g.Leader, g.Quest);
             return (ra, rs, false);
         }
 
-        static (bool accept, string say) RuleDecide(Adventurer c, Adventurer leader)
+        /// <summary>What a member too green for the quest says turning the invitation down (P4-88).</summary>
+        public const string TooGreenLine = "아직 나한텐 벅찬 일이야.";
+
+        /// <summary>
+        /// The rules' answer: by values, traits and feeling towards the leader — and, for a quest (P4-88), not when the
+        /// member is far under its level and it is 위험 for them (they had followed the party at 55% regardless).
+        /// </summary>
+        static (bool accept, string say) RuleDecide(Adventurer c, Adventurer leader, Quest quest = null)
         {
             if (c == null) return (false, null);
+            if (quest != null && QuestRisk.HoldsBack(c, quest)) return (false, TooGreenLine);
             float chance = PartyPrompt.RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f, Relationships.Get(c, leader));
             bool accept = GameRandom.Shared.Value < chance;
             return (accept, accept ? "좋아, 같이 가자!" : "이번엔 사양할게.");

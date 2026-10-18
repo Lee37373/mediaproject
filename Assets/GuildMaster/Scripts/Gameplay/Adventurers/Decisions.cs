@@ -118,7 +118,10 @@ namespace GuildMaster.Adventurers
             int partySize = q.Assignees.Count + 1;
             // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused.
             float margin = QuestRisk.Margin(AdventurerStats.Power(d), partySize, q);
-            if (QuestRisk.Label(margin) == QuestRisk.Reckless) return 0f;
+            string risk = QuestRisk.Label(margin);
+            if (risk == QuestRisk.Reckless) return 0f;
+            // Far under the quest's level, a 위험 one is not for it (P4-88): the rules never dare (the model may, rarely).
+            if (QuestRisk.TooGreen(d, q, risk)) return 0f;
 
             float value = q.RewardGold / (float)partySize + q.RewardExp * 1.2f / partySize;
             // Personality flavour for the rule-based fallback.
