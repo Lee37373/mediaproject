@@ -179,6 +179,12 @@ namespace GuildMaster.Session
             {
                 var m = i.Target;
                 string target = m != null ? $" target {m.DisplayName} Lv{m.Level} hp {m.Hp:0}/{m.Stats.MaxHp:0} at {m.Position.x:0},{m.Position.y:0} {m.StateLabel} off-circle {Vector2.Distance(m.Position, i.RumourCentre) - i.RumourRadius:0.0}" : "";
+                if (i.Kind == GuildMaster.Incidents.IncidentKind.Rescue)
+                {
+                    var t = i.Traveller;
+                    target = $" traveller {i.TargetName} {(t != null ? $"hp {t.Hp:0}/{t.Stats.MaxHp:0} {t.StateLabel} at {t.Position.x:0},{t.Position.y:0}" : "gone")} → {QuestBoard.DescribeArea(i.Destination)}, " +
+                             $"ambushers {i.Members.Count} {i.SpeciesName} Lv{i.TargetLevel}";
+                }
                 if (i.Kind == GuildMaster.Incidents.IncidentKind.Horde)
                     target = $" horde {i.SpeciesName} Lv{i.HordeLevel} {i.Members.Count}/{i.HordeSize} at {i.Spot.x:0},{i.Spot.y:0} ({QuestBoard.DescribeArea(i.Spot)}) → {i.Site?.DisplayName} {(i.Site != null ? QuestBoard.DescribeArea(i.Site.WorldPosition) : "")} " +
                              $"marching {i.Band != null && Services.Get<MigrationService>().Bands.Contains(i.Band)} off-circle {Vector2.Distance(i.Spot, i.RumourCentre) - i.RumourRadius:0.0}";
@@ -209,6 +215,16 @@ namespace GuildMaster.Session
             var site = nestIndex >= 0 && nestIndex < nests.Count ? nests[nestIndex] : null;
             var i = svc.StartHorde(site, null, size);
             if (i == null) return "no site for a horde";
+            if (rumourNow) i.RumourAtHour = Services.Get<GameClock>().TotalHours;
+            return Incidents();
+        }
+
+        /// <summary>A traveller ambushed now (debug): on a road to a village by the rules, or at x, y (heading for our town).</summary>
+        public static string RescueNow(float x = float.NaN, float y = float.NaN, int ambushers = 0, bool rumourNow = true)
+        {
+            var svc = Services.Get<GuildMaster.Incidents.IncidentService>();
+            var i = svc.StartRescue(float.IsNaN(x) ? null : new Vector2(x, y), ambushers);
+            if (i == null) return "no road or spot for an ambush";
             if (rumourNow) i.RumourAtHour = Services.Get<GameClock>().TotalHours;
             return Incidents();
         }

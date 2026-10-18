@@ -243,6 +243,7 @@ namespace GuildMaster.UI
                 case TownGate g: ShowGate(g); break;
                 case Villages.Village v: ShowVillage(v); break;
                 case Merchant m: ShowMerchant(m); break;
+                case Incidents.Traveller t: ShowTraveller(t); break;
                 case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
             }
@@ -265,6 +266,19 @@ namespace GuildMaster.UI
             _body.text =
                 $"상태: {UIBuilder.Colored(m.StateLabel, UITheme.Accent)}\n" +
                 Muted("창고의 재료·물약·장비를 사 갑니다. [행상인 (T)] 창에서 팔 수 있습니다.");
+        }
+
+        /// <summary>A traveller on the road (P4-85 rescue): only what can be seen of it.</summary>
+        void ShowTraveller(Incidents.Traveller t)
+        {
+            _title.text = $"{t.DisplayName}  {Muted("(길손)")}";
+            string state = t.Current == Incidents.Traveller.Phase.Crouching
+                ? UIBuilder.Colored(t.StateLabel, UITheme.Bad) : UIBuilder.Colored(t.StateLabel, UITheme.Accent);
+            _body.text =
+                $"상태: {state} · 체력 {Mathf.RoundToInt(t.HpRatio * 100f)}%\n" +
+                Muted(t.Current == Incidents.Traveller.Phase.Crouching
+                    ? "수레 옆에 웅크려 버티고 있습니다. 둘러싼 몬스터를 모두 쓰러뜨리면 다시 길을 떠납니다."
+                    : $"{Quests.QuestBoard.DescribeArea(t.Destination)}(으)로 가는 길입니다.");
         }
 
         static string Muted(string s) => UIBuilder.Colored(s, UITheme.TextMuted);

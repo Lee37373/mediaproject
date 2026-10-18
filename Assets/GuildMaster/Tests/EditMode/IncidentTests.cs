@@ -103,6 +103,20 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void Rescue_TravellerHoldsOutTheHours_TheBlowsLast_AndTheRewardIsDoubled()
+        {
+            // One blow of 10 a second (a defenceless target, criticals on average) for an hour of ten seconds.
+            float one = IncidentRules.HoldOutHp(new[] { (10f, 1f) }, 1f, 10f);
+            Assert.That(one, Is.EqualTo(10f * (1f + Combat.CritChance * (Combat.CritMultiplier - 1f)) * 10f).Within(0.01f));
+            Assert.That(IncidentRules.HoldOutHp(new[] { (10f, 1f), (10f, 1f) }, 2f, 10f), Is.EqualTo(one * 4f).Within(0.01f), "twice the blows, twice the hours");
+            Assert.That(IncidentRules.RescueReward(DangerLevel.Medium, 3, 60f), Is.GreaterThan(QuestPricing.HuntReward(DangerLevel.Medium, 3, 60f)));
+            Assert.That(IncidentRules.TravellerName(new GameRandom(3)), Does.Contain(" "));
+            var db = DefaultContent.Build();
+            db.BuildIndex();
+            foreach (var s in IncidentRules.Cargo) Assert.That(db.Item(s.itemId), Is.Not.Null, s.itemId);
+        }
+
+        [Test]
         public void RareVariant_DropsItsTrophy_AndGearByLevel()
         {
             var loot = new List<ItemStack>();

@@ -78,16 +78,20 @@ namespace GuildMaster.Incidents
             if (e.Day >= IncidentRules.HordeFirstDay && !_active.Any(i => i.Kind == IncidentKind.Horde)
                 && rng.Value < IncidentRules.HordeChancePerHour)
                 StartHorde();
+            if (e.Day >= IncidentRules.RescueFirstDay && !_active.Any(i => i.Kind == IncidentKind.Rescue)
+                && rng.Value < IncidentRules.RescueChancePerHour)
+                StartRescue();
         }
 
         void Update()
         {
             // Paused: nothing moves (P4-80; a loaded game starts with the check due and would otherwise run it once).
-            if (_active.Count == 0 || Time.deltaTime <= 0f) return;
+            if (_active.Count == 0 && _stragglers.Count == 0 || Time.deltaTime <= 0f) return;
             _timer -= Time.deltaTime;
             if (_timer > 0f) return;
             _timer = TickInterval;
             foreach (var i in _active.ToList()) Tick(i);
+            ScatterStragglers();
         }
 
         void Tick(Incident i)
@@ -96,6 +100,7 @@ namespace GuildMaster.Incidents
             {
                 case IncidentKind.RareMonster: TickRare(i); break;
                 case IncidentKind.Horde: TickHorde(i); break;
+                case IncidentKind.Rescue: TickRescue(i); break;
             }
             if (!i.Over && !i.Rumoured && Now >= i.RumourAtHour) SpreadRumour(i);
         }
@@ -162,12 +167,16 @@ namespace GuildMaster.Incidents
             return false;
         }
 
-        /// <summary>A kind that lives at that cell, drawn by the weights of the map's first dens (no region lords).</summary>
-        MonsterDefinition PickKind(Vector2Int cell, GameRandom rng)
+        /// <summary>
+        /// A kind that lives at that cell, drawn by the weights of the map's first dens (no region lords); only one that goes
+        /// for people when <paramref name="aggressive"/> (an ambush).
+        /// </summary>
+        MonsterDefinition PickKind(Vector2Int cell, GameRandom rng, bool aggressive = false)
         {
             var region = _world.Map.RegionOf(cell.x, cell.y);
             var biome = MapGenerator.ClassifyBiome(_world.Map, cell);
-            var kinds = _eco.AllSpecies.Where(s => s != null && !s.isRegionLord && EcosystemManager.Fit(s, region, biome) > 0f).ToList();
+            var kinds = _eco.AllSpecies.Where(s => s != null && !s.isRegionLord && (!aggressive || s.aggressiveToHumans)
+                                                   && EcosystemManager.Fit(s, region, biome) > 0f).ToList();
             if (kinds.Count == 0) return null;
             float total = kinds.Sum(s => EcosystemManager.Fit(s, region, biome));
             float roll = rng.Range(0f, total);
@@ -380,6 +389,156 @@ namespace GuildMaster.Incidents
             }
         }
 
+        // ---------------- Rescue ----------------
+
+        /// <summary>Ambushers left behind when a rescue ends, and when they may scatter (unseen).</summary>
+        readonly List<(Monster monster, float hour)> _stragglers = new();
+
+        /// <summary>
+        /// A traveller on the road between a village and our town is ambushed out of the guild's sight, 40-90 cells out:
+        /// a few of a kind that goes for people and lives there, at the land's level, fall on it; it crouches by its cart
+        /// and holds out about <see cref="IncidentRules.RescueHoldHours"/>. Null when there is no road or no spot.
+        /// <paramref name="at"/> is for tests and debug.
+        /// </summary>
+        public Incident StartRescue(Vector2? at = null, int ambushers = 0)
+        {
+            var rng = GameRandom.Shared;
+            var town = _world.TownCenterWorld;
+            Vector2 spot, destination;
+            MonsterDefinition kind;
+            if (at.HasValue)
+            {
+                spot = at.Value;
+                destination = town;
+                kind = PickKind(GridMap.WorldToCell(spot), rng, aggressive: true);
+            }
+            else if (!PickRescueSpot(rng, out spot, out destination, out kind)) return null;
+            if (kind == null) return null;
+            if (ambushers <= 0) ambushers = rng.Range(IncidentRules.AmbushMin, IncidentRules.AmbushMax + 1);
+
+            int id = _nextId++;
+            string name = IncidentRules.TravellerName(rng);
+            var traveller = Traveller.Create($"TRAVELLER_{id}", name, spot, destination, transform);
+            var i = new Incident
+            {
+                Id = id, Kind = IncidentKind.Rescue, StartedHour = Now, Spot = spot, RumourAtHour = Now + IncidentRules.RumourDelay(rng),
+                EndsAtHour = float.MaxValue, Traveller = traveller, Destination = destination, TargetName = name, SpeciesName = kind.displayName,
+            };
+            int level = _eco.BirthLevelAt(spot);
+            var pool = Services.Get<PoolService>();
+            var blows = new List<(float, float)>();
+            for (int k = 0; k < ambushers; k++)
+            {
+                float a = rng.Range(0f, Mathf.PI * 2f);
+                var p = spot + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * rng.Range(1.5f, 3f);
+                if (!_world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(p), 3, out var cell)) cell = GridMap.WorldToCell(spot);
+                var m = pool.Spawn<Monster>(Monster.PoolKey, GridMap.CellToWorld(cell));
+                m.Setup(kind, null);
+                m.SetLevel(level);
+                m.ForceTarget(traveller);
+                i.Members.Add(m);
+                blows.Add((m.Stats.Attack, m.Stats.AttackCooldown));
+            }
+            i.TargetLevel = level;
+            traveller.HoldOut(IncidentRules.HoldOutHp(blows, IncidentRules.RescueHoldHours, _clock.RealSecondsPerGameHour));
+            traveller.Arrived = t => { if (i.Traveller == t) i.Traveller = null; };
+            _active.Add(i);
+            Debug.Log($"[Incident] #{i.Id} rescue: {name} ambushed by {ambushers} {kind.displayName} Lv{level} at ({spot.x:0},{spot.y:0}) {QuestBoard.DescribeArea(spot)}, hp {traveller.Stats.MaxHp:0}");
+            return i;
+        }
+
+        /// <summary>On the straight road between our town and a standing village, 40-90 cells out (and short of the village).</summary>
+        bool PickRescueSpot(GameRandom rng, out Vector2 spot, out Vector2 destination, out MonsterDefinition kind)
+        {
+            spot = destination = default;
+            kind = null;
+            if (!Services.TryGet<Villages.VillageService>(out var villages)) return false;
+            var town = _world.TownCenterWorld;
+            var roads = villages.Standing.Where(v => Vector2.Distance(v.WorldPosition, town) > IncidentRules.RescueMinDistance + 15f).ToList();
+            if (roads.Count == 0) return false;
+            var grid = _world.Grid;
+            for (int attempt = 0; attempt < 32; attempt++)
+            {
+                var v = roads[rng.Range(0, roads.Count)];
+                float length = Vector2.Distance(v.WorldPosition, town);
+                float d = rng.Range(IncidentRules.RescueMinDistance, Mathf.Min(IncidentRules.RescueMaxDistance, length - 15f));
+                var p = town + (v.WorldPosition - town).normalized * d;
+                if (!grid.TryFindNearestWalkable(GridMap.WorldToCell(p), 6, out var cell) || grid.IsInTown(cell) || Hazards.Blocks(grid.HazardAt(cell))) continue;
+                var w = GridMap.CellToWorld(cell);
+                if (_fog != null && _fog.IsVisibleRaw(w)) continue;
+                if (_eco.Nests.Any(n => !n.IsEmpty && Vector2.Distance(n.WorldPosition, w) < n.TerritoryRadius + 4f)) continue;
+                var k = PickKind(cell, rng, aggressive: true);
+                if (k == null) continue;
+                spot = w;
+                kind = k;
+                destination = rng.Value < IncidentRules.RescueToTownShare ? town : v.WorldPosition;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Why the board took a rescue down.</summary>
+        public const string RescueDiedReason = "여행자가 목숨을 잃었습니다";
+        public const string RescueSavedReason = "여행자가 위기를 넘겼습니다";
+
+        void TickRescue(Incident i)
+        {
+            i.Members.RemoveAll(m => m == null || !m.IsAlive);
+            var t = i.Traveller;
+            if (t == null || !t.IsAlive)
+            {
+                // Fallen: its cart spills, the ones who did it scatter after a while.
+                if (t != null && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(t.Position, IncidentRules.Cargo);
+                i.Traveller = null;
+                End(i, IncidentOutcome.Expired);
+                _board.FailIncidentQuest(i.Quest, RescueDiedReason);
+                LeaveStragglers(i);
+                return;
+            }
+            i.Spot = t.Position;
+            if (i.Members.Count == 0)
+            {
+                // Nobody is on it any more: on its way. With a group on the quest it was their doing.
+                t.GoOn();
+                bool claimed = i.Quest != null && (i.Quest.Status is QuestStatus.Completed or QuestStatus.TurnedIn || i.Quest.IsActive && i.Quest.Assignees.Count > 0);
+                End(i, claimed ? IncidentOutcome.Resolved : IncidentOutcome.SettledByOthers);
+                SettleQuest(i, RescueSavedReason);
+                return;
+            }
+            bool visible = _fog != null && (_fog.IsVisibleRaw(t.Position) || i.Members.Any(m => _fog.IsVisibleRaw(m.Position)));
+            if (!visible) return;
+            i.LastSeen = t.Position;
+            i.LastSeenHour = Now;
+            bool first = !i.Sighted;
+            i.Sighted = true;
+            if (!i.Rumoured) SpreadRumour(i);
+            if (i.Quest != null && i.Quest.IsActive)
+            {
+                i.Quest.Point = t.Position;
+                i.Quest.Radius = IncidentRules.SightedRadius;
+            }
+            if (first) EventBus.Publish(new IncidentSightedEvent { Incident = i });
+        }
+
+        void LeaveStragglers(Incident i)
+        {
+            foreach (var m in i.Members) if (m != null && m.IsAlive) _stragglers.Add((m, Now + IncidentRules.StragglerHours));
+            i.Members.Clear();
+        }
+
+        /// <summary>Ambushers left behind go their ways once their time is up and nobody sees them.</summary>
+        void ScatterStragglers()
+        {
+            for (int k = _stragglers.Count - 1; k >= 0; k--)
+            {
+                var (m, hour) = _stragglers[k];
+                if (m == null || !m.IsAlive) { _stragglers.RemoveAt(k); continue; }
+                if (Now < hour || m.IsInFight() || _fog != null && _fog.IsVisibleRaw(m.Position)) continue;
+                _stragglers.RemoveAt(k);
+                m.Perish();
+            }
+        }
+
         // ---------------- Rumour, end ----------------
 
         /// <summary>
@@ -420,6 +579,19 @@ namespace GuildMaster.Incidents
                     {
                         Type = QuestType.Hunt, Species = species, Count = 1, Point = i.RumourCentre, HasPoint = true, Radius = i.RumourRadius,
                         RewardGold = gold, RewardExp = QuestPricing.RewardExp(gold), MaxParty = IncidentRules.RareParty,
+                    };
+                    return _board.PostIncidentQuest(draft, i);
+                }
+                case IncidentKind.Rescue:
+                {
+                    var species = i.Members.Count > 0 ? i.Members[0].Def : null;
+                    if (species == null) return null;
+                    var danger = QuestBoard.HuntDanger(i.TargetLevel, i.Members.Count);
+                    int gold = IncidentRules.RescueReward(danger, i.Members.Count, Vector2.Distance(i.RumourCentre, _world.TownCenterWorld));
+                    var draft = new QuestDraft
+                    {
+                        Type = QuestType.Hunt, Species = species, Count = i.Members.Count, Point = i.RumourCentre, HasPoint = true, Radius = i.RumourRadius,
+                        RewardGold = gold, RewardExp = QuestPricing.RewardExp(gold), MaxParty = QuestPricing.PartyFor(danger),
                     };
                     return _board.PostIncidentQuest(draft, i);
                 }
@@ -482,6 +654,12 @@ namespace GuildMaster.Incidents
             public int band = -1;
             public int site = -1;
             public float next_rumour;
+            public bool traveller;
+            public Vector2 traveller_pos;
+            public float traveller_hp;
+            public float traveller_max;
+            public Traveller.Phase traveller_phase;
+            public Vector2 destination;
         }
 
         [System.Serializable]
@@ -490,6 +668,8 @@ namespace GuildMaster.Incidents
             public int next_id = 1;
             public List<SavedIncident> active = new();
             public List<SavedIncident> history = new();
+            public List<string> stragglers = new();
+            public List<float> straggler_hours = new();
         }
 
         SaveData _restoring;
@@ -507,8 +687,17 @@ namespace GuildMaster.Incidents
                 target = i.Target != null && i.Target.IsAlive ? i.Target.UnitId : null, target_name = i.TargetName, target_level = i.TargetLevel,
                 requirement = i.Requirement, horde_size = i.HordeSize, species_name = i.SpeciesName, horde_level = i.HordeLevel,
                 band = i.Band != null && !i.Over ? i.Band.Id : -1, site = i.Site != null ? _eco.Nests.IndexOf(i.Site) : -1, next_rumour = i.NextRumourHour,
+                destination = i.Destination,
             };
             foreach (var m in i.Members) if (m != null && m.IsAlive) s.members.Add(m.UnitId);
+            if (i.Traveller != null && i.Traveller.IsAlive)
+            {
+                s.traveller = true;
+                s.traveller_pos = new Vector2(SaveTime.Hundredths(i.Traveller.Position.x), SaveTime.Hundredths(i.Traveller.Position.y));
+                s.traveller_hp = SaveTime.Hundredths(i.Traveller.Hp);
+                s.traveller_max = SaveTime.Hundredths(i.Traveller.Stats.MaxHp);
+                s.traveller_phase = i.Traveller.Current;
+            }
             return s;
         }
 
@@ -517,6 +706,8 @@ namespace GuildMaster.Incidents
             var s = new SaveData { next_id = _nextId };
             foreach (var i in _active) s.active.Add(CaptureOne(i));
             foreach (var i in _history) s.history.Add(CaptureOne(i));
+            foreach (var (m, hour) in _stragglers)
+                if (m != null && m.IsAlive) { s.stragglers.Add(m.UnitId); s.straggler_hours.Add(hour); }
             return JsonUtility.ToJson(s);
         }
 
@@ -539,8 +730,17 @@ namespace GuildMaster.Incidents
                 LastSeen = s.last_seen, LastSeenHour = s.last_seen_hour, Outcome = s.outcome, EndedHour = s.ended,
                 TargetName = s.target_name, TargetLevel = s.target_level, Requirement = s.requirement,
                 HordeSize = s.horde_size, SpeciesName = s.species_name, HordeLevel = s.horde_level, NextRumourHour = s.next_rumour,
-                Site = s.site >= 0 && s.site < _eco.Nests.Count ? _eco.Nests[s.site] : null,
+                Site = s.site >= 0 && s.site < _eco.Nests.Count ? _eco.Nests[s.site] : null, Destination = s.destination,
             };
+            if (s.traveller)
+            {
+                // Registered now: the monsters on it find it again when their fights are put back (Resume).
+                var t = Traveller.Create($"TRAVELLER_{i.Id}", i.TargetName, s.traveller_pos, s.destination, transform);
+                t.RestoreState(s.traveller_phase, s.traveller_max, s.traveller_hp);
+                t.Arrived = arrived => { if (i.Traveller == arrived) i.Traveller = null; };
+                i.Traveller = t;
+                ctx.Register(t.UnitId, t);
+            }
             ctx.Register(Incident.SaveKeyOf(i.Id), i);
             _restored.Add((i, s));
             return i;
@@ -556,6 +756,9 @@ namespace GuildMaster.Incidents
                 // The march was put back by the migration service's own Link (registered before this one).
                 if (s.band >= 0 && Services.TryGet<MigrationService>(out var migration)) i.Band = migration.BandById(s.band);
             }
+            _stragglers.Clear();
+            for (int k = 0; k < _restoring.stragglers.Count && k < _restoring.straggler_hours.Count; k++)
+                if (ctx.Find<Monster>(_restoring.stragglers[k]) is { } m) _stragglers.Add((m, _restoring.straggler_hours[k]));
             _restored.Clear();
             _restoring = null;
         }

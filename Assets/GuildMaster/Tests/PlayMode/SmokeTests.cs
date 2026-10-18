@@ -3457,6 +3457,74 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// A rescue (P4-85): a traveller is ambushed out of sight on the road to a village; it crouches by its cart and
+        /// loses life as they strike; the rumour posts a rescue that counts only the ambushers; bringing them all down
+        /// sends the traveller on its way. A second one nobody saves dies, its cart spills, the quest comes down, and the
+        /// ambushers go their ways a few hours later when nobody sees them.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Rescue_AmbushedTravellerHoldsOut_SavingItSendsItOn_AndOneLeftAloneDiesAndSpillsItsCart()
+        {
+            yield return Boot();
+            var incidents = Services.Get<Incidents.IncidentService>();
+            var fog = Services.Get<GuildMaster.Fog.FogOfWar>();
+            var rescue = incidents.StartRescue();
+            Assert.That(rescue, Is.Not.Null, "a road and a spot for an ambush");
+            var traveller = rescue.Traveller;
+            Assert.That(traveller.IsAlive && traveller.ExposedToMonsters && traveller.Current == Incidents.Traveller.Phase.Crouching, Is.True);
+            Assert.That(fog.IsVisibleRaw(traveller.Position), Is.False, "out of the guild's sight");
+            Assert.That(rescue.Members.Count, Is.InRange(Incidents.IncidentRules.AmbushMin, Incidents.IncidentRules.AmbushMax));
+            Assert.That(rescue.Members.All(m => m.Def.aggressiveToHumans && m.IsHostileTo(traveller)), Is.True, "they go for it");
+            Assert.That(traveller.Stats.MaxHp, Is.GreaterThan(Combat.ScaledHp(60f)), "life to hold out on");
+
+            // They strike: it loses life.
+            Clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+            yield return WaitFor(() => traveller.Hp < traveller.Stats.MaxHp, 8f);
+            Clock.SetSpeed(1);
+            Assert.That(traveller.Hp, Is.LessThan(traveller.Stats.MaxHp), "the ambushers are at it");
+            Assert.That(traveller.IsAlive, Is.True, "but it holds out");
+
+            rescue.RumourAtHour = Clock.TotalHours;
+            yield return WaitFor(() => rescue.Rumoured, 3f);
+            var quest = rescue.Quest;
+            Assert.That(quest, Is.Not.Null, "the rumour posted a rescue");
+            Assert.That(quest.Title, Does.StartWith("[구출]"));
+            Assert.That(quest.RequiredCount, Is.EqualTo(rescue.Members.Count));
+            Assert.That(quest.Counts(rescue.Members[0]), Is.True);
+
+            foreach (var m in Roster.Members) m.Data.level = 30;
+            Assert.That(DebugCommands.ForceAccept(quest.Id, 1), Is.Not.Empty);
+            var hunter = Roster.Members.First(m => quest.IsAssigned(m));
+            foreach (var m in rescue.Members.ToList()) m.ReceiveDamage(m.Hp + 1e6f, hunter, false);
+            yield return null;
+            Assert.That(quest.Status, Is.EqualTo(QuestStatus.Completed), "the ambushers are down");
+            yield return WaitFor(() => rescue.Over, 2f);
+            Assert.That(rescue.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Resolved));
+            Assert.That(traveller.Current, Is.EqualTo(Incidents.Traveller.Phase.Travelling), "on its way again");
+
+            // A second one nobody saves.
+            var lost = incidents.StartRescue();
+            Assert.That(lost, Is.Not.Null);
+            lost.RumourAtHour = Clock.TotalHours;
+            yield return WaitFor(() => lost.Rumoured, 3f);
+            var unclaimed = lost.Quest;
+            var victim = lost.Traveller;
+            var at = victim.Position;
+            var ambushers = lost.Members.ToList();
+            victim.ReceiveDamage(victim.Hp + 1e6f, ambushers[0], false);
+            yield return WaitFor(() => lost.Over, 2f);
+            Assert.That(lost.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Expired), "it died");
+            Assert.That(unclaimed.Status, Is.EqualTo(QuestStatus.Cancelled), "its quest came down");
+            var spilled = Services.Get<GroundItemService>().Items.Where(g => Vector2.Distance(g.Position, at) < 3f).Select(g => g.Item.id).ToList();
+            Assert.That(spilled, Does.Contain(DefaultContent.Potion), "its cart spilled");
+            // Unseen, the ambushers scatter a few hours on.
+            Clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+            yield return WaitFor(() => ambushers.All(m => !m.IsAlive), 10f);
+            Clock.SetSpeed(1);
+            Assert.That(ambushers.All(m => !m.IsAlive), Is.True, "the ambushers went their ways");
+        }
+
+        /// <summary>
         /// Walking country it has not seen (P4-64): a route drawn over unexplored ground goes
         /// straight at an unseen lake, and the walk redraws itself the moment the lake is seen.
         /// The same boot checks that a free hunt really walks in legs, not in one long plan.

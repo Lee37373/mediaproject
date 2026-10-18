@@ -215,6 +215,10 @@ namespace GuildMaster.Tests
             var horde = Services.Get<Incidents.IncidentService>().StartHorde(hordeSite, null, 10);
             Assert.That(horde, Is.Not.Null, "a horde on the march");
             horde.RumourAtHour = clock.TotalHours;
+            // And a traveller ambushed on the road (P4-85c), holding out.
+            var rescue = Services.Get<Incidents.IncidentService>().StartRescue();
+            Assert.That(rescue, Is.Not.Null, "an ambush on the road");
+            rescue.RumourAtHour = clock.TotalHours;
 
             clock.SetSpeed(3);
             float start = clock.TotalHours;
@@ -243,6 +247,9 @@ namespace GuildMaster.Tests
             Assert.That(horde.Rumoured && horde.Quest != null && !horde.Over, Is.True, "the horde's interception is up");
             string hordeQuest = horde.Quest.Id;
             int hordeLeft = horde.Members.Count;
+            Assert.That(rescue.Rumoured && rescue.Traveller != null && rescue.Traveller.IsAlive && !rescue.Over, Is.True, "the traveller holds out, its rescue is up");
+            string rescueQuest = rescue.Quest.Id;
+            int ambushersLeft = rescue.Members.Count;
 
             var a = Saves.Capture();
             yield return BootFrom(a);
@@ -269,6 +276,11 @@ namespace GuildMaster.Tests
             Assert.That(loadedHorde.Members.Count, Is.EqualTo(hordeLeft), "its members");
             Assert.That(loadedHorde.Band != null && System.Linq.Enumerable.Contains(Services.Get<Ecosystem.MigrationService>().Bands, loadedHorde.Band) && loadedHorde.Band.Horde,
                         Is.True, "and its march");
+            var loadedRescue = board.FindById(rescueQuest)?.Incident;
+            Assert.That(loadedRescue?.Traveller != null && loadedRescue.Traveller.IsAlive, Is.True, "the traveller is back");
+            Assert.That(loadedRescue.Traveller.Current, Is.EqualTo(Incidents.Traveller.Phase.Crouching), "still crouching by its cart");
+            Assert.That(loadedRescue.Members.Count, Is.EqualTo(ambushersLeft), "with its ambushers");
+            Assert.That(System.Linq.Enumerable.Count(loadedRescue.Members, m => m.Engage.Target == loadedRescue.Traveller), Is.GreaterThan(0), "who are still at it");
 
             yield return new WaitForSecondsRealtime(1f);
             AssertSameSections(a, Saves.Capture());

@@ -102,9 +102,56 @@ namespace GuildMaster.Incidents
         /// <summary>A head count the way a rumour tells it: rounded to five ("about fifteen").</summary>
         public static int RumouredCount(int size) => Mathf.Max(5, Mathf.RoundToInt(size / 5f) * 5);
 
+        // ---------------- Rescue ----------------
+
+        /// <summary>Chance per game hour that a traveller is ambushed on the road (about every other day).</summary>
+        public const float RescueChancePerHour = 1f / 48f;
+        public const int RescueFirstDay = 2;
+        /// <summary>The ambush happens this far from our town, on the road to a village at least a little farther.</summary>
+        public const float RescueMinDistance = 40f, RescueMaxDistance = 90f;
+        /// <summary>How many fall on the traveller.</summary>
+        public const int AmbushMin = 2, AmbushMax = 4;
+        /// <summary>Game hours the traveller holds out against them (the rescue's time limit).</summary>
+        public const float RescueHoldHours = 4f;
+        /// <summary>Its quest pays a hunt of the ambushers there times this.</summary>
+        public const float RescueRewardFactor = 2f;
+        /// <summary>Share of travellers heading for our town (the rest leave it for the village).</summary>
+        public const float RescueToTownShare = 0.6f;
+        /// <summary>Ambushers left once it is over scatter after this many game hours, when nobody sees them.</summary>
+        public const float StragglerHours = 3f;
+
+        public static int RescueReward(DangerLevel danger, int ambushers, float distance)
+            => QuestPricing.HuntReward(danger, ambushers, distance, RescueRewardFactor);
+
+        /// <summary>
+        /// Hit points that last <paramref name="hours"/> against these blows (each attack / cooldown, a defenceless target,
+        /// criticals on average): the time limit of a rescue is how long the traveller holds out.
+        /// </summary>
+        public static float HoldOutHp(System.Collections.Generic.IEnumerable<(float attack, float cooldown)> blows, float hours, float realSecondsPerHour)
+        {
+            float dps = 0f;
+            foreach (var (attack, cooldown) in blows)
+                dps += Units.Combat.Mitigate(attack, 0f) * (1f + Units.Combat.CritChance * (Units.Combat.CritMultiplier - 1f)) / Mathf.Max(0.1f, cooldown);
+            return dps * hours * realSecondsPerHour;
+        }
+
+        static readonly string[] TravellerNames = { "하란", "미로", "세나", "도윤", "라엘", "보리", "이안", "유나", "테스", "카이" };
+        static readonly string[] TravellerRoles = { "상인", "여행자", "순례자", "행상" };
+
+        public static string TravellerName(GameRandom rng)
+            => $"{TravellerRoles[rng.Range(0, TravellerRoles.Length)]} {TravellerNames[rng.Range(0, TravellerNames.Length)]}";
+
+        /// <summary>What a traveller's cart spills when it falls.</summary>
+        public static readonly Data.ItemStack[] Cargo = { new(Data.DefaultContent.Potion, 2), new("iron_ore", 2) };
+
         // ---------------- Every incident ----------------
 
-        public static DangerLevel Danger(Incident i) => i.Kind == IncidentKind.Horde ? HordeDanger(i.HordeLevel, i.HordeSize) : DangerLevel.High;
+        public static DangerLevel Danger(Incident i) => i.Kind switch
+        {
+            IncidentKind.Horde => HordeDanger(i.HordeLevel, i.HordeSize),
+            IncidentKind.Rescue => QuestBoard.HuntDanger(i.TargetLevel, Mathf.Max(1, i.Members.Count)),
+            _ => DangerLevel.High,
+        };
 
         /// <summary>The incident's own requirement, or null to rate it by its danger like any quest.</summary>
         public static float? Requirement(Incident i) => IsPartyWork(i) && i.Requirement > 0f ? i.Requirement : null;
@@ -138,6 +185,9 @@ namespace GuildMaster.Incidents
                 IncidentKind.Horde => i.Sighted
                     ? $"{QuestBoard.DescribeArea(i.RumourCentre)}에서 {i.SpeciesName} 큰 무리(약 {i.HordeSize}마리)가 마을 쪽으로 오는 것이 보입니다. {client} 도착하기 전에 막아 달라는 의뢰를 냈습니다."
                     : $"{QuestBoard.DescribeArea(i.RumourCentre)} 부근에서 {i.SpeciesName} 큰 무리(약 {RumouredCount(i.HordeSize)}마리)가 마을 쪽으로 오고 있다는 소문입니다. {client} 도착하기 전에 막아 달라는 의뢰를 냈습니다.",
+                IncidentKind.Rescue => i.Sighted
+                    ? $"{QuestBoard.DescribeArea(i.RumourCentre)}에서 {With(i.TargetName, "이", "가")} 몬스터에게 습격받고 있습니다. {client} 구해 달라는 의뢰를 냈습니다. 오래 버티지 못합니다."
+                    : $"{QuestBoard.DescribeArea(i.RumourCentre)} 부근에서 {With(i.TargetName, "이", "가")} 몬스터에게 습격받고 있다는 소식입니다. {client} 구해 달라는 의뢰를 냈습니다. 오래 버티지 못합니다.",
                 _ => $"{QuestBoard.DescribeArea(i.RumourCentre)} 부근에서 무슨 일이 일어났다는 소문입니다.",
             };
         }
@@ -150,6 +200,7 @@ namespace GuildMaster.Incidents
         {
             IncidentKind.RareMonster => $"{i.TargetName}(Lv.{i.TargetLevel}){Adventurers.MemoryRecorder.Josa(i.TargetName, "을", "를")} 직접 확인했습니다. 의뢰 구역을 그 자리로 옮깁니다.",
             IncidentKind.Horde => $"{i.SpeciesName} 무리(Lv.{i.HordeLevel}, {i.Members.Count}마리)를 직접 확인했습니다. 의뢰 구역이 무리를 따라갑니다.",
+            IncidentKind.Rescue => $"습격받는 {With(i.TargetName, "을", "를")} 찾았습니다. {i.SpeciesName} {i.Members.Count}마리가 둘러싸고 있습니다.",
             _ => "소문의 현장을 확인했습니다.",
         };
 
@@ -162,6 +213,9 @@ namespace GuildMaster.Incidents
             (IncidentKind.Horde, IncidentOutcome.Resolved) => $"{i.SpeciesName} 무리를 막아냈습니다!",
             (IncidentKind.Horde, IncidentOutcome.SettledByOthers) => $"{i.SpeciesName} 무리가 흩어졌다는 소식입니다.",
             (IncidentKind.Horde, IncidentOutcome.Expired) => $"{i.SpeciesName} 무리가 마을 근처에 자리를 잡았다는 소문입니다.",
+            (IncidentKind.Rescue, IncidentOutcome.Resolved) => $"{With(i.TargetName, "을", "를")} 구해 냈습니다!",
+            (IncidentKind.Rescue, IncidentOutcome.SettledByOthers) => $"{With(i.TargetName, "이", "가")} 무사히 길을 떠났다는 소식입니다.",
+            (IncidentKind.Rescue, IncidentOutcome.Expired) => $"{With(i.TargetName, "이", "가")} 끝내 목숨을 잃었다는 소식입니다.",
             _ => null,
         };
 
@@ -182,6 +236,7 @@ namespace GuildMaster.Incidents
             {
                 IncidentKind.RareMonster => $"[희귀 몬스터] {i.TargetName} 토벌 ({where})",
                 IncidentKind.Horde => $"[대규모 무리] {i.SpeciesName} 무리 요격 x{q.RequiredCount} ({where})",
+                IncidentKind.Rescue => $"[구출] {i.TargetName} 구출 ({where})",
                 _ => $"[돌발] {q.Species?.displayName} ({where})",
             };
         }

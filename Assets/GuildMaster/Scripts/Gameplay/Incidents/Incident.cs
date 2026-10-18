@@ -75,7 +75,13 @@ namespace GuildMaster.Incidents
         /// <summary>Game hour the rumour is next brought up to date (a moving horde, while unseen).</summary>
         public float NextRumourHour;
 
-        /// <summary>A monster this incident's quest is about: the rare one, or a member of the horde.</summary>
+        // ---- Rescue (the ambushers are in Members) ----
+        /// <summary>The traveller while it lives and is on the map (it goes on its way once saved, and is gone on arrival).</summary>
+        public Traveller Traveller;
+        /// <summary>Where it was going.</summary>
+        public Vector2 Destination;
+
+        /// <summary>A monster this incident's quest is about: the rare one, a member of the horde, an ambusher.</summary>
         public bool IsTarget(Monsters.Monster m) => m != null && (m == Target || Members.Contains(m));
 
         /// <summary>Key under which a loaded incident is registered (quests point at it).</summary>

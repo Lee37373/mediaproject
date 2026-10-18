@@ -116,7 +116,7 @@ namespace GuildMaster.Quests
         /// A hunt for particular monsters (an incident's: the rare one, a horde's members, P4-85): only they count, wherever
         /// they are seen. Any other hunt counts its species inside its area.
         /// </summary>
-        public bool HuntsParticularMonsters => Incident != null && Incident.Kind is Incidents.IncidentKind.RareMonster or Incidents.IncidentKind.Horde;
+        public bool HuntsParticularMonsters => Incident != null && Incident.Kind is Incidents.IncidentKind.RareMonster or Incidents.IncidentKind.Horde or Incidents.IncidentKind.Rescue;
 
         /// <summary>Whether killing this monster counts for the hunt.</summary>
         public bool Counts(Monsters.Monster m) => m != null && (HuntsParticularMonsters ? Incident.IsTarget(m) : m.Def == Species);
