@@ -39,7 +39,7 @@ namespace GuildMaster.Units
                 var go = new GameObject("Projectile");
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = SpriteFactory.Circle(6, Color.white, new Color(0f, 0f, 0f, 0.6f));
-                sr.sortingOrder = 2900;
+                sr.sortingOrder = Fog.FogOfWar.SortingOrder - 100;
                 go.AddComponent<Projectile>();
                 return go;
             }, prewarm: 16);

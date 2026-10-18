@@ -84,7 +84,8 @@ namespace GuildMaster.Fog
             Render();
         }
 
-        public const int SortingOrder = 3000;
+        /// <summary>Above every unit (<see cref="Visuals.CharacterVisual.BaseSortingOrder"/> at y = 0); bars, shots and effects sit just under it.</summary>
+        public const int SortingOrder = Visuals.CharacterVisual.BaseSortingOrder + 2000;
         /// <summary>Render texels per map cell (the simulation stays one value per cell).</summary>
         public const int RenderScale = 2;
         /// <summary>Redraw granularity in cells.</summary>

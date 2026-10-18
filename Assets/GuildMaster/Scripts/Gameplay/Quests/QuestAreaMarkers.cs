@@ -12,7 +12,7 @@ namespace GuildMaster.Quests
     public class QuestAreaMarkers : MonoBehaviour
     {
         const int SpritePx = 128;
-        const int SortingOrder = 3001; // just above FogOfWar
+        const int SortingOrder = Fog.FogOfWar.SortingOrder + 1; // just above FogOfWar
 
         static readonly Color Fill = new(1f, 0.85f, 0.3f, 0.07f);
         static readonly Color Outline = new(1f, 0.85f, 0.3f, 0.75f);

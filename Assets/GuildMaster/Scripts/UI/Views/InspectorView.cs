@@ -69,7 +69,7 @@ namespace GuildMaster.UI
             var ringGo = new GameObject("SelectionRing");
             _ring = ringGo.AddComponent<SpriteRenderer>();
             _ring.sprite = SpriteFactory.Circle(20, new Color(1, 1, 1, 0), new Color(1f, 0.9f, 0.3f, 1f));
-            _ring.sortingOrder = 1990;
+            _ring.sortingOrder = FogOfWar.SortingOrder - 1010;
             ringGo.transform.localScale = new Vector3(1.2f, 0.6f, 1f);
             ringGo.SetActive(false);
         }
