@@ -196,7 +196,8 @@ namespace GuildMaster.Adventurers
             {
                 case AdventurerAction.AcceptQuest:
                     var q = AdvCtx.Board.FindById(d.QuestId);
-                    if (q != null && AdvCtx.Board.TryAccept(q, a))
+                    // Still on it after the accept: party work nobody could be asked along for is dropped at once (P4-85).
+                    if (q != null && AdvCtx.Board.TryAccept(q, a) && q.IsAssigned(a))
                     {
                         a.CurrentQuest = q;
                         a.Say(d.Say);
@@ -346,6 +347,8 @@ namespace GuildMaster.Adventurers
         {
             var q = Owner.CurrentQuest;
             if (q == null || u is not Monster m) return false;
+            // A hunt for one monster (a rare variant, P4-85): that one only.
+            if (q.TargetUnit != null) return m == q.TargetUnit;
             return m.Def == q.Species;
         }
 
@@ -356,7 +359,8 @@ namespace GuildMaster.Adventurers
         {
             if (!IsQuestTarget(u)) return false;
             var q = Owner.CurrentQuest;
-            return q.Type != QuestType.Hunt || Vector2.Distance(u.Position, q.Point) <= q.Radius + AreaSlack;
+            // The one monster is fought wherever it shows up (it does not keep to the rumour's circle).
+            return q.Type != QuestType.Hunt || q.TargetUnit != null || Vector2.Distance(u.Position, q.Point) <= q.Radius + AreaSlack;
         }
 
         public override void Tick(float dt)

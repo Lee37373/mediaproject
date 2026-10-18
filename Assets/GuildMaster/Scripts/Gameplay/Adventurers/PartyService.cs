@@ -221,7 +221,12 @@ namespace GuildMaster.Adventurers
             // and free take the quest with it; invitations only fill the slots left.
             var comrades = PartyComrades(q, leader);
             var candidates = PickCandidates(q, leader);
-            if (candidates.Count == 0 && comrades.Count == 0) return;
+            if (candidates.Count == 0 && comrades.Count == 0)
+            {
+                // Party work nobody can be asked along for (P4-85): not walked into alone.
+                if (QuestRisk.TooFewFor(q, AdventurerStats.Power(leader.Data), q.Assignees.Count)) GiveUp(q, leader, comrades);
+                return;
+            }
 
             var g = new Gathering { Quest = q, Leader = leader, StartRealTime = Time.unscaledTime, Cts = new CancellationTokenSource() };
             g.Joined.AddRange(comrades);
@@ -377,8 +382,30 @@ namespace GuildMaster.Adventurers
             if (!_gatherings.Remove(g.Quest)) return;
             if (g.Pending > 0) g.Cts.Cancel();
             g.Cts.Dispose();
+            // Party work (P4-85) that too few said yes to: the group does not set out to be killed.
+            if (QuestRisk.TooFewFor(g.Quest, AdventurerStats.Power(g.Leader.Data), g.Quest.Assignees.Count))
+            {
+                GiveUp(g.Quest, g.Leader, g.Joined);
+                return;
+            }
             if (g.Joined.Count == 0) return;
             EventBus.Publish(new PartyFormedEvent { Quest = g.Quest, Leader = g.Leader, Members = g.Joined.ToList() });
+        }
+
+        /// <summary>Said by a leader whose party work found too few to go along.</summary>
+        public const string TooFewLine = "이 인원으로는 무리야. 다음에 다시 모이자.";
+
+        /// <summary>The quest goes back on the board; the leader and whoever had joined stay in town.</summary>
+        void GiveUp(Quest q, Adventurer leader, List<Adventurer> joined)
+        {
+            foreach (var a in joined.Append(leader).ToList())
+            {
+                if (a == null) continue;
+                _board.Abandon(q, a);
+                if (a.CurrentQuest == q) a.CurrentQuest = null;
+                if (a.IsAlive) a.ChangeState(a.IdleState);
+            }
+            if (leader != null && leader.IsAlive) leader.Say(TooFewLine);
         }
     }
 }

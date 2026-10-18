@@ -38,6 +38,7 @@ namespace GuildMaster.UI
         static readonly Color LairColor = new(0.85f, 0.2f, 0.6f);
         static readonly Color VillageColor = new(0.95f, 0.9f, 0.6f);
         static readonly Color VillageRuinColor = new(0.4f, 0.38f, 0.36f);
+        static readonly Color RumourColor = new(0.85f, 0.45f, 1f, 0.35f);
         /// <summary>Last-seen monsters under the fog (P4-23), grey so they read as memory.</summary>
         static readonly Color GhostColor = new(0.62f, 0.66f, 0.74f);
         static readonly Color FrameColor = new(1f, 1f, 1f, 0.85f);
@@ -212,6 +213,12 @@ namespace GuildMaster.UI
                     bool ruined = fog != null && villages.IsVisible(v) ? v.IsDestroyed : v.SeenRuined;
                     Dot(v.WorldPosition, ruined ? VillageRuinColor : VillageColor, 10f, square: true);
                 }
+
+            // Sudden incidents (P4-85): the rough circle of every open rumour (its quest's area), faint, under the units.
+            if (Services.TryGet<Incidents.IncidentService>(out var incidents))
+                foreach (var i in incidents.Active)
+                    if (i.Rumoured && i.Quest != null && i.Quest.IsActive)
+                        Dot(i.Quest.Point, RumourColor, Mathf.Max(8f, i.Quest.Radius * 2f / _mapData.Width * _map.rect.width));
 
             // Monsters only where the guild currently sees; raiders drawn larger in their own colour.
             var raiders = Services.TryGet<WaveManager>(out var waves) ? waves.Raiders : null;

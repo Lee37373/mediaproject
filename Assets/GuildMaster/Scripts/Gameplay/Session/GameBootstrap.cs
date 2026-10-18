@@ -215,6 +215,11 @@ namespace GuildMaster.Session
             Services.Register(disasters);
             save.Register(disasters);
             AddSystem<Disasters.HazardOverlay>().Init(world, fog);
+            // Sudden incidents (P4-85): heard of by rumour, dealt with through the quests their clients post.
+            var incidents = AddSystem<Incidents.IncidentService>();
+            incidents.Init(clock, world, eco, board, fog);
+            Services.Register(incidents);
+            save.Register(incidents);
 
             // --- AI: LLM gateway (falls back to rules when no model is available) ---
             var llm = AddSystem<LlmGateway>();

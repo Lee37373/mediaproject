@@ -81,6 +81,8 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
             EventBus.Subscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
             EventBus.Subscribe<RefugeeArrivedEvent>(OnRefugee);
+            EventBus.Subscribe<Incidents.IncidentRumouredEvent>(OnIncidentRumoured);
+            EventBus.Subscribe<Incidents.IncidentEndedEvent>(OnIncidentEnded);
         }
 
         public void Dispose()
@@ -105,6 +107,27 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
             EventBus.Unsubscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
             EventBus.Unsubscribe<RefugeeArrivedEvent>(OnRefugee);
+            EventBus.Unsubscribe<Incidents.IncidentRumouredEvent>(OnIncidentRumoured);
+            EventBus.Unsubscribe<Incidents.IncidentEndedEvent>(OnIncidentEnded);
+        }
+
+        // ---------------- Sudden incidents (P4-85): heard by rumour ----------------
+
+        static string IncidentKey(Incidents.Incident i) => "incident:" + i.Id;
+
+        void OnIncidentRumoured(Incidents.IncidentRumouredEvent e)
+        {
+            var i = e.Incident;
+            _center.Post(NotificationKind.Quest, $"{Incidents.IncidentRules.Tag(i.Kind)} 소문", Incidents.IncidentRules.RumourText(i),
+                IncidentKey(i), NotificationLink.Location(i.RumourCentre));
+        }
+
+        void OnIncidentEnded(Incidents.IncidentEndedEvent e)
+        {
+            if (!e.Known) return;
+            _center.Resolve(IncidentKey(e.Incident));
+            if (e.Incident.Outcome == Incidents.IncidentOutcome.Resolved && Incidents.IncidentRules.EndedText(e.Incident) is { } text)
+                _center.Post(NotificationKind.Success, Incidents.IncidentRules.Tag(e.Incident.Kind), text, IncidentKey(e.Incident) + ":end");
         }
 
         // ---------------- Natural disasters (P4-72): only those the guild has seen ----------------

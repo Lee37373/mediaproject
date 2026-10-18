@@ -46,6 +46,8 @@ namespace GuildMaster.Data
             var ironOre = Item("iron_ore", "철광석", ItemCategory.Material, 15, new Color(0.5f, 0.5f, 0.55f));
             var crownShard = Item("crown_shard", "왕관 조각", ItemCategory.Material, 60, new Color(0.95f, 0.8f, 0.3f));
             var royalJelly = Item("royal_jelly", "왕의 젤", ItemCategory.Material, 35, new Color(0.35f, 0.85f, 0.4f));
+            // A rare variant's certain spoils (P4-85, Monsters.RareMonster.AddSpoils): no monster wears or swallows it.
+            Item(Monsters.RareMonster.TrophyId, "빛나는 정수", ItemCategory.Material, 150, new Color(1f, 0.9f, 0.45f));
 
             // Monster use (P4-21): what monsters wear when they find these, and the one unique item.
             rustyDagger.equipSlot = EquipSlot.Weapon; rustyDagger.monsterAttackBonus = 2f;

@@ -15,9 +15,10 @@ namespace GuildMaster.Quests
     /// <see cref="Patron"/>: another client whose request the guild master took from the proposal cards.
     /// Every client but the guild pays the whole reward and the guild keeps a fee (<see cref="QuestPricing"/>).
     /// <see cref="Village"/>: another village (P4-84) — hunts on the dens by it, and its defence when the guild sees it attacked.
-    /// New clients (events P4-85) go at the end: saves keep the number.
+    /// <see cref="Incident"/>: whoever a sudden incident troubles (P4-85, <see cref="Quest.Incident"/> names them).
+    /// New clients go at the end: saves keep the number.
     /// </summary>
-    public enum QuestClient { Guild, Town, Patron, Village }
+    public enum QuestClient { Guild, Town, Patron, Village, Incident }
 
     /// <summary>Anyone who can take quests (adventurers).</summary>
     public interface IQuestTaker
@@ -54,8 +55,9 @@ namespace GuildMaster.Quests
         public string Id { get; }
         public QuestType Type { get; }
         public MonsterDefinition Species { get; }
-        public Vector2 Point { get; }
-        public float Radius { get; }
+        /// <summary>Centre of the area. Fixed, but for an incident's rumoured spot that the guild later sees (P4-85).</summary>
+        public Vector2 Point { get; internal set; }
+        public float Radius { get; internal set; }
         public int RequiredCount { get; }
         public int Progress { get; internal set; }
         public int RewardGold { get; private set; }
@@ -83,7 +85,9 @@ namespace GuildMaster.Quests
         /// <summary>The guild's cut of the client's gold, paid to the treasury when the work is done. <see cref="RewardGold"/> is what is left for the members.</summary>
         public int FeeGold { get; internal set; }
 
-        public string ClientLabel => Client == QuestClient.Village && Village != null ? Village.DisplayName : ClientName(Client);
+        public string ClientLabel => Client == QuestClient.Village && Village != null ? Village.DisplayName
+                                   : Client == QuestClient.Incident && Incident != null ? Incidents.IncidentRules.ClientName(Incident.Kind)
+                                   : ClientName(Client);
 
         public static string ClientName(QuestClient c) => c switch
         {
@@ -98,6 +102,15 @@ namespace GuildMaster.Quests
         public Villages.Village Village { get; internal set; }
         /// <summary>Its village's defence against a raid the guild saw: settled with the raid, not by a den.</summary>
         public bool IsVillageDefence { get; internal set; }
+
+        // ---- Sudden incidents (P4-85) ----
+        /// <summary>The incident this quest came from (its rumour), else null.</summary>
+        public Incidents.Incident Incident { get; internal set; }
+        /// <summary>
+        /// The one monster a hunt is for (a rare variant): only it counts, wherever it is seen, and the area follows
+        /// where the guild last saw it. Null for an ordinary hunt (any of the species in the area).
+        /// </summary>
+        public Monsters.Monster TargetUnit => Incident?.Target;
 
         // ---- Natural disasters (P4-72) ----
         /// <summary>The disaster to deal with.</summary>
@@ -157,6 +170,7 @@ namespace GuildMaster.Quests
 
         public string Title => Type switch
         {
+            QuestType.Hunt when Incident != null => Incidents.IncidentRules.QuestTitle(this),
             QuestType.Hunt when IsVillageDefence && Village != null => $"[방어] {Village.DisplayName} 습격 {Species?.displayName} x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
             QuestType.Hunt when Species != null && Species.isRegionLord => $"[지대 군주] {Species.displayName} 토벌 ({QuestBoard.DescribeArea(Point)})",
             QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
@@ -285,6 +299,7 @@ namespace GuildMaster.Quests
             public int fee_gold;
             public int village = -1;
             public bool village_defence;
+            public int incident = -1;
             public int disaster = -1;
             public int worked;
             public int max_hours;
@@ -308,7 +323,7 @@ namespace GuildMaster.Quests
                 progress = Progress, reward_gold = RewardGold, bonus_gold = BonusGold, reward_exp = RewardExp, max_party = MaxParty,
                 status = Status, posted = PostedAtHour, completed = CompletedAtHour, danger = Danger,
                 target_nest = TargetNest != null ? IndexOf(nests, TargetNest) : -1, client = Client, fee_gold = FeeGold,
-                village = Village != null ? Village.Id : -1, village_defence = IsVillageDefence,
+                village = Village != null ? Village.Id : -1, village_defence = IsVillageDefence, incident = Incident != null ? Incident.Id : -1,
                 disaster = Disaster != null ? Disaster.Id : -1, worked = Worked, max_hours = MaxHours, escort_hours = EscortHours,
                 escort_left = EscortLeftTown, pay_gold = PayGold, pay_exp = PayExp,
             };
@@ -366,6 +381,7 @@ namespace GuildMaster.Quests
             foreach (var id in s.assignees) if (ctx.Find<IQuestTaker>(id) is { } t) _assignees.Add(t);
             if (s.disaster >= 0) Disaster = ctx.Find<Disasters.Disaster>(Disasters.Disaster.SaveKeyOf(s.disaster));
             if (s.village >= 0) Village = ctx.Find<Villages.Village>(Villages.Village.SaveKeyOf(s.village));
+            if (s.incident >= 0) Incident = ctx.Find<Incidents.Incident>(Incidents.Incident.SaveKeyOf(s.incident));
         }
     }
 }

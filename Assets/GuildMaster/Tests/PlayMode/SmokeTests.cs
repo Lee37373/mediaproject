@@ -60,6 +60,7 @@ namespace GuildMaster.Tests
             MenuState.Reset();
             GameSettings.PaintGround = true;
             TownQuestPoster.Enabled = true;
+            Incidents.IncidentService.Enabled = true;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
             if (_scene.IsValid() && _scene.isLoaded) yield return SceneManager.UnloadSceneAsync(_scene);
@@ -87,6 +88,8 @@ namespace GuildMaster.Tests
             // Nor the town's own hunts (P4-82) unless a test asks: they would fill the board and pull members
             // off the quests a test posts itself.
             TownQuestPoster.Enabled = false;
+            // Nor sudden incidents (P4-85): a rare monster out of nowhere fights whatever it meets.
+            Incidents.IncidentService.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -3272,6 +3275,94 @@ namespace GuildMaster.Tests
             yield return WaitFor(() => walker.Mover.IsMoving, 10f);
             Assert.That(walker.Mover.RouteCaution, Is.EqualTo(RouteChoice.Hurried).Within(0.001f),
                 "running home takes no detour");
+        }
+
+        /// <summary>
+        /// A rare monster (P4-85, user decisions 2026-10-18): it appears out of sight, a shining loner of a kind that lives
+        /// there, born above the land's level; its rumour posts a hunt whose rough circle holds it; seeing it moves the
+        /// hunt onto it; killing it by the one on the hunt pays and drops its certain spoils. A second one nobody took
+        /// slips away when its time is up and nobody is looking, and its hunt comes down.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RareMonster_RumourPostsAHunt_SightingMovesIt_KillPays_AndAnUnclaimedOneSlipsAway()
+        {
+            yield return Boot();
+            var incidents = Services.Get<Incidents.IncidentService>();
+            var board = Services.Get<QuestBoard>();
+            var eco = Services.Get<EcosystemManager>();
+            var fog = Services.Get<GuildMaster.Fog.FogOfWar>();
+
+            var first = incidents.StartRareMonster();
+            Assert.That(first, Is.Not.Null, "a spot for it");
+            var rare = first.Target;
+            Assert.That(rare.IsRare && rare.Home == null && rare.Roaming == null, Is.True, "a loner of its own");
+            Assert.That(fog.IsVisibleRaw(rare.Position), Is.False, "it appears out of the guild's sight");
+            Assert.That(rare.Def.isRegionLord, Is.False);
+            Assert.That(rare.Level, Is.EqualTo(RareMonster.Level(eco.BirthLevelAt(first.Spot))), "the land's level plus the bonus");
+            Assert.That(rare.DisplayName, Does.EndWith(rare.Def.displayName).And.Not.EqualTo(rare.Def.displayName), "a name of its own");
+            Assert.That(rare.Stats.MaxHp, Is.EqualTo(Combat.ScaledHp(rare.Def.maxHp) * RareMonster.HpMultiplier * MonsterLevel.HpScale(rare.Level)).Within(1f));
+            Assert.That(board.Quests.Any(q => q.Incident == first), Is.False, "nothing is posted before the rumour comes");
+
+            // The rumour: a hunt from its client, for that one monster, in a circle that holds it.
+            first.RumourAtHour = Clock.TotalHours;
+            yield return WaitFor(() => first.Rumoured, 3f);
+            var quest = first.Quest;
+            Assert.That(quest, Is.Not.Null, "the rumour posted a hunt");
+            Assert.That(quest.Client, Is.EqualTo(QuestClient.Incident));
+            Assert.That(quest.TargetUnit, Is.SameAs(rare));
+            Assert.That(quest.Species, Is.SameAs(rare.Def));
+            Assert.That(quest.Danger, Is.EqualTo(DangerLevel.High));
+            Assert.That(quest.TargetNest, Is.Null, "about the monster, not a den");
+            Assert.That(Vector2.Distance(quest.Point, rare.Position), Is.LessThanOrEqualTo(quest.Radius), "the circle holds it");
+            Assert.That(Vector2.Distance(quest.Point, first.Spot), Is.GreaterThan(0.5f), "but does not give the spot away");
+            Assert.That(QuestRisk.RecommendedLevel(quest), Is.InRange(rare.Level - 3, rare.Level + 1), "recommended per member of a full party");
+
+            // Seen: the hunt moves onto it. One on the hunt (who cannot be hurt) stands next to it — strong enough to take
+            // the party work alone, so the invitations it sends do not decide whether it goes.
+            foreach (var m in Roster.Members) m.Data.level = rare.Level * 3;
+            Assert.That(DebugCommands.ForceAccept(quest.Id, 1), Is.Not.Empty);
+            var hunter = Roster.Members.First(m => quest.IsAssigned(m));
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                // In its very cell (it may stand in the woods, which hide it from anyone outside them, P4-48).
+                yield return WaitFor(() =>
+                {
+                    hunter.Mover.Stop();
+                    hunter.transform.position = rare.Position + new Vector2(0.3f, 0f);
+                    return first.Sighted;
+                }, 3f);
+                Assert.That(first.Sighted, Is.True, $"seen by the one next to it (forest {Services.Get<World.WorldService>().Grid.IsForest(World.GridMap.WorldToCell(rare.Position))})");
+                Assert.That(Vector2.Distance(quest.Point, rare.Position), Is.LessThan(2f), "the hunt follows what was seen");
+                Assert.That(quest.Radius, Is.EqualTo(Incidents.IncidentRules.SightedRadius));
+
+                // Killed by the hunter: the hunt is done, the spoils are certain.
+                var at = rare.Position;
+                rare.ReceiveDamage(rare.Hp + 1e6f, hunter, false);
+                yield return null;
+                Assert.That(quest.Status, Is.EqualTo(QuestStatus.Completed), "the hunt is done");
+                Assert.That(first.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Resolved));
+                Assert.That(first.Target, Is.Null, "its pooled body is let go");
+                var spoils = Services.Get<GroundItemService>().Items.Where(g => Vector2.Distance(g.Position, at) < 3f).Select(g => g.Item.id).ToList();
+                Assert.That(spoils, Does.Contain(RareMonster.TrophyId));
+                Assert.That(spoils, Does.Contain($"gear_t{RareMonster.GearTier(first.TargetLevel)}"));
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+
+            // A second one, heard of and left alone: when its time is up and nobody sees it, it is gone with its hunt.
+            var second = incidents.StartRareMonster();
+            Assert.That(second, Is.Not.Null);
+            var gone = second.Target;
+            second.RumourAtHour = Clock.TotalHours;
+            yield return WaitFor(() => second.Rumoured, 3f);
+            var unclaimed = second.Quest;
+            Assert.That(unclaimed, Is.Not.Null);
+            second.EndsAtHour = Clock.TotalHours;
+            yield return WaitFor(() => second.Over, 5f);
+            Assert.That(second.Outcome, Is.EqualTo(Incidents.IncidentOutcome.Expired), "it slipped away");
+            Assert.That(gone.IsAlive, Is.False);
+            Assert.That(unclaimed.Status, Is.EqualTo(QuestStatus.Cancelled), "its hunt came down");
+            Assert.That(board.Quests.Contains(unclaimed), Is.False);
         }
 
         /// <summary>

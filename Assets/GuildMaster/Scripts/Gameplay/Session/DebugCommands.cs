@@ -167,6 +167,45 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        // ---------------- Sudden incidents (P4-85) ----------------
+
+        /// <summary>Every incident, real values: kind, where it is and where the rumour put it, the quest, time left, how it ended.</summary>
+        public static string Incidents()
+        {
+            var svc = Services.Get<GuildMaster.Incidents.IncidentService>();
+            var clock = Services.Get<GameClock>();
+            var sb = new StringBuilder($"incidents active {svc.Active.Count}, past {svc.History.Count} (enabled {GuildMaster.Incidents.IncidentService.Enabled}) at {clock.TotalHours:0.00}h\n");
+            foreach (var i in svc.Active.Concat(svc.History))
+            {
+                var m = i.Target;
+                string target = m != null ? $" target {m.DisplayName} Lv{m.Level} hp {m.Hp:0}/{m.Stats.MaxHp:0} at {m.Position.x:0},{m.Position.y:0} {m.StateLabel} off-circle {Vector2.Distance(m.Position, i.RumourCentre) - i.RumourRadius:0.0}" : "";
+                var q = i.Quest;
+                string quest = q != null ? $" quest {q.Id} {q.Status} party {q.Assignees.Count}/{q.MaxParty} pay {q.RewardGold}+{q.FeeGold}G point {q.Point.x:0},{q.Point.y:0} r{q.Radius:0}" : "";
+                sb.AppendLine($"  #{i.Id} {i.Kind} {i.Outcome} spot {i.Spot.x:0},{i.Spot.y:0} ({QuestBoard.DescribeArea(i.Spot)}) rumour@{i.RumourAtHour:0.0} {(i.Rumoured ? $"({i.RumourCentre.x:0},{i.RumourCentre.y:0}) r{i.RumourRadius:0}" : "not yet")} " +
+                              $"sighted {i.Sighted} ends@{i.EndsAtHour:0.0}{target}{quest}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Starts a rare monster now (debug): at a spot (else a random one), of a kind (else one that lives there); <paramref name="rumourNow"/> brings its rumour at once.</summary>
+        public static string RareNow(string speciesId = null, float x = float.NaN, float y = float.NaN, bool rumourNow = true)
+        {
+            var svc = Services.Get<GuildMaster.Incidents.IncidentService>();
+            var kind = string.IsNullOrEmpty(speciesId) ? null : Services.Get<GameDatabase>().Monster(speciesId);
+            var i = svc.StartRareMonster(float.IsNaN(x) ? null : new Vector2(x, y), kind);
+            if (i == null) return "no spot found";
+            if (rumourNow) i.RumourAtHour = Services.Get<GameClock>().TotalHours;
+            return Incidents();
+        }
+
+        /// <summary>Puts the rare monster's time up now (debug: it slips away once nobody sees it).</summary>
+        public static string RareTimeUp()
+        {
+            var now = Services.Get<GameClock>().TotalHours;
+            foreach (var i in Services.Get<GuildMaster.Incidents.IncidentService>().Active) i.EndsAtHour = now;
+            return Incidents();
+        }
+
         // ---------------- Other villages (P4-84) ----------------
 
         /// <summary>Every village, real values: where, durability, fallen, what the guild knows, candidates, raids on it.</summary>

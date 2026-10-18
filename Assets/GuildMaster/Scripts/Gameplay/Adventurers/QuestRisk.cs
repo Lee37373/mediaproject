@@ -29,6 +29,8 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public static float Requirement(Quests.Quest q)
         {
+            // An incident asks for its own (a rare variant: a full party of its level, P4-85).
+            if (q.Incident != null && Incidents.IncidentRules.Requirement(q.Incident) is { } own) return own;
             bool lord = q.Species != null && q.Species.isRegionLord
                         || q.TargetNest != null && q.TargetNest.IsLair && Core.Services.TryGet<Ecosystem.GuildIntel>(out var intel) && intel.KnownLordAt(q.TargetNest) != null;
             return lord ? Monsters.RegionLords.RiskRequirement : RuleBasedDecisionMaker.DangerRequirement(q.Danger);
@@ -37,6 +39,30 @@ namespace GuildMaster.Adventurers
         /// <summary>The margin for this quest (its own requirement, see <see cref="Requirement"/>).</summary>
         public static float Margin(float leaderPower, int partySize, Quests.Quest q)
             => MarginAgainst(leaderPower, partySize, Requirement(q));
+
+        // ---------------- Work for a party (P4-85) ----------------
+
+        /// <summary>A quest meant for a whole party (a rare monster): it is rated by the party that could go, not by one alone.</summary>
+        public static bool IsPartyWork(Quests.Quest q) => q?.Incident != null && Incidents.IncidentRules.IsPartyWork(q.Incident);
+
+        /// <summary>
+        /// The party a member reckons with when weighing a quest: those already on it plus itself — and, for party work, as
+        /// many as are free in town to be invited (up to the quest's limit). Without this the rules weighed a rare hunt
+        /// as a lone walk and never took it.
+        /// </summary>
+        public static int ExpectedParty(Quests.Quest q)
+        {
+            int now = q.Assignees.Count + 1;
+            if (!IsPartyWork(q) || !Core.Services.TryGet<GuildRoster>(out var roster)) return now;
+            int free = 0;
+            foreach (var m in roster.Members)
+                if (m.IsAlive && !m.IsVisitor && m.CurrentQuest == null && m.IsIdleInTown) free++;
+            return Mathf.Clamp(Mathf.Max(now, free), now, Mathf.Max(now, q.MaxParty));
+        }
+
+        /// <summary>The party that actually set out is too small for party work: "무모" with this many (the leader's power).</summary>
+        public static bool TooFewFor(Quests.Quest q, float leaderPower, int partySize)
+            => IsPartyWork(q) && Label(Margin(leaderPower, partySize, q)) == Reckless;
 
         public static string Label(float margin)
             => margin >= 2f ? Easy : margin >= 1f ? Fair : margin >= 0.8f ? Risky : Reckless;
@@ -49,8 +75,8 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public static int RecommendedLevel(Quests.Quest q)
         {
-            bool lord = q.Species != null && q.Species.isRegionLord;
-            float need = lord ? Requirement(q) / (1f + 0.6f * (Mathf.Max(1, q.MaxParty) - 1)) : Requirement(q);
+            bool party = q.Species != null && q.Species.isRegionLord || q.Incident != null && Incidents.IncidentRules.IsPartyWork(q.Incident);
+            float need = party ? Requirement(q) / (1f + 0.6f * (Mathf.Max(1, q.MaxParty) - 1)) : Requirement(q);
             return Mathf.Max(1, Mathf.CeilToInt(need));
         }
 

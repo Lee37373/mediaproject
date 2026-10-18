@@ -262,22 +262,40 @@ namespace GuildMaster.Quests
         public Quest PostTownQuest(QuestDraft draft, Disasters.Disaster disaster)
             => PostRequest(draft, QuestClient.Town, null, disaster);
 
+        /// <summary>
+        /// A sudden incident's quest, posted when its rumour reaches the town (P4-85, user decision 2026-10-18): its
+        /// client pays (the guild keeps its fee), and it is about the incident, not a den — so the species need not be
+        /// known yet (the rumour names it) and the area is the rumour's rough circle.
+        /// </summary>
+        public Quest PostIncidentQuest(QuestDraft draft, Incidents.Incident incident, QuestClient client = QuestClient.Incident)
+            => PostRequest(draft, client, null, null, null, false, incident);
+
+        /// <summary>
+        /// The incident is over without its quest done (P4-85: the rare one slipped away, the traveller died...): nobody is
+        /// paid. Claimed, it failed; unclaimed, it simply comes down.
+        /// </summary>
+        public void FailIncidentQuest(Quest q, string reason)
+        {
+            if (q == null || !q.IsActive) return;
+            Close(q, q.Assignees.Count > 0 ? QuestStatus.Failed : QuestStatus.Cancelled, refund: true, reason);
+        }
+
         Quest PostRequest(QuestDraft draft, QuestClient client, Nest target, Disasters.Disaster disaster = null,
-                          Villages.Village village = null, bool villageDefence = false)
+                          Villages.Village village = null, bool villageDefence = false, Incidents.Incident incident = null)
         {
             var (members, fee) = QuestPricing.Split(draft.RewardGold);
             draft.RewardGold = members;
             return Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours)
             {
-                Client = client, FeeGold = fee, Disaster = disaster, Village = village, IsVillageDefence = villageDefence,
+                Client = client, FeeGold = fee, Disaster = disaster, Village = village, IsVillageDefence = villageDefence, Incident = incident,
             }, target);
         }
 
         Quest Add(Quest quest, Nest target = null)
         {
             quest.Danger = EvaluateDanger(quest);
-            // A village's defence is about its raiders, wherever their den is (P4-84).
-            if (quest.Type == QuestType.Hunt && !quest.IsVillageDefence) quest.TargetNest = target ?? OccupiedNestInArea(quest);
+            // A village's defence is about its raiders, wherever their den is (P4-84); an incident is about itself (P4-85).
+            if (quest.Type == QuestType.Hunt && !quest.IsVillageDefence && quest.Incident == null) quest.TargetNest = target ?? OccupiedNestInArea(quest);
             _quests.Add(quest);
             EventBus.Publish(new QuestPostedEvent { Quest = quest });
             return quest;
@@ -305,6 +323,8 @@ namespace GuildMaster.Quests
         public DangerLevel EvaluateDanger(Quest q)
         {
             DangerLevel d = DangerLevel.Low;
+            // An incident rates itself (the rumour says what it is, P4-85).
+            if (q.Incident != null) return Incidents.IncidentRules.Danger(q.Incident);
             switch (q.Type)
             {
                 case QuestType.Hunt:
@@ -434,7 +454,8 @@ namespace GuildMaster.Quests
             foreach (var q in _quests)
             {
                 if (q.Status != QuestStatus.InProgress || !q.IsAssigned(taker)) continue;
-                if (q.Type == QuestType.Hunt && q.Species == m.Def)
+                // A hunt for one monster (a rare variant, P4-85) counts only that one.
+                if (q.Type == QuestType.Hunt && q.Species == m.Def && (q.TargetUnit == null || q.TargetUnit == m))
                 {
                     q.Progress++;
                     q.AddContribution(taker, 1);
@@ -453,7 +474,7 @@ namespace GuildMaster.Quests
             // What lived there is no longer a guess once it has been wiped out, so this goes by the
             // real owners, not by GuildIntel: the quest is settled by what happened, not by hearsay.
             foreach (var q in _quests.ToList())
-                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && IsInArea(q, e.Nest, e.Nest?.Species)) Complete(q);
+                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && q.Incident == null && IsInArea(q, e.Nest, e.Nest?.Species)) Complete(q);
         }
 
         /// <summary>
@@ -462,7 +483,7 @@ namespace GuildMaster.Quests
         /// </summary>
         public static Nest NestInArea(Quest q)
         {
-            if (q == null || q.Type != QuestType.Hunt || !Services.TryGet<GuildIntel>(out var intel)) return null;
+            if (q == null || q.Type != QuestType.Hunt || q.Incident != null || !Services.TryGet<GuildIntel>(out var intel)) return null;
             foreach (var n in intel.KnownNests)
                 if (IsInArea(q, n, intel.SpeciesOf(n))) return n;
             return null;

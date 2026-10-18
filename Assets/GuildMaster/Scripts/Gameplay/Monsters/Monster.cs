@@ -114,16 +114,32 @@ namespace GuildMaster.Monsters
             Fsm.ChangeState(WanderState);
         }
 
+        /// <summary>
+        /// A rare variant (P4-85, <see cref="RareMonster"/>): alone, with no nest, at <paramref name="level"/>. The caller picks
+        /// the spot, the kind and the variant; nothing here draws a random number.
+        /// </summary>
+        public void SetupRare(MonsterDefinition def, int variant, int level)
+        {
+            Prepare(def, null, false, false, $"M_{++s_counter:0000}", variant);
+            Level = Mathf.Clamp(level, 1, MonsterLevel.MaxLevel);
+            ApplyLevel();
+            Finish(null);
+            _senseTimer = SenseInterval;
+            Fsm.ChangeState(WanderState);
+        }
+
         /// <summary>Who it is and its base numbers, at its nest's birth level, wearing nothing (no random draws).</summary>
-        void Prepare(MonsterDefinition def, Nest home, bool boss, bool ranged, string id)
+        void Prepare(MonsterDefinition def, Nest home, bool boss, bool ranged, string id, int rare = -1)
         {
             Def = def;
             Home = home;
             Roaming = null;
             UnitId = id;
+            RareVariant = rare;
             // A region lord (P4-83) is always its lair's boss, under its own name.
             IsBoss = boss || def.isRegionLord;
-            DisplayName = def.isRegionLord ? def.displayName : boss ? MonsterBoss.Name(def.displayName, def.bossName) : def.displayName;
+            DisplayName = def.isRegionLord ? def.displayName : boss ? MonsterBoss.Name(def.displayName, def.bossName)
+                        : rare >= 0 ? RareMonster.Name(rare, def.displayName) : def.displayName;
             name = $"{def.displayName}[{UnitId}]";
             Stats = new CombatStats
             {
@@ -150,6 +166,12 @@ namespace GuildMaster.Monsters
                 Stats.MaxHp *= MonsterBoss.HpMultiplier;
                 Stats.Attack *= MonsterBoss.AttackMultiplier;
                 Stats.Defense += MonsterBoss.DefenseBonus;
+            }
+            else if (rare >= 0)
+            {
+                Stats.MaxHp *= RareMonster.HpMultiplier;
+                Stats.Attack *= RareMonster.AttackMultiplier;
+                Stats.Defense += RareMonster.DefenseBonus;
             }
             Radius = 0.28f * Scale;
             Mass = Scale * Scale;
@@ -180,7 +202,8 @@ namespace GuildMaster.Monsters
             Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
             // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
             var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
-            Visual.SetTint(baseTint * def.artTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
+            // A rare variant shines in its own colour instead of the land's (P4-85).
+            Visual.SetTint(IsRare ? RareMonster.Tint(RareVariant) : baseTint * def.artTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
             GetComponent<HealthBar>().Init(this, 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
             GetComponent<FogHideable>().Refresh();
             Engage.Clear();
@@ -216,8 +239,11 @@ namespace GuildMaster.Monsters
         public bool IsBoss { get; private set; }
         /// <summary>One of the four region lords (P4-83, <see cref="RegionLords"/>); always also its lair's boss.</summary>
         public bool IsRegionLord => Def != null && Def.isRegionLord;
-        /// <summary>Drawn size: the species' scale, bigger for a boss.</summary>
-        public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : 1f);
+        /// <summary>Which rare variant it is (P4-85, <see cref="RareMonster"/>), or -1 for an ordinary member of its kind.</summary>
+        public int RareVariant { get; private set; } = -1;
+        public bool IsRare => RareVariant >= 0;
+        /// <summary>Drawn size: the species' scale, bigger for a boss or a rare variant.</summary>
+        public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : IsRare ? RareMonster.SizeMultiplier : 1f);
         public Color ProjectileColor => new(0.8f, 0.7f, 0.45f);
 
         public Vector2 HomePosition => Home != null ? Home.WorldPosition : Roaming != null ? Roaming.Center : _spawnPosition;
@@ -249,7 +275,7 @@ namespace GuildMaster.Monsters
         /// nobody cleared (<see cref="TierExp"/>).
         /// </summary>
         public override CombatTier Tier => Def == null ? CombatTier.Novice
-            : MonsterLevel.TierAt(MonsterBoss.SpeciesTier(Def.combatTier, IsBoss), Level, TierExp);
+            : MonsterLevel.TierAt(IsRare ? RareMonster.SpeciesTier(Def.combatTier) : MonsterBoss.SpeciesTier(Def.combatTier, IsBoss), Level, TierExp);
 
         // ---------------- Level and EXP (user decision 2026-09-22) ----------------
 
@@ -274,7 +300,8 @@ namespace GuildMaster.Monsters
         public int ExpToNext => MonsterLevel.ExpToNext(Level);
         /// <summary>What killing this one is worth.</summary>
         public int ExpWorth => Def == null ? 0
-            : MonsterLevel.ExpWorth(Def.expValue, Level) * (IsRegionLord ? RegionLords.ExpMultiplier : IsBoss ? MonsterBoss.ExpMultiplier : 1);
+            : MonsterLevel.ExpWorth(Def.expValue, Level)
+              * (IsRegionLord ? RegionLords.ExpMultiplier : IsBoss ? MonsterBoss.ExpMultiplier : IsRare ? RareMonster.ExpMultiplier : 1);
         CombatStats _unlevelledStats;
 
         /// <summary>Base stats = the species (and ranged variant) scaled by level; gear goes on top.</summary>
@@ -292,8 +319,8 @@ namespace GuildMaster.Monsters
             RefreshStats(fullHeal: true);
         }
 
-        /// <summary>Danger shown to the guild (P4-58): by level, one step more for a boss.</summary>
-        public DangerLevel Danger => (DangerLevel)Mathf.Min((int)DangerLevel.High, (int)MonsterLevel.DangerAt(Level) + (IsBoss ? 1 : 0));
+        /// <summary>Danger shown to the guild (P4-58): by level, one step more for a boss or a rare variant.</summary>
+        public DangerLevel Danger => (DangerLevel)Mathf.Min((int)DangerLevel.High, (int)MonsterLevel.DangerAt(Level) + (IsBoss || IsRare ? 1 : 0));
 
         /// <summary>EXP for a kill: this monster's own, and the same for pack mates fighting close by.</summary>
         public void GainKillExp(int amount)
@@ -503,7 +530,8 @@ namespace GuildMaster.Monsters
 
         /// <summary>Another living member of the same pack: same species and nest (or both nest-less).</summary>
         public bool IsPackMate(Monster o) => o != null && o != this && o.IsAlive && o.Home == Home && o.Roaming == Roaming
-                                             && (o.Def == Def || Home != null && (IsRegionLord || o.IsRegionLord)); // a lord and its guards (P4-83)
+                                             && (o.Def == Def || Home != null && (IsRegionLord || o.IsRegionLord)) // a lord and its guards (P4-83)
+                                             && o.IsRare == IsRare; // a rare variant is nobody's pack mate (P4-85)
 
         /// <summary>Who calls the pack's target: the crown holder / pack leader, else the first member of the nest.</summary>
         Monster CallingLeader
@@ -799,6 +827,8 @@ namespace GuildMaster.Monsters
             // A lord's table is rolled once: its trophy is certain, and one of it is the point (P4-83).
             if (killer != null) MonsterEquipment.BuildDrops(Def, Equipment.Worn, GameRandom.Shared, s_loot, IsBoss && !IsRegionLord ? MonsterBoss.LootRolls : 1);
             else MonsterEquipment.BuildDrops(null, Equipment.Worn, GameRandom.Shared, s_loot);
+            // A rare variant's spoils are certain (P4-85); one that slips away leaves nothing.
+            if (killer != null && IsRare) RareMonster.AddSpoils(Level, s_loot);
             if (s_loot.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, s_loot);
             Equipment.Clear();
             if (killer is ILootReceiver receiver) receiver.ReceiveKillRewards(Def, ExpWorth, s_noLoot);
@@ -932,6 +962,8 @@ namespace GuildMaster.Monsters
             public string species;
             public bool boss;
             public bool ranged;
+            /// <summary>Rare variant (P4-85), -1 for none.</summary>
+            public int rare = -1;
             public int level;
             public int exp;
             public int tier_exp;
@@ -975,7 +1007,7 @@ namespace GuildMaster.Monsters
         {
             var s = new MonsterSave
             {
-                id = UnitId, species = Def.id, boss = IsBoss, ranged = IsRangedVariant, level = Level, exp = Exp, tier_exp = TierExp,
+                id = UnitId, species = Def.id, boss = IsBoss, ranged = IsRangedVariant, rare = RareVariant, level = Level, exp = Exp, tier_exp = TierExp,
                 absorbed = Equipment.AbsorbedHp, spawn = _spawnPosition, default_state = DefaultStateOverride?.GetType().Name,
                 next_lure = SaveTime.Rel(NextLureTime), next_regroup = SaveTime.Rel(NextRegroupTime),
                 last_fight = SaveTime.Rel(_lastFightTime), sense_timer = Round(_senseTimer), pickup_timer = Round(_pickupTimer),
@@ -1002,7 +1034,7 @@ namespace GuildMaster.Monsters
         {
             var pool = Services.Get<PoolService>();
             var m = pool.Spawn<Monster>(PoolKey, new Vector2(s.unit.x, s.unit.y));
-            m.Prepare(def, home, s.boss, s.ranged, s.id);
+            m.Prepare(def, home, s.boss, s.ranged, s.id, s.rare);
             m.Level = Mathf.Clamp(s.level, 1, def.isRegionLord ? RegionLords.Level : MonsterLevel.MaxLevel);
             m.Exp = s.exp;
             m.TierExp = s.tier_exp;

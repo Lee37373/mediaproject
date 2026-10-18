@@ -201,6 +201,10 @@ namespace GuildMaster.Tests
             DebugCommands.HurtVillage(2, villages.Villages[2].MaxHp * 0.8f);
             DebugCommands.HurtVillage(2, villages.Villages[2].MaxHp);
             Assert.That(villages.TryFound(out _), Is.True, "a new village");
+            // A rare monster (P4-85) whose rumour has come: its hunt on the board, pointing at it.
+            var rare = Services.Get<Incidents.IncidentService>().StartRareMonster();
+            Assert.That(rare, Is.Not.Null, "a rare monster out there");
+            rare.RumourAtHour = clock.TotalHours;
 
             clock.SetSpeed(3);
             float start = clock.TotalHours;
@@ -224,6 +228,8 @@ namespace GuildMaster.Tests
             Assert.That(visitors, Is.GreaterThan(0), "a visitor in town");
             Assert.That(merchant, Is.True, "the merchant in town");
             Assert.That(camps, Is.GreaterThan(0), "a camp out in the wild");
+            Assert.That(rare.Rumoured && rare.Quest != null && !rare.Over, Is.True, "the rare monster's hunt is up");
+            string rareQuest = rare.Quest.Id;
 
             var a = Saves.Capture();
             yield return BootFrom(a);
@@ -241,6 +247,10 @@ namespace GuildMaster.Tests
             Assert.That(villages.Villages.Count, Is.EqualTo(villageCount), "villages, ruins and the new one");
             Assert.That(Services.Get<Villages.VillageRaids>().IsUnderAttack(villages.Villages[1]), Is.True, "the village raid");
             Assert.That(villages.Villages[2].IsDestroyed && Services.Get<World.WorldService>().Grid.IsWalkable(villages.Villages[2].Cell), Is.True, "the ruins are open ground");
+            var loadedRare = board.FindById(rareQuest);
+            Assert.That(loadedRare?.Incident, Is.Not.Null, "the rare hunt knows its incident");
+            Assert.That(loadedRare.TargetUnit != null && loadedRare.TargetUnit.IsRare && loadedRare.TargetUnit.IsAlive, Is.True, "and its monster, rare as it was");
+            Assert.That(Services.Get<Incidents.IncidentService>().Active, Does.Contain(loadedRare.Incident));
 
             yield return new WaitForSecondsRealtime(1f);
             AssertSameSections(a, Saves.Capture());

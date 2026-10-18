@@ -331,7 +331,8 @@ namespace GuildMaster.World
             }
         }
 
-        static Biome ClassifyBiome(MapData map, Vector2Int cell)
+        /// <summary>The surroundings of a cell as a nest site sees them (also where a rare monster appears, P4-85).</summary>
+        public static Biome ClassifyBiome(MapData map, Vector2Int cell)
         {
             int forest = 0, mountain = 0, water = 0;
             for (int dy = -3; dy <= 3; dy++)
