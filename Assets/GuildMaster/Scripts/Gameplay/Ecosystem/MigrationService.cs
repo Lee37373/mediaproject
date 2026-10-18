@@ -95,6 +95,7 @@ namespace GuildMaster.Ecosystem
                     if (ctx.Find<Monster>(id) is not { } m) continue;
                     band.Members.Add(m);
                     _of[m] = band;
+                    m.InHorde = band.Horde;
                     // As Enlist: a member that falls leaves the band (the pooled body is reused as
                     // another monster, which must not be found in this band afterwards).
                     m.Died += OnMemberDied;
@@ -289,14 +290,17 @@ namespace GuildMaster.Ecosystem
         /// site's level + <paramref name="levelBonus"/>. Like any newcomers the site is theirs from the start; whoever stops
         /// them on the way decides whether they get there. Null when the site cannot be had.
         /// </summary>
-        public Band TryHorde(Nest target, MonsterDefinition species, int size, int levelBonus, GameRandom rng)
+        public Band TryHorde(Nest target, MonsterDefinition species, int size, int levelBonus, GameRandom rng, float walk = 90f)
         {
             if (target == null || species == null || !target.IsEmpty || target.IsLair || target.Sealed || IsTarget(target)
                 || _world.Map.EdgeSpawnCells.Count == 0) return null;
-            target.ChangeSpecies(species);
-            // One of the nearer edges (a quarter of them), so it comes from a different side now and then.
+            // From the side of one of the nearer edges (a quarter of them, so it comes from a different side now and then),
+            // but only <paramref name="walk"/> cells out from its site, out of the guild's sight: from the map's edge it had
+            // the outer land to cross, and the first horde measured (Lv3) died to the dens there within hours.
             var edges = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).ToList();
             var edge = edges[rng.Range(0, Mathf.Max(1, edges.Count / 4))];
+            var start = HordeStart(target, edge, walk);
+            target.ChangeSpecies(species);
             var band = new Band
             {
                 Id = ++_count, From = target, Target = target, StartedAtHour = _clock.TotalHours, Species = species, Arrival = true, Horde = true,
@@ -304,13 +308,31 @@ namespace GuildMaster.Ecosystem
             bool boss = rng.Chance(MonsterBoss.Chance);
             for (int i = 0; i < size; i++)
             {
-                var m = _eco.Spawn(target, GridMap.CellToWorld(edge), boss && i == 0);
+                var m = _eco.Spawn(target, GridMap.CellToWorld(start), boss && i == 0);
                 if (levelBonus > 0) m.SetLevel(m.Level + levelBonus);
+                m.InHorde = true;
                 Enlist(band, m);
             }
             _bands.Add(band);
-            Debug.Log($"[Migration] horde #{band.Id}: {size} {species.displayName} from the edge {edge} → {target.DisplayName}");
+            Debug.Log($"[Migration] horde #{band.Id}: {size} {species.displayName} from {start} (towards the edge {edge}) → {target.DisplayName}");
             return band;
+        }
+
+        /// <summary>Walkable ground <paramref name="walk"/> cells from the site towards the edge — farther while the guild can see it — at most the edge itself.</summary>
+        Vector2Int HordeStart(Nest target, Vector2Int edge, float walk)
+        {
+            var from = target.WorldPosition;
+            var dir = (GridMap.CellToWorld(edge) - from).normalized;
+            float far = Vector2.Distance(from, GridMap.CellToWorld(edge));
+            Services.TryGet<FogOfWar>(out var fog);
+            for (float d = Mathf.Min(walk, far); d < far; d += 15f)
+            {
+                var cell = GridMap.WorldToCell(from + dir * d);
+                if (!_world.Grid.TryFindNearestWalkable(cell, 6, out cell) || _world.Grid.IsInTown(cell)) continue;
+                if (fog != null && fog.IsVisibleRaw(GridMap.CellToWorld(cell))) continue;
+                return cell;
+            }
+            return edge;
         }
 
         public Band BandById(int id) => _bands.FirstOrDefault(b => b.Id == id);
@@ -394,6 +416,7 @@ namespace GuildMaster.Ecosystem
                 m.Died -= OnMemberDied;
                 _of.Remove(m);
                 m.DefaultStateOverride = null;
+                m.InHorde = false;
                 m.Home?.TransferMember(m, to);
             }
             _bands.Remove(band);
@@ -410,6 +433,7 @@ namespace GuildMaster.Ecosystem
                 if (m == null) continue;
                 m.Died -= OnMemberDied;
                 _of.Remove(m);
+                m.InHorde = false;
                 if (!m.IsAlive) continue;
                 m.EndMarch();
             }

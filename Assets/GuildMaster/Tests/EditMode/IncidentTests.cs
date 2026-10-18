@@ -109,7 +109,8 @@ namespace GuildMaster.Tests
             float one = IncidentRules.HoldOutHp(new[] { (10f, 1f) }, 1f, 10f);
             Assert.That(one, Is.EqualTo(10f * (1f + Combat.CritChance * (Combat.CritMultiplier - 1f)) * 10f).Within(0.01f));
             Assert.That(IncidentRules.HoldOutHp(new[] { (10f, 1f), (10f, 1f) }, 2f, 10f), Is.EqualTo(one * 4f).Within(0.01f), "twice the blows, twice the hours");
-            Assert.That(IncidentRules.RescueReward(DangerLevel.Medium, 3, 60f), Is.GreaterThan(QuestPricing.HuntReward(DangerLevel.Medium, 3, 60f)));
+            Assert.That(IncidentRules.RescueReward(DangerLevel.Medium, 3, 60f), Is.GreaterThan(QuestPricing.HuntReward(DangerLevel.Medium, 3, 60f) * 2));
+            Assert.That(IncidentRules.RescueHoldHours, Is.GreaterThan(IncidentRules.RumourDelayMax + 3f), "time for the news and a walk out");
             Assert.That(IncidentRules.TravellerName(new GameRandom(3)), Does.Contain(" "));
             var db = DefaultContent.Build();
             db.BuildIndex();

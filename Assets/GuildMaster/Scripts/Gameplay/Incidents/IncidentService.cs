@@ -271,7 +271,7 @@ namespace GuildMaster.Incidents
             kind ??= PickHordeKind(site);
             if (kind == null) return null;
             if (size <= 0) size = rng.Range(IncidentRules.HordeMin, IncidentRules.HordeMax + 1);
-            var band = migration.TryHorde(site, kind, size, IncidentRules.HordeLevelBonus, rng);
+            var band = migration.TryHorde(site, kind, size, IncidentRules.HordeLevelBonus, rng, IncidentRules.HordeWalk);
             if (band == null) return null;
             var i = new Incident
             {

@@ -136,6 +136,7 @@ namespace GuildMaster.Monsters
             Roaming = null;
             UnitId = id;
             RareVariant = rare;
+            InHorde = false;
             // A region lord (P4-83) is always its lair's boss, under its own name.
             IsBoss = boss || def.isRegionLord;
             DisplayName = def.isRegionLord ? def.displayName : boss ? MonsterBoss.Name(def.displayName, def.bossName)
@@ -239,6 +240,8 @@ namespace GuildMaster.Monsters
         public bool IsBoss { get; private set; }
         /// <summary>One of the four region lords (P4-83, <see cref="RegionLords"/>); always also its lair's boss.</summary>
         public bool IsRegionLord => Def != null && Def.isRegionLord;
+        /// <summary>Marching with a sudden incident's horde (P4-85, set and cleared by <see cref="MigrationService"/>).</summary>
+        internal bool InHorde;
         /// <summary>Which rare variant it is (P4-85, <see cref="RareMonster"/>), or -1 for an ordinary member of its kind.</summary>
         public int RareVariant { get; private set; } = -1;
         public bool IsRare => RareVariant >= 0;
@@ -479,8 +482,9 @@ namespace GuildMaster.Monsters
             // Raiders on the march do not start fights on the way; hit, they still hit back. A band
             // on the move to a new home fights whatever it meets (P4-56, user decision 2026-09-22).
             // A region lord and its guards share a lair (P4-83): one pack, though of two kinds.
+            // A horde on its march (P4-85) does not start fights either: it came to settle by the town, not to clear the way.
             if (other is Monster m) return m.Def != Def && !(Home != null && m.Home == Home)
-                                           && (DefaultStateOverride == null || DefaultStateOverride == MigrateState || DefaultStateOverride == RoamState);
+                                           && (DefaultStateOverride == null || DefaultStateOverride == MigrateState && !InHorde || DefaultStateOverride == RoamState);
             return (other.Faction == Faction.Guild || other.ExposedToMonsters) && Def.aggressiveToHumans;
         }
 

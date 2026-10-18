@@ -3396,7 +3396,10 @@ namespace GuildMaster.Tests
                 Assert.That(horde.HordeSize, Is.EqualTo(12));
                 Assert.That(horde.Band.Horde && migration.Bands.Contains(horde.Band), Is.True, "marching as a band");
                 Assert.That(horde.Members.All(m => m.Home == site && m.Def.canRaid), Is.True, "a raiding kind, for that site");
-                Assert.That(Vector2.Distance(horde.Spot, site.WorldPosition), Is.GreaterThan(80f), "from far off, at the edge");
+                Assert.That(Vector2.Distance(horde.Spot, site.WorldPosition), Is.InRange(Incidents.IncidentRules.HordeWalk - 10f, Incidents.IncidentRules.HordeWalk + 60f),
+                            "from some way off, not from the map's edge across the outer land");
+                var other = eco.Nests.SelectMany(n => n.Members).FirstOrDefault(m => m.IsAlive && m.Def != horde.Members[0].Def);
+                if (other != null) Assert.That(horde.Members[0].IsHostileTo(other), Is.False, "on its march it starts no fights");
                 Assert.That(horde.Members.Min(m => m.Level), Is.GreaterThanOrEqualTo(site.BirthLevel + Incidents.IncidentRules.HordeLevelBonus));
 
                 horde.RumourAtHour = Clock.TotalHours;

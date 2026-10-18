@@ -79,6 +79,11 @@ namespace GuildMaster.Incidents
         public const int HordeLevelBonus = 2;
         /// <summary>It heads for the empty site nearest the town at least this far out (the dens' own minimum).</summary>
         public const float HordeMinDistance = 20f;
+        /// <summary>
+        /// It sets out this far from its site, towards a map edge (measurement 2026-10-18: from the edge itself a Lv3 horde
+        /// had the outer land's dens to cross and died there within hours). On the march it starts no fights.
+        /// </summary>
+        public const float HordeWalk = 90f;
         /// <summary>Game hours between rumours of where it is now, while the guild has not seen it.</summary>
         public const float HordeRumourEvery = 2f;
         /// <summary>Share of it the quest asks to bring down ("intercepted"): the rest may still get there.</summary>
@@ -111,10 +116,13 @@ namespace GuildMaster.Incidents
         public const float RescueMinDistance = 40f, RescueMaxDistance = 90f;
         /// <summary>How many fall on the traveller.</summary>
         public const int AmbushMin = 2, AmbushMax = 4;
-        /// <summary>Game hours the traveller holds out against them (the rescue's time limit).</summary>
-        public const float RescueHoldHours = 4f;
-        /// <summary>Its quest pays a hunt of the ambushers there times this.</summary>
-        public const float RescueRewardFactor = 2f;
+        /// <summary>
+        /// Game hours the traveller holds out against them (the rescue's time limit). Measurement 2026-10-18: at 4 (the
+        /// recommended start) one rescue in seven was in time — the rumour alone takes up to two hours.
+        /// </summary>
+        public const float RescueHoldHours = 6f;
+        /// <summary>Its quest pays a hunt of the ambushers there times this (at 2, 56-60 G near the town: nobody took them).</summary>
+        public const float RescueRewardFactor = 3f;
         /// <summary>Share of travellers heading for our town (the rest leave it for the village).</summary>
         public const float RescueToTownShare = 0.6f;
         /// <summary>Ambushers left once it is over scatter after this many game hours, when nobody sees them.</summary>
