@@ -98,7 +98,7 @@
 | P4-88 | 측정 관찰 후속: 길드보다 강한 후보는 영입이 어려움, 마을 습격 빈도 절반, 약한 신입은 위험 의뢰를 잘 안 받음, 지대 군주 강화(공격 ×4·호위 8·강타 쿨 5초) | 이재혁 | 완료 | Recruitment, Villages, Adventurers/Decisions·RuleBasedDecisionMaker·PartyService, Monsters/RegionLords | db14b11 |
 | P4-89 | 귀환 중 정지 조사(성벽·성문 옆에서 이동 중인 채 몇 시간 제자리) | 이재혁 | 완료 | World/PathFollower, Adventurers/ReturnToTownState·PartyTactics | 2f472e4 |
 | P4-90 | P4-85 관찰 후속: 위험 낮은 구출 의뢰 최저 보상 올림, 지대 군주 의뢰를 파티 인원으로 위험 평가 | 이재혁 | 완료 | Incidents/IncidentRules, Quests/QuestRisk, Adventurers/Decisions | b27ea28 |
-| P4-91 | NPC 행동 판단에서 LLM 제거(사용자 결정 2026-10-19): 의뢰·휴식·사냥 판단, 파티·사냥 초대 수락, 전리품 분배, 스킬 선택, 잡담을 규칙 기반으로. LLM은 영입 대화·설득 대화·의뢰 제안 카드에만 | 이재혁 | 진행 중 | Adventurers/LlmDecisionMaker(삭제)·PartyService·PartySettlement·SkillChoiceService·BanterService·Prompts, Session/GameBootstrap | |
+| P4-91 | NPC 행동 판단에서 LLM 제거(사용자 결정 2026-10-19): 의뢰·휴식·사냥 판단, 파티·사냥 초대 수락, 전리품 분배, 스킬 선택, 잡담을 규칙 기반으로. LLM은 영입 대화·설득 대화·의뢰 제안 카드에만 | 이재혁 | 완료 | Adventurers/LlmDecisionMaker·Prompts(Decision·Party·Skill·Split·Banter 삭제)·PartyService·PartySettlement·SkillChoiceService·BanterService·BanterLines(신규)·QuestRisk, Persuasion/PersuasionRules, Units/Unit, Session/GameBootstrap | 4b0f437 |
 | P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
@@ -128,15 +128,16 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-91 NPC 행동 판단에서 LLM 제거
+- **진행 중**: 없음
 - **예정**: P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-90, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-91, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
 - **예정**: F-4(명성·길드 등급·승리 목표), F-7(개발용 검증 명령). F-5(의뢰 종류·보상 확장)는 `QuestBoard.cs`를 건드려야 해서 P4-22와 조율이 필요합니다
 - **바뀐 점 알림(2026-10-17, P4-82 완료 c7b8e68)**: 사용자 결정으로 의뢰 구조가 바뀌었습니다. 플레이어는 토벌을 직접 올리지 않고, 우리 마을이 길드가 본 둥지마다 토벌을 올립니다. 보상은 의뢰처가 내고 길드는 20%를 수수료로 받으며, 길드 EXP는 없어졌습니다. **F-8 제안 카드**: 게시판에 없는 둥지에 대한 "다른 의뢰인의 요청"이 되었고, 보상 조절 버튼과 금고 잔액 제한을 없앴습니다(고르기만, `ProposalRules.BuildPool(targets, power, members, rng)`). **P4-59 협상**: 그대로 길드 금고에서 얹습니다. F-5(의뢰 확장)를 할 때는 `QuestClient`·`QuestPricing`·`QuestBoard.TryPostRequest`를 쓰면 됩니다. P4-83(8d091f6)으로 지대 군주 넷을 잡으면 승리 화면이 뜹니다(`AllLordsSlainEvent`) — F-4의 승리 목표는 여기에 얹으면 됩니다
 - **바뀐 점 알림(2026-10-19, P4-87 완료 661026d)**: 사용자 결정으로 **모든 모험가의 공격·방어·최대 체력이 ×0.75로 시작**하고, 성벽 안에 짓는 내실 건물(무기고·방어구 공방·식당 각 3레벨)로 예전 세기까지 돌아옵니다(`Town/FacilityRules`, `AdventurerStats.Compute(…, StatScale)`). 판단의 힘 `AdventurerStats.Power`도 이 배율을 곱하고(`RawPower`가 예전 값), 위험 낮음 요구치는 0.75입니다. 피해 공식은 `Unit.EffectiveDefense`·`Unit.AttackCooldownNow`(방어 감소·둔화 반영)를 씁니다. 정원은 대숙소가 있으면 없어집니다(`GuildRoster.IsFull`·`CountText`)
+- **바뀐 점 알림(2026-10-19, P4-91 완료 4b0f437)**: 사용자 결정으로 **NPC 행동 판단에 LLM을 쓰지 않습니다**. 의뢰·휴식·사냥 판단(`RuleBasedDecisionMaker`만 등록), 초대 수락, 스킬 선택, 파티 분배, 잡담(고정 대사 `BanterLines`)이 모두 규칙이고, `LlmDecisionMaker`·`DecisionPrompt`·`PartyPrompt`·`SkillPrompt`·`SplitPrompt`·`BanterPrompt`는 지웠습니다. LLM은 영입 대화·설득 대화(P4-59)·의뢰 제안 카드(F-8)에만 씁니다. 위험도 문구는 `QuestRisk.RiskLabel`, 무모 허용은 `PersuasionRules.RecklessAllowed`로 옮겼습니다
 - **완료**: F-1, F-2, F-3, F-6, F-8, P4-59 (자세한 내용은 `WORK_SUMMARY.md`, `FEATURE_IDEAS.md`, `NEGOTIATION.md`)
 
 ## 공용 파일 (충돌 주의)
