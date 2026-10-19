@@ -108,6 +108,7 @@ namespace GuildMaster.Adventurers
             if (Services.TryGet<QuestBoard>(out var board)) board.RemoveTakerEverywhere(a);
             a.IsGuildMember = false;
             EventBus.Publish(new AdventurerLeftEvent { Adventurer = a });
+            a.Vanish();
             Destroy(a.gameObject);
         }
     }

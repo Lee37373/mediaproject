@@ -223,7 +223,24 @@ namespace GuildMaster.Units
         }
 
         protected virtual void OnEnable() => UnitRegistry.Register(this);
-        protected virtual void OnDisable() => UnitRegistry.Unregister(this);
+
+        protected virtual void OnDisable()
+        {
+            UnitRegistry.Unregister(this);
+            // Off its target's list of attackers: a destroyed member was still counted round a monster it had been
+            // fighting, and scoring that monster read the destroyed object (a trial run threw 1700 times, P4-91).
+            CurrentTarget = null;
+        }
+
+        /// <summary>
+        /// Leaves the world for good without dying (a member who quits, a visitor who walks off): call just before its
+        /// object is destroyed, so whoever still points at it reads it as gone rather than touching a destroyed object.
+        /// </summary>
+        public void Vanish()
+        {
+            _dead = true;
+            CurrentTarget = null;
+        }
 
         /// <summary>Resets health/state for (re)spawn.</summary>
         protected void ResetVitals()

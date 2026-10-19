@@ -910,7 +910,7 @@ namespace GuildMaster.Session
         public static string BanterStatus()
         {
             var b = Services.Get<BanterService>();
-            return $"attempts={b.Attempts} llm={b.LlmBanters} fixed={b.FixedBanters}";
+            return $"attempts={b.Attempts} talks={b.Talks}";
         }
 
         // ---------------- Territories (P4-18) ----------------

@@ -171,6 +171,7 @@ namespace GuildMaster.Adventurers
             if (Vector2.Distance(a.Position, _exit) < 1.2f || (!a.Mover.IsMoving && TimeInState > 1f))
             {
                 EventBus.Publish(new VisitorLeftTownEvent { Visitor = a });
+                a.Vanish();
                 Object.Destroy(a.gameObject);
             }
         }

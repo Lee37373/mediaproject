@@ -382,7 +382,7 @@ namespace GuildMaster.UI
                     PersuadeOutcome.NoFunds => UIBuilder.Colored("자금 부족", UITheme.Bad),
                     _ => session.PlayerTurns == 0 ? "대화 전" : $"설득 중 {session.Willingness}/{session.Threshold}",
                 };
-                string risk = session != null ? session.RiskLabel : DecisionPrompt.RiskLabel(a, quest);
+                string risk = session != null ? session.RiskLabel : QuestRisk.RiskLabel(a, quest);
                 _text.text = $"{a.Data.name}  Lv.{a.Data.level} {AdventurerData.ClassLabel(a.Data.cls)}\n" +
                              $"{RiskColored(risk)} · {state}";
             }

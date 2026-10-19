@@ -140,7 +140,7 @@ namespace GuildMaster.Adventurers
     /// <summary>Waits for an asynchronous (possibly LLM) decision while idling.</summary>
     public class DecidingState : State<Adventurer>
     {
-        /// <summary>Real seconds (LLM latency does not scale with game speed); covers queue wait + generation.</summary>
+        /// <summary>Real seconds a decision may take before the rules decide anyway (a decision maker that never answers).</summary>
         const float TimeoutRealSeconds = 70f;
 
         Task<AdventurerDecision> _task;
@@ -192,7 +192,6 @@ namespace GuildMaster.Adventurers
             if (!string.IsNullOrEmpty(d.Reason))
             {
                 a.LastThought = d.Reason;
-                a.LastThoughtFromLlm = d.FromLLM;
             }
             switch (d.Action)
             {

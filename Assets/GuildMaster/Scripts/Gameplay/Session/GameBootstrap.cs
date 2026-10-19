@@ -228,13 +228,13 @@ namespace GuildMaster.Session
             Services.Register(incidents);
             save.Register(incidents);
 
-            // --- AI: LLM gateway (falls back to rules when no model is available) ---
+            // --- AI: LLM gateway, for talk only (recruitment, persuasion, proposal cards; rules when no model) ---
             var llm = AddSystem<LlmGateway>();
             llm.SetBackend(LlmBackends.CreateDefault(_systems));
             llm.Enabled = GameSettings.LlmEnabled; // settings menu (P4-10)
             Services.Register(llm);
-            // LLM decisions with the rule-based maker as the built-in fallback.
-            Services.Register<IAdventurerDecisionMaker>(new LlmDecisionMaker(llm));
+            // Every NPC decision is the rules' (P4-91, user decision 2026-10-19: no model in behaviour).
+            Services.Register<IAdventurerDecisionMaker>(new RuleBasedDecisionMaker());
             var roster = AddSystem<GuildRoster>();
             roster.Capacity = Balance.rosterCapacity;
             Services.Register(roster);
@@ -243,8 +243,8 @@ namespace GuildMaster.Session
             Services.Register(new FacilityService(town, roster));
             // Per-adventurer memories; before recruiting so the starting members remember joining.
             Services.Register(new MemoryRecorder(clock, roster));
-            // Multi-person quests: the first taker invites idle members (LLM, rule fallback).
-            Services.Register(new PartyService(llm, board, roster));
+            // Multi-person quests: the first taker invites idle members (each answers by the rules).
+            Services.Register(new PartyService(board, roster));
             // Quests nobody takes for 6 game hours can be talked into by the guild master (P4-24).
             Services.Register(new Persuasion.PersuasionService(board, roster, clock));
             // Notifications (F-1): the list behind the toasts and the HUD badge, fed by gameplay events.
@@ -259,20 +259,20 @@ namespace GuildMaster.Session
             save.Register(bands);
             // Standing parties (P4-50): formed in town, pooled pay split by the leader back home.
             var parties = AddSystem<GuildParties>();
-            parties.Init(clock, new PartySettlement(llm));
+            parties.Init(clock, new PartySettlement());
             Services.Register(parties);
             save.Register(parties);
             // Party roles, formation and focus fire on the leader's call (P4-27).
             var partyTactics = AddSystem<PartyTactics>();
             partyTactics.Init(pool);
             Services.Register(partyTactics);
-            // Learning on level-up (P4-34): the model picks from what the class can still learn.
+            // Learning on level-up (P4-34): the next skill of the class, by the rules.
             var skillChoice = AddSystem<SkillChoiceService>();
-            skillChoice.Init(llm);
+            skillChoice.Init();
             Services.Register(skillChoice);
-            // Idle small talk in town (LLM only when the gateway is idle).
+            // Idle small talk in town (fixed lines).
             var banter = AddSystem<BanterService>();
-            banter.Init(llm, roster, world);
+            banter.Init(roster, world);
             Services.Register(new RelationshipRecorder());
             Services.Register(banter);
             save.Register(banter);

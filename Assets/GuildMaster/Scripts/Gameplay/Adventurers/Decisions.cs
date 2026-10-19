@@ -19,14 +19,14 @@ namespace GuildMaster.Adventurers
         public string QuestId;
         public string Reason;
         public string Say;
-        public bool FromLLM;
 
         public static AdventurerDecision Idle(string reason = null) => new() { Action = AdventurerAction.Idle, Reason = reason };
     }
 
     /// <summary>
-    /// High-level cognitive decision source for adventurers. The rule-based implementation is
-    /// the always-available fallback; the LLM implementation (Phase 3) plugs in via Services.
+    /// High-level decision source for adventurers, resolved through Services. Since P4-91 (user decision 2026-10-19)
+    /// every NPC behaviour is decided by the rules (<see cref="RuleBasedDecisionMaker"/>); the model only talks
+    /// (recruitment, persuasion) and words the proposal cards.
     /// </summary>
     public interface IAdventurerDecisionMaker
     {

@@ -195,7 +195,7 @@ namespace GuildMaster.UI
             }
 
             _thought.text = string.IsNullOrEmpty(a.LastThought) ? UIBuilder.Colored("아직 판단한 적이 없습니다.", UITheme.TextMuted)
-                : $"{a.LastThought} {UIBuilder.Colored(a.LastThoughtFromLlm ? "(AI 판단)" : "(규칙 판단)", UITheme.TextMuted)}";
+                : a.LastThought;
 
             _memories.text = d.memories.Count == 0 ? UIBuilder.Colored("아직 기억이 없습니다.", UITheme.TextMuted)
                 : string.Join("\n", d.memories.Skip(Mathf.Max(0, d.memories.Count - MemoryPreview)).Select(m => m.Format()));

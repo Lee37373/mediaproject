@@ -598,10 +598,7 @@ namespace GuildMaster.Adventurers
             var a = camp.Members[GameRandom.Shared.Range(0, camp.Members.Count)];
             var others = camp.Members.Where(m => m != a).ToList();
             var b = others[GameRandom.Shared.Range(0, others.Count)];
-            string scene = $"{QuestBoard.DescribeArea(camp.Position)}의 들판에서 모닥불을 피우고 둘러앉아 있다. " +
-                           (_clock.IsNight ? "밤이 깊었다. " : "해가 아직 떠 있다. ") +
-                           (camp.Reason == CampReason.Night ? "밤을 여기서 보내기로 했다." : "싸움으로 지친 몸을 추스르는 중이다.");
-            banter.TryStartAt(a, b, scene, x => x != null && x.IsAlive && CampOf(x) == camp);
+            banter.TryStartAt(a, b, x => x != null && x.IsAlive && CampOf(x) == camp);
         }
     }
 }

@@ -158,6 +158,7 @@ namespace GuildMaster.Session
 
                 clock.SetSpeed(0);
                 foreach (var m in monsters) if (m.IsAlive) m.Perish();
+                ClearAround(site, 40f); // anything that wandered into the fight
                 if (quest != null)
                 {
                     foreach (var t in quest.Assignees.ToList()) board.Abandon(quest, t);

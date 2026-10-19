@@ -1,5 +1,4 @@
 using GuildMaster.Adventurers;
-using GuildMaster.Adventurers.Prompts;
 using NUnit.Framework;
 
 namespace GuildMaster.Tests
@@ -28,20 +27,12 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void BanterDelta_IsClamped()
-        {
-            Assert.That(BanterPrompt.ClampDelta(9), Is.EqualTo(5));
-            Assert.That(BanterPrompt.ClampDelta(-9), Is.EqualTo(-5));
-            Assert.That(BanterPrompt.ClampDelta(3), Is.EqualTo(3));
-        }
-
-        [Test]
         public void PartyRuleChance_ShiftsWithFeeling()
         {
-            Assert.That(PartyPrompt.RuleAcceptChance("돈", 1f, 40), Is.EqualTo(0.75f).Within(1e-4));
-            Assert.That(PartyPrompt.RuleAcceptChance("돈", 1f, -40), Is.EqualTo(0.35f).Within(1e-4));
-            Assert.That(PartyPrompt.RuleAcceptChance("동료", 1f, 100), Is.EqualTo(0.95f).Within(1e-4));
-            Assert.That(PartyPrompt.RuleAcceptChance("돈", 0.5f, -100), Is.EqualTo(0.05f).Within(1e-4));
+            Assert.That(PartyService.RuleAcceptChance("돈", 1f, 40), Is.EqualTo(0.75f).Within(1e-4));
+            Assert.That(PartyService.RuleAcceptChance("돈", 1f, -40), Is.EqualTo(0.35f).Within(1e-4));
+            Assert.That(PartyService.RuleAcceptChance("동료", 1f, 100), Is.EqualTo(0.95f).Within(1e-4));
+            Assert.That(PartyService.RuleAcceptChance("돈", 0.5f, -100), Is.EqualTo(0.05f).Within(1e-4));
         }
     }
 }

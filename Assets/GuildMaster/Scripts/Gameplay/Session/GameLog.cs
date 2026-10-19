@@ -116,7 +116,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<PartySettledEvent>(e =>
             {
                 if (e.Pool <= 0) return;
-                Add($"{e.Party.Name} 정산 {e.Pool}G{(e.FromLlm ? "" : " (규칙 분배)")}: {string.Join(", ", e.Shares.Select(s => $"{s.member.Data.name} {s.share}G"))}", LogCategory.Economy);
+                Add($"{e.Party.Name} 정산 {e.Pool}G: {string.Join(", ", e.Shares.Select(s => $"{s.member.Data.name} {s.share}G"))}", LogCategory.Economy);
             });
             EventBus.Subscribe<LivingCostsDayEvent>(e =>
             {

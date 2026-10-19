@@ -2053,33 +2053,46 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
-        /// P5-3: a model that loaded but fails every request (a native crash each time, and no
-        /// recovery) leaves the game on its rules: members still ask, get a failure, decide by the
-        /// rules, and a posted hunt is taken.
+        /// P5-3, P4-91: a model that loaded but fails every request (a native crash each time, and no recovery) leaves the
+        /// game on its rules. Members never ask it what to do (P4-91, user decision 2026-10-19: behaviour is the rules'), so
+        /// a posted hunt is taken as ever; what still talks through it — a visitor in the recruitment dialogue — answers
+        /// by the rules instead.
         /// </summary>
         [UnityTest]
         public IEnumerator AnLlmThatFailsEveryRequest_LeavesTheGameOnItsRules()
         {
             yield return Boot();
             var gateway = Services.Get<GuildMaster.LLM.LlmGateway>();
-            var fake = new FakeLlmBackend { Generate = (_, _) => throw new InvalidOperationException("native crash"), RecoverSucceeds = false };
+            var asked = new System.Collections.Generic.List<string>();
+            var fake = new FakeLlmBackend
+            {
+                Generate = (request, _) => { lock (asked) asked.Add(request.Tag ?? ""); throw new InvalidOperationException("native crash"); },
+                RecoverSucceeds = false,
+            };
             gateway.SetBackend(fake);
             gateway.Enabled = true;
-            var maker = (LlmDecisionMaker)Services.Get<IAdventurerDecisionMaker>();
-            int before = maker.FallbackDecisions;
+            Assert.That(Services.Get<IAdventurerDecisionMaker>(), Is.InstanceOf<RuleBasedDecisionMaker>());
 
             MakeKnown(Services.Get<EcosystemManager>().Species.First(s => s.id == "slime"));
-            string id = DebugCommands.PostHunt("slime", 2, 30, 10);
+            string id = DebugCommands.PostHunt("slime", 2, 30, 10, party: 2);
             var quest = Services.Get<QuestBoard>().FindById(id);
             Assert.That(quest, Is.Not.Null, "hunt posted: " + id);
             float start = Clock.TotalHours;
             Clock.SetSpeed(3);
-            yield return WaitFor(() => maker.FallbackDecisions > before && quest.Assignees.Count > 0, 40f);
+            yield return WaitFor(() => quest.Assignees.Count > 0, 40f);
             Clock.SetSpeed(1);
-            Assert.That(maker.FallbackDecisions, Is.GreaterThan(before), "members asked, the model failed, the rules decided");
-            Assert.That(quest.Assignees.Count, Is.GreaterThan(0), "and the hunt was still taken");
-            Assert.That(gateway.Stats.Count("native crash"), Is.GreaterThan(0));
+            Assert.That(quest.Assignees.Count, Is.GreaterThan(0), "the hunt was taken");
             Assert.That(Clock.TotalHours, Is.GreaterThan(start), "the game kept running");
+
+            // The recruitment talk still goes to the model: it fails, and the visitor answers by the rules.
+            DebugCommands.SpawnVisitor();
+            Assert.That(DebugCommands.RecruitSay("우리 길드에 와 줄래?"), Is.EqualTo("sent"));
+            yield return WaitFor(() => DebugCommands.RecruitStatus().Contains("NPC:"), 10f);
+            Assert.That(DebugCommands.RecruitStatus(), Does.Contain("NPC:").And.Contain("llm=False"), "a rule reply");
+            Assert.That(gateway.Stats.Count("native crash"), Is.GreaterThan(0), "it did ask the model");
+            lock (asked)
+                Assert.That(asked.Where(t => t.StartsWith("decision") || t.StartsWith("party") || t.StartsWith("skill")
+                                             || t.StartsWith("split") || t.StartsWith("banter")), Is.Empty, "nobody asked it what to do");
         }
 
         [UnityTest]
@@ -2393,10 +2406,10 @@ namespace GuildMaster.Tests
 
                 // Talk by the fire, then the watches: one awake, one asleep and all but blind.
                 Clock.SetSpeed(3);
-                int talks = Services.Get<BanterService>().FixedBanters;
+                int talks = Services.Get<BanterService>().Talks;
                 yield return WaitFor(() => camp.Talked, 15f);
                 Assert.That(camp.Talked, Is.True, "they sat down together and talked");
-                Assert.That(Services.Get<BanterService>().FixedBanters, Is.GreaterThan(talks), "a line was spoken (no model here: fixed lines)");
+                Assert.That(Services.Get<BanterService>().Talks, Is.GreaterThan(talks), "a line was spoken (fixed lines, P4-91)");
                 yield return WaitFor(() => camp.Watcher != null && camp.Members.Any(m => m.Visual.Lying), 20f);
                 var watcher = camp.Watcher;
                 Assert.That(watcher, Is.Not.Null, "someone keeps watch");

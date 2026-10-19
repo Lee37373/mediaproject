@@ -68,15 +68,6 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void TalkByTheFire_IsNotTownSmallTalk()
-        {
-            var camp = Adventurers.Prompts.BanterPrompt.CampSystemPrompt;
-            Assert.That(camp, Does.Contain("모닥불"));
-            Assert.That(camp, Does.Not.Contain("길드의 최근 소식"), "the topic line was replaced, not left as town talk");
-            Assert.That(camp, Does.Not.Contain("마을에서 쉬며"));
-        }
-
-        [Test]
         public void SleepMendsFasterThanTheWatch_AndSlowerThanTown()
         {
             Assert.That(CampRules.SleepHealPerHour, Is.GreaterThan(CampRules.WatchHealPerHour));

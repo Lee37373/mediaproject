@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using GuildMaster.Adventurers;
-using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Units;
 using NUnit.Framework;
 
@@ -83,34 +82,6 @@ namespace GuildMaster.Tests
             var room = new List<string> { "fireball", "blink" };
             Assert.That(SkillCatalog.RuleChoice(AdventurerClass.Mage, room, SkillCatalog.Candidates(AdventurerClass.Mage, room)),
                         Is.EqualTo(("warp", (string)null)), "below the cap nothing has to go");
-        }
-
-        [Test]
-        public void Interpret_TakesOnlyWhatWasOffered()
-        {
-            var candidates = new List<string> { "charge", "slam" };
-            var known = new List<string> { "taunt", "whirlwind" };
-
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "charge" }, candidates, known),
-                        Is.EqualTo(("charge", (string)null)), "under the cap, nothing is given up");
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "fireball" }, candidates, known).learn,
-                        Is.Null, "a skill that was not offered is refused");
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "" }, candidates, known).learn, Is.Null);
-            Assert.That(SkillPrompt.Interpret(null, candidates, known).learn, Is.Null);
-        }
-
-        [Test]
-        public void Interpret_AtTheCap_NeedsAValidSkillToGiveUp()
-        {
-            var candidates = new List<string> { "slam" };
-            var full = new List<string> { "taunt", "whirlwind", "charge" };
-
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "slam", forget = "charge" }, candidates, full),
-                        Is.EqualTo(("slam", "charge")));
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "slam", forget = "" }, candidates, full).learn,
-                        Is.Null, "at the cap something has to go");
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "slam", forget = "fireball" }, candidates, full).learn,
-                        Is.Null, "cannot give up a skill it does not have");
         }
     }
 }

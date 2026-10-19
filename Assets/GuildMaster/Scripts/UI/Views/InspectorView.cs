@@ -330,7 +330,7 @@ namespace GuildMaster.UI
                 // Titles (P4-83): a region lord's fall, for those who were there.
                 if (d.titles.Count > 0) lines.Add($"{Muted("칭호:")} {UIBuilder.Colored(string.Join(" · ", d.titles), UITheme.Accent)}");
             }
-            lines.Add($"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}");
+            lines.Add($"{Muted("최근 생각:")} {a.LastThought ?? "-"}");
             lines.Add($"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}");
             lines.Add($"{Muted("관계:")} {RelationsText(a)}");
             lines.Add(Muted("전리품: " + loot));

@@ -83,7 +83,7 @@ namespace GuildMaster.UI
 
         void Refresh()
         {
-            _llm.SetLabel(GameSettings.LlmEnabled ? "켬 (LLM 판단·대화)" : "끔 (규칙 기반)");
+            _llm.SetLabel(GameSettings.LlmEnabled ? "켬 (LLM 대화·제안)" : "끔 (규칙 기반)");
             _fullscreen.SetLabel(GameSettings.Fullscreen ? "켬" : "끔");
             _note.text = Application.isEditor
                 ? "에디터에서는 화면 설정이 저장만 되고 적용되지 않습니다(빌드에서 적용). 볼륨은 사운드 작업(P4-9) 때 추가됩니다."

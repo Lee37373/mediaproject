@@ -38,7 +38,6 @@ namespace GuildMaster.Adventurers
         public Quest CurrentQuest { get; set; }
         /// <summary>Reason of the latest high-level decision (shown in the inspector).</summary>
         public string LastThought { get; set; }
-        public bool LastThoughtFromLlm { get; set; }
         public bool IsGuildMember { get; set; } = true;
 
         // ---- Visitor (recruitment candidate) ----
@@ -591,7 +590,6 @@ namespace GuildMaster.Adventurers
             public string quest;
             public string drove_for_quest;
             public string last_thought;
-            public bool thought_from_llm;
             public Engagement.EngageSave engage;
             public string state;
             public float state_time;
@@ -624,7 +622,7 @@ namespace GuildMaster.Adventurers
             {
                 data = Data, unit = CaptureUnit(), visitor = IsVisitor, member = IsGuildMember,
                 visitor_leave_hour = VisitorLeaveAtHour, quest = CurrentQuest?.Id, drove_for_quest = DroveForQuest?.Id,
-                last_thought = LastThought, thought_from_llm = LastThoughtFromLlm, engage = Engage.Capture(),
+                last_thought = LastThought, engage = Engage.Capture(),
                 state = NameOf(current), state_time = Mathf.Round((current?.Elapsed ?? 0f) * 100f) / 100f,
                 state_data = current?.SaveState(),
             };
@@ -644,7 +642,6 @@ namespace GuildMaster.Adventurers
             if (!s.member || s.visitor) a.RecalculateStats(); // facilities are the guild's only (P4-87)
             a.RestoreUnit(s.unit);
             a.LastThought = s.last_thought;
-            a.LastThoughtFromLlm = s.thought_from_llm;
             ctx.Register(a.UnitId, a);
             return a;
         }

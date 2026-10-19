@@ -78,7 +78,7 @@ namespace GuildMaster.Persuasion
             get
             {
                 if (Target == null) return "대상이 없습니다.";
-                if (Target.HpRatio < LlmDecisionMaker.MinHpToAccept) return "몸 상태가 나빠 지금은 어떤 의뢰도 맡지 않을 겁니다.";
+                if (Target.HpRatio < PersuasionRules.MinHpToAccept) return "몸 상태가 나빠 지금은 어떤 의뢰도 맡지 않을 겁니다.";
                 if (Welfare.GuildWelfare.QuestRefusal(Target, Quest.Danger) != null)
                     return Welfare.StressRules.LevelOf(Target.Data.stress) == Welfare.StressLevel.Breaking || Welfare.GuildWelfare.AnyQuestRefusal(Target) != null
                         ? "지쳐서(스트레스나 휴가) 지금은 어떤 의뢰도 맡지 않을 겁니다."
@@ -93,7 +93,7 @@ namespace GuildMaster.Persuasion
             Quest = quest;
             _board = board;
             _clock = clock;
-            RiskLabel = DecisionPrompt.RiskLabel(target, quest);
+            RiskLabel = QuestRisk.RiskLabel(target, quest);
             float aversion = target.Traits?.DangerAversion ?? 0f;
             Willingness = PersuasionRules.InitialWillingness(RiskLabel, aversion, target.Data.values);
             Threshold = PersuasionRules.AcceptThreshold(RiskLabel, PersuasionRules.IsRecklessBlocked(RiskLabel, aversion, target.Data.values));

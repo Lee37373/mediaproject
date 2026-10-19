@@ -1,49 +1,31 @@
-using GuildMaster.Adventurers.Prompts;
+using System.Linq;
+using GuildMaster.Adventurers;
 using NUnit.Framework;
 
 namespace GuildMaster.Tests
 {
     public class BanterTests
     {
+        /// <summary>P4-91: the fixed lines are all the talk there is, so there are enough of them, each a line and an answer.</summary>
         [Test]
-        public void Interpret_AcceptsTwoLines()
+        public void Lines_AreComplete_AndPlentiful()
         {
-            var dto = new BanterPrompt.ResponseDto { a = "오늘 날씨 좋다.", b = "그러게, 사냥 가기 딱이야." };
-            Assert.That(BanterPrompt.TryInterpret(dto, out var a, out var b), Is.True);
-            Assert.That(a, Is.EqualTo("오늘 날씨 좋다."));
-            Assert.That(b, Is.EqualTo("그러게, 사냥 가기 딱이야."));
-        }
-
-        [Test]
-        public void Interpret_RejectsMissingOrCutLine()
-        {
-            Assert.That(BanterPrompt.TryInterpret(new BanterPrompt.ResponseDto { a = "안녕.", b = "" }, out _, out _), Is.False);
-            Assert.That(BanterPrompt.TryInterpret(null, out _, out _), Is.False);
-            // B was cut by the grammar cap with no sentence end → dropped → fixed pair instead.
-            var cut = new string('가', BanterPrompt.LineMaxChars);
-            Assert.That(BanterPrompt.TryInterpret(new BanterPrompt.ResponseDto { a = "안녕.", b = cut }, out _, out _), Is.False);
-        }
-
-        [Test]
-        public void StripOwnName_RemovesLeadingSelfAddress()
-        {
-            Assert.That(BanterPrompt.StripOwnName("로웬, 오늘도 몸이 튼튼해라.", "로웬"), Is.EqualTo("오늘도 몸이 튼튼해라."));
-            Assert.That(BanterPrompt.StripOwnName("로웬아, 힘내자.", "로웬"), Is.EqualTo("힘내자."));
-            // Addressing the other person or mentioning oneself mid-line stays.
-            Assert.That(BanterPrompt.StripOwnName("레오야, 힘내자.", "로웬"), Is.EqualTo("레오야, 힘내자."));
-            Assert.That(BanterPrompt.StripOwnName("로웬은 괜찮아.", "로웬"), Is.EqualTo("로웬은 괜찮아."));
-            Assert.That(BanterPrompt.StripOwnName("[아리스], 오늘도 쉬는구나.", "아리스"), Is.EqualTo("오늘도 쉬는구나."));
-            Assert.That(BanterPrompt.StripOwnName("[아리스] 혼자 일하고 싶대.", "리아"), Is.EqualTo("아리스 혼자 일하고 싶대."));
-        }
-
-        [Test]
-        public void FixedPairs_AreComplete()
-        {
-            foreach (var (a, b) in BanterPrompt.FixedPairs)
+            foreach (var (a, b) in BanterLines.Town.Concat(BanterLines.Camp))
             {
                 Assert.That(a, Is.Not.Empty);
                 Assert.That(b, Is.Not.Empty);
             }
+            Assert.That(BanterLines.Town.Length, Is.GreaterThanOrEqualTo(15));
+            Assert.That(BanterLines.Camp.Length, Is.GreaterThanOrEqualTo(12));
+            Assert.That(BanterLines.Town.Select(p => p.a).Distinct().Count(), Is.EqualTo(BanterLines.Town.Length), "no line twice");
+        }
+
+        /// <summary>Talk by a campfire is not town small talk (P4-66).</summary>
+        [Test]
+        public void TalkByTheFire_IsItsOwn()
+        {
+            Assert.That(BanterLines.Camp.Any(p => p.a.Contains("불") || p.b.Contains("불")), Is.True);
+            Assert.That(BanterLines.Camp.Intersect(BanterLines.Town), Is.Empty);
         }
     }
 }

@@ -1,11 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Core;
-using GuildMaster.LLM;
 using GuildMaster.Quests;
 using UnityEngine;
 
@@ -17,7 +13,6 @@ namespace GuildMaster.Adventurers
         public Adventurer Leader;
         public Adventurer Invitee;
         public bool Accepted;
-        public bool FromLlm;
     }
 
     /// <summary>Invitations are over; everyone who joined leaves town together.</summary>
@@ -29,9 +24,9 @@ namespace GuildMaster.Adventurers
     }
 
     /// <summary>
-    /// LLM party formation (P3-4). When the first adventurer takes a quest for 2+ people, the
-    /// best-suited idle members in town are invited; each decides from their own point of view
-    /// (LLM, or a trait/values roll as fallback). The leader and joiners wait in
+    /// Party formation (P3-4). When the first adventurer takes a quest for 2+ people, the best-suited idle members in
+    /// town are invited; each answers from its own point of view — by values, traits and feeling towards the leader
+    /// (P4-91, user decision 2026-10-19: the rules decide, the model no longer does). The leader and joiners wait in
     /// <see cref="PartyGatherState"/> until every answer is in, then depart together.
     /// </summary>
     public class PartyService : IDisposable
@@ -50,17 +45,14 @@ namespace GuildMaster.Adventurers
             public readonly HashSet<Adventurer> Answered = new();
             public int Pending;
             public float StartRealTime;
-            public CancellationTokenSource Cts;
         }
 
-        readonly LlmGateway _gateway;
         readonly QuestBoard _board;
         readonly GuildRoster _roster;
         readonly Dictionary<Quest, Gathering> _gatherings = new();
 
-        public PartyService(LlmGateway gateway, QuestBoard board, GuildRoster roster)
+        public PartyService(QuestBoard board, GuildRoster roster)
         {
-            _gateway = gateway;
             _board = board;
             _roster = roster;
             EventBus.Subscribe<QuestAcceptedEvent>(OnAccepted);
@@ -69,10 +61,24 @@ namespace GuildMaster.Adventurers
         public void Dispose()
         {
             EventBus.Unsubscribe<QuestAcceptedEvent>(OnAccepted);
-            foreach (var g in _gatherings.Values) g.Cts.Cancel();
-            foreach (var h in _hunts.Values) h.Cts.Cancel();
             _hunts.Clear();
             _gatherings.Clear();
+        }
+
+        /// <summary>What the leader says asking someone along on a quest.</summary>
+        public static string InviteLine(Quest q) => $"'{q.Title}' 같이 가지 않을래?";
+
+        /// <summary>What the leader says asking someone along on a free hunt (P4-51).</summary>
+        public static string HuntInviteLine() => "사냥 나가는데, 같이 갈래?";
+
+        /// <summary>
+        /// Odds an invitee says yes (spec P3-4): values 동료 0.8, loner-type traits 0.2, else 0.55; plus feeling towards
+        /// the leader / 200 (P3-5), kept within 0.05..0.95.
+        /// </summary>
+        public static float RuleAcceptChance(string values, float partyAffinity, int feelingToLeader = 0)
+        {
+            float c = values == "동료" ? 0.8f : partyAffinity < 1f ? 0.2f : 0.55f;
+            return Math.Max(0.05f, Math.Min(0.95f, c + feelingToLeader / 200f));
         }
 
         /// <summary>True while invitations for this quest are still being answered.</summary>
@@ -103,7 +109,6 @@ namespace GuildMaster.Adventurers
             public readonly HashSet<Adventurer> Answered = new();
             public int Pending;
             public float StartRealTime;
-            public CancellationTokenSource Cts;
         }
 
         readonly Dictionary<HuntBand, HuntGathering> _hunts = new();
@@ -120,7 +125,7 @@ namespace GuildMaster.Adventurers
         /// <summary>
         /// A member going hunting asks others in town to come (P4-51, user request: hunts are joined by
         /// invitation too): free, not in someone else's party, not hostile to it, fit enough; the ones it
-        /// likes most first. Each answers from its own point of view (LLM, rule fallback).
+        /// likes most first. Each answers from its own point of view (<see cref="RuleDecide"/>).
         /// </summary>
         public void InviteToHunt(Adventurer leader, HuntBand band, int slots)
         {
@@ -136,58 +141,21 @@ namespace GuildMaster.Adventurers
                 .ToList();
             if (candidates.Count == 0) return;
 
-            var g = new HuntGathering { Band = band, Leader = leader, StartRealTime = Time.unscaledTime, Cts = new CancellationTokenSource() };
+            var g = new HuntGathering { Band = band, Leader = leader, StartRealTime = Time.unscaledTime };
             g.Invited.AddRange(candidates);
             g.Pending = candidates.Count;
             _hunts[band] = g;
 
-            string invite = PartyPrompt.HuntInviteLine();
-            leader.Say(invite);
-            int size = band.Members.Count + candidates.Count;
+            leader.Say(HuntInviteLine());
             foreach (var c in candidates)
             {
                 if (c.Fsm.Current == c.DecidingState) c.ChangeState(c.IdleState);
-                _ = InviteToHuntAsync(g, c, invite, size);
+                var (accept, say) = RuleDecide(c, leader);
+                AnswerHunt(g, c, accept, say);
             }
         }
 
-        async Task InviteToHuntAsync(HuntGathering g, Adventurer c, string invite, int size)
-        {
-            bool accept;
-            string say;
-            bool fromLlm = false;
-            try
-            {
-                (accept, say, fromLlm) = await DecideHunt(g, c, invite, size);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogException(ex);
-                (accept, say) = RuleDecide(c, g.Leader);
-            }
-            AnswerHunt(g, c, accept, say, fromLlm);
-        }
-
-        async Task<(bool accept, string say, bool fromLlm)> DecideHunt(HuntGathering g, Adventurer c, string invite, int size)
-        {
-            if (_gateway != null && _gateway.Enabled && _gateway.IsReady)
-            {
-                var result = await _gateway.RequestAsync(PartyPrompt.BuildHuntRequest(c, g.Leader, invite, size), g.Cts.Token);
-                if (result.Ok && LlmJson.TryParse<PartyPrompt.ResponseDto>(result.Text, out var dto) && c != null
-                    && PartyPrompt.TryInterpret(dto, c.HpRatio, PartyPrompt.HuntRisk, c.Traits?.DangerAversion ?? 0f,
-                        c.Data.values, out var accept, out var say))
-                {
-                    if (result.Exchange != null) result.Exchange.Note = $"채택: {(accept ? "합류" : "거절")}";
-                    Debug.Log($"[LLM-PARTY] {c.Data.name} ← {g.Leader.Data.name} 자율 사냥: {dto.accept} | \"{say}\" ({result.Seconds:0.0}s)");
-                    return (accept, say, true);
-                }
-                if (result.Exchange != null) result.Exchange.Note = "규칙 기반으로 대체: " + (result.Ok ? "parse" : result.Error);
-            }
-            var (ra, rs) = RuleDecide(c, g.Leader);
-            return (ra, rs, false);
-        }
-
-        void AnswerHunt(HuntGathering g, Adventurer c, bool accept, string say, bool fromLlm)
+        void AnswerHunt(HuntGathering g, Adventurer c, bool accept, string say)
         {
             if (!_hunts.TryGetValue(g.Band, out var current) || current != g) return; // timed out or the band left
             g.Pending--;
@@ -198,7 +166,7 @@ namespace GuildMaster.Adventurers
             // Still free, and the band still waiting for company.
             if (accept && (!FreeInTown(c) || !g.Band.Mustering)) accept = false;
             if (!string.IsNullOrEmpty(say)) c.Say(say);
-            EventBus.Publish(new PartyInviteAnsweredEvent { Quest = null, Leader = g.Leader, Invitee = c, Accepted = accept, FromLlm = fromLlm });
+            EventBus.Publish(new PartyInviteAnsweredEvent { Quest = null, Leader = g.Leader, Invitee = c, Accepted = accept });
             if (accept)
             {
                 g.Band.Members.Add(c); // before the state change, so its Enter finds this band
@@ -206,12 +174,7 @@ namespace GuildMaster.Adventurers
             }
         }
 
-        void FinishHunt(HuntGathering g)
-        {
-            if (!_hunts.Remove(g.Band)) return;
-            if (g.Pending > 0) g.Cts.Cancel();
-            g.Cts.Dispose();
-        }
+        void FinishHunt(HuntGathering g) => _hunts.Remove(g.Band);
 
         void OnAccepted(QuestAcceptedEvent e)
         {
@@ -228,7 +191,7 @@ namespace GuildMaster.Adventurers
                 return;
             }
 
-            var g = new Gathering { Quest = q, Leader = leader, StartRealTime = Time.unscaledTime, Cts = new CancellationTokenSource() };
+            var g = new Gathering { Quest = q, Leader = leader, StartRealTime = Time.unscaledTime };
             g.Joined.AddRange(comrades);
             g.Invited.AddRange(candidates);
             g.Pending = candidates.Count;
@@ -243,14 +206,14 @@ namespace GuildMaster.Adventurers
             }
             if (candidates.Count == 0) return;
 
-            string invite = PartyPrompt.InviteLine(q);
-            leader.Say(invite);
+            leader.Say(InviteLine(q));
             foreach (var c in candidates)
             {
-                // The invitation replaces a decision in progress (one LLM call per member, and no
-                // race where the member takes the quest on their own while answering the invite).
+                // The invitation replaces a decision in progress (no race where the member takes the quest on its
+                // own while answering the invite).
                 if (c.Fsm.Current == c.DecidingState) c.ChangeState(c.IdleState);
-                _ = InviteAsync(g, c, invite);
+                var (accept, say) = RuleDecide(c, leader, q);
+                Answer(g, c, accept, say);
             }
         }
 
@@ -297,44 +260,6 @@ namespace GuildMaster.Adventurers
                 .ToList();
         }
 
-        async Task InviteAsync(Gathering g, Adventurer c, string invite)
-        {
-            bool accept;
-            string say;
-            bool fromLlm = false;
-            try
-            {
-                (accept, say, fromLlm) = await Decide(g, c, invite);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogException(ex);
-                (accept, say) = RuleDecide(c, g.Leader, g.Quest);
-            }
-            Answer(g, c, accept, say, fromLlm);
-        }
-
-        async Task<(bool accept, string say, bool fromLlm)> Decide(Gathering g, Adventurer c, string invite)
-        {
-            if (_gateway != null && _gateway.Enabled && _gateway.IsReady)
-            {
-                var result = await _gateway.RequestAsync(PartyPrompt.BuildRequest(c, g.Leader, g.Quest, invite), g.Cts.Token);
-                if (result.Ok && LlmJson.TryParse<PartyPrompt.ResponseDto>(result.Text, out var dto) && c != null
-                    && PartyPrompt.TryInterpret(dto, c.HpRatio, DecisionPrompt.RiskLabel(c, g.Quest), c.Traits?.DangerAversion ?? 0f,
-                        c.Data.values, out var accept, out var say))
-                {
-                    // P4-88: far under the quest's level, a 위험 quest is joined only now and then.
-                    if (accept && QuestRisk.HoldsBack(c, g.Quest)) (accept, say) = (false, TooGreenLine);
-                    if (result.Exchange != null) result.Exchange.Note = $"채택: {(accept ? "합류" : "거절")}";
-                    Debug.Log($"[LLM-PARTY] {c.Data.name} ← {g.Leader.Data.name} '{g.Quest.Title}': {dto.accept} | \"{say}\" ({result.Seconds:0.0}s)");
-                    return (accept, say, true);
-                }
-                if (result.Exchange != null) result.Exchange.Note = "규칙 기반으로 대체: " + (result.Ok ? "parse" : result.Error);
-            }
-            var (ra, rs) = RuleDecide(c, g.Leader, g.Quest);
-            return (ra, rs, false);
-        }
-
         /// <summary>What a member too green for the quest says turning the invitation down (P4-88).</summary>
         public const string TooGreenLine = "아직 나한텐 벅찬 일이야.";
 
@@ -346,12 +271,12 @@ namespace GuildMaster.Adventurers
         {
             if (c == null) return (false, null);
             if (quest != null && QuestRisk.HoldsBack(c, quest)) return (false, TooGreenLine);
-            float chance = PartyPrompt.RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f, Relationships.Get(c, leader));
+            float chance = RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f, Relationships.Get(c, leader));
             bool accept = GameRandom.Shared.Value < chance;
             return (accept, accept ? "좋아, 같이 가자!" : "이번엔 사양할게.");
         }
 
-        void Answer(Gathering g, Adventurer c, bool accept, string say, bool fromLlm)
+        void Answer(Gathering g, Adventurer c, bool accept, string say)
         {
             // Timed out / finished already — or a newer gathering for the same quest took its place
             // (the leader left and someone else took it): a stale answer must not join that one.
@@ -368,7 +293,7 @@ namespace GuildMaster.Adventurers
             if (accept && !alreadyOnQuest && (c.CurrentQuest != null || !FreeInTown(c) || !_board.TryAccept(q, c, invited: true))) accept = false;
             if (!string.IsNullOrEmpty(say)) c.Say(say);
             // Before the state change: the last answer ends the gathering (PartyFormedEvent).
-            EventBus.Publish(new PartyInviteAnsweredEvent { Quest = q, Leader = g.Leader, Invitee = c, Accepted = accept, FromLlm = fromLlm });
+            EventBus.Publish(new PartyInviteAnsweredEvent { Quest = q, Leader = g.Leader, Invitee = c, Accepted = accept });
             if (accept)
             {
                 c.CurrentQuest = q;
@@ -380,8 +305,6 @@ namespace GuildMaster.Adventurers
         void Finish(Gathering g)
         {
             if (!_gatherings.Remove(g.Quest)) return;
-            if (g.Pending > 0) g.Cts.Cancel();
-            g.Cts.Dispose();
             // Party work (P4-85) that too few said yes to: the group does not set out to be killed.
             if (QuestRisk.TooFewFor(g.Quest, AdventurerStats.Power(g.Leader.Data), g.Quest.Assignees.Count))
             {

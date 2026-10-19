@@ -74,6 +74,10 @@ namespace GuildMaster.Adventurers
         public static string Label(float margin)
             => margin >= 2f ? Easy : margin >= 1f ? Fair : margin >= 0.8f ? Risky : Reckless;
 
+        /// <summary>This member's risk on this quest as words (the party it reckons with, see <see cref="ExpectedParty"/>).</summary>
+        public static string RiskLabel(Adventurer a, Quests.Quest q)
+            => Label(Margin(AdventurerStats.Power(a.Data), ExpectedParty(q), q));
+
         // ---------------- Too green for it (P4-88) ----------------
 
         /// <summary>
@@ -103,7 +107,7 @@ namespace GuildMaster.Adventurers
 
         /// <summary>The roll behind <see cref="TooGreen"/>: true when this member, too green for the quest, holds back (not pure: dice).</summary>
         public static bool HoldsBack(Adventurer a, Quests.Quest q)
-            => a != null && q != null && TooGreen(a.Data, q, Prompts.DecisionPrompt.RiskLabel(a, q))
+            => a != null && q != null && TooGreen(a.Data, q, RiskLabel(a, q))
                && !Core.GameRandom.Shared.Chance(GreenDareChance(a.Traits?.DangerAversion ?? 0f));
 
         /// <summary>Lowest level at which one adventurer with this gear tier reaches "적당" alone (at the guild's present strength, P4-87).</summary>

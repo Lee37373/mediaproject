@@ -215,7 +215,9 @@ namespace GuildMaster.Villages
         void TakeIn(Adventurer a)
         {
             _out.Remove(a);
-            if (a != null) Destroy(a.gameObject);
+            if (a == null) return;
+            a.Vanish();
+            Destroy(a.gameObject);
         }
 
         /// <summary>

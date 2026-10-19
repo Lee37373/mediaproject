@@ -49,9 +49,25 @@ namespace GuildMaster.Persuasion
             return Mathf.Clamp(v, 5, 80);
         }
 
-        /// <summary>A "무모" quest the adventurer would never take on their own (same gate as LlmDecisionMaker).</summary>
+        /// <summary>Below this health a member takes no quest, however it is talked to.</summary>
+        public const float MinHpToAccept = 0.3f;
+
+        /// <summary>A "무모" quest the adventurer would never take on their own.</summary>
         public static bool IsRecklessBlocked(string riskLabel, float dangerAversion, string values)
-            => riskLabel == QuestRisk.Reckless && !LlmDecisionMaker.RecklessAllowed(riskLabel, dangerAversion, values, joiningParty: false);
+            => riskLabel == QuestRisk.Reckless && !RecklessAllowed(riskLabel, dangerAversion, values, joiningParty: false);
+
+        /// <summary>
+        /// Personality gate for "무모" (reckless) quests — taking one is a character trait, not a bug, but a guild that
+        /// takes them freely walks into certain death: cautious (danger aversion &gt; 0 or values 안전) never; bold
+        /// (aversion &lt; 0 or values 명예/모험) always; everyone else only when joining someone who already took it.
+        /// </summary>
+        public static bool RecklessAllowed(string riskLabel, float dangerAversion, string values, bool joiningParty)
+        {
+            if (riskLabel != QuestRisk.Reckless) return true;
+            if (dangerAversion > 0f || values == "안전") return false;
+            if (dangerAversion < 0f || values == "명예" || values == "모험") return true;
+            return joiningParty;
+        }
 
         /// <summary>Willingness needed to say yes: 50, +15 for a reckless quest, +10 more when they would never take it alone.</summary>
         public static int AcceptThreshold(string riskLabel, bool recklessBlocked)
