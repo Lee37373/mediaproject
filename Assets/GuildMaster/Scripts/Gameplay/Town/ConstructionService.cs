@@ -184,6 +184,30 @@ namespace GuildMaster.Town
             return true;
         }
 
+        /// <summary>
+        /// The walls moved out over a placed building (P4-86, user decision 2026-10-19): it comes down and, if it was
+        /// still standing, all it cost comes back. Returns what came back as "150G · 돌 슬라임 조각 8" ("" for rubble).
+        /// </summary>
+        public string TakeDownForWalls(Building b)
+        {
+            if (!CanDemolish(b)) return "";
+            var cost = b.IsDestroyed ? null : CostOf(b.Type);
+            var parts = new List<string>();
+            if (cost != null)
+            {
+                _treasury.AddGold(cost.goldCost, GoldReason.Build);
+                parts.Add($"{cost.goldCost}G");
+                foreach (var c in cost.itemCosts)
+                {
+                    _treasury.AddStock(c.itemId, c.count);
+                    parts.Add($"{_db.Item(c.itemId)?.displayName ?? c.itemId} {c.count}");
+                }
+            }
+            EventBus.Publish(new BuildingDemolishedEvent { Building = b });
+            _town.Remove(b);
+            return string.Join(" · ", parts);
+        }
+
         /// <summary>Half of the build cost, as "75G · 돌조각 4" for the demolish button.</summary>
         public string RefundText(BuildingType type)
         {

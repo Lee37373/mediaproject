@@ -202,7 +202,8 @@ namespace GuildMaster.Adventurers
             return null;
         }
 
-        float DistanceToTown(Vector2 p) => Vector2.Distance(_world.OnTheSurface(p), _world.TownCenterWorld);
+        /// <summary>From the town as far as camping goes: past where the walls stood at the start (P4-86: they move out).</summary>
+        float DistanceToTown(Vector2 p) => Vector2.Distance(_world.OnTheSurface(p), _world.TownCenterWorld) - _world.TownGrowth;
 
         /// <summary>Down in a ruin (P4-85): nobody makes camp there — the band walks on out.</summary>
         bool Underground(Adventurer a) => _world.Map.IsUnderground(GridMap.WorldToCell(a.Position));

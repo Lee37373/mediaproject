@@ -1,5 +1,6 @@
 using System.Collections;
 using System.IO;
+using System.Linq;
 using GuildMaster.Core;
 using GuildMaster.Disasters;
 using GuildMaster.Save;
@@ -143,6 +144,52 @@ namespace GuildMaster.Tests
             // A second later (systems that set up in Start, the real-time checks), still the same.
             yield return new WaitForSecondsRealtime(1f);
             AssertSameSections(a, Saves.Capture());
+        }
+
+        /// <summary>
+        /// P4-86: a town grown two steps comes back as it was — the loaded map is grown again from the fresh one, so
+        /// every tile, the gates (where they stand and how battered), the retired den sites and the town's sight match.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RoundTrip_TheGrownTownComesBack()
+        {
+            BootNow();
+            yield return null;
+            var expansion = Services.Get<Town.TownExpansion>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            for (int i = 0; i < 2; i++)
+            {
+                var price = expansion.NextCost.Value;
+                treasury.AddGold(price.Gold);
+                foreach (var item in price.Items) treasury.AddStock(item.itemId, item.count);
+                Assert.That(expansion.TryExpand(out var error), Is.True, error);
+            }
+            Services.Get<Town.GateService>().Gates[1].Damage(120f);
+            Services.Get<GameClock>().SetSpeed(0);
+            yield return new WaitForSecondsRealtime(1f);
+            var map = Services.Get<World.WorldService>().Map;
+            var tiles = (World.TileType[])map.Tiles.Clone();
+            var trees = (bool[])map.Trees.Clone();
+            var gates = new System.Collections.Generic.List<Vector2Int>(map.Gates);
+            float sight = expansion.TownSight;
+            float battered = Services.Get<Town.GateService>().Gates[1].Hp;
+
+            var a = Saves.Capture();
+            yield return BootFrom(a);
+            AssertSameSections(a, _afterBoot);
+            var loaded = Services.Get<World.WorldService>().Map;
+            Assert.That(Services.Get<Town.TownExpansion>().Stage, Is.EqualTo(2));
+            Assert.That(loaded.TownHalfSize, Is.EqualTo(19));
+            Assert.That(loaded.Tiles, Is.EqualTo(tiles), "every tile as it was");
+            Assert.That(loaded.Trees, Is.EqualTo(trees));
+            Assert.That(loaded.Gates, Is.EqualTo(gates));
+            Assert.That(Services.Get<Town.TownExpansion>().TownSight, Is.EqualTo(sight).Within(0.01f));
+            var gate = Services.Get<Town.GateService>().Gates[1];
+            Assert.That(gate.CenterCell, Is.EqualTo(gates[1]));
+            Assert.That(gate.Hp, Is.EqualTo(battered).Within(0.01f), "as battered as it was");
+            Assert.That(Services.Get<World.WorldService>().Grid.IsClosedGate(gate.CenterCell), Is.True);
+            foreach (var n in Services.Get<Ecosystem.EcosystemManager>().Nests.Where(n => Town.TownExpansionRules.Crowds(n.Cell, loaded.TownCenter, 19)))
+                Assert.That(n.Retired && !n.Discovered, Is.True, $"{n.DisplayName} stays the town's ground");
         }
 
         /// <summary>

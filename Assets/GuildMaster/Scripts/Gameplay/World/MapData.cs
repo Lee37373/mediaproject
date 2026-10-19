@@ -74,6 +74,11 @@ namespace GuildMaster.World
         public readonly List<RuinSite> Ruins = new();
         public RectInt TownRect;
         public Vector2Int TownCenter;
+        /// <summary>Cells from the centre to the walls now (P4-86: the walls move out a step at a time, <see cref="TownWalls"/>).</summary>
+        public int TownHalfSize;
+        /// <summary>The walls' half size when the map was made.</summary>
+        public int BaseTownHalfSize;
+        /// <summary>Gate centre cells, always north, south, west, east (saves and the gate objects go by this order).</summary>
         public readonly List<Vector2Int> Gates = new();
         public readonly List<NestSite> Nests = new();
         public readonly List<Vector2Int> EdgeSpawnCells = new();

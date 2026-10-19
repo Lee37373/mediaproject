@@ -105,6 +105,9 @@ namespace GuildMaster.World
             if (Hazards.Blocks(old) != Hazards.Blocks(kind)) Version++;
         }
 
+        /// <summary>The tiles themselves changed (P4-86: the walls moved out): walkers re-check their paths.</summary>
+        public void TerrainChanged() => Version++;
+
         public void SetBlocked(RectInt area, bool blocked)
         {
             for (int y = area.yMin; y < area.yMax; y++)

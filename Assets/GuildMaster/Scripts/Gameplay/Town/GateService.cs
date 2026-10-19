@@ -66,6 +66,23 @@ namespace GuildMaster.Town
             UpdateSealed();
         }
 
+        /// <summary>
+        /// The walls moved out (P4-86): each gate moves to its place in the map's gate list. New walls come with
+        /// whole gates (<paramref name="mend"/>); a saved town being rebuilt keeps the durability it loaded.
+        /// </summary>
+        public void FollowWalls(bool mend)
+        {
+            for (int i = 0; i < _gates.Count && i < _world.Map.Gates.Count; i++)
+            {
+                var g = _gates[i];
+                _world.Grid.SetGateClosed(g.Cells, false);
+                g.MoveTo(_world.Map.Gates[i]);
+                if (mend && g.Hp < g.MaxHp) g.RestoreHp(g.MaxHp);
+                _world.Grid.SetGateClosed(g.Cells, !g.IsBroken);
+            }
+            UpdateSealed();
+        }
+
         internal void OnGateChanged(TownGate gate)
         {
             _world.Grid.SetGateClosed(gate.Cells, !gate.IsBroken);

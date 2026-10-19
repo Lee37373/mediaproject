@@ -51,6 +51,18 @@ namespace GuildMaster.World
 
         bool Cleared(int i) => _cleared != null && _cleared[i];
 
+        /// <summary>The tiles here changed (P4-86: the town walls moved out and the woods round them were cleared).</summary>
+        public void Refresh(RectInt cells)
+        {
+            for (int y = Mathf.Max(0, cells.yMin); y < Mathf.Min(_map.Height, cells.yMax); y++)
+            for (int x = Mathf.Max(0, cells.xMin); x < Mathf.Min(_map.Width, cells.xMax); x++)
+            {
+                int i = _map.Index(x, y);
+                if (_cleared != null && _map.Tiles[i] != TileType.Forest) _cleared[i] = false;
+                if (_risk != null) _risk[i] = Of(_map, x, y, Cleared(i));
+            }
+        }
+
         /// <summary>A forest cell burnt down, or grown back (P4-72).</summary>
         public void SetForestCleared(int x, int y, bool cleared)
         {

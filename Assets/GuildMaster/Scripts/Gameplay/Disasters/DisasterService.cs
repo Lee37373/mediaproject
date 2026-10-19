@@ -341,6 +341,30 @@ namespace GuildMaster.Disasters
             EventBus.Publish(new HazardChangedEvent { Cell = c, Kind = after });
         }
 
+        /// <summary>A disaster the guild knows of with ground here (P4-86: the walls cannot be pushed out over it), or null.</summary>
+        public Disaster KnownOn(System.Func<Vector2Int, bool> area)
+            => _active.FirstOrDefault(d => d.Known && !d.Over && (d.Cells.Any(area) || d.HasCore && area(GridMap.WorldToCell(d.Core))));
+
+        /// <summary>
+        /// The town's walls moved out over this ground (P4-86): whatever burns or lies here goes, as do burnt cells
+        /// waiting to grow back (the woods were cleared). A disaster left with nothing ends as if it had died down.
+        /// </summary>
+        public void ClearGround(System.Func<Vector2Int, bool> cleared)
+        {
+            foreach (var d in _active.ToList())
+            {
+                foreach (var c in d.Cells.Where(cleared).ToList()) Remove(d, c);
+                if (d.HasCore && cleared(GridMap.WorldToCell(d.Core)) || d.Cells.Count == 0) BeginEnding(d, false);
+            }
+            foreach (var c in _burnt.Keys.Where(cleared).ToList())
+            {
+                _burnt.Remove(c);
+                if (Grid.HazardAt(c) != HazardKind.Burnt) continue;
+                Grid.SetHazard(c, HazardKind.None);
+                EventBus.Publish(new HazardChangedEvent { Cell = c, Kind = HazardKind.None });
+            }
+        }
+
         /// <summary>Snow or a crack opens under someone: hurt and thrown clear.</summary>
         void Bury(Vector2Int c)
         {

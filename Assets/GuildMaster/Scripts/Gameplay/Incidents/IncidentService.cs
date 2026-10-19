@@ -290,7 +290,7 @@ namespace GuildMaster.Incidents
         {
             var town = _world.TownCenterWorld;
             foreach (var n in _eco.Nests.Where(n => n.IsEmpty && !n.IsLair && !n.Sealed && !migration.IsTarget(n)
-                                                    && Vector2.Distance(n.WorldPosition, town) >= IncidentRules.HordeMinDistance)
+                                                    && Vector2.Distance(n.WorldPosition, town) >= IncidentRules.HordeMinDistance + _world.TownGrowth)
                                         .OrderBy(n => Vector2.Distance(n.WorldPosition, town)))
             {
                 var k = PickHordeKind(n);

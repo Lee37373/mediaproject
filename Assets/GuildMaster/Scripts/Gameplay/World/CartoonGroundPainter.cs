@@ -155,17 +155,27 @@ namespace GuildMaster.World
             PixelsPerTile = pixelsPerTile;
             int n = _w * _h;
             _forest = new byte[n]; _sand = new byte[n]; _water = new byte[n]; _road = new byte[n]; _mountain = new byte[n];
-            for (int i = 0; i < n; i++)
-            {
-                var t = map.Tiles[i];
-                _forest[i] = (byte)(t == TileType.Forest ? 1 : 0);
-                // Beaches: sand also rings every body of water.
-                _sand[i] = (byte)(t == TileType.Sand || t == TileType.Water ? 1 : 0);
-                _water[i] = (byte)(t == TileType.Water ? 1 : 0);
-                _road[i] = (byte)(t == TileType.Road ? 1 : 0);
-                _mountain[i] = (byte)(t == TileType.Mountain ? 1 : 0);
-            }
+            for (int i = 0; i < n; i++) ReadTile(i);
             _nearBorder = NearBorder();
+        }
+
+        void ReadTile(int i)
+        {
+            var t = _map.Tiles[i];
+            _forest[i] = (byte)(t == TileType.Forest ? 1 : 0);
+            // Beaches: sand also rings every body of water.
+            _sand[i] = (byte)(t == TileType.Sand || t == TileType.Water ? 1 : 0);
+            _water[i] = (byte)(t == TileType.Water ? 1 : 0);
+            _road[i] = (byte)(t == TileType.Road ? 1 : 0);
+            _mountain[i] = (byte)(t == TileType.Mountain ? 1 : 0);
+        }
+
+        /// <summary>The tiles in this block changed (P4-86: the town walls moved out); paint from them from now on.</summary>
+        public void Refresh(RectInt cells)
+        {
+            for (int y = Mathf.Max(0, cells.yMin); y < Mathf.Min(_h, cells.yMax); y++)
+            for (int x = Mathf.Max(0, cells.xMin); x < Mathf.Min(_w, cells.xMax); x++)
+                ReadTile(y * _w + x);
         }
 
         /// <summary>Fills a block of tiles [tx0, tx0+tilesW) × [ty0, ty0+tilesH) into pixels (row-major, bottom row first).</summary>

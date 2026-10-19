@@ -12,7 +12,7 @@ namespace GuildMaster.UI
     /// <summary>
     /// Build window (P4-13): what the guild can put up, what it costs against what it has, and a
     /// button that starts "click where it goes". Placed buildings are torn down from the building
-    /// window instead (click the building).
+    /// window instead (click the building). On top, pushing the town walls out (P4-86).
     /// </summary>
     public class BuildView : UIPanel
     {
@@ -22,6 +22,8 @@ namespace GuildMaster.UI
         readonly List<Button> _buttons = new();
         RectTransform _list;
         Text _message;
+        Text _expandTitle, _expandEffect, _expandCost;
+        Button _expandButton;
 
         protected override void Build(RectTransform body)
         {
@@ -33,6 +35,7 @@ namespace GuildMaster.UI
             _list.Size(-1, -1, -1, 1);
             _message = UIBuilder.Label(body, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 26);
 
+            BuildExpansionRow();
             var construction = Services.Get<ConstructionService>();
             foreach (var type in ConstructionService.Placeable)
             {
@@ -58,11 +61,68 @@ namespace GuildMaster.UI
             }
         }
 
+        // ---------------- Town walls (P4-86) ----------------
+
+        void BuildExpansionRow()
+        {
+            var row = UIBuilder.Rect(_list, "Expand");
+            UIBuilder.HLayout(row, 8, 0);
+            row.Size(-1, 118, -1, 0);
+            var info = UIBuilder.Rect(row, "Info");
+            UIBuilder.VLayout(info, 2, 0);
+            info.Size(-1, 118, flexWidth: 1);
+            _expandTitle = UIBuilder.Label(info, "", 19, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 28);
+            _expandEffect = UIBuilder.Label(info, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 22);
+            _expandCost = UIBuilder.Label(info, "", 15, TextAnchor.UpperLeft).Size(-1, 60);
+            _expandCost.verticalOverflow = VerticalWrapMode.Overflow;
+            _expandButton = UIBuilder.Button(row, "넓히기", OnExpand, 130, 48, new Color(0.45f, 0.35f, 0.2f), 17).Size(130, 48, flexWidth: 0);
+        }
+
+        void RefreshExpansion(GuildTreasury treasury, GameDatabase db)
+        {
+            if (_expandTitle == null || !Services.TryGet<TownExpansion>(out var expansion)) return;
+            int width = TownExpansionRules.Width(expansion.HalfSize);
+            if (expansion.AtMax)
+            {
+                _expandTitle.text = "마을 넓히기 (최대)";
+                _expandEffect.text = $"성벽 안 {width}×{width}칸, 더 넓힐 수 없습니다.";
+                _expandCost.text = "";
+                _expandButton.interactable = false;
+                return;
+            }
+            int next = TownExpansionRules.Width(expansion.NextHalfSize);
+            _expandTitle.text = $"마을 넓히기 ({expansion.Stage + 1}/{TownExpansionRules.MaxStage}단계)";
+            _expandEffect.text = $"성벽 안 {width}×{width}칸 → {next}×{next}칸. 성벽과 성문이 바로 밀려납니다.";
+            var cost = expansion.NextCost.Value;
+            var sb = new StringBuilder(Have(treasury.Gold, cost.Gold, "골드", "G"));
+            foreach (var c in cost.Items)
+                sb.Append("   ").Append(Have(treasury.GetStock(c.itemId), c.count, db.Item(c.itemId)?.displayName ?? c.itemId, ""));
+            string reason = expansion.CannotExpandReason();
+            // The cost line already shows what is short; other reasons get a line of their own.
+            bool cantAfford = treasury.Gold < cost.Gold || System.Array.Exists(cost.Items, c => treasury.GetStock(c.itemId) < c.count);
+            if (reason != null && !cantAfford) sb.Append("\n").Append(UIBuilder.Colored(reason, UITheme.Bad));
+            _expandCost.text = sb.ToString();
+            _expandButton.interactable = reason == null;
+        }
+
+        void OnExpand()
+        {
+            if (!Services.TryGet<TownExpansion>(out var expansion)) return;
+            if (expansion.TryExpand(out var error))
+            {
+                int width = TownExpansionRules.Width(expansion.HalfSize);
+                _message.text = UIBuilder.Colored($"마을이 {width}×{width}칸으로 넓어졌습니다.", UITheme.Good);
+            }
+            else _message.text = UIBuilder.Colored(error, UITheme.Bad);
+            Refresh();
+        }
+
         protected override void Refresh()
         {
             var construction = Services.Get<ConstructionService>();
             var treasury = Services.Get<GuildTreasury>();
             var db = Services.Get<GameDatabase>();
+            RefreshExpansion(treasury, db);
             for (int i = 0; i < ConstructionService.Placeable.Length && i < _costs.Count; i++)
             {
                 var type = ConstructionService.Placeable[i];

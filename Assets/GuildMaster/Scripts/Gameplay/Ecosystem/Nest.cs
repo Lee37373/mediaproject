@@ -37,6 +37,21 @@ namespace GuildMaster.Ecosystem
         /// <summary>Cleansed land (P4-83): nothing is born here or moves in any more.</summary>
         public bool Sealed { get; internal set; }
 
+        /// <summary>
+        /// The town's walls moved out over this site (P4-86): it is the town's ground now — sealed, its den gone
+        /// from the map and from what the guild knows (<see cref="Discovered"/> false).
+        /// </summary>
+        public bool Retired { get; private set; }
+
+        /// <summary>See <see cref="Retired"/>; whoever still lives here has to be gone first.</summary>
+        internal void Retire()
+        {
+            Retired = true;
+            Sealed = true;
+            Discovered = false;
+            if (_renderer != null) _renderer.enabled = false;
+        }
+
         internal void MakeLair(MonsterDefinition lord)
         {
             IsLair = true;
@@ -165,8 +180,8 @@ namespace GuildMaster.Ecosystem
         /// <summary>Save (P5-4): found before; shown on the map at once, no discovery event.</summary>
         internal void RestoreDiscovered(bool discovered)
         {
-            Discovered = discovered;
-            if (_renderer != null) _renderer.enabled = discovered;
+            Discovered = discovered && !Retired;
+            if (_renderer != null) _renderer.enabled = Discovered;
         }
 
         /// <summary>Save (P5-4): a saved member back in its place in the pack's order (the first one alive leads).</summary>
@@ -229,7 +244,7 @@ namespace GuildMaster.Ecosystem
 
         void Update()
         {
-            if (Discovered) return;
+            if (Discovered || Retired) return;
             _revealTimer -= Time.unscaledDeltaTime;
             if (_revealTimer > 0f) return;
             _revealTimer = 0.5f;

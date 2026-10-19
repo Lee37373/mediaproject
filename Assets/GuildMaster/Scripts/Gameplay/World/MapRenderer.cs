@@ -54,20 +54,59 @@ namespace GuildMaster.World
             for (int y = 0; y < map.Height; y++)
             for (int x = 0; x < map.Width; x++)
             {
-                int i = map.Index(x, y);
-                int hash = Hash(x, y);
-                if (map.Trees[i])
-                {
-                    decorPositions.Add(new Vector3Int(x, y, 0));
-                    decorTiles.Add(_trees[(int)map.Regions[i] * Variants + (hash / 7) % Variants]);
-                }
-                else if (map.Tiles[i] == TileType.Mountain && hash % 100 < 30)
-                {
-                    decorPositions.Add(new Vector3Int(x, y, 0));
-                    decorTiles.Add(_rocks[(int)map.Regions[i] * Variants + (hash / 7) % Variants]);
-                }
+                var tile = DecorAt(x, y);
+                if (tile == null) continue;
+                decorPositions.Add(new Vector3Int(x, y, 0));
+                decorTiles.Add(tile);
             }
             _decor.SetTiles(decorPositions.ToArray(), decorTiles.ToArray());
+        }
+
+        /// <summary>The tree or rock standing on a cell, or null.</summary>
+        Tile DecorAt(int x, int y)
+        {
+            int i = _map.Index(x, y);
+            int hash = Hash(x, y);
+            if (_map.Trees[i]) return _trees[(int)_map.Regions[i] * Variants + (hash / 7) % Variants];
+            if (_map.Tiles[i] == TileType.Mountain && hash % 100 < 30) return _rocks[(int)_map.Regions[i] * Variants + (hash / 7) % Variants];
+            return null;
+        }
+
+        /// <summary>
+        /// The tiles under these cells changed (P4-86: the walls moved out): their trees and rocks are set again and
+        /// the ground chunks already painted there are painted again in the background, the old picture staying until
+        /// the new one is ready (painting them on the spot froze the game for half a second); the ones not asked for
+        /// yet will be painted from the new tiles when the fog lifts. The low-detail backdrop is left: painted chunks
+        /// always cover it where anyone has looked.
+        /// </summary>
+        public void Repaint(RectInt cells)
+        {
+            if (_map == null) return;
+            int xMin = Mathf.Max(0, cells.xMin), yMin = Mathf.Max(0, cells.yMin);
+            int xMax = Mathf.Min(_map.Width, cells.xMax), yMax = Mathf.Min(_map.Height, cells.yMax);
+            if (_decor != null)
+                for (int y = yMin; y < yMax; y++)
+                for (int x = xMin; x < xMax; x++)
+                    _decor.SetTile(new Vector3Int(x, y, 0), DecorAt(x, y));
+            if (_chunkState == null || xMax <= xMin || yMax <= yMin) return;
+
+            _painter.Refresh(new RectInt(xMin, yMin, xMax - xMin, yMax - yMin));
+            // Edges are smoothed from the cells round them: a chunk next to the change can change too.
+            int x0 = Mathf.Max(0, (xMin - 2) / ChunkCells), x1 = Mathf.Min(_cw - 1, (xMax + 1) / ChunkCells);
+            int y0 = Mathf.Max(0, (yMin - 2) / ChunkCells), y1 = Mathf.Min(_ch - 1, (yMax + 1) / ChunkCells);
+            int again = 0;
+            for (int y = y0; y <= y1; y++)
+            for (int x = x0; x <= x1; x++)
+            {
+                int i = y * _cw + x;
+                // A worker painting the old tiles: its picture is thrown away when it comes back.
+                _chunkGeneration[i]++;
+                if (_chunkState[i] is not (ChunkState.Done or ChunkState.Painting)) continue;
+                _chunkState[i] = ChunkState.Queued;
+                _queue.Add(i);
+                again++;
+            }
+            if (again > 0) Debug.Log($"[Map] Ground: {again} chunks to paint again");
         }
 
         // ---------------- Ground (P4-81) ----------------
@@ -88,6 +127,8 @@ namespace GuildMaster.World
         struct PaintedChunk
         {
             public int Chunk;
+            /// <summary>The chunk's <see cref="_chunkGeneration"/> when its painting began.</summary>
+            public int Generation;
             public byte[] Data;
             public string Error;
         }
@@ -95,6 +136,10 @@ namespace GuildMaster.World
         CartoonGroundPainter _painter;
         Transform _groundRoot;
         ChunkState[] _chunkState;
+        /// <summary>Bumped when a chunk's tiles change (P4-86): a picture begun before is out of date.</summary>
+        int[] _chunkGeneration;
+        /// <summary>Each painted chunk's sprite, to swap when it is painted again.</summary>
+        SpriteRenderer[] _chunkRenderers;
         int _cw, _ch;
         int _workers;
         int _inFlight;
@@ -118,6 +163,8 @@ namespace GuildMaster.World
             _cw = (map.Width + ChunkCells - 1) / ChunkCells;
             _ch = (map.Height + ChunkCells - 1) / ChunkCells;
             _chunkState = new ChunkState[_cw * _ch];
+            _chunkGeneration = new int[_cw * _ch];
+            _chunkRenderers = new SpriteRenderer[_cw * _ch];
             // Half the cores at most: the game keeps the main and render threads.
             _workers = Mathf.Clamp(SystemInfo.processorCount / 2, 1, 4);
             BuildBackdrop(map);
@@ -174,7 +221,7 @@ namespace GuildMaster.World
             _queue.Clear();
             var data = new byte[chunks.Length][];
             Parallel.For(0, chunks.Length, k => data[k] = PaintChunk(chunks[k]));
-            for (int k = 0; k < chunks.Length; k++) Finish(new PaintedChunk { Chunk = chunks[k], Data = data[k] });
+            for (int k = 0; k < chunks.Length; k++) Finish(new PaintedChunk { Chunk = chunks[k], Data = data[k], Generation = _chunkGeneration[chunks[k]] });
             Debug.Log($"[Map] Ground: {chunks.Length} chunks painted at boot in {sw.ElapsedMilliseconds} ms");
         }
 
@@ -195,9 +242,10 @@ namespace GuildMaster.World
                 _queue.RemoveAt(_queue.Count - 1);
                 _chunkState[chunk] = ChunkState.Painting;
                 _inFlight++;
+                int generation = _chunkGeneration[chunk];
                 Task.Run(() =>
                 {
-                    var result = new PaintedChunk { Chunk = chunk };
+                    var result = new PaintedChunk { Chunk = chunk, Generation = generation };
                     try { result.Data = PaintChunk(chunk); }
                     catch (System.Exception e) { result.Error = e.ToString(); }
                     _painted.Enqueue(result);
@@ -247,6 +295,12 @@ namespace GuildMaster.World
         void Finish(PaintedChunk p)
         {
             if (this == null) return;
+            if (p.Generation != _chunkGeneration[p.Chunk])
+            {
+                // Painted from tiles that have changed since: the chunk is queued to be painted again.
+                if (p.Data != null) _dataPool.Add(p.Data);
+                return;
+            }
             _chunkState[p.Chunk] = ChunkState.Done;
             if (p.Error != null)
             {
@@ -257,14 +311,26 @@ namespace GuildMaster.World
             int pw = tw * GroundPixelsPerCell, ph = th * GroundPixelsPerCell;
             var tex = MakeGroundTexture(pw, ph, $"GroundChunk_{tx}_{ty}", null, p.Data);
             _dataPool.Add(p.Data);
-            var go = new GameObject(tex.name);
-            go.transform.SetParent(_groundRoot, false);
-            go.transform.position = new Vector3(tx, ty, 0f);
-            var sr = go.AddComponent<SpriteRenderer>();
+            var sr = _chunkRenderers[p.Chunk];
+            if (sr == null)
+            {
+                var go = new GameObject(tex.name);
+                go.transform.SetParent(_groundRoot, false);
+                go.transform.position = new Vector3(tx, ty, 0f);
+                sr = _chunkRenderers[p.Chunk] = go.AddComponent<SpriteRenderer>();
+                sr.sortingOrder = GroundOrder;
+                GroundChunksPainted++;
+            }
+            else if (sr.sprite != null)
+            {
+                var old = sr.sprite;
+                _owned.Remove(old.texture);
+                _owned.Remove(old);
+                Destroy(old.texture);
+                Destroy(old);
+            }
             sr.sprite = Sprite.Create(tex, new Rect(0, 0, pw, ph), Vector2.zero, GroundPixelsPerCell, 0, SpriteMeshType.FullRect);
             _owned.Add(sr.sprite);
-            sr.sortingOrder = GroundOrder;
-            GroundChunksPainted++;
         }
 
         /// <summary>

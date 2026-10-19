@@ -90,13 +90,28 @@ namespace GuildMaster.UI
             _texture = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
             _base = new Color32[w * h];
             _pixels = new Color32[w * h];
-            for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
+            BaseColours(new RectInt(0, 0, w, h));
+            EventBus.Subscribe<TownGroundChangedEvent>(OnGroundChanged);
+        }
+
+        void BaseColours(RectInt cells)
+        {
+            int w = _mapData.Width;
+            for (int y = Mathf.Max(0, cells.yMin); y < Mathf.Min(_mapData.SurfaceHeight, cells.yMax); y++)
+            for (int x = Mathf.Max(0, cells.xMin); x < Mathf.Min(w, cells.xMax); x++)
             {
                 int i = y * w + x;
                 _base[i] = TileColor(_mapData.Tiles[i], _mapData.Regions[i]);
                 if (_mapData.Trees[i]) _base[i] = Color32.Lerp(_base[i], new Color32(0x2F, 0x6E, 0x2A, 255), 0.5f);
             }
+        }
+
+        /// <summary>The town walls moved out (P4-86): those cells take their new colours at the next redraw.</summary>
+        void OnGroundChanged(TownGroundChangedEvent e)
+        {
+            if (_mapData == null || _base == null) return;
+            BaseColours(e.Area);
+            _paintedVersion = null; // the whole map once (rare)
         }
 
         // Natural ground in the region's colours (P4-55), the rest as before.
@@ -324,6 +339,7 @@ namespace GuildMaster.UI
 
         void OnDestroy()
         {
+            EventBus.Unsubscribe<TownGroundChangedEvent>(OnGroundChanged);
             if (_texture != null) Destroy(_texture);
         }
 

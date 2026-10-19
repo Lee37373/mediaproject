@@ -44,6 +44,20 @@ namespace GuildMaster.Town
             return null;
         }
 
+        /// <summary>
+        /// A building standing here is in the way of walls just moved out (P4-86): on the new wall or a gate, or
+        /// close enough to a gate to plug it (what <see cref="CannotPlace"/> would refuse now).
+        /// </summary>
+        public static bool InTheWayOfWalls(MapData map, IReadOnlyList<Vector2Int> gates, RectInt foot)
+        {
+            for (int y = foot.yMin; y < foot.yMax; y++)
+            for (int x = foot.xMin; x < foot.xMax; x++)
+                if (map.InBounds(x, y) && map[x, y] is TileType.Wall or TileType.Gate) return true;
+            foreach (var gate in gates)
+                if (Near(foot, gate, GateClearance)) return true;
+            return false;
+        }
+
         /// <summary>Is the cell within `distance` cells of the rectangle (Chebyshev)?</summary>
         static bool Near(RectInt foot, Vector2Int cell, int distance)
         {

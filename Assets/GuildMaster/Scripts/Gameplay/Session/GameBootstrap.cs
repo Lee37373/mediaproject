@@ -138,6 +138,11 @@ namespace GuildMaster.Session
             var construction = AddSystem<ConstructionService>();
             construction.Init(town, world, mapRenderer, treasury, db);
             Services.Register(construction);
+            // The walls pushed out a step at a time (P4-86). Saved after the gates: rebuilding the walls moves them as loaded.
+            var expansion = AddSystem<TownExpansion>();
+            expansion.Init(world, town, gates, mapRenderer, townVision, treasury, db);
+            Services.Register(expansion);
+            save.Register(expansion);
 
             // --- Units, ecosystem, quests ---
             var pool = Services.Get<PoolService>();

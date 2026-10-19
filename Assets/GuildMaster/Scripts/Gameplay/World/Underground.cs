@@ -46,6 +46,8 @@ namespace GuildMaster.World
             System.Array.Copy(surface.Regions, map.Regions, w * h);
             map.TownRect = surface.TownRect;
             map.TownCenter = surface.TownCenter;
+            map.TownHalfSize = surface.TownHalfSize;
+            map.BaseTownHalfSize = surface.BaseTownHalfSize;
             map.RegionLayout = surface.RegionLayout;
             map.Gates.AddRange(surface.Gates);
             map.Nests.AddRange(surface.Nests);

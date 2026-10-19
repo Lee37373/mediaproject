@@ -50,19 +50,30 @@ namespace GuildMaster.Town
         public void Init(GateService service, Vector2Int center, Vector2Int outward, float maxHp)
         {
             _service = service;
-            CenterCell = center;
             Outward = outward;
             MaxHp = Hp = Mathf.Max(1f, maxHp);
-            var side = new Vector2Int(outward.y, outward.x);
-            for (int k = -1; k <= 1; k++) _cells.Add(center + side * k);
             name = $"Gate:{DisplayName}";
+            _door = gameObject.AddComponent<SpriteRenderer>();
+            Place(center);
+            RefreshSprite();
+        }
 
+        /// <summary>
+        /// The gate now stands in the walls pushed out (P4-86), the same gate (saves, raiders breaking it and the
+        /// gate window go by it), as battered as it was. The caller updates the navigation grid.
+        /// </summary>
+        internal void MoveTo(Vector2Int center) => Place(center);
+
+        void Place(Vector2Int center)
+        {
+            CenterCell = center;
+            var side = new Vector2Int(Outward.y, Outward.x);
+            _cells.Clear();
+            for (int k = -1; k <= 1; k++) _cells.Add(center + side * k);
             var pos = GridMap.CellToWorld(center);
             // Front view stands on the sill (bottom of the cell); the top-down strip is centred.
             transform.position = AlongX ? new Vector3(pos.x, center.y, 0f) : new Vector3(pos.x, pos.y, 0f);
-            _door = gameObject.AddComponent<SpriteRenderer>();
             _door.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(center.y * 8f) + 4;
-            RefreshSprite();
         }
 
         public void Damage(float amount, Units.Unit attacker = null)

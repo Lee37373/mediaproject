@@ -89,7 +89,7 @@ namespace GuildMaster.UI
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             AddWindow<MerchantView>(menu, "행상인 (T)", Key.T, new Vector2(760, 600));
-            AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(700, 300));
+            AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(700, 430));
             // Daily accounts: income, spending and events per game day (F-3). Moved off B, which
             // construction (P4-13) already claimed.
             AddWindow<DailyReportView>(menu, "정산 (L)", Key.L, new Vector2(960, 760));

@@ -136,7 +136,7 @@ namespace GuildMaster.Ecosystem
         public const float ReturnAfterHours = 12f;
         /// <summary>Stops keep this far clear of other packs' territories.</summary>
         public const float TerritoryMargin = 6f;
-        /// <summary>Stops keep this far from the town centre.</summary>
+        /// <summary>Stops keep this far from the town centre, and as much again as the walls have moved out (P4-86).</summary>
         public const float TownMargin = 30f;
         /// <summary>Average HP a pack wants back before walking on.</summary>
         public const float WalkOnHp = 0.8f;
@@ -288,7 +288,7 @@ namespace GuildMaster.Ecosystem
                 var p = pack.Center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * rng.Range(MinStep, MaxStep);
                 var cell = GridMap.WorldToCell(p);
                 if (!grid.InBounds(cell) || !grid.IsWalkable(cell) || grid.IsInTown(cell)) continue;
-                if (Vector2.Distance(p, town) < TownMargin) continue;
+                if (Vector2.Distance(p, town) < TownMargin + _world.TownGrowth) continue;
                 if (!Habitable(pack.Species, cell)) continue;
                 if (_eco.Nests.Any(n => !n.IsEmpty && Vector2.Distance(n.WorldPosition, p) < n.TerritoryRadius + TerritoryMargin)) continue;
                 pack.Goal = GridMap.CellToWorld(cell);

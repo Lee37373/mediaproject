@@ -1222,6 +1222,39 @@ namespace GuildMaster.Session
             return construction.TryDemolish(best, out var error) ? "demolished " + name : "failed: " + error;
         }
 
+        // ---------------- Town walls (P4-86) ----------------
+
+        /// <summary>The walls now, the town's sight, the next step's cost and why it is refused; the real dens on its ground.</summary>
+        public static string Walls()
+        {
+            var ex = Services.Get<Town.TownExpansion>();
+            var map = Services.Get<World.WorldService>().Map;
+            var sb = new StringBuilder($"stage {ex.Stage}/{Town.TownExpansionRules.MaxStage}, half {map.TownHalfSize} ({Town.TownExpansionRules.Width(map.TownHalfSize)} wide), " +
+                                       $"rect {map.TownRect}, gates {string.Join(" ", map.Gates)}, town sight {ex.TownSight:0.0}\n");
+            if (ex.AtMax) return sb.Append("at the last stage").ToString();
+            var cost = ex.NextCost.Value;
+            sb.Append($"next: half {ex.NextHalfSize}, {cost.Gold}G {string.Join(" ", cost.Items.Select(c => $"{c.itemId}x{c.count}"))}\n");
+            sb.Append($"refused: {ex.CannotExpandReason() ?? "no"}\n");
+            var c0 = map.TownCenter;
+            foreach (var n in Services.Get<EcosystemManager>().Nests)
+                if (!n.Retired && Town.TownExpansionRules.Crowds(n.Cell, c0, ex.NextHalfSize))
+                    sb.AppendLine($"  den in the way: {n.DisplayName} at {n.Cell} pop {n.Population} discovered {n.Discovered}");
+            return sb.ToString();
+        }
+
+        /// <summary>Pushes the walls out a step; <paramref name="free"/> hands over the gold and materials first (tests, measurements).</summary>
+        public static string ExpandTown(bool free = true)
+        {
+            var ex = Services.Get<Town.TownExpansion>();
+            if (free && ex.NextCost is { } cost)
+            {
+                var treasury = Services.Get<Economy.GuildTreasury>();
+                treasury.AddGold(cost.Gold);
+                foreach (var c in cost.Items) treasury.AddStock(c.itemId, c.count);
+            }
+            return ex.TryExpand(out var error) ? "expanded: " + Walls() : "failed: " + error;
+        }
+
         /// <summary>Last-seen ghosts standing under the fog right now.</summary>
         public static string FogGhosts()
         {

@@ -22,6 +22,12 @@ namespace GuildMaster.World
 
         public Vector2 TownCenterWorld => GridMap.CellToWorld(Map.TownCenter);
 
+        /// <summary>
+        /// Cells the walls have moved out since the start (P4-86: 0, 4, 8, 12). Distances "from the town" that mean
+        /// "out past the walls" add it, so they keep their gap from the walls as the town grows.
+        /// </summary>
+        public int TownGrowth => Map.TownHalfSize - Map.BaseTownHalfSize;
+
         /// <summary>The surface (P4-85: the underground band above it is not the land the camera roams).</summary>
         public Bounds WorldBounds => new(new Vector3(Map.Width / 2f, Map.SurfaceHeight / 2f), new Vector3(Map.Width, Map.SurfaceHeight));
 

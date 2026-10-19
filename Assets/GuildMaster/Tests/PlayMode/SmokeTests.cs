@@ -76,10 +76,10 @@ namespace GuildMaster.Tests
         /// <summary>Same world every run, so a failure can be reproduced (random seeds made some tests flaky).</summary>
         const int TestSeed = 20260920;
 
-        static IEnumerator Boot(bool showTitle = false)
+        static IEnumerator Boot(bool showTitle = false, int seed = TestSeed)
         {
             GameSettings.ShowTitle = showTitle;
-            GameSettings.PendingSeed = TestSeed;
+            GameSettings.PendingSeed = seed;
             GameSettings.PaintGround = false; // ~9 s a boot; no test looks at the ground
             // No natural disasters (P4-72) unless a test asks: one set off by a chance fight drives dens
             // off and changes the world under tests that measure something else.
@@ -1250,6 +1250,110 @@ namespace GuildMaster.Tests
             yield return WaitFor(() => !fog.IsVisibleRaw(far), 5f);
             Assert.That(fog.IsVisibleRaw(far), Is.False, "and it stops watching once it is gone");
             Assert.That(world.Grid.IsWalkable(World.GridMap.WorldToCell(spot)), Is.True, "its ground is free again");
+        }
+
+        /// <summary>
+        /// P4-86 (user decision 2026-10-19): the walls move out four cells a side for gold and materials, at once.
+        /// The gates go with them and still shut monsters out; a tower on the new wall comes down for all it cost;
+        /// whoever stands on the new wall steps off it, a monster the walls close round steps out of town, loot on
+        /// the wall is moved; empty den sites by the new walls become the town's for good; and a den the guild knows
+        /// of on that ground has to be cleared first — one it has not found does not stop it (information rule).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TownWalls_MoveOut_GatesFollow_TheWayIsCleared_AndAKnownDenHasToGoFirst()
+        {
+            // The test seed has no den within reach of even the widest walls; on seed 2 one lies by the first step's.
+            yield return Boot(seed: 2);
+            var expansion = Services.Get<Town.TownExpansion>();
+            var construction = Services.Get<Town.ConstructionService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var world = Services.Get<World.WorldService>();
+            var map = world.Map;
+            var grid = world.Grid;
+            var eco = Services.Get<EcosystemManager>();
+            var master = Services.Get<PlayerAvatar>();
+            Services.Get<GameClock>().SetSpeed(0); // nobody walks off the spots set below
+            var c = map.TownCenter;
+            var center = world.TownCenterWorld;
+
+            void Pay()
+            {
+                var price = expansion.NextCost.Value;
+                treasury.AddGold(price.Gold);
+                foreach (var item in price.Items) treasury.AddStock(item.itemId, item.count);
+            }
+
+            Assert.That(expansion.CannotExpandReason(), Does.Contain("부족"), "not without the price");
+            Pay();
+
+            // A den by the next walls: unfound, it does not hold them back; seen, it has to be cleared first.
+            var den = eco.Nests.Where(n => !n.IsEmpty && !n.IsLair && Town.TownExpansionRules.Crowds(n.Cell, c, 15))
+                              .OrderBy(n => (n.Cell - c).sqrMagnitude).FirstOrDefault();
+            Assert.That(den, Is.Not.Null, "seed 2 has a den by the first step's walls");
+            Assert.That(den.Discovered, Is.False);
+            Assert.That(expansion.CannotExpandReason(), Is.Null, "a den nobody has found does not stop the walls");
+            master.Mover.Warp(den.WorldPosition); // right at it: this one lies in a wood, which hides it from outside (P4-48)
+            yield return WaitFor(() => den.Discovered && Services.Get<GuildIntel>().Get(den).Observed, 5f);
+            Assert.That(expansion.CannotExpandReason(), Does.Contain("토벌"), "a den the guild has seen there has to go first");
+            foreach (var m in den.Members.ToList()) m.ReceiveDamage(m.Hp + 1e6f, master, false);
+            yield return WaitFor(() => expansion.CannotExpandReason() == null, 5f);
+            Assert.That(expansion.CannotExpandReason(), Is.Null, "seen empty, it is in nobody's way");
+
+            // A tower on the line of the next east wall, the master standing on it, a monster about to be walled in, loot on the north wall.
+            var towerCost = construction.CostOf(Town.BuildingType.Watchtower);
+            treasury.AddGold(towerCost.goldCost);
+            foreach (var item in towerCost.itemCosts) treasury.AddStock(item.itemId, item.count);
+            Assert.That(construction.TryBuild(Town.BuildingType.Watchtower, center + new Vector2(15f, 8f), out var error), Is.True, error);
+            master.Mover.Warp(center + new Vector2(15f, -6f));
+            var walledIn = SpawnMonster("slime", center + new Vector2(13.5f, -12.5f));
+            var before = World.GridMap.WorldToCell(walledIn.Position);
+            Assert.That(!map.TownRect.Contains(before) && World.TownWalls.RectFor(c, 15).Contains(before), Is.True, "outside the walls, inside the next ones");
+            GuildMaster.Session.DebugCommands.DropItem("slime_jelly", 2, center.x - 6f, center.y + 15f);
+            var loot = Services.Get<GroundItemService>().Items.Last();
+            int goldBefore = treasury.Gold - expansion.NextCost.Value.Gold;
+
+            Assert.That(expansion.TryExpand(out error), Is.True, error);
+            Assert.That(expansion.Stage, Is.EqualTo(1));
+            Assert.That(map.TownHalfSize, Is.EqualTo(15));
+            Assert.That(map.TownRect, Is.EqualTo(World.TownWalls.RectFor(c, 15)));
+            var gates = Services.Get<Town.GateService>().Gates;
+            for (int i = 0; i < gates.Count; i++)
+            {
+                var dir = World.TownWalls.GateDirections[i];
+                Assert.That(gates[i].CenterCell, Is.EqualTo(c + dir * 15), $"{gates[i].DisplayName} moved with the wall");
+                Assert.That(grid.IsClosedGate(gates[i].CenterCell), Is.True, "and shuts monsters out there");
+                var old = c + dir * 11;
+                Assert.That(grid.IsWalkable(old) && !grid.IsClosedGate(old), Is.True, "where it stood is open road");
+            }
+            Assert.That(grid.IsWalkable(c + new Vector2Int(11, 11)), Is.True, "the old corner is floor");
+            Assert.That(Services.Get<Town.TownService>().Get(Town.BuildingType.Watchtower), Is.Null, "the tower on the new wall came down");
+            Assert.That(treasury.Gold, Is.EqualTo(goldBefore + towerCost.goldCost), "with all its gold back");
+            foreach (var item in towerCost.itemCosts) Assert.That(treasury.GetStock(item.itemId), Is.EqualTo(item.count), "and its materials");
+            Assert.That(grid.IsWalkable(World.GridMap.WorldToCell(master.Position)), Is.True, "the master stepped off the wall");
+            var monsterCell = World.GridMap.WorldToCell(walledIn.Position);
+            Assert.That(grid.IsWalkable(monsterCell) && !map.TownRect.Contains(monsterCell), Is.True, "the monster stepped out of town");
+            Assert.That(grid.IsWalkable(World.GridMap.WorldToCell(loot.Position)), Is.True, "the loot was moved off the wall");
+            Assert.That(expansion.TownSight, Is.EqualTo(Town.TownExpansionRules.SightRadius(18f, 4)).Within(0.01f), "the town sees further");
+            foreach (var n in eco.Nests.Where(n => Town.TownExpansionRules.Crowds(n.Cell, c, 15)))
+                Assert.That(n.Retired && n.Sealed && !n.Discovered && n.IsEmpty, Is.True, $"{n.DisplayName} by the new walls is the town's ground");
+            var path = new System.Collections.Generic.List<Vector2Int>();
+            var outside = gates[3].CenterCell + Vector2Int.right * 4; // on the road out of the east gate
+            Assert.That(world.Pathfinder.FindPath(outside, c, path), Is.True, "the guild walks in");
+            Assert.That(world.Pathfinder.FindPath(outside, c, path, passesGates: false), Is.False, "a monster does not");
+            Assert.That(den.Retired, Is.True, "the cleared den's site is the town's now");
+
+            // Up to the last step, then no further.
+            while (!expansion.AtMax)
+            {
+                Pay();
+                if (expansion.CannotExpandReason() != null) break; // another den the guild knows of by the next walls
+                Assert.That(expansion.TryExpand(out error), Is.True, error);
+            }
+            if (expansion.AtMax)
+            {
+                Assert.That(map.TownHalfSize, Is.EqualTo(23));
+                Assert.That(expansion.CannotExpandReason(), Is.Not.Null, "no step past the last");
+            }
         }
 
         /// <summary>

@@ -117,6 +117,21 @@ namespace GuildMaster.World
             return true;
         }
 
+        /// <summary>
+        /// Puts the walker somewhere else at once (P4-86: off a cell the new town wall took). A walk under way is
+        /// planned again from there; when no way is left it stops and reports the failure as a walk would.
+        /// </summary>
+        public void Warp(Vector2 to)
+        {
+            transform.position = new Vector3(to.x, to.y, transform.position.z);
+            Velocity = Vector2.zero;
+            _steerVelocity = Vector2.zero;
+            _bumped.Clear();
+            _recentring = false;
+            _noShortcut = false;
+            if (IsMoving && !BuildPath()) { Stop(); PathFailed?.Invoke(); }
+        }
+
         public void Stop()
         {
             IsMoving = false;

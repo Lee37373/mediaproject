@@ -142,40 +142,10 @@ namespace GuildMaster.World
 
             // 2. Town: cleared surroundings, floor, walls and 4 gates.
             var c = new Vector2Int(s.Width / 2, s.Height / 2);
-            int hs = s.TownHalfSize;
-            map.TownCenter = c;
-            map.TownRect = new RectInt(c.x - hs, c.y - hs, hs * 2 + 1, hs * 2 + 1);
-            int clear = hs + 7;
-            for (int y = c.y - clear; y <= c.y + clear; y++)
-            for (int x = c.x - clear; x <= c.x + clear; x++)
-            {
-                if (!map.InBounds(x, y)) continue;
-                float d = Vector2.Distance(new Vector2(x, y), c);
-                if (d <= clear || (Mathf.Abs(x - c.x) <= hs + 2 && Mathf.Abs(y - c.y) <= hs + 2))
-                    map[x, y] = TileType.Grass;
-            }
-            var r = map.TownRect;
-            for (int y = r.yMin; y < r.yMax; y++)
-            for (int x = r.xMin; x < r.xMax; x++)
-            {
-                bool border = x == r.xMin || y == r.yMin || x == r.xMax - 1 || y == r.yMax - 1;
-                map[x, y] = border ? TileType.Wall : TileType.TownFloor;
-            }
-            var gateDirs = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
-            foreach (var dir in gateDirs)
-            {
-                var gate = c + dir * hs;
-                var side = new Vector2Int(dir.y, dir.x);
-                for (int k = -1; k <= 1; k++) map[gate + side * k] = TileType.Gate;
-                map.Gates.Add(gate);
-                CarveRoad(map, gate + dir, dir, rng);
-            }
-            // Town plaza cross roads.
-            for (int k = -hs + 1; k <= hs - 1; k++)
-            {
-                map[c.x + k, c.y] = TileType.Road;
-                map[c.x, c.y + k] = TileType.Road;
-            }
+            TownWalls.Lay(map, c, s.TownHalfSize);
+            for (int g = 0; g < TownWalls.GateDirections.Length; g++)
+                CarveRoad(map, map.Gates[g] + TownWalls.GateDirections[g], TownWalls.GateDirections[g], rng);
+            TownWalls.LayPlazaRoads(map);
 
             // Trees on forest cells (partial cover). Deterministic from the seed.
             for (int i = 0; i < map.Tiles.Length; i++)
