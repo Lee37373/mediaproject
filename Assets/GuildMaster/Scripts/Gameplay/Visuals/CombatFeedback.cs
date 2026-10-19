@@ -50,7 +50,8 @@ namespace GuildMaster.Visuals
         void OnDamaged(UnitDamagedEvent e)
         {
             var victim = e.Target;
-            if (victim == null || e.Amount <= 0f || !OnScreen(victim.Position, out float closeness)) return;
+            // A poison step is no blow: no burst (P4-87).
+            if (victim == null || e.Amount <= 0f || e.OverTime || !OnScreen(victim.Position, out float closeness)) return;
             var at = victim.Position + new Vector2(0f, 0.35f);
             float share = victim.Stats.MaxHp > 0f ? e.Amount / victim.Stats.MaxHp : 0f;
             var color = ColorOf(victim);

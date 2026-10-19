@@ -64,7 +64,14 @@ namespace GuildMaster.Adventurers
 
         public ListView<Adventurer> Members => new(_members);
         public int Capacity { get; set; } = 6;
-        public bool IsFull => _members.Count >= Capacity;
+        public bool IsFull => !Unlimited && _members.Count >= Capacity;
+        /// <summary>
+        /// A dormitory stands (P4-87): no limit. Fallen, the limit is back for newcomers only — nobody already in is sent
+        /// away (user decision 2026-10-19).
+        /// </summary>
+        public bool Unlimited => Services.TryGet<Town.FacilityService>(out var f) && f.NoRosterLimit;
+        /// <summary>"6/9명", or "11명 (정원 없음)" while a dormitory stands.</summary>
+        public string CountText => Unlimited ? $"{_members.Count}명 (정원 없음)" : $"{_members.Count}/{Capacity}명";
 
         public Adventurer Recruit(AdventurerData data, Vector2 position)
         {

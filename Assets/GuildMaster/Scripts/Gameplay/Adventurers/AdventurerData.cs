@@ -121,6 +121,27 @@ namespace GuildMaster.Adventurers
         void Modify(ref CombatStats stats);
     }
 
+    /// <summary>
+    /// What an adventurer's attack, defence and health are worth (P4-87): weakened for everyone, raised for members by the
+    /// guild's stat buildings (<see cref="Town.FacilityRules"/>). One = the strength before P4-87.
+    /// </summary>
+    public readonly struct StatScale
+    {
+        public readonly float Attack, Defense, MaxHp;
+
+        public StatScale(float attack, float defense, float maxHp)
+        {
+            Attack = attack;
+            Defense = defense;
+            MaxHp = maxHp;
+        }
+
+        public static StatScale One => new(1f, 1f, 1f);
+
+        /// <summary>One number for the decisions' rough power (<see cref="AdventurerStats.Power"/>).</summary>
+        public float Mean => (Attack + Defense + MaxHp) / 3f;
+    }
+
     public static class AdventurerStats
     {
         public static CombatStats Base(AdventurerClass cls) => cls switch
@@ -132,7 +153,8 @@ namespace GuildMaster.Adventurers
             _ => new CombatStats { MaxHp = 36, Attack = 13, Defense = 1, AttackRange = 4.5f, AttackCooldown = 1.6f, MoveSpeed = 3.0f, SightRadius = 8f },
         };
 
-        public static CombatStats Compute(AdventurerData d, IEnumerable<IStatModifier> modifiers)
+        /// <summary>Stats from class, level and gear, scaled by <paramref name="scale"/> (P4-87; none = the old strength), then traits.</summary>
+        public static CombatStats Compute(AdventurerData d, IEnumerable<IStatModifier> modifiers, StatScale? scale = null)
         {
             var s = Base(d.cls);
             float lv = d.level - 1;
@@ -142,6 +164,10 @@ namespace GuildMaster.Adventurers
             s.MaxHp = Units.Combat.ScaledHp(s.MaxHp);
             s.Attack += 3f * d.gearTier;
             s.Defense += 2f * d.gearTier;
+            var k = scale ?? StatScale.One;
+            s.Attack *= k.Attack;
+            s.Defense *= k.Defense;
+            s.MaxHp *= k.MaxHp;
             if (modifiers != null) foreach (var m in modifiers) m.Modify(ref s);
             s.MaxHp = Mathf.Max(1f, Mathf.Round(s.MaxHp));
             s.Attack = Mathf.Max(1f, s.Attack);
@@ -151,7 +177,16 @@ namespace GuildMaster.Adventurers
             return s;
         }
 
-        /// <summary>Rough combat power used by decision heuristics.</summary>
-        public static float Power(AdventurerData d) => d.level + d.gearTier * 1.5f;
+        /// <summary>
+        /// Rough combat power used by decision heuristics, in levels of the old strength: the guild's stat buildings scale it
+        /// (P4-87 — weakened members weigh quests by what they can really do; the danger steps were set at the old strength).
+        /// </summary>
+        public static float Power(AdventurerData d) => RawPower(d) * PowerScale;
+
+        /// <summary>Level and gear alone, as before P4-87.</summary>
+        public static float RawPower(AdventurerData d) => d.level + d.gearTier * 1.5f;
+
+        /// <summary>The members' stat scale as one number (1 with no guild, e.g. pure tests).</summary>
+        public static float PowerScale => Core.Services.TryGet<Town.FacilityService>(out var f) && f.IsLive ? f.MemberScale.Mean : 1f;
     }
 }

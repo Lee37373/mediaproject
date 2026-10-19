@@ -71,7 +71,7 @@ namespace GuildMaster.Units
         protected static void Damage(Unit self, Unit target, float multiplier)
         {
             if (target == null || !target.IsAlive) return;
-            float dmg = Combat.Mitigate(self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f), target.Stats.Defense);
+            float dmg = Combat.Mitigate(self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f), target.EffectiveDefense);
             target.ReceiveDamage(Mathf.Round(dmg), self, false);
         }
 

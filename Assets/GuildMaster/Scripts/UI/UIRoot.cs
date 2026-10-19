@@ -89,7 +89,7 @@ namespace GuildMaster.UI
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             AddWindow<MerchantView>(menu, "행상인 (T)", Key.T, new Vector2(760, 600));
-            AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(700, 430));
+            AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(760, 620));
             // Daily accounts: income, spending and events per game day (F-3). Moved off B, which
             // construction (P4-13) already claimed.
             AddWindow<DailyReportView>(menu, "정산 (L)", Key.L, new Vector2(960, 760));
@@ -104,7 +104,7 @@ namespace GuildMaster.UI
             AddWindow<RecruitDialogView>(null, null, Key.None, new Vector2(980, 600));
             // Opened from the quest board ("설득") once a quest has stayed untaken (P4-24).
             AddWindow<PersuadeDialogView>(null, null, Key.None, new Vector2(1040, 700));
-            AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 380));
+            AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 450));
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
             // Opened from the inspector and roster [상세] buttons (P4-6).
             AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 700));

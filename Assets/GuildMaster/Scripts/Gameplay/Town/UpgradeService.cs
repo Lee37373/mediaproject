@@ -41,6 +41,18 @@ namespace GuildMaster.Town
             return b != null && def != null ? def.Level(b.Level) : null;
         }
 
+        /// <summary>
+        /// The next level and what it costs this building: a facility's second and third of a kind pay more (P4-87,
+        /// <see cref="FacilityRules.CopyCost"/>). Null at the top level or without a definition.
+        /// </summary>
+        public BuildingLevel NextLevel(Building b)
+        {
+            var def = Definition(b);
+            if (def == null || b.Level >= def.MaxLevel) return null;
+            int earlier = FacilityRules.IsFacility(b.Type) ? _town.EarlierOfKind(b) : 0;
+            return ConstructionService.Priced(def.Level(b.Level + 1), earlier);
+        }
+
         /// <summary>Why the building cannot be upgraded right now, or null if it can.</summary>
         public string CannotUpgradeReason(Building b)
         {
@@ -48,7 +60,7 @@ namespace GuildMaster.Town
             if (def == null) return "업그레이드할 수 없는 건물입니다.";
             if (b.IsDestroyed) return "무너진 건물은 업그레이드할 수 없습니다.";
             if (b.Level >= def.MaxLevel) return "최고 레벨입니다.";
-            var next = def.Level(b.Level + 1);
+            var next = NextLevel(b);
             if (_treasury.Gold < next.goldCost) return $"골드가 부족합니다 ({_treasury.Gold}/{next.goldCost}G).";
             foreach (var c in next.itemCosts)
                 if (_treasury.GetStock(c.itemId) < c.count)
@@ -60,7 +72,7 @@ namespace GuildMaster.Town
         {
             error = CannotUpgradeReason(b);
             if (error != null) return false;
-            var next = Definition(b).Level(b.Level + 1);
+            var next = NextLevel(b);
             if (!_treasury.TrySpendGold(next.goldCost, GoldReason.Upgrade)) { error = "골드가 부족합니다."; return false; }
             foreach (var c in next.itemCosts) _treasury.TryRemoveStock(c.itemId, c.count);
             b.SetLevel(b.Level + 1);
@@ -71,6 +83,8 @@ namespace GuildMaster.Town
         /// <summary>Makes a level's effects take hold immediately.</summary>
         void Apply(Building b, BuildingLevel lv)
         {
+            // A facility's level is read by FacilityService (BuildingLevelChangedEvent); it also grows sturdier (P4-87).
+            if (FacilityRules.IsFacility(b.Type) && lv.maxHp > 0f) b.SetMaxHp(lv.maxHp, heal: false);
             switch (b.Type)
             {
                 case BuildingType.GuildHall:

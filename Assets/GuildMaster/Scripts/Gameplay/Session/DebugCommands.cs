@@ -1255,6 +1255,99 @@ namespace GuildMaster.Session
             return ex.TryExpand(out var error) ? "expanded: " + Walls() : "failed: " + error;
         }
 
+        // ---------------- Guild facilities (P4-87) ----------------
+
+        /// <summary>What the facilities give now (members' scale, marks, roster) and each facility standing or fallen.</summary>
+        public static string Facilities()
+        {
+            var f = Services.Get<Town.FacilityService>();
+            var town = Services.Get<Town.TownService>();
+            var roster = Services.Get<GuildRoster>();
+            var k = f.MemberScale;
+            var sb = new StringBuilder();
+            sb.AppendLine($"  members x atk {k.Attack:0.###} def {k.Defense:0.###} hp {k.MaxHp:0.###} (power x{k.Mean:0.###}, base {Town.FacilityRules.BaseStatFactor})");
+            sb.AppendLine($"  marks: poison {f.Poison:0.###} armor -{f.ArmorBreak:0.###} slow -{f.Slow:0.###} ({Town.FacilityRules.AfflictionSeconds}s) · roster {roster.CountText} full={roster.IsFull}");
+            foreach (var b in town.Buildings)
+            {
+                if (!Town.FacilityRules.IsFacility(b.Type)) continue;
+                sb.AppendLine($"  {b.Type} Lv{b.Level} hp {b.Hp:0}/{b.MaxHp:0}{(b.IsDestroyed ? " FALLEN" : "")} weight {f.WeightOf(b)} at {b.Footprint.position}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Puts up a facility (debug): <paramref name="type"/> by enum name ("Armory"), raised to <paramref name="level"/>,
+        /// paid for by the debug when <paramref name="free"/>. Without a point, the first spot inside the walls that takes it,
+        /// from the plaza outwards.
+        /// </summary>
+        public static string BuildFacility(string type, int level = 1, bool free = true, float x = float.NaN, float y = float.NaN)
+        {
+            if (!System.Enum.TryParse<Town.BuildingType>(type, true, out var t) || !Town.FacilityRules.IsFacility(t)) return "not a facility: " + type;
+            var construction = Services.Get<Town.ConstructionService>();
+            var upgrades = Services.Get<Town.UpgradeService>();
+            var town = Services.Get<Town.TownService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var world = Services.Get<World.WorldService>();
+            void Pay(Data.BuildingLevel cost)
+            {
+                if (!free || cost == null) return;
+                treasury.AddGold(cost.goldCost);
+                foreach (var c in cost.itemCosts) treasury.AddStock(c.itemId, c.count);
+            }
+            Vector2 point;
+            if (!float.IsNaN(x)) point = new Vector2(x, y);
+            else
+            {
+                var centre = world.Map.TownCenter;
+                int reach = world.Map.TownRect.width / 2;
+                Vector2? found = null;
+                for (int r = 2; r <= reach && found == null; r++)
+                for (int dy = -r; dy <= r && found == null; dy++)
+                for (int dx = -r; dx <= r && found == null; dx++)
+                {
+                    if (Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dy)) != r) continue;
+                    var p = World.GridMap.CellToWorld(centre + new Vector2Int(dx, dy));
+                    if (construction.CannotPlaceAt(t, p) == null) found = p;
+                }
+                if (found == null) return "no room inside the walls";
+                point = found.Value;
+            }
+            Pay(construction.PriceToBuild(t));
+            if (!construction.TryBuild(t, point, out var error)) return "not built: " + error;
+            var built = town.Buildings.Last(b => b.Type == t);
+            while (built.Level < level)
+            {
+                Pay(upgrades.NextLevel(built));
+                if (!upgrades.TryUpgrade(built, out error)) return $"built at {built.Footprint.position}, stuck at Lv{built.Level}: {error}";
+            }
+            return $"{t} Lv{built.Level} at {built.Footprint.position}\n" + Facilities();
+        }
+
+        static TrialRunner s_trial;
+
+        /// <summary>
+        /// Trial fights for tuning (P4-87, <see cref="TrialRunner"/>): <paramref name="team"/> as class letters — W warrior, R ranger,
+        /// P priest, M mage ("WRPM" is one of each, "W" one warrior) — fresh, no traits, at <paramref name="memberLevel"/> and
+        /// <paramref name="gear"/>, against <paramref name="pack"/> fresh <paramref name="species"/> of <paramref name="level"/>,
+        /// <paramref name="rounds"/> times at clock speed index <paramref name="speed"/>. Read with <see cref="TrialReport"/>.
+        /// </summary>
+        public static string Trial(string species, int pack, int level, string team, int memberLevel, int gear, int rounds = 5, int speed = 3)
+        {
+            if (s_trial != null && s_trial.Running) return "a trial is running: " + s_trial.Report();
+            var classes = team.ToUpperInvariant().Select(c => c switch
+            {
+                'W' => AdventurerClass.Warrior,
+                'R' => AdventurerClass.Ranger,
+                'P' => AdventurerClass.Priest,
+                _ => AdventurerClass.Mage,
+            }).ToArray();
+            if (s_trial != null) Object.Destroy(s_trial.gameObject);
+            s_trial = TrialRunner.Start(species, pack, level, classes, memberLevel, gear, rounds, speed);
+            return "started: " + s_trial.Label;
+        }
+
+        public static string TrialReport() => s_trial == null ? "no trial" : s_trial.Report();
+
         /// <summary>Last-seen ghosts standing under the fog right now.</summary>
         public static string FogGhosts()
         {

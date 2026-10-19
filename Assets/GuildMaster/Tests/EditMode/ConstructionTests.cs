@@ -67,6 +67,22 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void AFacility_GoesInsideTheWalls_OffTheRoads_AndNoBuildingCoversADoor()
+        {
+            // P4-87 (user decision 2026-10-19): the guild's facilities stand inside the walls; the roads stay open.
+            Assert.That(ConstructionRules.CannotPlace(_grid, null, null, At(15, 15), insideWalls: true), Does.Contain("성벽 안"));
+            Assert.That(ConstructionRules.CannotPlace(_grid, null, null, At(9, 3, 1), insideWalls: true), Is.Null, "inside the town rect");
+            _grid.Data[9, 3] = TileType.Road;
+            Assert.That(ConstructionRules.CannotPlace(_grid, null, null, At(9, 3, 1), insideWalls: true), Does.Contain("길"));
+            Assert.That(ConstructionRules.CannotPlace(_grid, null, null, At(9, 3, 1)), Is.Null, "a tower may stand on a road (P4-13)");
+
+            var b = new GameObject("B").AddComponent<Building>();
+            b.Init(BuildingType.GuildHall, new RectInt(14, 14, 3, 3), new Vector2Int(15, 13), true, 100f);
+            Assert.That(ConstructionRules.CannotPlace(_grid, new List<Building> { b }, null, At(15, 12)), Does.Contain("출입문"));
+            Object.DestroyImmediate(b.gameObject);
+        }
+
+        [Test]
         public void Footprint_IsCentredOnTheClickedCell()
         {
             Assert.That(ConstructionRules.FootprintAt(new Vector2(10.9f, 10.1f), 1), Is.EqualTo(new RectInt(10, 10, 1, 1)));

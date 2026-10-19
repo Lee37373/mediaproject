@@ -83,6 +83,12 @@ namespace GuildMaster.UI
         {
             if (e.Target == null) return;
             if (Services.TryGet<FogOfWar>(out var fog) && !fog.IsVisible(e.Target.Position)) return;
+            // Poison (P4-87): a small green number off to the side, so it does not hide the blows.
+            if (e.OverTime)
+            {
+                Spawn(e.Target.transform.position + new Vector3(0.35f, 0.45f), $"{e.Amount:0}", new Color(0.55f, 0.95f, 0.35f), 13);
+                return;
+            }
             var color = e.Target.Faction == Faction.Guild ? new Color(1f, 0.4f, 0.35f) : e.Critical ? UITheme.Accent : Color.white;
             Spawn(e.Target.transform.position + new Vector3(0, 0.6f), e.Critical ? $"{e.Amount:0}!" : $"{e.Amount:0}", color, e.Critical ? 22 : 17);
         }

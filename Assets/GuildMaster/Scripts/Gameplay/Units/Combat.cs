@@ -55,7 +55,7 @@ namespace GuildMaster.Units
             if (attacker == null || target == null || !attacker.IsAlive || !target.IsAlive || attacker.IsStunned) return false;
             if (Time.time < attacker.NextAttackTime || !InRange(attacker, target) || !HasShot(attacker, target)) return false;
 
-            attacker.NextAttackTime = Time.time + attacker.Stats.AttackCooldown;
+            attacker.NextAttackTime = Time.time + attacker.AttackCooldownNow;
             attacker.Visual?.FaceTowards(target.Position);
 
             if (attacker.Stats.IsRanged && Services.TryGet<ProjectileService>(out var projectiles))
@@ -74,7 +74,7 @@ namespace GuildMaster.Units
             float raw = atk * rng.Range(0.9f, 1.1f);
             bool crit = rng.Chance(CritChance);
             if (crit) raw *= CritMultiplier;
-            float dmg = Mitigate(raw, target.Stats.Defense);
+            float dmg = Mitigate(raw, target.EffectiveDefense);
             target.ReceiveDamage(Mathf.Round(dmg), attacker, crit);
         }
     }

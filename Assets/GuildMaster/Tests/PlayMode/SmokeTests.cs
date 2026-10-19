@@ -915,10 +915,10 @@ namespace GuildMaster.Tests
                 Assert.That(intel.NameOf(first.Lair), Is.EqualTo($"{first.Def.displayName}의 거처"));
                 // Work for two parties (P4-90): weighed by the group that could go, recommended per member of eight — and
                 // so is a hunt on its guards' den once the lord is known there (requirement 90, four at most).
-                Assert.That((QuestRisk.IsPartyWork(quest), QuestRisk.RecommendedLevel(quest)), Is.EqualTo((true, 18)));
+                Assert.That((QuestRisk.IsPartyWork(quest), QuestRisk.RecommendedLevel(quest)), Is.EqualTo((true, Mathf.CeilToInt(90f / 5.2f / AdventurerStats.PowerScale - 0.001f))));
                 var guardHunt = new Quest("Q_guards", new QuestDraft { Type = QuestType.Hunt, Species = first.Lair.Species, Count = 5, RewardGold = 100, MaxParty = 4 }, 0f)
                     { Danger = DangerLevel.High, TargetNest = first.Lair };
-                Assert.That((QuestRisk.IsLordWork(guardHunt), QuestRisk.IsPartyWork(guardHunt), QuestRisk.RecommendedLevel(guardHunt)), Is.EqualTo((true, true, 33)));
+                Assert.That((QuestRisk.IsLordWork(guardHunt), QuestRisk.IsPartyWork(guardHunt), QuestRisk.RecommendedLevel(guardHunt)), Is.EqualTo((true, true, Mathf.CeilToInt(90f / 2.8f / AdventurerStats.PowerScale - 0.001f))));
 
                 // It falls to a member standing by: the region's outer land is sealed, the member carries its title.
                 var hero = Roster.Members.First(a => a.IsAlive);
@@ -1360,6 +1360,103 @@ namespace GuildMaster.Tests
                 Assert.That(map.TownHalfSize, Is.EqualTo(23));
                 Assert.That(expansion.CannotExpandReason(), Is.Not.Null, "no step past the last");
             }
+        }
+
+        /// <summary>
+        /// The guild's facilities (P4-87, user decisions 2026-10-16·18·19): members start weaker; a stat building raises every
+        /// member at once, stops while it lies fallen and is back once repaired; facilities go inside the walls; a second of a
+        /// kind costs ×1.5 and counts half; a member's blow leaves poison (its share of the hit, burnt over four seconds, to the
+        /// member's credit), broken armour and a chill; a dormitory lifts the roster limit until it falls, and nobody is sent away.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Facilities_RaiseEveryMember_MarkWhatTheyHit_AndADormitoryLiftsTheLimit()
+        {
+            yield return Boot();
+            var facilities = Services.Get<Town.FacilityService>();
+            var construction = Services.Get<Town.ConstructionService>();
+            var town = Services.Get<Town.TownService>();
+            var world = Services.Get<World.WorldService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var member = Roster.Members.First(a => a.IsAlive);
+            var old = AdventurerStats.Compute(member.Data, member.Traits?.Modifiers);
+            float k0 = Town.FacilityRules.BaseStatFactor;
+            Assert.That(member.Stats.Attack, Is.EqualTo(old.Attack * k0).Within(0.01f), "weaker with no stat building");
+            Assert.That(AdventurerStats.PowerScale, Is.EqualTo(k0).Within(1e-4f), "and decisions know it");
+
+            Assert.That(construction.CannotPlaceAt(Town.BuildingType.Armory, world.TownCenterWorld + new Vector2(40f, 0f)), Does.Contain("성벽 안"));
+            DebugCommands.ExpandTown(true);
+            DebugCommands.ExpandTown(true); // room to build (P4-86)
+            Assert.That(DebugCommands.BuildFacility("Armory", 1), Does.StartWith("Armory Lv1"));
+            var armory = town.Buildings.Last(b => b.Type == Town.BuildingType.Armory);
+            float k1 = k0 * (1f + Town.FacilityRules.StatBonusAt(1));
+            Assert.That(Roster.Members.All(a => Mathf.Abs(a.Stats.Attack - AdventurerStats.Compute(a.Data, a.Traits?.Modifiers).Attack * k1) < 0.01f), Is.True, "every member at once");
+            Assert.That(member.Stats.Defense, Is.EqualTo(old.Defense * k0).Within(0.01f), "its own stat only");
+
+            // A second costs more and counts half; taken down, it is gone again.
+            Assert.That(construction.PriceToBuild(Town.BuildingType.Armory).goldCost, Is.EqualTo(Town.FacilityRules.ScaledGold(400, 1)));
+            Assert.That(DebugCommands.BuildFacility("Armory", 1), Does.StartWith("Armory Lv1"));
+            var second = town.Buildings.Last(b => b.Type == Town.BuildingType.Armory);
+            Assert.That((facilities.WeightOf(armory), facilities.WeightOf(second)), Is.EqualTo((1f, 0.5f)));
+            Assert.That(member.Stats.Attack, Is.EqualTo(old.Attack * k0 * (1f + 1.5f * Town.FacilityRules.StatBonusAt(1))).Within(0.01f));
+            Assert.That(construction.TryDemolish(second, out var error), Is.True, error);
+            Assert.That(member.Stats.Attack, Is.EqualTo(old.Attack * k1).Within(0.01f));
+
+            // Fallen: it stops; repaired: back.
+            armory.Damage(armory.MaxHp + 1f);
+            Assert.That(member.Stats.Attack, Is.EqualTo(old.Attack * k0).Within(0.01f), "stops while fallen");
+            treasury.AddGold(5000);
+            Assert.That(town.TryRepair(armory), Is.True, town.CannotRepairReason(armory));
+            Assert.That(member.Stats.Attack, Is.EqualTo(old.Attack * k1).Within(0.01f), "back once repaired");
+
+            // The marks: poison, broken armour, chill at level 3.
+            foreach (var t in new[] { "PoisonLab", "RuneForge", "FrostAltar" })
+                Assert.That(DebugCommands.BuildFacility(t, 3), Does.StartWith(t + " Lv3"));
+            Assert.That(facilities.Poison, Is.EqualTo(0.3f).Within(1e-4f));
+            Assert.That(facilities.ArmorBreak, Is.EqualTo(0.3f).Within(1e-4f));
+            Assert.That(facilities.Slow, Is.EqualTo(0.3f).Within(1e-4f));
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                // Far out where nobody else is; struck once from afar (the rule is the blow, not the reach).
+                var goblin = Services.Get<EcosystemManager>().Species.First(s => s.id == "goblin");
+                world.Grid.TryFindNearestWalkable(world.Map.TownCenter + new Vector2Int(0, 60), 8, out var cell);
+                var monster = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(cell));
+                monster.Setup(goblin, null);
+                float burnt = 0f;
+                Unit burner = null;
+                void Burn(UnitDamagedEvent e)
+                {
+                    if (e.Target != monster || !e.OverTime) return;
+                    burnt += e.Amount;
+                    burner = e.Source;
+                }
+                EventBus.Subscribe<UnitDamagedEvent>(Burn);
+                float hp0 = monster.Hp;
+                Combat.ApplyHit(member, monster);
+                float dealt = hp0 - monster.Hp;
+                Assert.That(monster.Afflictions.PoisonLeft, Is.EqualTo(dealt * 0.3f).Within(0.01f), "a share of the blow to burn");
+                Assert.That(monster.EffectiveDefense, Is.EqualTo(monster.Stats.Defense * 0.7f).Within(0.01f), "armour broken");
+                Assert.That(monster.AttackCooldownNow, Is.EqualTo(monster.Stats.AttackCooldown / 0.7f).Within(0.01f), "slower blows");
+                yield return null;
+                Assert.That(monster.Mover.BuffMultiplier, Is.EqualTo(0.7f).Within(0.01f), "slower steps");
+                yield return WaitFor(() => !monster.Afflictions.Any, 10f);
+                EventBus.Unsubscribe<UnitDamagedEvent>(Burn);
+                Assert.That(monster.Afflictions.Any, Is.False, $"over after {Town.FacilityRules.AfflictionSeconds}s");
+                Assert.That(burnt, Is.EqualTo(Mathf.Round(dealt * 0.3f)).Within(1f), "its share burnt, no more");
+                Assert.That(burner, Is.SameAs(member), "to the member's credit");
+                Assert.That(monster.EffectiveDefense, Is.EqualTo(monster.Stats.Defense));
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+
+            // The dormitory: no limit while it stands; fallen, newcomers wait, nobody leaves.
+            Roster.Capacity = Roster.Members.Count;
+            Assert.That(Roster.IsFull, Is.True);
+            Assert.That(DebugCommands.BuildFacility("Dormitory"), Does.StartWith("Dormitory Lv1"));
+            Assert.That((Roster.IsFull, Roster.CountText.Contains("정원 없음")), Is.EqualTo((false, true)));
+            int members = Roster.Members.Count;
+            var dorm = town.Buildings.Last(b => b.Type == Town.BuildingType.Dormitory);
+            dorm.Damage(dorm.MaxHp + 1f);
+            Assert.That((Roster.IsFull, Roster.Members.Count), Is.EqualTo((true, members)));
         }
 
         /// <summary>
@@ -3425,7 +3522,9 @@ namespace GuildMaster.Tests
             Assert.That(quest.TargetNest, Is.Null, "about the monster, not a den");
             Assert.That(Vector2.Distance(quest.Point, rare.Position), Is.LessThanOrEqualTo(quest.Radius), "the circle holds it");
             Assert.That(Vector2.Distance(quest.Point, first.Spot), Is.GreaterThan(0.5f), "but does not give the spot away");
-            Assert.That(QuestRisk.RecommendedLevel(quest), Is.InRange(rare.Level - 3, rare.Level + 1), "recommended per member of a full party");
+            // At the guild's present strength (P4-87: no stat buildings, so more levels).
+            float scale = AdventurerStats.PowerScale;
+            Assert.That(QuestRisk.RecommendedLevel(quest), Is.InRange(Mathf.FloorToInt((rare.Level - 3) / scale), Mathf.CeilToInt((rare.Level + 1) / scale)), "recommended per member of a full party");
 
             // Seen: the hunt moves onto it. One on the hunt (who cannot be hurt) stands next to it — strong enough to take
             // the party work alone, so the invitations it sends do not decide whether it goes.

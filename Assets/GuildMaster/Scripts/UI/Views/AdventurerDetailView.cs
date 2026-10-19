@@ -144,6 +144,15 @@ namespace GuildMaster.UI
 
         // ---------------- Live text ----------------
 
+        /// <summary>What the guild's facilities make of its stats (P4-87; 100% = the three stat buildings at level 3).</summary>
+        static string FacilityScaleText(Adventurer a)
+        {
+            if (!Services.TryGet<Town.FacilityService>(out var f)) return "";
+            var k = f.ScaleFor(a);
+            string who = a.IsGuildMember && !a.IsVisitor ? "내실" : "내실(길드원만)";
+            return $"{who} 공격 {k.Attack * 100f:0}%·방어 {k.Defense * 100f:0}%·체력 {k.MaxHp * 100f:0}%";
+        }
+
         protected override void Refresh()
         {
             if (_who == null || _who.Data == null) { _header.text = "대상이 없습니다."; return; }
@@ -162,7 +171,7 @@ namespace GuildMaster.UI
                 $"사거리 {s.AttackRange:0.#}   공격 간격 {s.AttackCooldown:0.##}초   이동 {s.MoveSpeed:0.#}   시야 {s.SightRadius:0.#}\n" +
                 $"피로      {Bar(d.fatigue)}\n" +
                 $"스트레스 {Bar(d.stress)}\n" +
-                UIBuilder.Colored($"후퇴 기준 체력 {a.RetreatThreshold * 100f:0}%", UITheme.TextMuted);
+                UIBuilder.Colored($"후퇴 기준 체력 {a.RetreatThreshold * 100f:0}% · {FacilityScaleText(a)}", UITheme.TextMuted);
 
             var db = Services.Get<GameDatabase>();
             var next = GearShopping.NextGear(d, db);

@@ -79,7 +79,7 @@ namespace GuildMaster.UI
             int mats = t.Stock.Where(kv => db.Item(kv.Key)?.category == ItemCategory.Material).Sum(kv => kv.Value);
             _materials.text = $"재료 {mats}";
             var roster = Services.Get<GuildRoster>();
-            _members.text = $"길드원 {roster.Members.Count}/{roster.Capacity}";
+            _members.text = $"길드원 {roster.CountText}";
             _monsters.text = $"시야 내 몬스터 {Services.Get<GuildIntel>().VisibleMonsters}";
             _extra.text = ExtraStatus?.Invoke() ?? "";
         }

@@ -41,7 +41,9 @@ namespace GuildMaster.Adventurers
 
         public static float DangerRequirement(DangerLevel d) => d switch
         {
-            DangerLevel.Low => 1f,
+            // A fresh member alone, even with no stat building (P4-87: power is scaled by the facilities, and at 1 a Lv1
+            // read every 낮음 quest — a single slime — as 무모, so nobody took the first quests).
+            DangerLevel.Low => Town.FacilityRules.BaseStatFactor,
             DangerLevel.Medium => 5f, // P4-58: levels now run 1..15 across the map (were 1..5)
             _ => 9f,
         };

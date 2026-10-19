@@ -28,6 +28,8 @@ namespace GuildMaster.Units
         public Unit Source;
         public float Amount;
         public bool Critical;
+        /// <summary>A step of poison (P4-87), not a blow: it leaves no new mark and shows as a small green number.</summary>
+        public bool OverTime;
     }
 
     public struct UnitDiedEvent
@@ -82,6 +84,14 @@ namespace GuildMaster.Units
 
         public float StunnedUntil { get; private set; }
         public bool IsStunned => Time.time < StunnedUntil;
+
+        /// <summary>Poison, broken armour and chill left by the guild's facilities (P4-87).</summary>
+        public Afflictions Afflictions { get; } = new();
+        /// <summary>Defence as blows meet it (broken armour taken off).</summary>
+        public float EffectiveDefense => Stats.Defense * (1f - Afflictions.ArmorBreak);
+        /// <summary>Seconds between attacks as they are now (a chill draws them out).</summary>
+        public float AttackCooldownNow => Stats.AttackCooldown / Mathf.Max(0.1f, 1f - Afflictions.Slow);
+
         float _speedBuff = 1f;
         float _speedBuffUntil;
         Vector2 _knockVelocity;
@@ -158,7 +168,9 @@ namespace GuildMaster.Units
 
         protected void TickStatus(float dt)
         {
-            Mover.BuffMultiplier = Time.time < _speedBuffUntil ? _speedBuff : 1f;
+            Mover.BuffMultiplier = (Time.time < _speedBuffUntil ? _speedBuff : 1f) * (1f - Afflictions.Slow);
+            Afflictions.Tick(this, dt);
+            if (Visual != null) Visual.StatusTint = Afflictions.Tint;
             if (Time.time < _knockUntil)
             {
                 var next = Position + _knockVelocity * dt;
@@ -224,6 +236,8 @@ namespace GuildMaster.Units
             StunnedUntil = 0f;
             _speedBuffUntil = 0f;
             _knockUntil = 0f;
+            Afflictions.Clear();
+            if (Visual != null) Visual.StatusTint = Color.white;
             CurrentTarget = null;
             foreach (var s in Skills) s.ResetCooldown(GameRandomStagger());
             if (Mover) Mover.Speed = Stats.MoveSpeed;
@@ -331,7 +345,7 @@ namespace GuildMaster.Units
             return skill != null && skill.TryUseDeliberately(this, target);
         }
 
-        internal void ReceiveDamage(float amount, Unit source, bool critical)
+        internal void ReceiveDamage(float amount, Unit source, bool critical, bool overTime = false)
         {
             if (!IsAlive) return;
             if (GuildInvulnerable && Faction == Faction.Guild) amount = 0f;
@@ -341,13 +355,16 @@ namespace GuildMaster.Units
                 LastAttacker = source;
                 LastAttackedTime = Time.time;
             }
-            Visual?.Flash();
-            EventBus.Publish(new UnitDamagedEvent { Target = this, Source = source, Amount = amount, Critical = critical });
+            if (!overTime) Visual?.Flash();
+            EventBus.Publish(new UnitDamagedEvent { Target = this, Source = source, Amount = amount, Critical = critical, OverTime = overTime });
             OnDamaged(amount, source);
             if (Hp <= 0f)
             {
                 Hp = 0f;
                 _dead = true;
+                // Marks end with the life (the corpse fades from its own colour, not the poison's).
+                Afflictions.Clear();
+                if (Visual != null) Visual.StatusTint = Color.white;
                 Mover.Stop();
                 OnDeath(source);
                 Died?.Invoke(this);
@@ -380,6 +397,8 @@ namespace GuildMaster.Units
             public float grace_until;
             /// <summary>Seconds left on each skill, in the order of <see cref="Skills"/>.</summary>
             public System.Collections.Generic.List<float> skill_cooldowns = new();
+            /// <summary>Marks from the guild's facilities (P4-87); all zero when none.</summary>
+            public Afflictions.SaveData afflictions;
         }
 
         public UnitSave CaptureUnit()
@@ -392,6 +411,7 @@ namespace GuildMaster.Units
                 last_attacked = SaveTime.Rel(LastAttackedTime), next_attack = SaveTime.Rel(NextAttackTime),
                 stunned_until = SaveTime.Rel(StunnedUntil), speed_buff = _speedBuff, speed_buff_until = SaveTime.Rel(_speedBuffUntil),
                 hidden_until = SaveTime.Rel(_hiddenUntil), grace_until = SaveTime.Rel(GraceUntil),
+                afflictions = Afflictions.Capture(),
             };
             foreach (var skill in Skills) s.skill_cooldowns.Add(SaveTime.Hundredths(skill.CooldownLeft));
             return s;
@@ -411,11 +431,13 @@ namespace GuildMaster.Units
             if (Visual != null) Visual.Fade = IsHidden ? 0.35f : 1f;
             GraceUntil = SaveTime.Abs(s.grace_until);
             for (int i = 0; i < Skills.Count && i < s.skill_cooldowns.Count; i++) Skills[i].ResetCooldown(s.skill_cooldowns[i]);
+            Afflictions.Restore(s.afflictions);
         }
 
         public void LinkUnit(UnitSave s, SaveContext ctx)
         {
             if (!string.IsNullOrEmpty(s.last_attacker)) LastAttacker = ctx.Find<Unit>(s.last_attacker);
+            Afflictions.Link(s.afflictions, ctx);
         }
 
         /// <summary>Until this moment (Time.time) nothing can hurt the unit (a last stand's grace, F-6).</summary>

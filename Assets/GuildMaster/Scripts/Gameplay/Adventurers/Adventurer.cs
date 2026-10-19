@@ -171,6 +171,7 @@ namespace GuildMaster.Adventurers
             Faction = Faction.Visitor;
             IsGuildMember = false;
             VisitorLeaveAtHour = leaveAtHour;
+            RecalculateStats(); // not the guild's yet: no facility helps it (P4-87; health stays full, no dice drawn)
             ChangeState(VisitorWanderState);
         }
 
@@ -184,6 +185,7 @@ namespace GuildMaster.Adventurers
             IsGuildMember = true;
             InConversation = false;
             ConversationPartner = null;
+            RecalculateStats(); // the guild's facilities now count (P4-87)
             ChangeState(IdleState);
         }
 
@@ -287,7 +289,9 @@ namespace GuildMaster.Adventurers
         public void RecalculateStats(bool fullHeal = false)
         {
             float ratio = Stats.MaxHp > 0 ? HpRatio : 1f;
-            Stats = AdventurerStats.Compute(Data, Traits?.Modifiers);
+            // P4-87: weakened, raised for members by the guild's stat buildings.
+            Stats = AdventurerStats.Compute(Data, Traits?.Modifiers,
+                Services.TryGet<Town.FacilityService>(out var facilities) ? facilities.ScaleFor(this) : null);
             if (fullHeal) ResetVitals();
             else
             {
@@ -637,6 +641,7 @@ namespace GuildMaster.Adventurers
                 a.Faction = Faction.Visitor;
                 a.VisitorLeaveAtHour = s.visitor_leave_hour;
             }
+            if (!s.member || s.visitor) a.RecalculateStats(); // facilities are the guild's only (P4-87)
             a.RestoreUnit(s.unit);
             a.LastThought = s.last_thought;
             a.LastThoughtFromLlm = s.thought_from_llm;

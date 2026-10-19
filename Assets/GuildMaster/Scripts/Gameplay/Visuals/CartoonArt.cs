@@ -111,6 +111,16 @@ namespace GuildMaster.Visuals
                 return outside + Mathf.Min(Mathf.Max(qx, qy), 0f) - r;
             };
 
+        /// <summary>A stroke from one point to another with round ends (emblems, P4-87).</summary>
+        static Func<float, float, float> Segment(float x0, float y0, float x1, float y1, float r)
+            => (x, y) =>
+            {
+                float dx = x1 - x0, dy = y1 - y0;
+                float t = Mathf.Clamp01(((x - x0) * dx + (y - y0) * dy) / Mathf.Max(1e-4f, dx * dx + dy * dy));
+                float px = x0 + dx * t - x, py = y0 + dy * t - y;
+                return Mathf.Sqrt(px * px + py * py) - r;
+            };
+
         static Func<float, float, float> Union(params Func<float, float, float>[] shapes)
             => (x, y) =>
             {
@@ -493,6 +503,14 @@ namespace GuildMaster.Visuals
                 Town.BuildingType.GuildHall => Hex(0x4A7BD0),
                 Town.BuildingType.Blacksmith => Hex(0x6B6F7A),
                 Town.BuildingType.Apothecary => Hex(0x4DB06B),
+                // The guild's facilities (P4-87): a roof colour each and an emblem on the roof.
+                Town.BuildingType.Armory => Hex(0x9B3B2E),
+                Town.BuildingType.ArmorWorkshop => Hex(0x5B7A99),
+                Town.BuildingType.DiningHall => Hex(0xE08A2E),
+                Town.BuildingType.PoisonLab => Hex(0x6FA83A),
+                Town.BuildingType.RuneForge => Hex(0x7B5BD6),
+                Town.BuildingType.FrostAltar => Hex(0x6FBBE0),
+                Town.BuildingType.Dormitory => Hex(0xA0643A),
                 _ => Hex(0xB9854A),
             };
             var wall = Hex(0xF3E6C8);
@@ -529,7 +547,59 @@ namespace GuildMaster.Visuals
             c.ShapeClipped(RoundRect(8, h - 14, w - 8, h - 9, 2f), (x, y) => roofShape(x, y) + ink, Lighter(roof, 0.3f));
             if (type == Town.BuildingType.Blacksmith)
                 c.Shape(RoundRect(w - 26, h - 34, w - 14, h - 2, 2f), Hex(0x8A8E99), Ink, 2.5f);   // chimney
+            if (type == Town.BuildingType.DiningHall)
+                c.Shape(RoundRect(w - 24, h - 30, w - 13, h - 2, 2f), Hex(0xB98A55), Ink, 2.5f);   // kitchen chimney
+            Emblem(c, type, w * 0.5f, (roofBottom + h) * 0.5f);
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+        }
+
+        /// <summary>A round plaque on a facility's roof (P4-87) showing what it does; nothing for the town's own buildings.</summary>
+        static void Emblem(Canvas c, Town.BuildingType type, float cx, float cy)
+        {
+            if (!Town.FacilityRules.IsFacility(type)) return;
+            const float r = 13f;
+            c.Shape(Circle(cx, cy, r), Hex(0xF6E7C1), Ink, 2.5f);
+            var steel = Hex(0xC9CED8);
+            switch (type)
+            {
+                case Town.BuildingType.Armory: // crossed swords
+                    c.Shape(Segment(cx - 7, cy - 7, cx + 7, cy + 7, 1.8f), steel, Ink, 1.2f);
+                    c.Shape(Segment(cx + 7, cy - 7, cx - 7, cy + 7, 1.8f), steel, Ink, 1.2f);
+                    c.Shape(Segment(cx - 7, cy - 3, cx - 3, cy - 7, 1.4f), Hex(0x8A5A30), Ink, 1f);
+                    c.Shape(Segment(cx + 7, cy - 3, cx + 3, cy - 7, 1.4f), Hex(0x8A5A30), Ink, 1f);
+                    break;
+                case Town.BuildingType.ArmorWorkshop: // shield
+                    c.Shape(Union(RoundRect(cx - 7, cy - 2, cx + 7, cy + 8, 2f), Circle(cx, cy - 2, 7f)), Hex(0x5B7A99), Ink, 2f);
+                    c.Shape(Segment(cx, cy - 7, cx, cy + 6, 1.2f), Hex(0xF2C94C), Hex(0xF2C94C), 0f);
+                    break;
+                case Town.BuildingType.DiningHall: // bowl with steam
+                    c.Shape(Union(Ellipse(cx, cy - 2, 9, 5), RoundRect(cx - 9, cy - 2, cx + 9, cy, 1f)), Hex(0xE8C98A), Ink, 2f);
+                    c.Shape(Segment(cx - 3, cy + 3, cx - 3, cy + 8, 1.1f), Hex(0xBFC6D0), Hex(0xBFC6D0), 0f);
+                    c.Shape(Segment(cx + 3, cy + 3, cx + 3, cy + 8, 1.1f), Hex(0xBFC6D0), Hex(0xBFC6D0), 0f);
+                    break;
+                case Town.BuildingType.PoisonLab: // flask with green brew
+                    c.Shape(Union(Circle(cx, cy - 3, 6.5f), RoundRect(cx - 2.5f, cy, cx + 2.5f, cy + 8, 1f)), Hex(0x8BE04A), Ink, 2f);
+                    c.Shape(Circle(cx - 2, cy - 2, 1.4f), Hex(0xD8FFB0), Hex(0xD8FFB0), 0f);
+                    break;
+                case Town.BuildingType.RuneForge: // rune ring
+                    c.Shape(Circle(cx, cy, 8f), Hex(0xB8A2F5), Ink, 2f);
+                    c.Shape(Circle(cx, cy, 4f), Hex(0xF6E7C1), Ink, 1.5f);
+                    c.Shape(Segment(cx, cy - 8, cx, cy + 8, 1f), Hex(0x4A2E9A), Hex(0x4A2E9A), 0f);
+                    break;
+                case Town.BuildingType.FrostAltar: // snowflake
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float a = i * Mathf.PI / 3f;
+                        float dx = Mathf.Cos(a) * 8f, dy = Mathf.Sin(a) * 8f;
+                        c.Shape(Segment(cx - dx, cy - dy, cx + dx, cy + dy, 1.4f), Hex(0x9ED8F5), Hex(0x2B6E9A), 0.8f);
+                    }
+                    break;
+                case Town.BuildingType.Dormitory: // bed
+                    c.Shape(RoundRect(cx - 9, cy - 5, cx + 9, cy + 1, 2f), Hex(0xD9534F), Ink, 1.5f);
+                    c.Shape(RoundRect(cx - 9, cy - 1, cx - 3, cy + 4, 1.5f), Hex(0xFFF6DA), Ink, 1.5f);
+                    c.Shape(RoundRect(cx - 10, cy - 7, cx - 8, cy + 6, 0.8f), Hex(0x8A5A30), Ink, 1f);
+                    break;
+            }
         }
 
         /// <summary>
@@ -584,6 +654,38 @@ namespace GuildMaster.Visuals
                     var bottles = new[] { Hex(0xE74C3C), Hex(0x3498DB), Hex(0x2ECC71), Hex(0xE74C3C), Hex(0x9B59B6) };
                     for (int i = 0; i < bottles.Length && 20 + i * 12 < w - 20; i++) c.Shape(Circle(22 + i * 12, h - 26, 4f), bottles[i], Ink, 1.5f);
                     c.Shape(RoundRect(cx - 18, 26, cx + 18, 36, 2f), Hex(0xA56B3A), Ink, 2f);                              // counter
+                    break;
+                // The guild's facilities (P4-87).
+                case Town.BuildingType.Armory:
+                    c.Shape(RoundRect(16, h - 30, w - 16, h - 22, 2f), Hex(0x8A5A30), Ink, 2f);                            // weapon rack
+                    for (float x = 22; x < w - 18; x += 10) c.Shape(Segment(x, h - 44, x, h - 20, 1.6f), Hex(0xC9CED8), Ink, 1f);
+                    break;
+                case Town.BuildingType.ArmorWorkshop:
+                    for (int i = -1; i <= 1; i += 2)
+                        c.Shape(Union(Circle(cx + i * 18, h - 30, 6f), RoundRect(cx + i * 18 - 7, h - 50, cx + i * 18 + 7, h - 34, 3f)), Hex(0x8C9AAE), Ink, 2f);  // armour stands
+                    break;
+                case Town.BuildingType.DiningHall:
+                    c.Shape(RoundRect(cx - 26, 30, cx + 26, 42, 3f), Hex(0xA56B3A), Ink, 2f);                              // long table
+                    c.Shape(RoundRect(18, h - 34, 44, h - 20, 3f), Hex(0x6B6F7A), Ink, 2f);                                // stove
+                    break;
+                case Town.BuildingType.PoisonLab:
+                    c.Shape(RoundRect(14, h - 32, w - 14, h - 20, 2f), Hex(0x8A5A30), Ink, 2f);                            // shelf
+                    for (int i = 0; 22 + i * 12 < w - 20; i++) c.Shape(Circle(22 + i * 12, h - 26, 4f), Hex(0x8BE04A), Ink, 1.5f);
+                    c.Shape(Circle(cx, 34, 8f), Hex(0x4A4E57), Ink, 2f);                                                    // cauldron
+                    break;
+                case Town.BuildingType.RuneForge:
+                    c.Shape(Circle(cx, h * 0.5f, 16f), Hex(0xB8A2F5), Hex(0x4A2E9A), 2f);                                  // rune circle
+                    c.Shape(Circle(cx, h * 0.5f, 9f), floor, Hex(0x4A2E9A), 1.5f);
+                    break;
+                case Town.BuildingType.FrostAltar:
+                    c.Shape(RoundRect(cx - 14, h * 0.5f - 6, cx + 14, h * 0.5f + 8, 3f), Hex(0x9ED8F5), Hex(0x2B6E9A), 2f);  // altar
+                    break;
+                case Town.BuildingType.Dormitory:
+                    for (float x = 20; x < w - 24; x += 22)
+                    {
+                        c.Shape(RoundRect(x, h - 46, x + 16, h - 18, 3f), Hex(0xD9534F), Ink, 2f);                         // beds
+                        c.Shape(RoundRect(x + 2, h - 26, x + 14, h - 20, 2f), Hex(0xFFF6DA), Ink, 1f);
+                    }
                     break;
             }
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));

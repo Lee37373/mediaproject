@@ -62,6 +62,29 @@ namespace GuildMaster.Town
         }
 
         public ListView<Building> Buildings => new(_buildings);
+
+        /// <summary>Goes up whenever a building is put up or taken away (a restore included, which raises no events).</summary>
+        public int Version { get; private set; }
+
+        /// <summary>How many of this kind stand or lie in rubble (P4-87: the next one costs more).</summary>
+        public int CountOf(BuildingType type)
+        {
+            int n = 0;
+            foreach (var b in _buildings) if (b.Type == type) n++;
+            return n;
+        }
+
+        /// <summary>How many of its kind were put up before this one (its place in the build order, P4-87).</summary>
+        public int EarlierOfKind(Building building)
+        {
+            int n = 0;
+            foreach (var b in _buildings)
+            {
+                if (b == building) return n;
+                if (b.Type == building.Type) n++;
+            }
+            return n;
+        }
         public RectInt TownRect => _world.Map.TownRect;
         public Vector2 PlazaPosition => _world.TownCenterWorld;
 
@@ -100,6 +123,7 @@ namespace GuildMaster.Town
             if (blocks) _world.Grid.SetBlocked(rect, true);
             mapRenderer.ClearDecor(rect);
             _buildings.Add(b);
+            Version++;
             return b;
         }
 
@@ -118,6 +142,7 @@ namespace GuildMaster.Town
         {
             if (b == null || !_buildings.Remove(b)) return;
             if (b.BlocksMovement) _world.Grid.SetBlocked(b.Footprint, false);
+            Version++;
             Destroy(b.gameObject);
         }
 

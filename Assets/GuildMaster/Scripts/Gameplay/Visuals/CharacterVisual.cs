@@ -111,7 +111,10 @@ namespace GuildMaster.Visuals
             if (_body) _body.color = Shown(c);
         }
 
-        Color Shown(Color c) => new(c.r, c.g, c.b, c.a * Mathf.Clamp01(Fade));
+        /// <summary>A mark laid over the tint (P4-87: poison, chill, broken armour; white = none).</summary>
+        public Color StatusTint { get; set; } = Color.white;
+
+        Color Shown(Color c) => new(c.r * StatusTint.r, c.g * StatusTint.g, c.b * StatusTint.b, c.a * Mathf.Clamp01(Fade));
 
         public void Flash(float duration = 0.1f) => _flashTimer = duration;
 
@@ -155,7 +158,11 @@ namespace GuildMaster.Visuals
                 _flashTimer -= Time.deltaTime;
                 _body.color = Shown(_flashTimer > 0f ? new Color(1f, 0.35f, 0.35f, _tint.a) : _tint);
             }
-            else if (!Mathf.Approximately(_body.color.a, _tint.a * Mathf.Clamp01(Fade))) _body.color = Shown(_tint);
+            else
+            {
+                var shown = Shown(_tint);
+                if (_body.color != shown) _body.color = shown;
+            }
         }
     }
 }

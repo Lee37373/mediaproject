@@ -130,7 +130,7 @@ namespace GuildMaster.UI
         protected override void Refresh()
         {
             var roster = Services.Get<GuildRoster>();
-            _summary.text = $"길드원 {roster.Members.Count}/{roster.Capacity}명 · 파티별로 묶어 보여 줍니다(★ 리더). 행을 클릭하면 해당 모험가를 추적합니다.";
+            _summary.text = $"길드원 {roster.CountText} · 파티별로 묶어 보여 줍니다(★ 리더). 행을 클릭하면 해당 모험가를 추적합니다.";
             BuildGroups(roster.Members);
             EnsureRows(_content, _headers, _groups.Count, GroupHeader.Create);
             EnsureRows(_content, _rows, roster.Members.Count, MemberRow.Create);

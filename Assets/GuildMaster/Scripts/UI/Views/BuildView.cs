@@ -12,12 +12,14 @@ namespace GuildMaster.UI
     /// <summary>
     /// Build window (P4-13): what the guild can put up, what it costs against what it has, and a
     /// button that starts "click where it goes". Placed buildings are torn down from the building
-    /// window instead (click the building). On top, pushing the town walls out (P4-86).
+    /// window instead (click the building). On top, pushing the town walls out (P4-86); below the
+    /// watchtower, the guild's facilities (P4-87, inside the walls, raised by clicking them).
     /// </summary>
     public class BuildView : UIPanel
     {
         public override string Title => "건설";
 
+        readonly List<Text> _titles = new();
         readonly List<Text> _costs = new();
         readonly List<Button> _buttons = new();
         RectTransform _list;
@@ -28,17 +30,20 @@ namespace GuildMaster.UI
         protected override void Build(RectTransform body)
         {
             UIBuilder.VLayout(body, 8, 6);
-            UIBuilder.Label(body, "[배치]를 누르면 미리보기가 커서를 따라옵니다. 초록이면 지을 수 있고, 우클릭이나 ESC로 취소합니다.\n무너지거나 필요 없어진 건물은 클릭해서 철거합니다.",
+            UIBuilder.Label(body, "[배치]를 누르면 미리보기가 커서를 따라옵니다. 초록이면 지을 수 있고, 우클릭이나 ESC로 취소합니다.\n지은 건물은 클릭해서 업그레이드·수리·철거합니다. 길드 내실 건물은 성벽 안에만 지을 수 있습니다.",
                             14, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 42);
-            _list = UIBuilder.Rect(body, "List");
-            UIBuilder.VLayout(_list, 6, 0);
-            _list.Size(-1, -1, -1, 1);
             _message = UIBuilder.Label(body, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 26);
+            _list = UIBuilder.ScrollList(body, out var scroll, 6);
+            scroll.GetComponent<RectTransform>().Size(-1, -1, -1, 1);
 
             BuildExpansionRow();
             var construction = Services.Get<ConstructionService>();
             foreach (var type in ConstructionService.Placeable)
             {
+                bool facility = FacilityRules.IsFacility(type);
+                if (type == BuildingType.Armory)
+                    UIBuilder.Label(_list, "길드 내실 — 스탯 3종(공격·방어·체력), 적 약화 3종, 대숙소. 같은 종류를 더 지으면 효과는 절반·¼, 비용은 ×1.5씩.",
+                                    14, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 24);
                 var row = UIBuilder.Rect(_list, "Row");
                 UIBuilder.HLayout(row, 8, 0);
                 // An HLayout force-expands its height, which makes the row itself report as
@@ -48,8 +53,10 @@ namespace GuildMaster.UI
                 var info = UIBuilder.Rect(row, "Info");
                 UIBuilder.VLayout(info, 2, 0);
                 info.Size(-1, 100, flexWidth: 1);
-                UIBuilder.Label(info, BuildingNames.Of(type), 19, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 28);
+                _titles.Add(UIBuilder.Label(info, BuildingNames.Of(type), 19, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 28));
                 var effect = construction.CostOf(type)?.effectText ?? "";
+                if (facility && type != BuildingType.Dormitory)
+                    effect = $"Lv.1 {effect} · Lv.3 {FacilityRules.EffectText(type, FacilityRules.MaxLevel)}";
                 UIBuilder.Label(info, effect, 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 22);
                 var cost = UIBuilder.Label(info, "", 15, TextAnchor.MiddleLeft).Size(-1, 40);
                 cost.verticalOverflow = VerticalWrapMode.Overflow;
@@ -123,17 +130,32 @@ namespace GuildMaster.UI
             var treasury = Services.Get<GuildTreasury>();
             var db = Services.Get<GameDatabase>();
             RefreshExpansion(treasury, db);
+            var town = Services.Get<TownService>();
             for (int i = 0; i < ConstructionService.Placeable.Length && i < _costs.Count; i++)
             {
                 var type = ConstructionService.Placeable[i];
-                var cost = construction.CostOf(type);
+                var cost = construction.PriceToBuild(type);
                 if (cost == null) continue;
-                var sb = new StringBuilder(Have(treasury.Gold, cost.goldCost, "골드", "G"));
-                foreach (var c in cost.itemCosts)
-                    sb.Append("   ").Append(Have(treasury.GetStock(c.itemId), c.count, db.Item(c.itemId)?.displayName ?? c.itemId, ""));
-                sb.Append("\n").Append(UIBuilder.Colored($"철거하면 {construction.RefundText(type)} 돌려받습니다.", UITheme.TextMuted));
+                bool facility = FacilityRules.IsFacility(type);
+                int built = town.CountOf(type);
+                _titles[i].text = facility
+                    ? $"{BuildingNames.Of(type)}  {UIBuilder.Colored($"{built}/{FacilityRules.MaxCopies(type)}채", UITheme.TextMuted)}"
+                    : BuildingNames.Of(type);
+                string reason = construction.CannotBuildReason(type);
+                var sb = new StringBuilder();
+                if (facility && built >= FacilityRules.MaxCopies(type)) sb.Append(UIBuilder.Colored(reason, UITheme.TextMuted));
+                else
+                {
+                    sb.Append(Have(treasury.Gold, cost.goldCost, "골드", "G"));
+                    foreach (var c in cost.itemCosts)
+                        sb.Append("   ").Append(Have(treasury.GetStock(c.itemId), c.count, db.Item(c.itemId)?.displayName ?? c.itemId, ""));
+                    string note = facility && built > 0
+                        ? $"{built + 1}번째 채: 효과 {FacilityRules.CopyWeights[built] * 100f:0}%·비용 ×{FacilityRules.CopyCost(built):0.##}. "
+                        : "";
+                    sb.Append("\n").Append(UIBuilder.Colored($"{note}철거하면 {construction.RefundText(type)} 돌려받습니다.", UITheme.TextMuted));
+                }
                 _costs[i].text = sb.ToString();
-                _buttons[i].interactable = construction.CannotAffordReason(type) == null;
+                _buttons[i].interactable = reason == null;
             }
         }
 

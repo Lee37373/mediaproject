@@ -389,6 +389,45 @@ namespace GuildMaster.Data
                     footprint = 2,
                     effectText = "주변 14칸을 성벽 너머까지 감시",
                 });
+
+            // The guild's facilities (P4-87, user decision 2026-10-19: 400 / 1000 / 2000G a level plus materials, the
+            // dormitory 1500G). Placed inside the walls like a tower; the second and third of a kind cost more (FacilityRules).
+            BuildingLevel F(Town.BuildingType type, int level, int gold, int hp, params ItemCost[] items)
+            {
+                var lv = new BuildingLevel { goldCost = gold, maxHp = hp, footprint = 3, effectText = Town.FacilityRules.EffectText(type, level) };
+                lv.itemCosts.AddRange(items);
+                return lv;
+            }
+            void Facility(Town.BuildingType type, ItemCost[] one, ItemCost[] two, ItemCost[] three)
+                => B(type, F(type, 1, 400, 300, one), F(type, 2, 1000, 400, two), F(type, 3, 2000, 500, three));
+
+            Facility(Town.BuildingType.Armory,
+                new[] { I("iron_ore", 6), I("rusty_dagger", 4) },
+                new[] { I("iron_ore", 12), I("goblin_helm", 3) },
+                new[] { I("iron_ore", 20), I("crown_shard", 1) });
+            Facility(Town.BuildingType.ArmorWorkshop,
+                new[] { I("stone_shard", 10), I("bone_shard", 6) },
+                new[] { I("goblin_helm", 4), I("iron_ore", 8) },
+                new[] { I("goblin_helm", 8), I("crown_shard", 1) });
+            Facility(Town.BuildingType.DiningHall,
+                new[] { I("slime_jelly", 15), I("goblin_ear", 6) },
+                new[] { I("dense_jelly", 12), I("bone_shard", 8) },
+                new[] { I("royal_jelly", 3), I("dense_jelly", 15) });
+            Facility(Town.BuildingType.PoisonLab,
+                new[] { I("slime_jelly", 12), I("goblin_ear", 8) },
+                new[] { I("dense_jelly", 10), I("old_arrowhead", 10) },
+                new[] { I("royal_jelly", 3), I("crown_shard", 1) });
+            Facility(Town.BuildingType.RuneForge,
+                new[] { I("bone_shard", 8), I("stone_shard", 8) },
+                new[] { I("bone_shard", 15), I("iron_ore", 8) },
+                new[] { I("crown_shard", 2), I("bone_shard", 15) });
+            Facility(Town.BuildingType.FrostAltar,
+                new[] { I("stone_shard", 12), I("bone_shard", 4) },
+                new[] { I("bone_shard", 12), I("dense_jelly", 10) },
+                new[] { I("crown_shard", 1), I("royal_jelly", 2) });
+            var dorm = F(Town.BuildingType.Dormitory, 1, 1500, 450, I("iron_ore", 15), I("stone_shard", 15), I("goblin_ear", 10));
+            dorm.footprint = 4;
+            B(Town.BuildingType.Dormitory, dorm);
         }
 
         /// <summary>Crafting recipes (P4-2). Agreed with the user 2026-09-19; tune in P5-1.</summary>

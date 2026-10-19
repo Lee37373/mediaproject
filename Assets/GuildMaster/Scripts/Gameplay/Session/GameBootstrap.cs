@@ -239,6 +239,8 @@ namespace GuildMaster.Session
             roster.Capacity = Balance.rosterCapacity;
             Services.Register(roster);
             save.Register(roster);
+            // The guild's facilities (P4-87): before the founders, whose stats it scales; derived from the town, not saved.
+            Services.Register(new FacilityService(town, roster));
             // Per-adventurer memories; before recruiting so the starting members remember joining.
             Services.Register(new MemoryRecorder(clock, roster));
             // Multi-person quests: the first taker invites idle members (LLM, rule fallback).

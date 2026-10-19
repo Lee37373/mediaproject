@@ -5,7 +5,12 @@ using UnityEngine;
 
 namespace GuildMaster.Town
 {
-    public enum BuildingType { TownHall, GuildHall, Blacksmith, Apothecary, TrainingGround, Watchtower }
+    /// <summary>Saved by number: new types go at the end. The guild's own facilities (P4-87) follow the watchtower.</summary>
+    public enum BuildingType
+    {
+        TownHall, GuildHall, Blacksmith, Apothecary, TrainingGround, Watchtower,
+        Armory, ArmorWorkshop, DiningHall, PoisonLab, RuneForge, FrostAltar, Dormitory,
+    }
 
     /// <summary>Korean names, also needed before a building exists (the build window).</summary>
     public static class BuildingNames
@@ -18,6 +23,13 @@ namespace GuildMaster.Town
             BuildingType.Apothecary => "약방",
             BuildingType.TrainingGround => "훈련소",
             BuildingType.Watchtower => "감시탑",
+            BuildingType.Armory => "무기고",
+            BuildingType.ArmorWorkshop => "방어구 공방",
+            BuildingType.DiningHall => "식당",
+            BuildingType.PoisonLab => "독 연구소",
+            BuildingType.RuneForge => "마법 각인소",
+            BuildingType.FrostAltar => "냉기 제단",
+            BuildingType.Dormitory => "대숙소",
             _ => type.ToString(),
         };
     }

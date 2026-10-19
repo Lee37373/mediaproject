@@ -61,7 +61,7 @@ namespace GuildMaster.Monsters
                 m.Mover.Stop();
                 if (Time.time >= m.NextAttackTime)
                 {
-                    m.NextAttackTime = Time.time + m.Stats.AttackCooldown;
+                    m.NextAttackTime = Time.time + m.AttackCooldownNow;
                     _target.Damage(m.Stats.Attack * BuildingDamageMul);
                     m.Visual.Flash();
                 }

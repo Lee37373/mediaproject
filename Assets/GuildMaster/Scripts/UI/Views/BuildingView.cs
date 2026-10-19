@@ -24,7 +24,8 @@ namespace GuildMaster.UI
         {
             UIBuilder.VLayout(body, 8, 4);
             _header = UIBuilder.Label(body, "", 20, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 30);
-            _current = UIBuilder.Label(body, "", 15).Size(-1, 44);
+            _current = UIBuilder.Label(body, "", 15).Size(-1, 62);
+            _current.verticalOverflow = VerticalWrapMode.Overflow;
             _next = UIBuilder.Label(body, "", 15).Size(-1, 44);
             _cost = UIBuilder.Label(body, "", 15).Size(-1, 84);
             _cost.verticalOverflow = VerticalWrapMode.Overflow;
@@ -41,6 +42,8 @@ namespace GuildMaster.UI
             BuildingType.GuildHall => "시간당 EXP가",
             BuildingType.Blacksmith or BuildingType.Apothecary => "제작이",
             BuildingType.TrainingGround => "훈련이",
+            BuildingType.Dormitory => "정원 해제가(이미 있는 길드원은 그대로)",
+            _ when FacilityRules.IsFacility(type) => "효과가",
             _ => "건물의 기능이",
         };
 
@@ -74,14 +77,15 @@ namespace GuildMaster.UI
             if (canDemolish)
                 _demolish.SetLabel(_building.IsDestroyed
                     ? "잔해 치우기"
-                    : $"철거 (돌려받기: {construction.RefundText(_building.Type)})");
+                    : $"철거 (돌려받기: {construction.RefundText(_building)})");
             if (def == null)
             {
                 _current.text = _next.text = _cost.text = "";
                 _upgrade.gameObject.SetActive(false);
                 return;
             }
-            if (canDemolish)
+            bool facility = FacilityRules.IsFacility(_building.Type);
+            if (canDemolish && !facility)
             {
                 _current.text = def.Level(1).effectText;
                 _next.text = _building.IsDestroyed
@@ -92,6 +96,16 @@ namespace GuildMaster.UI
                 return;
             }
             _current.text = $"{UIBuilder.Colored("현재", UITheme.TextMuted)}  {def.Level(_building.Level).effectText}";
+            // The second and third of a kind count for less (P4-87): say how much this one counts now.
+            if (facility && !_building.IsDestroyed && _building.Type != BuildingType.Dormitory
+                && Services.TryGet<FacilityService>(out var facilities))
+            {
+                float weight = facilities.WeightOf(_building);
+                if (weight < 1f)
+                    _current.text += "\n" + UIBuilder.Colored(weight > 0f
+                        ? $"같은 종류 중 더 강한 건물이 있어 효과의 {weight * 100f:0}%만 더해집니다."
+                        : "같은 종류가 이미 셋이라 효과가 더해지지 않습니다.", UITheme.TextMuted);
+            }
             // Fallen: what it gives stops until it is stood up again (P4-74·76·78), and it cannot be upgraded.
             if (_building.IsDestroyed)
             {
@@ -108,7 +122,7 @@ namespace GuildMaster.UI
                 _cost.text = "";
                 return;
             }
-            var next = def.Level(_building.Level + 1);
+            var next = upgrades.NextLevel(_building);
             _next.text = $"{UIBuilder.Colored($"Lv.{_building.Level + 1}", UITheme.Accent)}  {next.effectText}";
 
             var treasury = Services.Get<GuildTreasury>();

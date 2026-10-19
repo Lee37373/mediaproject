@@ -270,6 +270,8 @@ namespace GuildMaster.Tests
             var ruin = Services.Get<Incidents.IncidentService>().StartRuin();
             Assert.That(ruin, Is.Not.Null, "a ruin talked of");
             ruin.RumourAtHour = clock.TotalHours;
+            // A guild facility (P4-87), raised a level.
+            Assert.That(DebugCommands.BuildFacility("PoisonLab", 2), Does.StartWith("PoisonLab Lv2"));
 
             clock.SetSpeed(3);
             float start = clock.TotalHours;
@@ -304,6 +306,12 @@ namespace GuildMaster.Tests
             Assert.That(ruin.Rumoured && ruin.Quest != null && !ruin.ChestOpened, Is.True, "the ruin's exploration is up");
             string ruinQuest = ruin.Quest.Id;
             int guardians = ruin.Members.Count;
+            // A monster a member has just marked (P4-87): poison burning, armour broken, chilled — paused, so it all waits.
+            var marked = System.Linq.Enumerable.First(eco.Nests, n => n.Members.Count > 0 && !n.IsLair).Members[0];
+            var poisoner = Services.Get<Adventurers.GuildRoster>().Members[0];
+            marked.Afflictions.Poison(12f, 3f, poisoner);
+            marked.Afflictions.BreakArmor(0.2f, 3f);
+            marked.Afflictions.Chill(0.3f, 2f);
 
             var a = Saves.Capture();
             yield return BootFrom(a);

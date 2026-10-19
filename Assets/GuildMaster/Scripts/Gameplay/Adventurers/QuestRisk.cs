@@ -78,12 +78,13 @@ namespace GuildMaster.Adventurers
 
         /// <summary>
         /// The level at which a member pulls its weight on this quest: alone for an ordinary one (its danger's requirement),
-        /// as one of a full party for party work (<see cref="IsPartyWork"/>). Shown to the model and the player.
+        /// as one of a full party for party work (<see cref="IsPartyWork"/>) — at the guild's present strength (P4-87: with
+        /// no stat buildings a member needs more levels than the old requirement). Shown to the model and the player.
         /// </summary>
         public static int RecommendedLevel(Quests.Quest q)
         {
             float need = IsPartyWork(q) ? Requirement(q) / (1f + 0.6f * (Mathf.Max(1, q.MaxParty) - 1)) : Requirement(q);
-            return Mathf.Max(1, Mathf.CeilToInt(need));
+            return Mathf.Max(1, Mathf.CeilToInt(need / Mathf.Max(0.1f, AdventurerStats.PowerScale) - 0.001f));
         }
 
         /// <summary>A member this many levels (gear counted) under a quest's <see cref="RecommendedLevel"/> is too green for it.</summary>
@@ -92,9 +93,10 @@ namespace GuildMaster.Adventurers
         /// <summary>
         /// Too green for this quest and it is no safe outing for them (위험 or 무모 by <paramref name="riskLabel"/>): P4-88, user
         /// decision 2026-10-18 — new members followed their party to far 위험 quests and died (seven in five days on one seed).
+        /// Levels against levels: the recommendation already counts the guild's strength.
         /// </summary>
         public static bool TooGreen(AdventurerData d, Quests.Quest q, string riskLabel)
-            => (riskLabel == Risky || riskLabel == Reckless) && AdventurerStats.Power(d) <= RecommendedLevel(q) - GreenGap;
+            => (riskLabel == Risky || riskLabel == Reckless) && AdventurerStats.RawPower(d) <= RecommendedLevel(q) - GreenGap;
 
         /// <summary>Odds a too-green member takes or joins such a quest anyway: the bold dare twice as often.</summary>
         public static float GreenDareChance(float dangerAversion) => dangerAversion < 0f ? 0.3f : 0.15f;
@@ -104,9 +106,9 @@ namespace GuildMaster.Adventurers
             => a != null && q != null && TooGreen(a.Data, q, Prompts.DecisionPrompt.RiskLabel(a, q))
                && !Core.GameRandom.Shared.Chance(GreenDareChance(a.Traits?.DangerAversion ?? 0f));
 
-        /// <summary>Lowest level at which one adventurer with this gear tier reaches "적당" alone.</summary>
+        /// <summary>Lowest level at which one adventurer with this gear tier reaches "적당" alone (at the guild's present strength, P4-87).</summary>
         public static int SoloLevel(DangerLevel danger, int gearTier)
-            => Mathf.Max(1, Mathf.CeilToInt(RuleBasedDecisionMaker.DangerRequirement(danger) - gearTier * 1.5f));
+            => Mathf.Max(1, Mathf.CeilToInt(RuleBasedDecisionMaker.DangerRequirement(danger) / Mathf.Max(0.1f, AdventurerStats.PowerScale) - gearTier * 1.5f - 0.001f));
 
         /// <summary>Smallest party (up to <paramref name="maxParty"/>) led by this power that reaches "적당"; 0 if none.</summary>
         public static int PartyNeeded(float leaderPower, DangerLevel danger, int maxParty = 4)
