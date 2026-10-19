@@ -245,6 +245,9 @@ namespace GuildMaster.Adventurers
             if (a.CurrentQuest == null) { a.ChangeState(a.ReturnState); return; }
             // Wait for party invitations to be answered, then leave together.
             if (Services.TryGet<PartyService>(out var party) && party.IsGathering(a.CurrentQuest)) { a.ChangeState(a.GatherState); return; }
+            // Asking closed the gathering, and too few came along (P4-85): the quest went back on the board and the
+            // leader is idle again (it threw here on the next line, seen in a 10-day run with 35 members).
+            if (a.CurrentQuest == null) return;
             // Escorts walk to (and keep up with) the guild master themselves.
             if (a.CurrentQuest.Type == QuestType.Escort) { a.ChangeState(a.EscortState); return; }
             _destination = AdvCtx.QuestDestination(a, a.CurrentQuest);
