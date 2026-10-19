@@ -27,8 +27,12 @@ namespace GuildMaster.Visuals
         Color _tint = Color.white;
         bool _facingLeftOverride;
         float _faceOverrideTimer;
+        bool _shownLeft;
 
         public SpriteRenderer Body => _body;
+
+        /// <summary>Times the sprite turned round (left ↔ right), never reset (a pooled unit keeps counting): read differences. Debug, P4-92.</summary>
+        public int Turns { get; private set; }
 
         // ---- Frame animation (imported art, see ArtLibrary) ----
         CharacterAnimSet _anim;
@@ -118,10 +122,18 @@ namespace GuildMaster.Visuals
 
         public void Flash(float duration = 0.1f) => _flashTimer = duration;
 
+        /// <summary>
+        /// Within this many cells of straight above or below the target a unit keeps the way it faces (P4-92: skilled
+        /// units side-stepping round a target crossed above and below it every few frames and the sprite flickered).
+        /// </summary>
+        public const float FaceDeadZone = 0.3f;
+
         /// <summary>Face toward a world x position for a moment (e.g. when attacking).</summary>
         public void FaceTowards(Vector2 target)
         {
-            _facingLeftOverride = target.x < transform.position.x;
+            float dx = target.x - transform.position.x;
+            if (Mathf.Abs(dx) > FaceDeadZone) _facingLeftOverride = dx < 0f;
+            else if (_faceOverrideTimer <= 0f) _facingLeftOverride = _shownLeft;
             _faceOverrideTimer = 0.4f;
         }
 
@@ -129,7 +141,12 @@ namespace GuildMaster.Visuals
         {
             if (_body == null) return;
             bool moving = _mover != null && (_mover.IsMoving || _mover.IsSteering);
-            bool left = _faceOverrideTimer > 0f ? _facingLeftOverride : _mover != null && _mover.FacingLeft;
+            // Looking somewhere on purpose (a blow, a target), else the way it walks — and standing still, the way it
+            // last looked (P4-92: after each blow a unit turned back to where it had last walked, twice a swing).
+            bool left = _faceOverrideTimer > 0f ? _facingLeftOverride
+                      : moving && _mover != null ? _mover.FacingLeft
+                      : _shownLeft;
+            if (left != _shownLeft) { _shownLeft = left; Turns++; }
             _faceOverrideTimer -= Time.deltaTime;
             _body.flipX = ArtFacesLeft ? !left : left;
 

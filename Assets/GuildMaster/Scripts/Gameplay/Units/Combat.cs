@@ -473,7 +473,11 @@ namespace GuildMaster.Units
             {
                 ResetChase();
                 // Encircling (P4-28): between blows, keep working round to the own slot.
-                if (Time.time < _self.NextAttackTime && CircleToSlot(dt)) return EngageStatus.Attacking;
+                if (Time.time < _self.NextAttackTime && CircleToSlot(dt))
+                {
+                    _self.Visual?.FaceTowards(Target.Position); // steps round it facing it (P4-92)
+                    return EngageStatus.Attacking;
+                }
                 if (_self.Mover.IsMoving) _self.Mover.Stop();
                 Combat.TryAttack(_self, Target);
                 return EngageStatus.Attacking;
@@ -589,6 +593,8 @@ namespace GuildMaster.Units
                         _kiting = true;
                     }
                 }
+                // Backs away facing the fight (P4-92: turning to walk and back to shoot flickered every half second).
+                _self.Visual?.FaceTowards(Target.Position);
                 return EngageStatus.Chasing;
             }
             _kiting = false;
@@ -601,6 +607,7 @@ namespace GuildMaster.Units
                     _tacticTimer = 0.45f;
                     _self.Mover.SetDestination(hold, 0.2f);
                 }
+                _self.Visual?.FaceTowards(Target.Position);
                 return EngageStatus.Chasing;
             }
 

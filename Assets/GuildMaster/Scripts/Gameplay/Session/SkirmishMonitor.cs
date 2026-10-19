@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
@@ -90,7 +91,15 @@ namespace GuildMaster.Session
             System.Array.Clear(_tierCloseSamples, 0, _tierCloseSamples.Length);
             System.Array.Clear(_tierSwings, 0, _tierSwings.Length);
             _lastSwing.Clear();
+            _lastTurns.Clear();
+            _stateTurns.Clear();
+            System.Array.Clear(_tierTurns, 0, _tierTurns.Length);
+            System.Array.Clear(_tierFightSamples, 0, _tierFightSamples.Length);
         }
+
+        /// <summary>Turns per minute of fighting by tier (scaled time).</summary>
+        public float TurnsPerMinute(CombatTier tier)
+            => _tierFightSamples[(int)tier] > 0 ? _tierTurns[(int)tier] * 60f / (_tierFightSamples[(int)tier] * SampleInterval) : 0f;
 
         void OnLog(string message, string stackTrace, LogType type)
         {
@@ -127,7 +136,39 @@ namespace GuildMaster.Session
             SampleTargets();
             SampleParties();
             SampleFootwork();
+            SampleTurns();
         }
+
+        // ---------------- Facing (P4-92) ----------------
+
+        readonly Dictionary<Unit, int> _lastTurns = new();
+        readonly int[] _tierTurns = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+        readonly int[] _tierFightSamples = new int[System.Enum.GetValues(typeof(CombatTier)).Length];
+
+        /// <summary>How often fighters turn round (left ↔ right) — the sprite flickered for skilled+ units side-stepping and kiting.</summary>
+        void SampleTurns()
+        {
+            foreach (var u in UnitRegistry.All)
+            {
+                if (u == null || !u.IsAlive || u.Visual == null) continue;
+                int turns = u.Visual.Turns;
+                bool had = _lastTurns.TryGetValue(u, out var before);
+                _lastTurns[u] = turns;
+                if (!had || !u.IsInFight()) continue;
+                int t = (int)u.Tier;
+                _tierFightSamples[t]++;
+                int turned = Mathf.Max(0, turns - before);
+                _tierTurns[t] += turned;
+                // What it was doing (state, and how it moved), to find where the turning comes from.
+                var e = u.CombatEngagement;
+                string how = e != null && e.IsKiting ? "kite" : u.Mover.IsSteering ? "steer" : u.Mover.IsMoving ? "walk" : "stand";
+                string key = $"{(u is Adventurer ? "adv" : "mon")}:{u.DebugState}:{how}";
+                _stateTurns.TryGetValue(key, out var acc);
+                _stateTurns[key] = (acc.turns + turned, acc.samples + 1);
+            }
+        }
+
+        readonly Dictionary<string, (int turns, int samples)> _stateTurns = new();
 
         // ---------------- Parties (P4-27) ----------------
 
@@ -310,6 +351,14 @@ namespace GuildMaster.Session
                 if (_tierCloseSamples[t] > 0) sb.Append($" {CombatTiers.Label((CombatTier)t)}={_tierSwings[t] * 60f / (_tierCloseSamples[t] * SampleInterval):0}");
             sb.AppendLine();
             sb.AppendLine($"  targets:spreadSamples={_spreadSamples} avgTopShare={share:0}% allOnOne={allOne:0}% monsterSwitches={_monsterSwitches} advSwitches={_advSwitches} dropped={_dropped}");
+            sb.Append("  turnsPerMinFighting:");
+            for (int t = 0; t < _tierFightSamples.Length; t++)
+                if (_tierFightSamples[t] > 0) sb.Append($" {CombatTiers.Label((CombatTier)t)}={TurnsPerMinute((CombatTier)t):0}/{_tierFightSamples[t]}");
+            sb.AppendLine();
+            sb.Append("  turnsBy(state:move, per min/samples):");
+            foreach (var kv in _stateTurns.OrderByDescending(kv => kv.Value.turns).Take(8))
+                sb.Append($" {kv.Key}={kv.Value.turns * 60f / (kv.Value.samples * SampleInterval):0}/{kv.Value.samples}");
+            sb.AppendLine();
             return sb.ToString();
         }
     }

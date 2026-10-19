@@ -184,8 +184,17 @@ namespace GuildMaster.World
                 else { next = pos; _steerVelocity = Vector2.zero; }
             }
             Velocity = _steerVelocity;
-            if (Mathf.Abs(_steerVelocity.x) > 0.05f) FacingLeft = _steerVelocity.x < 0f;
+            if (Mathf.Abs(_steerVelocity.x) > 0.05f) UpdateFacing(_steerVelocity);
             transform.position = new Vector3(next.x, next.y, transform.position.z);
+        }
+
+        /// <summary>
+        /// Turns only for a move that goes clearly sideways (at least half as much across as up or down): walking nearly
+        /// straight up or down with a little sideways wobble flipped the sprite back and forth (P4-92).
+        /// </summary>
+        void UpdateFacing(Vector2 move)
+        {
+            if (Mathf.Abs(move.x) > 0.0001f && Mathf.Abs(move.x) >= 0.5f * Mathf.Abs(move.y)) FacingLeft = move.x < 0f;
         }
 
         /// <summary>Remaining path distance estimate (straight segments).</summary>
@@ -347,7 +356,7 @@ namespace GuildMaster.World
                 return;
             }
             Velocity = (next - pos) / Mathf.Max(Time.deltaTime, 1e-5f);
-            if (Mathf.Abs(next.x - pos.x) > 0.0001f) FacingLeft = next.x < pos.x;
+            UpdateFacing(next - pos);
             transform.position = new Vector3(next.x, next.y, transform.position.z);
 
             if ((next - target).sqrMagnitude < 0.0004f)

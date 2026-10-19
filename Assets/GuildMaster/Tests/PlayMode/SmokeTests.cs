@@ -2709,7 +2709,7 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
-        public IEnumerator SkilledMelee_SideStepsBetweenBlows_NoviceStandsAndStrikes()
+        public IEnumerator SkilledMelee_SideStepsBetweenBlows_NoviceStandsAndStrikes_AndASkilledArcherKitesFacingItsTarget()
         {
             yield return Boot();
             Unit.GuildInvulnerable = true;
@@ -2745,10 +2745,35 @@ namespace GuildMaster.Tests
                 yield return Duel("goblin_warrior", SkilledLevel, (t, s) => { skilledTurn = t; skilledSwings = s; });
                 yield return Duel("goblin", 1, (t, s) => { noviceTurn = t; noviceSwings = s; });
 
+                // A skilled archer the guild master keeps walking at: it backs off facing the master, not turning round to
+                // walk and back to shoot (P4-92: the sprite flipped twice a second).
+                Monster archer = null;
+                for (int i = 0; i < 40 && archer == null; i++)
+                {
+                    var m = SpawnMonster("goblin", master.Position + new Vector2(1.5f, 0f), level: SkilledLevel);
+                    if (m.IsRangedVariant) archer = m; else m.Perish();
+                }
+                Assume.That(archer, Is.Not.Null, "a goblin archer spawned");
+                archer.ForceTarget(master);
+                bool kited = false;
+                int archerFlipsBefore = archer.Visual.Turns;
+                float chaseUntil = Time.time + 6f, chaseTimer = 0f;
+                while (Time.time < chaseUntil)
+                {
+                    if ((chaseTimer -= Time.deltaTime) <= 0f) { master.Mover.SetDestination(archer.Position, 0.5f); chaseTimer = 0.5f; }
+                    kited |= archer.Engage.IsKiting;
+                    yield return null;
+                }
+                int archerFlips = archer.Visual.Turns - archerFlipsBefore;
+                master.Mover.Stop();
+                archer.Perish();
+
                 Assert.That(skilledTurn, Is.GreaterThan(30f), "a skilled warrior side-steps round its target");
                 Assert.That(noviceTurn, Is.LessThan(15f), "a novice goblin stands and strikes");
                 Assert.That(skilledSwings, Is.GreaterThanOrEqualTo(3), "footwork does not stop the blows");
                 Assert.That(noviceSwings, Is.GreaterThanOrEqualTo(3), "the novice keeps swinging too");
+                Assert.That(kited, Is.True, "a skilled archer backs off the guild master walking at it");
+                Assert.That(archerFlips, Is.LessThanOrEqualTo(3), "and backs off facing the master (it turned 10 times in 6 s before)");
             }
             finally { Unit.GuildInvulnerable = false; }
         }
