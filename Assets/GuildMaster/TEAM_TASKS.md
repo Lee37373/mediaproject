@@ -94,7 +94,7 @@
 | P4-84 | 다른 마을(지도 아이콘): 지대마다 듬성듬성, 길드 마스터가 직접 가서 영입, 몬스터가 공격하면 그 마을이 방어 의뢰를 올림, 무너지면 영구 소멸하고 확률로 다른 곳에 새 마을 | 이재혁 | 완료 | Villages(신규), World/MapGenerator, Recruitment, Quests, Monsters, UI | 966d454 (정렬 버그 1e3bb65) |
 | P4-85 | 돌발 이벤트 4종(여행자·상인 구출, 희귀 몬스터 출현, 유적·보물 발견, 대규모 무리 접근) → 의뢰. **F-5와 겹침** | 이재혁 | 완료 | Incidents(신규: 희귀 몬스터·대규모 무리·여행자 구출·유적 지하 미궁), World/Underground(지하 띠·입구 연결), Quests, Monsters, Ecosystem/MigrationService | f0fb857·0c26b14·6faae39·6703cf7·d397601 |
 | P4-86 | 마을 넓히기: 골드·재료로 성벽을 단계별로 밀어냄(성문 이동, 땅 다시 그리기). 23 → 31 → 39 → 47칸, 즉시, 아는 둥지는 먼저 토벌, 건설 창(B) 맨 위 | 이재혁 | 완료 | Town/TownExpansion·TownExpansionRules(신규)·GateService·TownGate·ConstructionService, World/TownWalls(신규)·MapGenerator·MapRenderer·GridMap·PathFollower, Ecosystem/Nest, UI/BuildView·MinimapView | bfa8588 |
-| P4-87 | 내실 건물: 길드원 전원 상시 스탯 버프, 길드원이 때린 적 약화, 정원 제한을 없애는 건물 | 이재혁 | 예정 | Town/ConstructionService·Building, Data/DefaultContent, Units/Unit·Combat, Recruitment/VisitorService | |
+| P4-87 | 내실 건물: 길드원 전원 상시 스탯 버프, 길드원이 때린 적 약화, 정원 제한을 없애는 건물 | 이재혁 | 진행 중 | Town/ConstructionService·Building, Data/DefaultContent, Units/Unit·Combat, Recruitment/VisitorService | |
 | P4-88 | 측정 관찰 후속: 길드보다 강한 후보는 영입이 어려움, 마을 습격 빈도 절반, 약한 신입은 위험 의뢰를 잘 안 받음, 지대 군주 강화(공격 ×4·호위 8·강타 쿨 5초) | 이재혁 | 완료 | Recruitment, Villages, Adventurers/Decisions·RuleBasedDecisionMaker·PartyService, Monsters/RegionLords | db14b11 |
 | P4-89 | 귀환 중 정지 조사(성벽·성문 옆에서 이동 중인 채 몇 시간 제자리) | 이재혁 | 완료 | World/PathFollower, Adventurers/ReturnToTownState·PartyTactics | 2f472e4 |
 | P4-90 | P4-85 관찰 후속: 위험 낮은 구출 의뢰 최저 보상 올림, 지대 군주 의뢰를 파티 인원으로 위험 평가 | 이재혁 | 완료 | Incidents/IncidentRules, Quests/QuestRisk, Adventurers/Decisions | b27ea28 |
@@ -127,8 +127,8 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: 없음
-- **예정**: P4-87 추가 기획(내실 건물), P5-5 Windows 빌드(맨 마지막)
+- **진행 중**: P4-87 추가 기획(내실 건물)
+- **예정**: P5-5 Windows 빌드(맨 마지막)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-86, P4-88 ~ P4-90, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
