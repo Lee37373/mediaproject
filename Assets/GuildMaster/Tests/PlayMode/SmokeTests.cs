@@ -913,6 +913,12 @@ namespace GuildMaster.Tests
                 Assert.That((quest.Species, quest.RequiredCount, quest.MaxParty), Is.EqualTo((first.Def, 1, RegionLords.QuestParty)));
                 Assert.That(quest.Title, Does.StartWith("[지대 군주]"));
                 Assert.That(intel.NameOf(first.Lair), Is.EqualTo($"{first.Def.displayName}의 거처"));
+                // Work for two parties (P4-90): weighed by the group that could go, recommended per member of eight — and
+                // so is a hunt on its guards' den once the lord is known there (requirement 90, four at most).
+                Assert.That((QuestRisk.IsPartyWork(quest), QuestRisk.RecommendedLevel(quest)), Is.EqualTo((true, 18)));
+                var guardHunt = new Quest("Q_guards", new QuestDraft { Type = QuestType.Hunt, Species = first.Lair.Species, Count = 5, RewardGold = 100, MaxParty = 4 }, 0f)
+                    { Danger = DangerLevel.High, TargetNest = first.Lair };
+                Assert.That((QuestRisk.IsLordWork(guardHunt), QuestRisk.IsPartyWork(guardHunt), QuestRisk.RecommendedLevel(guardHunt)), Is.EqualTo((true, true, 33)));
 
                 // It falls to a member standing by: the region's outer land is sealed, the member carries its title.
                 var hero = Roster.Members.First(a => a.IsAlive);

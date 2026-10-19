@@ -58,6 +58,27 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void ALordsQuest_IsPartyWork_WeighedByTheFullGroup_AndTooFewGiveUp()
+        {
+            // P4-90 (user decision 2026-10-19): weighed as one alone, the lord's requirement (90) was beyond anyone.
+            var lord = UnityEngine.ScriptableObject.CreateInstance<MonsterDefinition>();
+            lord.isRegionLord = true;
+            try
+            {
+                var q = QuestOf(DangerLevel.High, lord, Monsters.RegionLords.QuestParty);
+                Assert.That((QuestRisk.IsLordWork(q), QuestRisk.IsPartyWork(q)), Is.EqualTo((true, true)));
+                int level = QuestRisk.RecommendedLevel(q);
+                Assert.That(QuestRisk.TooFewFor(q, level, 1), Is.True, "one alone does not set out");
+                Assert.That(QuestRisk.TooFewFor(q, level, 4), Is.True, "nor one party of its recommended level");
+                Assert.That(QuestRisk.TooFewFor(q, level, Monsters.RegionLords.QuestParty), Is.False, "two parties of it do");
+                Assert.That(QuestRisk.Label(QuestRisk.Margin(level, Monsters.RegionLords.QuestParty, q)), Is.EqualTo(QuestRisk.Fair));
+            }
+            finally { UnityEngine.Object.DestroyImmediate(lord); }
+            var den = QuestOf(DangerLevel.High);
+            Assert.That((QuestRisk.IsLordWork(den), QuestRisk.IsPartyWork(den)), Is.EqualTo((false, false)), "an ordinary hunt keeps its own rules");
+        }
+
+        [Test]
         public void FarUnderItsLevel_ARiskyQuestIsTooGreen_ButAFairOneIsNot()
         {
             // P4-88 (user decision 2026-10-18): new members followed their party to far 위험 quests and died.

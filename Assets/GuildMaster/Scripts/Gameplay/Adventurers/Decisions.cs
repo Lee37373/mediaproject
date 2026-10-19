@@ -115,7 +115,7 @@ namespace GuildMaster.Adventurers
             var d = a.Data;
             // F-2: stress (and leave) decide whether a quest is considered at all; a tense member is less keen.
             if (Welfare.GuildWelfare.QuestRefusal(a, q.Danger) != null) return 0f;
-            // Party work (a rare monster, P4-85) counts the party that could go along.
+            // Party work (a rare monster P4-85, a region lord P4-90) counts the party that could go along.
             int partySize = QuestRisk.ExpectedParty(q);
             // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused.
             float margin = QuestRisk.Margin(AdventurerStats.Power(d), partySize, q);

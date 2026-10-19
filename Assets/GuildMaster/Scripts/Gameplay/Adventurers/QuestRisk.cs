@@ -31,10 +31,13 @@ namespace GuildMaster.Adventurers
         {
             // An incident asks for its own (a rare variant: a full party of its level, P4-85).
             if (q.Incident != null && Incidents.IncidentRules.Requirement(q.Incident) is { } own) return own;
-            bool lord = q.Species != null && q.Species.isRegionLord
-                        || q.TargetNest != null && q.TargetNest.IsLair && Core.Services.TryGet<Ecosystem.GuildIntel>(out var intel) && intel.KnownLordAt(q.TargetNest) != null;
-            return lord ? Monsters.RegionLords.RiskRequirement : RuleBasedDecisionMaker.DangerRequirement(q.Danger);
+            return IsLordWork(q) ? Monsters.RegionLords.RiskRequirement : RuleBasedDecisionMaker.DangerRequirement(q.Danger);
         }
+
+        /// <summary>A region lord's quest, or a hunt on a lair whose living lord the guild has seen there (P4-83).</summary>
+        public static bool IsLordWork(Quests.Quest q)
+            => q != null && (q.Species != null && q.Species.isRegionLord
+                             || q.TargetNest != null && q.TargetNest.IsLair && Core.Services.TryGet<Ecosystem.GuildIntel>(out var intel) && intel.KnownLordAt(q.TargetNest) != null);
 
         /// <summary>The margin for this quest (its own requirement, see <see cref="Requirement"/>).</summary>
         public static float Margin(float leaderPower, int partySize, Quests.Quest q)
@@ -42,8 +45,12 @@ namespace GuildMaster.Adventurers
 
         // ---------------- Work for a party (P4-85) ----------------
 
-        /// <summary>A quest meant for a whole party (a rare monster): it is rated by the party that could go, not by one alone.</summary>
-        public static bool IsPartyWork(Quests.Quest q) => q?.Incident != null && Incidents.IncidentRules.IsPartyWork(q.Incident);
+        /// <summary>
+        /// A quest meant for a whole party (a rare monster, a horde, a ruin — and a region lord, P4-90): it is rated by the
+        /// party that could go, not by one alone. The lord's requirement (90) alone was beyond anyone, so nobody took it.
+        /// </summary>
+        public static bool IsPartyWork(Quests.Quest q)
+            => q?.Incident != null && Incidents.IncidentRules.IsPartyWork(q.Incident) || IsLordWork(q);
 
         /// <summary>
         /// The party a member reckons with when weighing a quest: those already on it plus itself — and, for party work, as
@@ -71,12 +78,11 @@ namespace GuildMaster.Adventurers
 
         /// <summary>
         /// The level at which a member pulls its weight on this quest: alone for an ordinary one (its danger's requirement),
-        /// as one of a full party for a region lord's. Shown to the model and the player.
+        /// as one of a full party for party work (<see cref="IsPartyWork"/>). Shown to the model and the player.
         /// </summary>
         public static int RecommendedLevel(Quests.Quest q)
         {
-            bool party = q.Species != null && q.Species.isRegionLord || q.Incident != null && Incidents.IncidentRules.IsPartyWork(q.Incident);
-            float need = party ? Requirement(q) / (1f + 0.6f * (Mathf.Max(1, q.MaxParty) - 1)) : Requirement(q);
+            float need = IsPartyWork(q) ? Requirement(q) / (1f + 0.6f * (Mathf.Max(1, q.MaxParty) - 1)) : Requirement(q);
             return Mathf.Max(1, Mathf.CeilToInt(need));
         }
 

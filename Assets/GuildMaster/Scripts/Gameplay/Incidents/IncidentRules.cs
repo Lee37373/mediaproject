@@ -123,13 +123,18 @@ namespace GuildMaster.Incidents
         public const float RescueHoldHours = 6f;
         /// <summary>Its quest pays a hunt of the ambushers there times this (at 2, 56-60 G near the town: nobody took them).</summary>
         public const float RescueRewardFactor = 3f;
+        /// <summary>
+        /// Never less than this (the client's total, fee included): P4-90, user decision 2026-10-19 — at ×3 a 낮음 rescue
+        /// near the town still paid about 70 G and nobody took it.
+        /// </summary>
+        public const int RescueMinReward = 150;
         /// <summary>Share of travellers heading for our town (the rest leave it for the village).</summary>
         public const float RescueToTownShare = 0.6f;
         /// <summary>Ambushers left once it is over scatter after this many game hours, when nobody sees them.</summary>
         public const float StragglerHours = 3f;
 
         public static int RescueReward(DangerLevel danger, int ambushers, float distance)
-            => QuestPricing.HuntReward(danger, ambushers, distance, RescueRewardFactor);
+            => Mathf.Max(RescueMinReward, QuestPricing.HuntReward(danger, ambushers, distance, RescueRewardFactor));
 
         /// <summary>
         /// Hit points that last <paramref name="hours"/> against these blows (each attack / cooldown, a defenceless target,

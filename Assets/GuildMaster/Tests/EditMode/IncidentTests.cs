@@ -118,6 +118,17 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void ALowRescue_PaysAtLeastTheFloor_ADearerOneItsOwnPrice()
+        {
+            // P4-90 (user decision 2026-10-19): a 낮음 rescue 49 cells out paid 70 G and nobody took it.
+            Assert.That(QuestPricing.HuntReward(DangerLevel.Low, 2, 49f, IncidentRules.RescueRewardFactor), Is.EqualTo(70), "the measured case");
+            Assert.That(IncidentRules.RescueReward(DangerLevel.Low, 2, 49f), Is.EqualTo(IncidentRules.RescueMinReward));
+            Assert.That(IncidentRules.RescueMinReward, Is.EqualTo(150));
+            Assert.That(IncidentRules.RescueReward(DangerLevel.Medium, 3, 88f),
+                        Is.EqualTo(QuestPricing.HuntReward(DangerLevel.Medium, 3, 88f, IncidentRules.RescueRewardFactor)).And.GreaterThan(IncidentRules.RescueMinReward));
+        }
+
+        [Test]
         public void RareVariant_DropsItsTrophy_AndGearByLevel()
         {
             var loot = new List<ItemStack>();
