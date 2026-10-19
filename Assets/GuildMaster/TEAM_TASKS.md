@@ -100,6 +100,7 @@
 | P4-90 | P4-85 관찰 후속: 위험 낮은 구출 의뢰 최저 보상 올림, 지대 군주 의뢰를 파티 인원으로 위험 평가 | 이재혁 | 완료 | Incidents/IncidentRules, Quests/QuestRisk, Adventurers/Decisions | b27ea28 |
 | P4-91 | NPC 행동 판단에서 LLM 제거(사용자 결정 2026-10-19): 의뢰·휴식·사냥 판단, 파티·사냥 초대 수락, 전리품 분배, 스킬 선택, 잡담을 규칙 기반으로. LLM은 영입 대화·설득 대화·의뢰 제안 카드에만 | 이재혁 | 완료 | Adventurers/LlmDecisionMaker·Prompts(Decision·Party·Skill·Split·Banter 삭제)·PartyService·PartySettlement·SkillChoiceService·BanterService·BanterLines(신규)·QuestRisk, Persuasion/PersuasionRules, Units/Unit, Session/GameBootstrap | 4b0f437 |
 | P4-92 | 사용자 요청(2026-10-19): 길드원 정원 제한을 처음부터 없앰, 대숙소는 스트레스 회복 건물(1~3레벨)로 바꿈, 등급 높은 유닛이 카이팅·옆걸음 때 그림이 좌우로 빠르게 뒤집히는 문제 | 이재혁 | 완료 | Adventurers/GuildRoster·Adventurer·AdventurerStates, Town/FacilityRules·FacilityService·UpgradeService, Recruitment/VisitorService, Data/DefaultContent·BuildingDefinition, Session/GameBalance·GameBootstrap, UI/BuildView·BuildingView, Visuals/CharacterVisual, World/PathFollower, Units/Combat, Session/SkirmishMonitor | aa0199e, acf8a24 |
+| P4-44 | 시간에 따른 생태 변화(사용자 결정 2026-10-19): 바깥 몬스터가 시간이 지날수록 레벨이 오르고, 밀려난 무리는 안쪽으로 와서 마을을 침공. 속도는 고정 주기 없이 게임 흐름에 맞춤 | 이재혁 | 진행 중 | Ecosystem/EcosystemManager·MigrationService·TerritoryService·RoamingPackService, Monsters/MonsterLevel, Town/WaveManager | |
 | P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
@@ -129,6 +130,7 @@
 ## 담당자별 요약
 
 ### 이재혁
+- **진행 중**: P4-44 시간에 따른 생태 변화
 - **예정**: P5-5 Windows 빌드(맨 마지막)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-92, P5-1 ~ P5-4 (위 표 참고)
 
