@@ -251,28 +251,16 @@ namespace GuildMaster.Ecosystem
             if (_bands.Count(b => b.Arrival) >= MaxArrivals || _world.Map.EdgeSpawnCells.Count == 0) return false;
             if (target == null)
             {
-                // Not a lair, nor cleansed land (P4-83: nothing new comes there).
-                var free = _eco.Nests.Where(n => n.IsEmpty && !n.IsLair && !n.Sealed && _eco.Depth(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)).ToList();
+                // Not a lair, nor cleansed land (P4-83: nothing new comes there), nor a site other newcomers are fighting for (P4-44).
+                Services.TryGet<RoamingPackService>(out var roaming);
+                var free = _eco.Nests.Where(n => n.IsEmpty && !n.IsLair && !n.Sealed && _eco.Depth(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)
+                                                 && (roaming == null || !roaming.Packs.Any(p => p.Bound == n))).ToList();
                 if (free.Count == 0) return false;
                 target = free[GameRandom.Shared.Range(0, free.Count)];
             }
             if (!target.IsEmpty) return false;
-            if (species == null)
-            {
-                // A kind that lives there (P4-58: habitat by terrain), drawn by the same weights as the
-                // map's first dens — rarity included (P4-75: an even draw let the rare sand goblins,
-                // one of two desert kinds, take half the desert's new packs).
-                var kinds = _eco.AllSpecies.Where(target.Suits).ToList();
-                if (kinds.Count == 0) return false;
-                float total = kinds.Sum(k => EcosystemManager.Fit(k, target.Region, target.Biome));
-                float roll = GameRandom.Shared.Range(0f, total);
-                species = kinds[^1];
-                foreach (var k in kinds)
-                {
-                    roll -= EcosystemManager.Fit(k, target.Region, target.Biome);
-                    if (roll <= 0f) { species = k; break; }
-                }
-            }
+            species ??= PickKind(target);
+            if (species == null) return false;
             target.ChangeSpecies(species);
             var edge = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).First();
             var band = new Band { Id = ++_count, From = target, Target = target, StartedAtHour = _clock.TotalHours, Species = species, Arrival = true };
@@ -282,6 +270,74 @@ namespace GuildMaster.Ecosystem
             _bands.Add(band);
             Debug.Log($"[Migration] newcomers #{band.Id}: {size} {species.displayName} from the edge {edge} → {target.DisplayName}");
             return true;
+        }
+
+        /// <summary>
+        /// A kind that lives at the site (P4-58: habitat by terrain), drawn by the same weights as the map's first dens —
+        /// rarity included (P4-75: an even draw let the rare sand goblins, one of two desert kinds, take half the desert's
+        /// new packs). Null when nothing lives there.
+        /// </summary>
+        MonsterDefinition PickKind(Nest site)
+        {
+            var kinds = _eco.AllSpecies.Where(site.Suits).ToList();
+            if (kinds.Count == 0) return null;
+            float total = kinds.Sum(k => EcosystemManager.Fit(k, site.Region, site.Biome));
+            float roll = GameRandom.Shared.Range(0f, total);
+            foreach (var k in kinds)
+            {
+                roll -= EcosystemManager.Fit(k, site.Region, site.Biome);
+                if (roll <= 0f) return k;
+            }
+            return kinds[^1];
+        }
+
+        // ---------------- Newcomers crowding in (P4-44) ----------------
+
+        /// <summary>Share of a den's room a pack that comes for a held site brings.</summary>
+        public const float InvaderShare = 0.6f;
+
+        public static int InvaderCount(MonsterDefinition species) => Mathf.Max(4, Mathf.RoundToInt(species.nestCapacity * InvaderShare));
+
+        /// <summary>A fresh pack's fighting weight (as <see cref="TerritoryService.Strength"/>: HP × attack).</summary>
+        public static float FreshStrength(MonsterDefinition species, int count, int level)
+        {
+            var s = MonsterLevel.Grow(new Units.CombatStats { MaxHp = Units.Combat.ScaledHp(species.maxHp), Attack = species.attack }, level);
+            return count * s.MaxHp * Mathf.Max(1f, s.Attack);
+        }
+
+        static float ResidentStrength(Nest n) => n.Members.Where(m => m != null && m.IsAlive && m.IsDefendingTerritory).Sum(TerritoryService.Strength);
+
+        /// <summary>
+        /// Newcomers come for a held outer site (P4-44, user decisions 2026-10-19): a pack from beyond the map edge, born at
+        /// the site's level of the day, picks the outer site whose residents it would match best — if it would at least match
+        /// them (<see cref="WildsPressure.InvadeAtOdds"/>) — and walks at it (<see cref="RoamingPackService.SendNewcomers"/>).
+        /// Residents born in quieter days are the weaker the longer it goes; they give way inwards or fight it out, and
+        /// newcomers who fail roam and in the end come at the town. Null when no site is worth it.
+        /// </summary>
+        public RoamingPack TryInvade(Nest target = null, MonsterDefinition species = null)
+        {
+            if (!Services.TryGet<RoamingPackService>(out var roaming) || _world.Map.EdgeSpawnCells.Count == 0) return null;
+            if (target == null && roaming.Packs.Count(p => p.Bound != null) >= MaxArrivals) return null;
+            if (target == null)
+            {
+                float bestOdds = 0f;
+                var only = species;
+                foreach (var n in _eco.Nests)
+                {
+                    if (n.IsEmpty || n.IsLair || n.Sealed || _eco.Depth(n.WorldPosition) < OuterSites) continue;
+                    if (IsMigrating(n) || IsTarget(n) || roaming.Packs.Any(p => p.Bound == n)) continue;
+                    var kind = only ?? PickKind(n);
+                    if (kind == null || !n.Suits(kind)) continue;
+                    float odds = FreshStrength(kind, InvaderCount(kind), n.BirthLevel) / Mathf.Max(1f, ResidentStrength(n));
+                    if (odds > bestOdds) { bestOdds = odds; target = n; species = kind; }
+                }
+                if (target == null || bestOdds < WildsPressure.InvadeAtOdds) return null;
+            }
+            species ??= PickKind(target);
+            if (species == null || target.IsEmpty || !target.Suits(species)) return null;
+            var edge = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).First();
+            bool boss = GameRandom.Shared.Chance(MonsterBoss.Chance);
+            return roaming.SendNewcomers(species, InvaderCount(species), target.BirthLevel, GridMap.CellToWorld(edge), target, boss);
         }
 
         /// <summary>
@@ -350,6 +406,7 @@ namespace GuildMaster.Ecosystem
             foreach (var band in _bands.ToList())
                 if (_clock.TotalHours - band.StartedAtHour >= MaxHours) GoHome(band);
             if (!NoNewcomers && GameRandom.Shared.Value < ArrivalChancePerHour) TryArrive();
+            if (!NoNewcomers && GameRandom.Shared.Value < WildsPressure.InvasionChancePerHour(EcosystemManager.Days)) TryInvade();
         }
 
         /// <summary>Beaten back on the way or at the target: rest, then try elsewhere (or go home).</summary>

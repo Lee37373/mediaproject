@@ -336,6 +336,19 @@ namespace GuildMaster.Monsters
                     m.GainExp(amount);
         }
 
+        /// <summary>
+        /// One level more from the land it lives on (P4-44: the far land grows wilder, and those living there with it), HP
+        /// share kept. The EXP towards the next level carries over.
+        /// </summary>
+        internal void GrowWithTheLand()
+        {
+            if (!IsAlive || Level >= MonsterLevel.MaxLevel || Def.isRegionLord) return;
+            Level++;
+            Exp = Mathf.Min(Exp, ExpToNext - 1);
+            ApplyLevel();
+            RefreshStats();
+        }
+
         public void GainExp(int amount)
         {
             if (amount <= 0 || !IsAlive || Level >= MonsterLevel.MaxLevel) return;

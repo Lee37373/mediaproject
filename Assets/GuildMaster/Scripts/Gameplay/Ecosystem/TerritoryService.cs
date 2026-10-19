@@ -219,13 +219,17 @@ namespace GuildMaster.Ecosystem
 
         /// <summary>
         /// Nearest empty nest of the species' habitat at a safe distance, that no migrating band is
-        /// heading for (preferring its biomes); null when there is none.
+        /// heading for (preferring its biomes); null when there is none. One nearer the town comes first
+        /// (P4-44: the pushed give way inwards).
         /// </summary>
         Nest FindNewHome(Nest from, MonsterDefinition species, Vector2 threat, Nest avoid, MigrationService migration)
         {
             bool Safe(Nest n) => n != from && n != avoid && Vector2.Distance(n.WorldPosition, threat) >= MinResettleDistance;
+            var town = Services.TryGet<World.WorldService>(out var world) ? world.TownCenterWorld : from.WorldPosition;
+            float home = Vector2.Distance(from.WorldPosition, town);
             return _eco.Nests.Where(n => n.IsEmpty && n.Suits(species) && Safe(n) && (migration == null || !migration.IsTarget(n)))
-                .OrderBy(n => species.biomes.Contains(n.Biome) ? 0 : 1)
+                .OrderBy(n => Vector2.Distance(n.WorldPosition, town) < home ? 0 : 1)
+                .ThenBy(n => species.biomes.Contains(n.Biome) ? 0 : 1)
                 .ThenBy(n => Vector2.Distance(n.WorldPosition, from.WorldPosition))
                 .FirstOrDefault();
         }

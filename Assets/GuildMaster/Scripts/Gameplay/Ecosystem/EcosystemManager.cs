@@ -13,6 +13,8 @@ namespace GuildMaster.Ecosystem
     public struct NestClearedEvent { public Nest Nest; public Unit Killer; }
     public struct NestDiscoveredEvent { public Nest Nest; }
     public struct NestRecolonizedEvent { public Nest Nest; }
+    /// <summary>The far land's young are born another level stronger (P4-44): word of it reaches the town.</summary>
+    public struct WildsStirredEvent { public int OutermostBonus; }
 
     /// <summary>
     /// Monster ecosystem simulation:
@@ -20,7 +22,8 @@ namespace GuildMaster.Ecosystem
     /// - predators' growth scales with prey availability; starving predators die off,
     /// - an emptied nest stays empty until a band moves in: one migrating inwards, or (at the
     ///   outer sites) a new band from beyond the map edge (<see cref="MigrationService"/>, user
-    ///   decision 2026-09-22; the old six-hour refill by the same kind is gone).
+    ///   decision 2026-09-22; the old six-hour refill by the same kind is gone),
+    /// - the far land's young are born stronger as the days go by (<see cref="WildsPressure"/>, P4-44).
     /// A kind may vanish for a while (the P4-43 "no extinction" guarantee went with the refill):
     /// newcomers from beyond the edge are of any kind and bring it back.
     /// </summary>
@@ -177,8 +180,39 @@ namespace GuildMaster.Ecosystem
             return 1f + Mathf.InverseLerp(InnerEdge, Mathf.Max(outermost, InnerEdge + 1f), distance);
         }
 
-        /// <summary>The level monsters are born at around this spot (P4-58: the level is the strength).</summary>
-        public int BirthLevelAt(Vector2 p) => MonsterLevel.BirthLevel(Depth(p));
+        /// <summary>
+        /// The level monsters are born at around this spot (P4-58: the level is the strength), the far land the higher
+        /// the longer the game has run (P4-44). Distance and time are no secret: the guild reckons with it too.
+        /// </summary>
+        public int BirthLevelAt(Vector2 p) => WildsPressure.BirthLevel(Depth(p), Days);
+
+        /// <summary>Game days gone (fractional), which the wilds' pressure follows.</summary>
+        public static float Days => Services.TryGet<GameClock>(out var clock) ? clock.TotalHours / 24f : 0f;
+
+        /// <summary>The outermost sites' bonus last told to the guild (-1: not yet this session — a loaded game says nothing).</summary>
+        int _wildsTold = -1;
+
+        /// <summary>
+        /// Every site breeds at today's level and its residents grow towards it; a level more out at the edge is news (P4-44).
+        /// </summary>
+        void StirTheWilds()
+        {
+            var rng = GameRandom.Shared;
+            foreach (var nest in _nests)
+            {
+                nest.BirthLevel = BirthLevelAt(nest.WorldPosition);
+                // Rolled only for those behind (the shared random draws stay as they were while nobody is).
+                foreach (var m in nest.Members)
+                    if (m != null && m.IsAlive && m.Level < nest.BirthLevel && WildsPressure.GrowsThisHour(m.Level, nest.BirthLevel, rng.Value)) m.GrowWithTheLand();
+            }
+            int outermost = WildsPressure.LevelBonus(WildsPressure.FullDepth, Days);
+            if (_wildsTold < 0) _wildsTold = outermost;
+            else if (outermost > _wildsTold)
+            {
+                _wildsTold = outermost;
+                EventBus.Publish(new WildsStirredEvent { OutermostBonus = outermost });
+            }
+        }
 
         /// <summary>Species that exist in the game (newcomers from beyond the edge are drawn from these).</summary>
         internal IReadOnlyList<MonsterDefinition> AllSpecies => _db.monsters;
@@ -215,7 +249,7 @@ namespace GuildMaster.Ecosystem
                 var nest = go.AddComponent<Nest>();
                 nest.Init(this, $"N_{i + 1:00}", assignment[i], map.Nests[i]);
                 nest.GrowthFactor = GrowthFactorAt(nest.WorldPosition);
-                nest.BirthLevel = MonsterLevel.BirthLevel(Depth(nest.WorldPosition));
+                nest.BirthLevel = BirthLevelAt(nest.WorldPosition);
                 lairs.TryGetValue(i, out var lairLord);
                 if (lairLord != null) nest.MakeLair(lairLord);
                 _nests.Add(nest);
@@ -318,6 +352,21 @@ namespace GuildMaster.Ecosystem
             return m;
         }
 
+        /// <summary>
+        /// A monster with no nest at all (P4-44: newcomers from beyond the edge bound for a held site), born at
+        /// <paramref name="level"/>; it is counted like any other and leaves the count through <see cref="NotifyRoamerDied"/>.
+        /// </summary>
+        internal Monster SpawnHomeless(MonsterDefinition species, Vector2 at, int level, bool boss = false)
+        {
+            var world = Services.Get<WorldService>();
+            world.Grid.TryRandomWalkableNear(GridMap.WorldToCell(at), 2, GameRandom.Shared, out var cell);
+            var m = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, GridMap.CellToWorld(cell) + GameRandom.Shared.InsideUnitCircle() * 0.3f);
+            m.Setup(species, null, boss);
+            m.SetLevel(Mathf.Min(MonsterLevel.MaxLevel, level + (boss ? MonsterBoss.LevelBonus : 0)));
+            ChangePopulation(species, +1);
+            return m;
+        }
+
         /// <summary>A member of a roaming pack (no nest) died (P4-58).</summary>
         internal void NotifyRoamerDied(MonsterDefinition species) => ChangePopulation(species, -1);
 
@@ -345,6 +394,7 @@ namespace GuildMaster.Ecosystem
 
         void OnHourPassed(HourPassedEvent e)
         {
+            StirTheWilds();
             var rng = GameRandom.Shared;
             foreach (var nest in _nests)
             {

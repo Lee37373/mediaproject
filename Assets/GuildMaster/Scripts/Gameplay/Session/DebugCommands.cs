@@ -938,8 +938,48 @@ namespace GuildMaster.Session
             foreach (var p in svc.Packs)
                 sb.Append($"  #{p.Id} {p.Species.id} x{p.Members.Count} at {p.Center} " +
                           (p.Moving ? $"walking to {p.Goal}" : $"resting {Mathf.Max(0f, p.RestUntilHour - clock.TotalHours):0.0}h") +
+                          (p.Bound != null ? $" bound for {p.Bound.DisplayName} {Mathf.Max(0f, p.BoundUntilHour - clock.TotalHours):0}h" : "") +
+                          $" town in {Mathf.Max(0f, p.DesperateAtHour - clock.TotalHours):0}h" +
                           $" states={string.Join("/", p.Members.Select(m => m.StateLabel))}\n");
             return sb.Length == 0 ? "no roaming packs" : sb.ToString();
+        }
+
+        /// <summary>The wilds' pressure now (P4-44): days, birth level by depth, newcomers' chance and packs on their way.</summary>
+        public static string Wilds()
+        {
+            var eco = Services.Get<EcosystemManager>();
+            float days = EcosystemManager.Days;
+            var sb = new StringBuilder($"  day {days:0.0}: outermost +{WildsPressure.Bonus(days):0.0} levels, newcomers come for a held site {WildsPressure.InvasionChancePerHour(days) * 100f:0}%/h\n  birth level by depth:");
+            foreach (float d in new[] { 0f, 0.5f, 1f, 1.5f, 2f })
+                sb.Append($" {d:0.0}=Lv{WildsPressure.BirthLevel(d, days)}(was {MonsterLevel.BirthLevel(d)})");
+            sb.AppendLine();
+            var roaming = Services.Get<RoamingPackService>();
+            sb.AppendLine($"  roaming packs {roaming.Packs.Count} (bound for a held site {roaming.Packs.Count(p => p.Bound != null)})");
+            foreach (var g in eco.Nests.Where(n => !n.IsEmpty).GroupBy(n => Mathf.Clamp(Mathf.FloorToInt(eco.Depth(n.WorldPosition) * 2f), 0, 3)).OrderBy(g => g.Key))
+            {
+                var alive = g.SelectMany(n => n.Members).Where(m => m != null && m.IsAlive).ToList();
+                sb.AppendLine($"  depth {g.Key / 2f:0.0}~{(g.Key + 1) / 2f:0.0}: {g.Count()} dens, {alive.Count} monsters, mean Lv{(alive.Count == 0 ? 0 : alive.Average(m => m.Level)):0.0}, born Lv{g.Min(n => n.BirthLevel)}~{g.Max(n => n.BirthLevel)}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Newcomers come for a held outer site now (P4-44): nest #index, or the best match when -1.</summary>
+        public static string Invade(int index = -1)
+        {
+            var eco = Services.Get<EcosystemManager>();
+            var target = index >= 0 && index < eco.Nests.Count ? eco.Nests[index] : null;
+            var pack = Services.Get<MigrationService>().TryInvade(target);
+            return pack == null ? "no site worth it" : $"pack #{pack.Id}: {pack.Members.Count} {pack.Species.id} Lv{pack.Members[0].Level} → {pack.Bound.DisplayName} ({pack.Bound.Population} {pack.Bound.Species.id})";
+        }
+
+        /// <summary>Roaming pack #id comes at the town now (P4-44: homeless too long).</summary>
+        public static string Desperate(int id)
+        {
+            var pack = Services.Get<RoamingPackService>().Packs.FirstOrDefault(p => p.Id == id);
+            if (pack == null) return "no such pack";
+            pack.Bound = null;
+            pack.DesperateAtHour = 0f;
+            return $"pack #{id}: {pack.Members.Count} {pack.Species.id} will come at the town";
         }
 
         /// <summary>Sends nest #index's whole pack on the road as if driven out with nowhere to go (P4-58).</summary>

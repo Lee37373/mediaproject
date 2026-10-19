@@ -3397,6 +3397,94 @@ namespace GuildMaster.Tests
             finally { Unit.GuildInvulnerable = false; }
         }
 
+        /// <summary>Jumps the clock to <paramref name="hours"/> without replaying the hours in between (the next whole hour then strikes).</summary>
+        static void JumpClockTo(float hours)
+        {
+            typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(Clock, hours);
+            typeof(GameClock).GetField("_lastWholeHour", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(Clock, Mathf.FloorToInt(hours));
+        }
+
+        /// <summary>
+        /// P4-44 (user decisions 2026-10-19): the wilds grow wilder with time — far-out sites breed higher levels while the
+        /// inner half never changes, and word of it reaches the guild; newcomers from beyond the edge come for a held outer
+        /// site, born at its level of the day; and a pack homeless for long enough comes at the town as one, and takes to
+        /// the road again when it gives up.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheWildsGrowWilder_NewcomersComeForHeldSites_AndTheHomelessComeAtTheTown()
+        {
+            yield return Boot();
+            var eco = Services.Get<EcosystemManager>();
+            var town = Services.Get<World.WorldService>().TownCenterWorld;
+            var outer = eco.Nests.Where(n => !n.IsLair).OrderByDescending(n => Vector2.Distance(n.WorldPosition, town)).First();
+            var inner = eco.Nests.OrderBy(n => Vector2.Distance(n.WorldPosition, town)).First();
+            int outerAtStart = outer.BirthLevel, innerAtStart = inner.BirthLevel;
+            var farOut = eco.Nests.Where(n => !n.IsLair && eco.Depth(n.WorldPosition) >= 1f).SelectMany(n => n.Members).Where(m => m.IsAlive).ToList();
+            var levelsBefore = farOut.ToDictionary(m => m, m => m.Level);
+            int stirred = 0;
+            void OnStirred(WildsStirredEvent e) => stirred++;
+            EventBus.Subscribe<WildsStirredEvent>(OnStirred);
+            try
+            {
+                // The session's first hour (its first look at the wilds), then twenty days on, just before an hour strikes.
+                JumpClockTo(Mathf.Floor(Clock.TotalHours) + 0.98f);
+                float first = Clock.TotalHours;
+                yield return WaitFor(() => Clock.TotalHours >= first + 0.05f, 10f);
+                Assert.That(stirred, Is.EqualTo(0), "day one: nothing to tell");
+                float later = 20f * 24f - 0.02f;
+                JumpClockTo(later);
+                yield return WaitFor(() => Clock.TotalHours >= later + 0.05f, 10f);
+            }
+            finally { EventBus.Unsubscribe<WildsStirredEvent>(OnStirred); }
+            Assert.That(outer.BirthLevel, Is.GreaterThan(outerAtStart).Or.EqualTo(MonsterLevel.MaxLevel), "far out: born stronger");
+            Assert.That(inner.BirthLevel, Is.EqualTo(innerAtStart), "the inner half never changes");
+            Assert.That(eco.BirthLevelAt(outer.WorldPosition), Is.EqualTo(outer.BirthLevel), "the guild reckons by the same rule");
+            Assert.That(stirred, Is.EqualTo(1), "word of it reaches the guild once");
+            // Half a day more, an hour at a time: those living far out grow with the land (about a level a day each).
+            Assume.That(farOut.Count, Is.GreaterThan(10), "monsters far out");
+            for (int i = 0; i < 12; i++)
+            {
+                float next = Mathf.Floor(Clock.TotalHours) + 0.98f;
+                JumpClockTo(next);
+                yield return WaitFor(() => Clock.TotalHours >= next + 0.03f, 10f);
+            }
+            int grew = farOut.Count(m => m.IsAlive && m.Level > levelsBefore[m]);
+            Assert.That(grew, Is.GreaterThan(0), $"those living far out grow with the land ({grew} of {farOut.Count})");
+            Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.Contains("거칠어")), Is.True);
+
+            // Newcomers come for a held outer site, born at its level of the day, a pack of their own with no nest yet.
+            var held = eco.Nests.Where(n => !n.IsEmpty && !n.IsLair && !n.Sealed && eco.Depth(n.WorldPosition) >= MigrationService.OuterSites)
+                .OrderByDescending(n => Vector2.Distance(n.WorldPosition, town)).First();
+            var newcomers = Services.Get<MigrationService>().TryInvade(held);
+            Assert.That(newcomers, Is.Not.Null, "newcomers came for " + held.DisplayName);
+            Assert.That(newcomers.Bound, Is.SameAs(held));
+            Assert.That(newcomers.Members.All(m => m.Home == null && m.Roaming == newcomers && m.Level >= held.BirthLevel), Is.True);
+            Assert.That(newcomers.Members.Count, Is.EqualTo(MigrationService.InvaderCount(newcomers.Species)));
+
+            // A pack driven out with nowhere to go, homeless too long: it comes at the town as one.
+            var den = eco.Nests.Where(n => !n.IsEmpty && !n.IsLair && n != held).OrderBy(n => Vector2.Distance(n.WorldPosition, town)).First();
+            var homeless = Services.Get<RoamingPackService>().SendOnTheRoad(den, null);
+            Assert.That(homeless, Is.Not.Null);
+            Assert.That(homeless.DesperateAtHour - Clock.TotalHours, Is.EqualTo(RoamingPackService.DesperateHours).Within(0.1f), "not at once");
+            var waves = Services.Get<Town.WaveManager>();
+            int raids = waves.RaidCount;
+            homeless.DesperateAtHour = 0f;
+            yield return WaitFor(() => waves.RaidCount > raids, 5f);
+            var raiders = homeless.Members.Where(m => m.IsAlive).ToList();
+            Assert.That(raiders.Count, Is.GreaterThan(0));
+            Assert.That(raiders.All(m => m.DefaultStateOverride == m.RaidState && m.Roaming == homeless), Is.True, "the whole pack, still a pack");
+            Assert.That(homeless.DesperateAtHour, Is.GreaterThan(Clock.TotalHours), "and not again for a while");
+
+            // It gives up after the raid's hours: back on the road, not to a nest it no longer has.
+            float giveUpAt = Mathf.Floor(Clock.TotalHours + Services.Get<GameBalance>().raidMaxHours) + 0.98f;
+            JumpClockTo(giveUpAt);
+            yield return WaitFor(() => Clock.TotalHours >= giveUpAt + 0.05f, 10f);
+            yield return null;
+            var back = homeless.Members.Where(m => m.IsAlive).ToList();
+            Assume.That(back.Count, Is.GreaterThan(0), "someone lived through the raid");
+            Assert.That(back.All(m => m.DefaultStateOverride == m.RoamState && m.Home == null), Is.True, "roaming again");
+        }
+
         [UnityTest]
         public IEnumerator APackWithNowhereToGo_RoamsAsOne_AndSettlesAnEmptyNestOfItsHabitat()
         {

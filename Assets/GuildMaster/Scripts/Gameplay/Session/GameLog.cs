@@ -194,7 +194,11 @@ namespace GuildMaster.Session
             // Territorial routs, only when the guild saw them (GuildIntel rule).
             EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == null ? $"{e.Cause}{Adventurers.MemoryRecorder.Josa(e.Cause ?? "", "을", "를")} 피해 " : $"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 ")}{e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다{(e.To == null ? ". 갈 곳 없이 떠돌기 시작합니다" : "")}.", LogCategory.Ecosystem); });
             // Roaming packs (P4-58): seen for the first time, and settling where the guild could see it.
-            EventBus.Subscribe<RoamingPackSightedEvent>(e => Add($"둥지 없이 떠도는 {e.Pack.Species.displayName} 무리({e.Pack.Members.Count}마리)를 발견했습니다.", LogCategory.Ecosystem));
+            EventBus.Subscribe<RoamingPackSightedEvent>(e => Add(e.Pack.Bound != null
+                ? $"먼 곳에서 온 {e.Pack.Species.displayName} 무리({e.Pack.Members.Count}마리)가 다른 무리의 땅으로 향하는 것을 보았습니다."
+                : $"둥지 없이 떠도는 {e.Pack.Species.displayName} 무리({e.Pack.Members.Count}마리)를 발견했습니다.", LogCategory.Ecosystem));
+            // The wilds grow wilder (P4-44): a rumour, no names — distance and time are no secret.
+            EventBus.Subscribe<WildsStirredEvent>(e => Add("[생태계] 바깥 땅이 더 거칠어졌다는 소문이 돕니다. 먼 곳의 몬스터가 전보다 강하게 태어나고, 그곳 무리들이 안쪽으로 밀려들고 있습니다.", LogCategory.Ecosystem));
             EventBus.Subscribe<RoamingPackSettledEvent>(e => { if (e.Observed) Add($"떠돌던 {e.Pack.Species.displayName} 무리가 {e.Nest.DisplayName}에 자리 잡았습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<IntrudersRoutedEvent>(e => { if (e.Observed) Add($"{e.IntruderHome.Species.displayName} 무리가 {e.Territory.DisplayName}의 기세에 눌려 물러났습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<BandSettledEvent>(e => { if (e.Observed) Add($"{e.Species.displayName} 무리 {e.Count}마리가 옮겨 와 {e.To.DisplayName}에 자리 잡았습니다.", LogCategory.Ecosystem); });

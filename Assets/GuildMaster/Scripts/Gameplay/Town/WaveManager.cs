@@ -262,6 +262,27 @@ namespace GuildMaster.Town
             return raid.Members.Count;
         }
 
+        /// <summary>
+        /// A pack with no home left comes at the town as one (P4-44, user decision 2026-10-19: the pushed in the end
+        /// attack the town), whatever its kind. It has no nest to go back to: survivors who give up take to the road
+        /// again (<see cref="Monster.EndMarch"/>). Returns raiders sent.
+        /// </summary>
+        public int LaunchHomeless(IEnumerable<Monster> pack)
+        {
+            var members = pack.Where(m => m != null && m.IsAlive && (m.DefaultStateOverride == null || m.DefaultStateOverride == m.RoamState)).ToList();
+            if (members.Count == 0) return 0;
+            var raid = new Raid { Id = ++RaidCount, Nest = null, StartedAtHour = _clock.TotalHours };
+            foreach (var m in members)
+            {
+                m.DefaultStateOverride = m.RaidState;
+                m.GoToDefaultState();
+                m.Died += OnRaiderDied;
+                raid.Members.Add(m);
+            }
+            _raids.Add(raid);
+            return raid.Members.Count;
+        }
+
         void OnRaiderDied(Units.Unit u)
         {
             u.Died -= OnRaiderDied;
