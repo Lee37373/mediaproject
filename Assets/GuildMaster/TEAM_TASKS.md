@@ -97,7 +97,7 @@
 | P4-87 | 내실 건물: 길드원 전원 상시 스탯 버프, 길드원이 때린 적 약화, 정원 제한을 없애는 건물 | 이재혁 | 예정 | Town/ConstructionService·Building, Data/DefaultContent, Units/Unit·Combat, Recruitment/VisitorService | |
 | P4-88 | 측정 관찰 후속: 길드보다 강한 후보는 영입이 어려움, 마을 습격 빈도 절반, 약한 신입은 위험 의뢰를 잘 안 받음, 지대 군주 강화(공격 ×4·호위 8·강타 쿨 5초) | 이재혁 | 완료 | Recruitment, Villages, Adventurers/Decisions·RuleBasedDecisionMaker·PartyService, Monsters/RegionLords | db14b11 |
 | P4-89 | 귀환 중 정지 조사(성벽·성문 옆에서 이동 중인 채 몇 시간 제자리) | 이재혁 | 완료 | World/PathFollower, Adventurers/ReturnToTownState·PartyTactics | 2f472e4 |
-| P4-90 | P4-85 관찰 후속: 위험 낮은 구출 의뢰 최저 보상 올림, 지대 군주 의뢰를 파티 인원으로 위험 평가 | 이재혁 | 진행 중 | Incidents/IncidentRules, Quests/QuestRisk, Adventurers/Decisions | |
+| P4-90 | P4-85 관찰 후속: 위험 낮은 구출 의뢰 최저 보상 올림, 지대 군주 의뢰를 파티 인원으로 위험 평가 | 이재혁 | 완료 | Incidents/IncidentRules, Quests/QuestRisk, Adventurers/Decisions | b27ea28 |
 | P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
@@ -127,9 +127,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-90 P4-85 관찰 후속
+- **진행 중**: 없음
 - **예정**: P4-87 추가 기획(내실 건물), P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-86, P4-88, P4-89, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-45 ~ P4-56, P4-58, P4-60 ~ P4-86, P4-88 ~ P4-90, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
