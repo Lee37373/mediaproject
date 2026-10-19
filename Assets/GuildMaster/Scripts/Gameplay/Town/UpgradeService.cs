@@ -87,9 +87,6 @@ namespace GuildMaster.Town
             if (FacilityRules.IsFacility(b.Type) && lv.maxHp > 0f) b.SetMaxHp(lv.maxHp, heal: false);
             switch (b.Type)
             {
-                case BuildingType.GuildHall:
-                    _roster.Capacity = lv.rosterCapacity;
-                    break;
                 case BuildingType.TownHall:
                     b.SetMaxHp(lv.maxHp, heal: false);
                     _treasury.DailyTax = lv.dailyTax;

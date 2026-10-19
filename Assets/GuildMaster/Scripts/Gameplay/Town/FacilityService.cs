@@ -9,8 +9,8 @@ namespace GuildMaster.Town
     /// <summary>
     /// The guild's facilities at work (P4-87, rules in <see cref="FacilityRules"/>): reads the standing ones (a fallen one
     /// stops until it is repaired, user decision 2026-10-19), gives every member the stat scale, marks what a member hits,
-    /// and lifts the roster limit while a dormitory stands. Members' stats are worked out again whenever one is built,
-    /// raised, falls, is repaired or comes down.
+    /// and speeds up stress relief in town while a dormitory stands (P4-92). Members' stats are worked out again whenever
+    /// one is built, raised, falls, is repaired or comes down.
     /// </summary>
     public class FacilityService : IDisposable
     {
@@ -21,7 +21,7 @@ namespace GuildMaster.Town
         bool _dirty = true;
         StatScale _scale = FacilityRules.Unbuilt;
         float _poison, _armorBreak, _slow;
-        bool _noLimit;
+        float _stressRelief = 1f;
         readonly Dictionary<FacilityEffect, List<int>> _levels = new();
 
         public FacilityService(TownService town, GuildRoster roster)
@@ -60,8 +60,11 @@ namespace GuildMaster.Town
         public float Poison { get { Refresh(); return _poison; } }
         public float ArmorBreak { get { Refresh(); return _armorBreak; } }
         public float Slow { get { Refresh(); return _slow; } }
-        /// <summary>A dormitory stands: anyone may join, however many there are.</summary>
-        public bool NoRosterLimit { get { Refresh(); return _noLimit; } }
+        /// <summary>How much faster members in town shed stress (1 with no dormitory standing).</summary>
+        public float StressRelief { get { Refresh(); return _stressRelief; } }
+
+        /// <summary><see cref="StressRelief"/> of the running game, or 1 with none (pure tests, before boot).</summary>
+        public static float TownStressRelief => Services.TryGet<FacilityService>(out var f) && f.IsLive ? f.StressRelief : 1f;
 
         /// <summary>Members get the guild's scale; visitors, candidates and refugees only the weakened base.</summary>
         public StatScale ScaleFor(Adventurer a)
@@ -101,7 +104,15 @@ namespace GuildMaster.Town
             _poison = FacilityRules.AfflictionOf(Levels(FacilityEffect.Poison));
             _armorBreak = FacilityRules.AfflictionOf(Levels(FacilityEffect.ArmorBreak));
             _slow = FacilityRules.AfflictionOf(Levels(FacilityEffect.Slow));
-            _noLimit = Levels(FacilityEffect.NoRosterLimit).Count > 0;
+            _stressRelief = StressReliefOf(Levels(FacilityEffect.StressRelief));
+        }
+
+        /// <summary>One dormitory at most (<see cref="FacilityRules.MaxCopies"/>): the highest level standing.</summary>
+        static float StressReliefOf(List<int> levels)
+        {
+            int best = 0;
+            foreach (int l in levels) best = Math.Max(best, l);
+            return FacilityRules.StressReliefAt(best);
         }
 
         List<int> Levels(FacilityEffect e)
@@ -142,7 +153,7 @@ namespace GuildMaster.Town
             _poison = FacilityRules.AfflictionOf(Levels(FacilityEffect.Poison));
             _armorBreak = FacilityRules.AfflictionOf(Levels(FacilityEffect.ArmorBreak));
             _slow = FacilityRules.AfflictionOf(Levels(FacilityEffect.Slow));
-            _noLimit = Levels(FacilityEffect.NoRosterLimit).Count > 0;
+            _stressRelief = StressReliefOf(Levels(FacilityEffect.StressRelief));
             // The town list drops it right after the event (Version goes up): worked out once more then.
         }
 

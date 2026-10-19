@@ -42,7 +42,7 @@ namespace GuildMaster.UI
             {
                 bool facility = FacilityRules.IsFacility(type);
                 if (type == BuildingType.Armory)
-                    UIBuilder.Label(_list, "길드 내실 — 스탯 3종(공격·방어·체력), 적 약화 3종, 대숙소. 같은 종류를 더 지으면 효과는 절반·¼, 비용은 ×1.5씩.",
+                    UIBuilder.Label(_list, "길드 내실 — 스탯 3종(공격·방어·체력), 적 약화 3종, 대숙소(스트레스 회복, 1채만). 같은 종류를 더 지으면 효과는 절반·¼, 비용은 ×1.5씩.",
                                     14, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 24);
                 var row = UIBuilder.Rect(_list, "Row");
                 UIBuilder.HLayout(row, 8, 0);
@@ -55,7 +55,7 @@ namespace GuildMaster.UI
                 info.Size(-1, 100, flexWidth: 1);
                 _titles.Add(UIBuilder.Label(info, BuildingNames.Of(type), 19, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 28));
                 var effect = construction.CostOf(type)?.effectText ?? "";
-                if (facility && type != BuildingType.Dormitory)
+                if (facility)
                     effect = $"Lv.1 {effect} · Lv.3 {FacilityRules.EffectText(type, FacilityRules.MaxLevel)}";
                 UIBuilder.Label(info, effect, 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 22);
                 var cost = UIBuilder.Label(info, "", 15, TextAnchor.MiddleLeft).Size(-1, 40);

@@ -34,7 +34,6 @@ namespace GuildMaster.Recruitment
         /// <summary>Visitors who came as refugees from another village (P4-84): outside the cap, no sight of their own until they join.</summary>
         readonly HashSet<string> _refugees = new();
         GameClock _clock;
-        GuildRoster _roster;
         WorldService _world;
         float _nextVisitHour;
         /// <summary>Game hour the applicant of a posted notice arrives; negative when none is posted.</summary>
@@ -47,7 +46,6 @@ namespace GuildMaster.Recruitment
         public string CannotPostNoticeReason()
         {
             if (NoticePosted) return "지원자가 오는 중입니다";
-            if (_roster.IsFull) return "정원이 가득 찼습니다";
             if (Services.TryGet<Economy.GuildTreasury>(out var t) && !t.CanAfford(NoticeCost)) return "골드가 부족합니다";
             return null;
         }
@@ -132,10 +130,9 @@ namespace GuildMaster.Recruitment
             _restoring.Clear();
         }
 
-        public void Init(GameClock clock, GuildRoster roster, WorldService world)
+        public void Init(GameClock clock, WorldService world)
         {
             _clock = clock;
-            _roster = roster;
             _world = world;
             // First visitor comes early so the feature is discoverable.
             _nextVisitHour = clock.TotalHours + GameRandom.Shared.Range(3f, 6f);
@@ -164,18 +161,16 @@ namespace GuildMaster.Recruitment
         void Update()
         {
             if (_clock == null) return;
-            // A paid notice always brings its applicant, whoever else is already in town; only a
-            // full roster turns it away, and then the gold is not wasted.
+            // A paid notice always brings its applicant, whoever else is already in town.
             if (NoticePosted && _clock.TotalHours >= _noticeHour)
             {
                 _noticeHour = -1f;
-                if (!_roster.IsFull) SpawnVisitor();
-                else if (Services.TryGet<Economy.GuildTreasury>(out var t)) t.AddGold(NoticeCost, Economy.GoldReason.Recruit);
+                SpawnVisitor();
             }
             if (_clock.TotalHours < _nextVisitHour) return;
             _nextVisitHour = _clock.TotalHours + GameRandom.Shared.Range(MinIntervalHours, MaxIntervalHours);
             _visitors.RemoveAll(v => v == null);
-            if (_roster.IsFull || RegularVisitors >= MaxConcurrent) return;
+            if (RegularVisitors >= MaxConcurrent) return;
             SpawnVisitor();
         }
 

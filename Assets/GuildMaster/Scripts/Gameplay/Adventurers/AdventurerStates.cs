@@ -911,7 +911,8 @@ namespace GuildMaster.Adventurers
             float hours = dt / AdvCtx.Clock.RealSecondsPerGameHour;
             a.Heal(a.Stats.MaxHp * 0.25f * hours);
             a.Data.fatigue = Mathf.Max(0f, a.Data.fatigue - 30f * hours);
-            a.Data.stress = Mathf.Max(0f, a.Data.stress - 12f * hours);
+            float relief = AdvCtx.Town.IsInTown(a.Position) ? FacilityService.TownStressRelief : 1f; // dormitory (P4-92)
+            a.Data.stress = Mathf.Max(0f, a.Data.stress - 12f * relief * hours);
 
             if (a.HpRatio >= 0.95f && a.Data.fatigue <= 10f)
             {

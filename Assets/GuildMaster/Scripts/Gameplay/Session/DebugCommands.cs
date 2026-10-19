@@ -1257,7 +1257,7 @@ namespace GuildMaster.Session
 
         // ---------------- Guild facilities (P4-87) ----------------
 
-        /// <summary>What the facilities give now (members' scale, marks, roster) and each facility standing or fallen.</summary>
+        /// <summary>What the facilities give now (members' scale, marks, stress relief in town) and each facility standing or fallen.</summary>
         public static string Facilities()
         {
             var f = Services.Get<Town.FacilityService>();
@@ -1266,7 +1266,7 @@ namespace GuildMaster.Session
             var k = f.MemberScale;
             var sb = new StringBuilder();
             sb.AppendLine($"  members x atk {k.Attack:0.###} def {k.Defense:0.###} hp {k.MaxHp:0.###} (power x{k.Mean:0.###}, base {Town.FacilityRules.BaseStatFactor})");
-            sb.AppendLine($"  marks: poison {f.Poison:0.###} armor -{f.ArmorBreak:0.###} slow -{f.Slow:0.###} ({Town.FacilityRules.AfflictionSeconds}s) · roster {roster.CountText} full={roster.IsFull}");
+            sb.AppendLine($"  marks: poison {f.Poison:0.###} armor -{f.ArmorBreak:0.###} slow -{f.Slow:0.###} ({Town.FacilityRules.AfflictionSeconds}s) · stress relief in town x{f.StressRelief:0.##} · roster {roster.CountText}");
             foreach (var b in town.Buildings)
             {
                 if (!Town.FacilityRules.IsFacility(b.Type)) continue;

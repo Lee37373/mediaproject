@@ -10,7 +10,10 @@ namespace GuildMaster.Adventurers
     public struct AdventurerDiedEvent { public Adventurer Adventurer; public Unit Killer; }
     public struct AdventurerLeftEvent { public Adventurer Adventurer; }
 
-    /// <summary>The guild's member list. Owns adventurer creation and removal.</summary>
+    /// <summary>
+    /// The guild's member list. Owns adventurer creation and removal. There is no limit on how many join (P4-92, user
+    /// decision 2026-10-19): their keep and how often visitors come hold the number down.
+    /// </summary>
     public class GuildRoster : MonoBehaviour, ISaveable, ISaveLink, ISaveResume
     {
         readonly List<Adventurer> _members = new();
@@ -20,7 +23,6 @@ namespace GuildMaster.Adventurers
         [System.Serializable]
         class SaveData
         {
-            public int capacity;
             /// <summary>Last adventurer number handed out, so the dead and the departed are never renumbered.</summary>
             public int next_id;
             public List<Adventurer.AdventurerSave> members = new();
@@ -32,7 +34,7 @@ namespace GuildMaster.Adventurers
 
         public string Capture()
         {
-            var s = new SaveData { capacity = Capacity, next_id = AdventurerGenerator.Counter };
+            var s = new SaveData { next_id = AdventurerGenerator.Counter };
             foreach (var m in _members) if (m != null && m.IsAlive) s.members.Add(m.CaptureSave());
             return JsonUtility.ToJson(s);
         }
@@ -40,7 +42,6 @@ namespace GuildMaster.Adventurers
         public void Restore(string json, SaveContext ctx)
         {
             var s = JsonUtility.FromJson<SaveData>(json);
-            Capacity = s.capacity;
             AdventurerGenerator.Counter = s.next_id;
             _restoring.Clear();
             foreach (var saved in s.members)
@@ -63,15 +64,8 @@ namespace GuildMaster.Adventurers
         }
 
         public ListView<Adventurer> Members => new(_members);
-        public int Capacity { get; set; } = 6;
-        public bool IsFull => !Unlimited && _members.Count >= Capacity;
-        /// <summary>
-        /// A dormitory stands (P4-87): no limit. Fallen, the limit is back for newcomers only — nobody already in is sent
-        /// away (user decision 2026-10-19).
-        /// </summary>
-        public bool Unlimited => Services.TryGet<Town.FacilityService>(out var f) && f.NoRosterLimit;
-        /// <summary>"6/9명", or "11명 (정원 없음)" while a dormitory stands.</summary>
-        public string CountText => Unlimited ? $"{_members.Count}명 (정원 없음)" : $"{_members.Count}/{Capacity}명";
+        /// <summary>"7명".</summary>
+        public string CountText => $"{_members.Count}명";
 
         public Adventurer Recruit(AdventurerData data, Vector2 position)
         {
@@ -84,7 +78,7 @@ namespace GuildMaster.Adventurers
         /// <summary>Adds an already spawned visitor to the guild (recruitment).</summary>
         public bool AddExisting(Adventurer a)
         {
-            if (a == null || IsFull || _members.Contains(a)) return false;
+            if (a == null || _members.Contains(a)) return false;
             a.transform.SetParent(transform, true);
             a.JoinGuild();
             _members.Add(a);

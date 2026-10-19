@@ -236,7 +236,6 @@ namespace GuildMaster.Session
             // Every NPC decision is the rules' (P4-91, user decision 2026-10-19: no model in behaviour).
             Services.Register<IAdventurerDecisionMaker>(new RuleBasedDecisionMaker());
             var roster = AddSystem<GuildRoster>();
-            roster.Capacity = Balance.rosterCapacity;
             Services.Register(roster);
             save.Register(roster);
             // The guild's facilities (P4-87): before the founders, whose stats it scales; derived from the town, not saved.
@@ -254,7 +253,7 @@ namespace GuildMaster.Session
             Services.Register(new Notifications.NotificationSources(notifications, clock, board));
             // Bands that go out hunting without a quest (P4-37); PartyTactics formats them like a party.
             var bands = AddSystem<HuntBandService>();
-            bands.Init(clock, Balance.rosterCapacity);
+            bands.Init(clock, Balance.huntBandSize);
             Services.Register(bands);
             save.Register(bands);
             // Standing parties (P4-50): formed in town, pooled pay split by the leader back home.
@@ -313,7 +312,7 @@ namespace GuildMaster.Session
             save.Register(proposals);
             // --- Recruitment: visitors who can be talked into joining ---
             var visitors = AddSystem<Recruitment.VisitorService>();
-            visitors.Init(clock, roster, world);
+            visitors.Init(clock, world);
             Services.Register(visitors);
             save.Register(visitors);
             // Lets ambient town small talk pair a visitor with a member too (user request 2026-09-23);

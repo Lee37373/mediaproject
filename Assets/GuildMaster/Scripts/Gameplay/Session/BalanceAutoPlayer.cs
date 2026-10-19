@@ -195,7 +195,7 @@ namespace GuildMaster.Session
                 _ = _talk.SendAsync(_talk.PlayerTurns == 0 ? Opening : PitchFor(_talk.Visitor.Data.values), false);
                 return;
             }
-            if (_roster.IsFull || !Services.TryGet<VisitorService>(out var visitors)) return;
+            if (!Services.TryGet<VisitorService>(out var visitors)) return;
             foreach (var v in visitors.Visitors)
             {
                 if (v == null || !v.IsAlive || !v.IsVisitor || v.InConversation || _talkedTo.Contains(v)) continue;

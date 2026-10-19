@@ -42,7 +42,6 @@ namespace GuildMaster.UI
             BuildingType.GuildHall => "시간당 EXP가",
             BuildingType.Blacksmith or BuildingType.Apothecary => "제작이",
             BuildingType.TrainingGround => "훈련이",
-            BuildingType.Dormitory => "정원 해제가(이미 있는 길드원은 그대로)",
             _ when FacilityRules.IsFacility(type) => "효과가",
             _ => "건물의 기능이",
         };

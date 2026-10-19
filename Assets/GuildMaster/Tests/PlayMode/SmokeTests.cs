@@ -1366,10 +1366,10 @@ namespace GuildMaster.Tests
         /// The guild's facilities (P4-87, user decisions 2026-10-16·18·19): members start weaker; a stat building raises every
         /// member at once, stops while it lies fallen and is back once repaired; facilities go inside the walls; a second of a
         /// kind costs ×1.5 and counts half; a member's blow leaves poison (its share of the hit, burnt over four seconds, to the
-        /// member's credit), broken armour and a chill; a dormitory lifts the roster limit until it falls, and nobody is sent away.
+        /// member's credit), broken armour and a chill; a dormitory makes members in town shed stress faster until it falls (P4-92).
         /// </summary>
         [UnityTest]
-        public IEnumerator Facilities_RaiseEveryMember_MarkWhatTheyHit_AndADormitoryLiftsTheLimit()
+        public IEnumerator Facilities_RaiseEveryMember_MarkWhatTheyHit_AndADormitoryEasesStressInTown()
         {
             yield return Boot();
             var facilities = Services.Get<Town.FacilityService>();
@@ -1448,15 +1448,26 @@ namespace GuildMaster.Tests
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
 
-            // The dormitory: no limit while it stands; fallen, newcomers wait, nobody leaves.
-            Roster.Capacity = Roster.Members.Count;
-            Assert.That(Roster.IsFull, Is.True);
-            Assert.That(DebugCommands.BuildFacility("Dormitory"), Does.StartWith("Dormitory Lv1"));
-            Assert.That((Roster.IsFull, Roster.CountText.Contains("정원 없음")), Is.EqualTo((false, true)));
-            int members = Roster.Members.Count;
+            // The dormitory (P4-92): members in town shed stress faster, ×2.5 at level 3; fallen, it stops. There is no
+            // roster limit to lift any more.
+            Assert.That(Roster.CountText, Does.Not.Contain("/"), "no limit shown");
+            Assert.That(facilities.StressRelief, Is.EqualTo(1f));
+            Assert.That(DebugCommands.BuildFacility("Dormitory", 3), Does.StartWith("Dormitory Lv3"));
+            Assert.That(facilities.StressRelief, Is.EqualTo(2.5f).Within(1e-4f));
+            var rester = Roster.Members.FirstOrDefault(a => a.IsAlive && town.IsInTown(a.Position));
+            Assume.That(rester, Is.Not.Null, "a member in town");
+            rester.ChangeState(rester.RestState);
+            rester.Data.fatigue = 100f; // stays resting the whole half hour
+            rester.Data.stress = 50f;
+            Clock.SetSpeed(3);
+            float from = Clock.TotalHours;
+            yield return WaitFor(() => Clock.TotalHours >= from + 0.5f, 30f);
+            float shed = 50f - rester.Data.stress, hours = Clock.TotalHours - from;
+            // Resting in town: 12 + 4 an hour without it, 40 with it.
+            Assert.That(shed / hours, Is.EqualTo(40f).Within(6f), $"shed {shed:0.0} in {hours:0.00} h ({rester.Fsm.Current?.Label})");
             var dorm = town.Buildings.Last(b => b.Type == Town.BuildingType.Dormitory);
             dorm.Damage(dorm.MaxHp + 1f);
-            Assert.That((Roster.IsFull, Roster.Members.Count), Is.EqualTo((true, members)));
+            Assert.That(facilities.StressRelief, Is.EqualTo(1f), "stops while fallen");
         }
 
         /// <summary>

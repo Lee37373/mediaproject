@@ -319,7 +319,8 @@ namespace GuildMaster.Adventurers
                 // Resting in town or by a campfire (P4-66) wears nobody out.
                 if (Fsm.Current != RestState && Fsm.Current != CampState) Data.fatigue = Mathf.Min(100f, Data.fatigue + fatigueRate * hours);
                 if (inTown && Fsm.Current != RestState) Heal(Stats.MaxHp * 0.04f * hours);
-                Data.stress = Mathf.Max(0f, Data.stress - (inTown ? 4f : 0.5f) * hours);
+                // A dormitory makes the town more restful (P4-92).
+                Data.stress = Mathf.Max(0f, Data.stress - (inTown ? 4f * Town.FacilityService.TownStressRelief : 0.5f) * hours);
                 TickStatus(dt);
                 if (IsStunned) return;
             }

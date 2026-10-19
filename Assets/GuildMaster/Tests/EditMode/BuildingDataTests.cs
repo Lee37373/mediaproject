@@ -57,7 +57,9 @@ namespace GuildMaster.Tests
             Assert.That(new[] { hall.Level(1).maxHp, hall.Level(2).maxHp, hall.Level(3).maxHp }, Is.EqualTo(new[] { 1000f, 1500f, 2100f }));
             Assert.That(new[] { hall.Level(1).dailyTax, hall.Level(2).dailyTax, hall.Level(3).dailyTax }, Is.EqualTo(new[] { 90, 120, 160 }), "level 1 is the tax the game starts with (P4-69)");
             var guild = db.Building(BuildingType.GuildHall);
-            Assert.That(new[] { guild.Level(1).rosterCapacity, guild.Level(2).rosterCapacity, guild.Level(3).rosterCapacity }, Is.EqualTo(new[] { 6, 9, 12 }));
+            Assert.That(new[] { guild.Level(1).visitorLevelBonus, guild.Level(2).visitorLevelBonus, guild.Level(3).visitorLevelBonus }, Is.EqualTo(new[] { 0, 1, 2 }));
+            // P4-92: there is no roster limit, so its text must not promise room for more.
+            for (int lv = 1; lv <= 3; lv++) Assert.That(guild.Level(lv).effectText, Does.Not.Contain("정원"));
             // P4-82: the guild hall makes no EXP any more, so its text must not promise any.
             for (int lv = 1; lv <= 3; lv++) Assert.That(guild.Level(lv).effectText, Does.Not.Contain("EXP"));
         }

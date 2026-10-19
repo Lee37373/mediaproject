@@ -59,7 +59,6 @@ namespace GuildMaster.Session
             TownQuestPoster.Enabled = false;
             Incidents.IncidentService.Enabled = false;
             Disasters.DisasterService.ChanceOverride = 0f;
-            roster.Capacity = Mathf.Max(roster.Capacity, 64);
             // The guild's own stay in town out of the way.
             foreach (var a in roster.Members.ToList()) if (a.IsAlive) a.ChangeState(a.RestState);
 

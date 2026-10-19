@@ -22,7 +22,6 @@ namespace GuildMaster.Data
         public List<ItemCost> itemCosts = new();
 
         [Header("Guild hall")]
-        public int rosterCapacity;
         public int visitorLevelBonus;
 
         [Header("Town hall")]

@@ -349,11 +349,12 @@ namespace GuildMaster.Data
             // P4-69: level 1 is what the game actually starts with (P5-1 set 90G tax); the old 60 here never
             // applied, so the town hall's level 2 (90G) was an upgrade that paid nothing. Levels 2 and 3 keep
             // their old steps (user decision 2026-09-27). P4-82 (user decision 2026-10-17): the guild hall no
-            // longer makes EXP — quest EXP comes from the clients.
+            // longer makes EXP — quest EXP comes from the clients. P4-92 (user decision 2026-10-19): no roster limit, so
+            // the levels only bring stronger visitors (costs as before).
             B(Town.BuildingType.GuildHall,
-                new BuildingLevel { rosterCapacity = 6, visitorLevelBonus = 0, effectText = "정원 6명" },
-                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, rosterCapacity = 9, visitorLevelBonus = 1, effectText = "정원 9명 · 방문자 레벨 +1" },
-                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, rosterCapacity = 12, visitorLevelBonus = 2, effectText = "정원 12명 · 방문자 레벨 +2" });
+                new BuildingLevel { visitorLevelBonus = 0, effectText = "방문자 레벨 +0" },
+                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, visitorLevelBonus = 1, effectText = "방문자 레벨 +1" },
+                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, visitorLevelBonus = 2, effectText = "방문자 레벨 +2" });
 
             B(Town.BuildingType.Blacksmith,
                 new BuildingLevel { craftTier = 1, effectText = "1등급 장비 제작" },
@@ -425,8 +426,14 @@ namespace GuildMaster.Data
                 new[] { I("stone_shard", 12), I("bone_shard", 4) },
                 new[] { I("bone_shard", 12), I("dense_jelly", 10) },
                 new[] { I("crown_shard", 1), I("royal_jelly", 2) });
-            var dorm = F(Town.BuildingType.Dormitory, 1, 1500, 450, I("iron_ore", 15), I("stone_shard", 15), I("goblin_ear", 10));
-            dorm.footprint = 4;
+            // P4-92 (user decision 2026-10-19): stress relief in town at three levels, dearer than the other facilities.
+            var dorm = new[]
+            {
+                F(Town.BuildingType.Dormitory, 1, 800, 450, I("iron_ore", 10), I("stone_shard", 10), I("goblin_ear", 6)),
+                F(Town.BuildingType.Dormitory, 2, 1500, 550, I("iron_ore", 15), I("stone_shard", 15), I("bone_shard", 10)),
+                F(Town.BuildingType.Dormitory, 3, 2500, 650, I("iron_ore", 20), I("dense_jelly", 12), I("crown_shard", 1)),
+            };
+            foreach (var lv in dorm) lv.footprint = 4;
             B(Town.BuildingType.Dormitory, dorm);
         }
 

@@ -84,7 +84,8 @@ namespace GuildMaster.Session
         [Header("Guild")]
         /// <summary>P4-38 (was 3): one full party from the start, one of each class (see StartingLineup).</summary>
         public int startingAdventurers = 4;
-        public int rosterCapacity = 6;
+        /// <summary>Most members in one hunting band (P4-37). It was the roster limit's start value until P4-92 dropped the limit.</summary>
+        public int huntBandSize = 6;
 
         [Header("Raids (P3-6): swollen nests raid the town")]
         /// <summary>Hourly raid chance per danger level of a nest (level = steps above its threshold).</summary>

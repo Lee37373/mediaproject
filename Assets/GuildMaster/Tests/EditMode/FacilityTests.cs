@@ -6,7 +6,7 @@ using NUnit.Framework;
 
 namespace GuildMaster.Tests
 {
-    /// <summary>P4-87: the guild's facilities — the weakened base, the stat buildings, the marks, more than one of a kind.</summary>
+    /// <summary>P4-87: the guild's facilities — the weakened base, the stat buildings, the marks, the dormitory (P4-92), more than one of a kind.</summary>
     public class FacilityTests
     {
         static List<int> L(params int[] levels) => new(levels);
@@ -55,6 +55,16 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void Dormitory_SpeedsUpStressReliefInTown_HalfAgainALevel_AndThereIsOneOnly()
+        {
+            Assert.That(FacilityRules.EffectOf(BuildingType.Dormitory), Is.EqualTo(FacilityEffect.StressRelief));
+            Assert.That(new[] { FacilityRules.StressReliefAt(0), FacilityRules.StressReliefAt(1), FacilityRules.StressReliefAt(2), FacilityRules.StressReliefAt(3) },
+                        Is.EqualTo(new[] { 1f, 1.5f, 2f, 2.5f }), "user decision 2026-10-19");
+            Assert.That(FacilityRules.EffectText(BuildingType.Dormitory, 3), Does.Contain("×2.5"));
+            Assert.That(FacilityService.TownStressRelief, Is.EqualTo(1f), "no game running: no relief");
+        }
+
+        [Test]
         public void TheSevenBuildings_HaveTheirEffects_DataAndPrices()
         {
             Assert.That(FacilityRules.All, Has.Length.EqualTo(7));
@@ -65,14 +75,15 @@ namespace GuildMaster.Tests
                 Assert.That(FacilityRules.IsFacility(t), Is.True, t.ToString());
                 var def = db.Building(t);
                 Assert.That(def, Is.Not.Null, t.ToString());
-                Assert.That(def.MaxLevel, Is.EqualTo(t == BuildingType.Dormitory ? 1 : 3), t.ToString());
+                Assert.That(def.MaxLevel, Is.EqualTo(3), t.ToString());
                 Assert.That(def.Level(1).effectText, Is.Not.Empty);
                 foreach (var lv in def.levels)
                     foreach (var c in lv.itemCosts) Assert.That(db.Item(c.itemId), Is.Not.Null, $"{t}: {c.itemId}");
             }
             var armory = db.Building(BuildingType.Armory);
             Assert.That((armory.Level(1).goldCost, armory.Level(2).goldCost, armory.Level(3).goldCost), Is.EqualTo((400, 1000, 2000)), "user decision 2026-10-19");
-            Assert.That(db.Building(BuildingType.Dormitory).Level(1).goldCost, Is.EqualTo(1500));
+            var dorm = db.Building(BuildingType.Dormitory);
+            Assert.That((dorm.Level(1).goldCost, dorm.Level(2).goldCost, dorm.Level(3).goldCost), Is.EqualTo((800, 1500, 2500)), "dearer than the others (user decision 2026-10-19)");
             Assert.That(FacilityRules.IsFacility(BuildingType.Watchtower), Is.False);
             Assert.That(FacilityRules.IsFacility(BuildingType.GuildHall), Is.False);
             Assert.That(FacilityRules.EffectText(BuildingType.PoisonLab, 2), Does.Contain("20%"));

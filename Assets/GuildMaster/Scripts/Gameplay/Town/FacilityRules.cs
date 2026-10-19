@@ -5,12 +5,13 @@ using UnityEngine;
 namespace GuildMaster.Town
 {
     /// <summary>What a guild facility does (P4-87).</summary>
-    public enum FacilityEffect { None, Attack, Defense, MaxHp, Poison, ArmorBreak, Slow, NoRosterLimit }
+    public enum FacilityEffect { None, Attack, Defense, MaxHp, Poison, ArmorBreak, Slow, StressRelief }
 
     /// <summary>
     /// The guild's own facilities (P4-87, user decisions 2026-10-16·18·19): seven buildings put up inside the walls. Three
     /// raise every member's attack, defence or health all the time, wherever they are; three mark whatever a member hits
-    /// (poison, broken armour, chill) for a few seconds; the dormitory lifts the roster limit. Members start weaker than
+    /// (poison, broken armour, chill) for a few seconds; the dormitory lets members in town shed stress faster (P4-92 —
+    /// there is no roster limit any more, user decision 2026-10-19). Members start weaker than
     /// before (<see cref="BaseStatFactor"/>) and the three stat buildings at level 3 bring them back to the old strength.
     /// More of the same kind add up, each less than the one before. Pure numbers and rules, tested.
     /// </summary>
@@ -32,7 +33,7 @@ namespace GuildMaster.Town
             BuildingType.PoisonLab => FacilityEffect.Poison,
             BuildingType.RuneForge => FacilityEffect.ArmorBreak,
             BuildingType.FrostAltar => FacilityEffect.Slow,
-            BuildingType.Dormitory => FacilityEffect.NoRosterLimit,
+            BuildingType.Dormitory => FacilityEffect.StressRelief,
             _ => FacilityEffect.None,
         };
 
@@ -67,9 +68,17 @@ namespace GuildMaster.Town
         /// <summary>The strongest a mark gets (three of a kind at level 3 come to 52.5%, so this is only a guard).</summary>
         public const float MaxAffliction = 0.6f;
 
+        // ---------------- Dormitory ----------------
+
+        /// <summary>
+        /// How much faster members in town shed stress, resting or not, with the dormitory at this level (P4-92, user decision
+        /// 2026-10-19): ×1.5, ×2, ×2.5; 1 with none standing. Out of town and by a campfire it does nothing.
+        /// </summary>
+        public static float StressReliefAt(int level) => 1f + 0.5f * Mathf.Clamp(level, 0, MaxLevel);
+
         // ---------------- More than one of a kind ----------------
 
-        /// <summary>Most of one kind (the dormitory: one is all it takes).</summary>
+        /// <summary>Most of one kind (the dormitory: one only, user decision 2026-10-19).</summary>
         public static int MaxCopies(BuildingType t) => t == BuildingType.Dormitory ? 1 : CopyWeights.Length;
 
         /// <summary>
@@ -126,7 +135,7 @@ namespace GuildMaster.Town
                 FacilityEffect.Poison => $"길드원이 때린 적 중독: 준 피해의 {share}%를 {secs}에 걸쳐",
                 FacilityEffect.ArmorBreak => $"길드원이 때린 적 방어 -{share}% ({secs})",
                 FacilityEffect.Slow => $"길드원이 때린 적 이동·공격 속도 -{share}% ({secs})",
-                FacilityEffect.NoRosterLimit => "길드원 정원 제한 없음",
+                FacilityEffect.StressRelief => $"마을에 있는 길드원 스트레스 회복 ×{StressReliefAt(level):0.#}",
                 _ => "",
             };
         }
