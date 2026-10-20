@@ -130,6 +130,21 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void Strength_EightInTheirTwenties_ReadItAsTheFightTheyCanWin()
+        {
+            // P4-94 (user decision: eight members in their twenties win it), with no stat buildings (×0.75): eight Lv22 gear 2
+            // won the test fights, eight Lv20 won with a death, eight Lv18 lost.
+            static string Read(int level, int gear, int party)
+                => QuestRisk.Label(QuestRisk.MarginAgainst((level + gear * 1.5f) * Town.FacilityRules.BaseStatFactor, party, Dragon.RiskRequirement));
+            Assert.That(Read(22, 2, 8), Is.EqualTo(QuestRisk.Fair));
+            Assert.That(Read(20, 2, 8), Is.EqualTo(QuestRisk.Risky));
+            Assert.That(Read(17, 1, 8), Is.EqualTo(QuestRisk.Reckless));
+            Assert.That(Read(25, 2, 4), Is.EqualTo(QuestRisk.Reckless), "half a party is no match");
+            Assert.That(Dragon.RiskRequirement, Is.GreaterThan(RegionLords.RiskRequirement), "still beyond a lord");
+            Assert.That(Dragon.Level, Is.GreaterThan(RegionLords.Level));
+        }
+
+        [Test]
         public void Art_EveryPoseHasItsFrames_TheFireAndTheHoard()
         {
             foreach (DragonPose pose in System.Enum.GetValues(typeof(DragonPose)))

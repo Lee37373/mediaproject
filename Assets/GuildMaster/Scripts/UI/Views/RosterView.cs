@@ -244,7 +244,7 @@ namespace GuildMaster.UI
                 if (Services.TryGet<Legacy.GuildLegacy>(out var legacy) && legacy.IsWounded(a))
                     stress += UIBuilder.Colored(" [중상]", UITheme.Bad);
                 _traits.text = "특성: " + Traits.TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad);
-                _sub.text = $"{LivingCostRules.Purse(d.gold, d.debt)} · EXP {d.exp}/{d.ExpToNextLevel} · 피로 {d.fatigue:0} · 스트레스 {stress} · 물약 {d.potions} · 전리품 {d.LootCount} · 처치 {d.kills} · 완료 {d.questsCompleted}{quest}";
+                _sub.text = $"{LivingCostRules.Purse(d.gold, d.debt)} · EXP {d.exp}/{d.ExpToNextLevel} · 피로 {d.fatigue:0} · 스트레스 {stress} · 물약 {d.potions} · 조명탄 {d.flares} · 전리품 {d.LootCount} · 처치 {d.kills} · 완료 {d.questsCompleted}{quest}";
             }
 
             void OpenDetail()

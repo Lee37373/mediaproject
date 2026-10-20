@@ -157,6 +157,10 @@ namespace GuildMaster.Session
             particles.Init(pool);
             Services.Register(particles);
             AddSystem<CombatFeedback>().Init(particles, fx);
+            // Flares (P4-94): members light up a foe that slipped out of sight.
+            var flares = AddSystem<Flares.FlareService>();
+            flares.Init(pool);
+            Services.Register(flares);
             // Items on the ground (P4-21): drops of the dead, picked up by monsters and adventurers.
             var groundItems = AddSystem<Items.GroundItemService>();
             groundItems.Init(pool, clock, db);

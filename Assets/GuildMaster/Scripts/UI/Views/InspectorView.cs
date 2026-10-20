@@ -314,7 +314,7 @@ namespace GuildMaster.UI
             {
                 $"상태: {UIBuilder.Colored(a.StateLabel, UITheme.Accent)} · 의뢰: {quest}",
                 $"HP {a.Hp:0}/{s.MaxHp:0} · 공격 {s.Attack:0.#} · 방어 {s.Defense:0.#} · 사거리 {s.AttackRange:0.#}",
-                $"EXP {d.exp}/{d.ExpToNextLevel} · {LivingCostRules.Purse(d.gold, d.debt)} · 물약 {d.potions} · 장비 {d.gearTier}등급",
+                $"EXP {d.exp}/{d.ExpToNextLevel} · {LivingCostRules.Purse(d.gold, d.debt)} · 물약 {d.potions} · 조명탄 {d.flares} · 장비 {d.gearTier}등급",
                 $"피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 처치 {d.kills} · 완료 의뢰 {d.questsCompleted}",
             };
             // Values/personality/traits are the recruitment "answer key" (see RecruitDialogView, hidden there

@@ -273,14 +273,17 @@ namespace GuildMaster.Units
         /// <summary>
         /// Sight of another unit: within the sight radius (a third of it inside a forest), and no
         /// mountain, wall, building or — seen from outside — forest in between; up to two trees are
-        /// fine (P4-48, <see cref="ForestSight"/>). Use when picking new targets by sight.
+        /// fine (P4-48, <see cref="ForestSight"/>). Use when picking new targets by sight. The guild also sees whatever
+        /// stands in a flare's light near it (P4-94, <see cref="Flares.FlareService.LightsFor"/>).
         /// </summary>
         public bool CanSee(Unit other)
-            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, other.Position, Stats.SightRadius));
+            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, other.Position, Stats.SightRadius)
+                                 || Faction == Faction.Guild && Flares.FlareService.LightsFor(Position, other.Position));
 
         /// <summary>Same sight rule for a point (e.g. an item on the ground).</summary>
         public bool CanSee(Vector2 point)
-            => !Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, point, Stats.SightRadius);
+            => !Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, point, Stats.SightRadius)
+               || Faction == Faction.Guild && Flares.FlareService.LightsFor(Position, point);
 
         /// <summary>How far this unit sees where it stands now (a third of its sight inside a forest).</summary>
         public float EffectiveSightRadius

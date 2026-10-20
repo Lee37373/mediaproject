@@ -16,9 +16,13 @@ namespace GuildMaster.Monsters
     {
         /// <summary>Beyond the region lords (35) and the ordinary cap (30); it never grows.</summary>
         public const int Level = 40;
-        public const float HpMultiplier = 20f;
-        public const float AttackMultiplier = 4f;
-        public const float DefenseBonus = 5f;
+        // P4-94 (user decision 2026-10-20: eight members in their twenties win it): test fights at the lair, eight
+        // members gear 2 with no stat buildings. ×20 HP, ×4 attack, +5 defence: Lv22 wore it to half in a day and fell
+        // back worn out. ×10/×6: Lv20 won with nobody hurt much (the priests healed the slow blows). ×10/×7 and ×10/×8:
+        // four died and the rest fell back. ×11/×6.5: Lv20 won with one dead (23 game hours), Lv18 lost two and fell back.
+        public const float HpMultiplier = 11f;
+        public const float AttackMultiplier = 6.5f;
+        public const float DefenseBonus = 0f;
         public const int ExpMultiplier = 15;
 
         // ---------------- Waking ----------------
@@ -117,8 +121,12 @@ namespace GuildMaster.Monsters
         public const float RaidRange = 160f;
         /// <summary>Seen on the wing this recently, the guild takes it to be away from home.</summary>
         public const float AwayHours = 4f;
-        /// <summary>The strength a group needs to read its hunt as "적당" (<c>Adventurers.QuestRisk</c>), above a lord's 90.</summary>
-        public const float RiskRequirement = 110f;
+        /// <summary>
+        /// The strength a group needs to read its hunt as "적당" (<c>Adventurers.QuestRisk</c>), above a lord's 90. P4-94: 110
+        /// read the eight Lv22s who win it as 위험 and too green (recommended Lv29); at 95 eight Lv22 gear 2 are 적당, eight Lv20
+        /// (who win with a death) 위험, recommended Lv25.
+        /// </summary>
+        public const float RiskRequirement = 95f;
 
         /// <summary>What a raider takes now: sacks of its gold (whole sacks only) and things off the pile.</summary>
         public static int SacksTaken(int gold) => Mathf.Clamp(gold / SackValue, 0, TakeSacks);

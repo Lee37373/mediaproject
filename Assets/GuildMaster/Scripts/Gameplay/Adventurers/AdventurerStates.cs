@@ -882,7 +882,9 @@ namespace GuildMaster.Adventurers
             var trade = Services.Get<TradeService>();
             _shopped = true;
             while (a.Data.potions < 2 && trade.SellGoods(a, DefaultContent.Potion)) a.Data.potions++;
-            // Survival first (potions), then the next gear tier if the gold is left (P4-4).
+            // Then flares (P4-94): cheap, and a foe lost in the trees or the sky is a foe that hits unseen.
+            while (a.Data.flares < Flares.FlareRules.Carry && trade.SellGoods(a, Flares.FlareRules.ItemId)) a.Data.flares++;
+            // Survival first (potions, flares), then the next gear tier if the gold is left (P4-4).
             GearShopping.TryBuy(a);
         }
 

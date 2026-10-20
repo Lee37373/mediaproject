@@ -7,6 +7,7 @@ using GuildMaster.Core;
 using GuildMaster.Data;
 using GuildMaster.Disasters;
 using GuildMaster.Ecosystem;
+using GuildMaster.Flares;
 using GuildMaster.Items;
 using GuildMaster.Monsters;
 using GuildMaster.Player;
@@ -1028,6 +1029,59 @@ namespace GuildMaster.Tests
                 DebugCommands.KillDragon(Roster.Members.ToList().IndexOf(warrior));
                 Assert.That((svc.Slain, svc.Dragon), Is.EqualTo((true, (Monster)null)));
                 Assert.That(warrior.Data.titles, Does.Contain(Dragon.Title(dragon.Def.displayName)));
+
+                // Flares (P4-94, user decisions 2026-10-20), out between the town and the lair: a member that loses a foe
+                // shoots one over where it was last seen (and not again while it waits), the fog lifts round it, and the
+                // guild — not the monsters — sees what stands in its light, until it burns out.
+                // ×4 on the clock itself: a hit-stop (the dragon's fall) hands time back to the clock's speed, not to timeScale.
+                Clock.SetSpeed(3);
+                var flares = Services.Get<FlareService>();
+                var fog = Services.Get<Fog.FogOfWar>();
+                float sight = shooter.Stats.SightRadius;
+                Assume.That(sight, Is.LessThan(12f), "the light reaches past the shooter's own sight");
+                world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(Vector2.Lerp(town, svc.Lair, 0.5f)), 8, out var outCell);
+                var at = World.GridMap.CellToWorld(outCell);
+                shooter.Mover.Stop();
+                shooter.transform.position = at;
+                shooter.Data.flares = 2;
+                var foe = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && !m.IsDragon && m.Def.aggressiveToHumans && m.IsHostileTo(shooter));
+                Assume.That(foe.Stats.SightRadius, Is.LessThan(13f));
+                var lastSeen = at + new Vector2(FlareRules.MaxThrow, 0f);
+                var watched = lastSeen + new Vector2(8f, 0f);
+                Assert.That(fog.IsVisibleRaw(watched), Is.False, "beyond the shooter's sight");
+                int fired = flares.Fired;
+                shooter.Engage.LostSight(foe, lastSeen);
+                shooter.Engage.LostSight(foe, lastSeen);
+                Assert.That((flares.Fired - fired, shooter.Data.flares), Is.EqualTo((1, 1)), "one shot, then the wait");
+                // Out here it walks among monsters meanwhile: its own shot at one it loses would start a new wait.
+                shooter.Data.flares = 0;
+                SkyFlare shot = null;
+                yield return WaitFor(() => (shot = FlareService.Burning.FirstOrDefault(f => Vector2.Distance(f.Centre, lastSeen) < 0.01f)) != null
+                                           && fog.IsVisibleRaw(watched), 5f);
+                Assert.That(shot, Is.Not.Null, "it bursts over where the foe was last seen");
+                Assert.That(fog.IsVisibleRaw(watched), Is.True, "the fog lifts round it");
+                shooter.transform.position = at; // it walks on its own business meanwhile
+                foe.transform.position = lastSeen + new Vector2(4f, 0f);
+                Assert.That(world.CanSee(shooter.Position, foe.Position, sight), Is.False, "out of its own sight");
+                Assert.That(shooter.CanSee(foe), Is.True, "seen in the light");
+                Assert.That(foe.CanSee(shooter), Is.False, "the light is the guild's: the monster still does not see it");
+                foe.transform.position = lastSeen + new Vector2(0f, FlareRules.Radius + 0.5f);
+                Assert.That(shooter.CanSee(foe), Is.False, "just outside the light");
+                yield return WaitFor(() => !shot.IsBurning, FlareRules.BurnSeconds + 5f);
+                Assert.That(shot.IsBurning, Is.False, "it burns out");
+
+                // In a real fight: the foe slips out of sight, and the member shoots by itself.
+                shooter.Mover.Stop();
+                shooter.transform.position = at;
+                shooter.Data.flares = 1;
+                foe.transform.position = at + new Vector2(Mathf.Min(sight + 1.5f, 13.5f), 0f);
+                Assume.That(FlareService.IsLit(foe.Position), Is.False);
+                // A fresh fight: it may have taken this foe on by itself meanwhile and already be searching for it.
+                shooter.Engage.Clear();
+                shooter.Engage.SetTarget(foe);
+                fired = flares.Fired;
+                shooter.Engage.Tick(0.3f);
+                Assert.That((shooter.Engage.IsSearching, flares.Fired - fired, shooter.Data.flares), Is.EqualTo((true, 1, 0)), "lost it: a flare after it");
             }
             finally
             {

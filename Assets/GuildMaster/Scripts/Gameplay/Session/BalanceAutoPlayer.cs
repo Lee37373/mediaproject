@@ -97,6 +97,8 @@ namespace GuildMaster.Session
 
         /// <summary>How much to keep on the shelf, as a player would set it in the warehouse.</summary>
         public int PotionTarget { get; set; } = 6;
+        /// <summary>Flares kept in stock (P4-94).</summary>
+        public int FlareTarget { get; set; } = 4;
         public int GearTarget { get; set; } = 3;
 
         /// <summary>
@@ -109,6 +111,7 @@ namespace GuildMaster.Session
             foreach (var r in crafting.Recipes)
             {
                 if (r.outputItemId == DefaultContent.Potion) crafting.SetTarget(r, PotionTarget);
+                else if (r.outputItemId == GuildMaster.Flares.FlareRules.ItemId) crafting.SetTarget(r, FlareTarget);
                 else if (r.outputItemId == "gear_t1") crafting.SetTarget(r, GearTarget);
             }
         }

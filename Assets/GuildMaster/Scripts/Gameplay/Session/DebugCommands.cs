@@ -133,13 +133,30 @@ namespace GuildMaster.Session
                 world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(stand + new Vector2(i % 3, i / 3)), 4, out var cell);
                 a.Mover.Stop();
                 a.transform.position = World.GridMap.CellToWorld(cell);
-                if (!board.TryAccept(q, a, invited: i > 0)) continue;
-                a.CurrentQuest = q;
-                a.ChangeState(a.TravelState);
             }
+            AcceptAsParty(board, q, team);
             Services.Get<Fog.FogOfWar>().Reveal(lair.WorldPosition, 20f);
             Services.Get<CameraControl.CameraController>().JumpTo(lair.WorldPosition);
             return $"{q.Id}: {string.Join(", ", team.Select(a => $"{a.Data.name}({a.Data.cls} {a.Stats.MaxHp:0}hp {a.Stats.Attack:0.#}atk)"))} vs {lord.DisplayName} {lord.Hp:0}hp";
+        }
+
+        /// <summary>
+        /// Puts a trial team on party work as one party (debug): the others go on the quest first and the leader takes it
+        /// last, so the party service does not go looking in town for comrades — the team stands out by the lair, and a lone
+        /// first taker of party work gives it up as 무모 (P4-90; every member gave up the dragon trial so, P4-94) — then
+        /// the party forms as if all had said yes.
+        /// </summary>
+        static void AcceptAsParty(QuestBoard board, Quest q, List<Adventurer> team)
+        {
+            if (team.Count == 0) return;
+            for (int i = 1; i < team.Count; i++) q.AddAssignee(team[i]);
+            if (!board.TryAccept(q, team[0], invited: true)) return;
+            foreach (var a in team)
+            {
+                a.CurrentQuest = q;
+                a.ChangeState(a.TravelState);
+            }
+            EventBus.Publish(new PartyFormedEvent { Quest = q, Leader = team[0], Members = team.Skip(1).ToList() });
         }
 
         /// <summary>Moves the camera to a lair (debug: the lords are deep in the fog).</summary>
@@ -1728,17 +1745,37 @@ namespace GuildMaster.Session
                 a.Data.level = level;
                 a.Data.gearTier = gear;
                 a.Data.potions = 3;
+                a.Data.flares = GuildMaster.Flares.FlareRules.Carry;
                 a.RecalculateStats(fullHeal: true);
                 world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(stand + new Vector2(i % 3, i / 3)), 4, out var cell);
                 a.Mover.Stop();
                 a.transform.position = World.GridMap.CellToWorld(cell);
-                if (!board.TryAccept(q, a, invited: i > 0)) continue;
-                a.CurrentQuest = q;
-                a.ChangeState(a.TravelState);
             }
+            AcceptAsParty(board, q, team);
             Services.Get<Fog.FogOfWar>().Reveal(svc.Lair, 20f);
             Services.Get<CameraControl.CameraController>().JumpTo(svc.Lair);
             return $"{q.Id}: {string.Join(", ", team.Select(a => $"{a.Data.name}({a.Data.cls} {a.Stats.MaxHp:0}hp {a.Stats.Attack:0.#}atk)"))} vs {dragon.DisplayName} {dragon.Hp:0}hp";
+        }
+
+        // ---------------- Flares (P4-94) ----------------
+
+        /// <summary>Burning flares, flares shot so far, what each member carries and the stock.</summary>
+        public static string Flares() => Services.TryGet<GuildMaster.Flares.FlareService>(out var f) ? f.Describe() : "no flare service";
+
+        /// <summary>Every living member carries <paramref name="count"/> flares (and the stock gets as many more).</summary>
+        public static string GiveFlares(int count = 2)
+        {
+            foreach (var a in Services.Get<GuildRoster>().Members) if (a.IsAlive) a.Data.flares = count;
+            Services.Get<GuildTreasury>().AddStock(GuildMaster.Flares.FlareRules.ItemId, count);
+            return Flares();
+        }
+
+        /// <summary>Shoots one over (x, y) — the camera's centre when left out — from nobody.</summary>
+        public static string FireFlare(float x = -1f, float y = -1f)
+        {
+            var at = x < 0f ? (Vector2)Camera.main.transform.position : new Vector2(x, y);
+            Services.Get<GuildMaster.Flares.FlareService>().Fire(null, at);
+            return Flares();
         }
     }
 }

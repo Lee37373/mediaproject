@@ -43,6 +43,8 @@ namespace GuildMaster.Adventurers
         public int recruitAffinity = -1;
         public int recruitTurns;
         public int potions;
+        /// <summary>Flares carried (P4-94): shot by itself when a foe it fights slips out of sight.</summary>
+        public int flares;
         public int gearTier;
         public List<ItemStack> loot = new();
         public int kills;

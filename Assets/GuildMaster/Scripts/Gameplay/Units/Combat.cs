@@ -340,6 +340,9 @@ namespace GuildMaster.Units
         /// <summary>Where the target was last seen (or felt, or heard).</summary>
         public Vector2 LastSeenPosition { get; private set; }
 
+        /// <summary>The target just slipped out of sight and the search for it begins (P4-94: a member may shoot a flare).</summary>
+        public System.Action<Unit, Vector2> LostSight { get; set; }
+
         /// <summary>
         /// Whether the unit still knows where its target is: it sees it (forest rules, <see cref="Unit.CanSee(Unit)"/>),
         /// feels it right next to it, was just hit by it, or hears it fighting one of its own nearby.
@@ -384,6 +387,7 @@ namespace GuildMaster.Units
                 _lookTime = 0f;
                 _kiting = false;
                 _steering = false;
+                LostSight?.Invoke(Target, LastSeenPosition);
                 if (!_self.Mover.SetDestination(LastSeenPosition, 0.4f)) return GiveUpSearch();
             }
             _searchTime += dt;

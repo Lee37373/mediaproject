@@ -107,7 +107,7 @@ namespace GuildMaster.UI
             for (int i = 0; i < items.Count; i++)
             {
                 var (item, count) = items[i];
-                string cat = item.category switch { ItemCategory.Material => "재료", ItemCategory.Potion => "물약", _ => "장비" };
+                string cat = item.category switch { ItemCategory.Material => "재료", ItemCategory.Potion => "물약", ItemCategory.Tool => "도구", _ => "장비" };
                 string price = item.category == ItemCategory.Material
                     ? $"매입가 {trade.LootPrice(item)}G"
                     : $"판매가 {trade.GoodsPrice(item)}G";

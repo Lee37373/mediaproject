@@ -59,6 +59,8 @@ namespace GuildMaster.Data
 
             var potion = Item(Potion, "체력 물약", ItemCategory.Potion, 20, new Color(0.9f, 0.2f, 0.25f));
             potion.healAmount = 40f;
+            // P4-94: shot by members when a foe slips out of sight (Flares.FlareRules).
+            Item(Flares.FlareRules.ItemId, "조명탄", ItemCategory.Tool, 25, new Color(1f, 0.85f, 0.35f));
             for (int tier = 1; tier <= 3; tier++)
             {
                 var g = Item($"gear_t{tier}", $"{tier}등급 장비", ItemCategory.Gear, 60 * tier * tier, new Color(0.7f, 0.75f, 0.85f));
@@ -474,6 +476,8 @@ namespace GuildMaster.Data
             }
 
             R("potion", Potion, Town.BuildingType.Apothecary, 1, 2f, 5, I("slime_jelly", 2));
+            // P4-94 (user decision: made at the apothecary): from the near ring's drops, as cheap as a potion to make.
+            R("flare", Flares.FlareRules.ItemId, Town.BuildingType.Apothecary, 1, 2f, 5, I("slime_jelly", 1), I("stone_shard", 1));
             // P5-1: tier 1 used to need a rusty dagger, which only 20% of goblins carry — a new guild
             // could not make its first gear for days. It now comes from the near ring's own drops.
             R("gear_t1", "gear_t1", Town.BuildingType.Blacksmith, 1, 4f, 0, I("stone_shard", 3), I("dense_jelly", 2));

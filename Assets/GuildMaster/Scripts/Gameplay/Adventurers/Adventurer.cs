@@ -154,6 +154,7 @@ namespace GuildMaster.Adventurers
             Looting = new AdventurerLooting(this);
             // Party back line (P4-27): ranged members fall back behind a front-liner while reloading.
             Engage.HoldSpot = target => Services.TryGet<PartyTactics>(out var party) ? party.BackLineSpot(this, target) : null;
+            Engage.LostSight = ShootFlare;
         }
 
         // ---------------- Party roles (P4-27) ----------------
@@ -451,6 +452,27 @@ namespace GuildMaster.Adventurers
         {
             Mover.SpeedMultiplier = 1f;
             return true;
+        }
+
+        // ---------------- Flares (P4-94) ----------------
+
+        float _flareReadyAt;
+
+        /// <summary>
+        /// A foe it was fighting slipped out of sight: shoots a flare over where it was last seen when it carries one, its
+        /// last shot is long enough ago, that spot is not in a flare's light already, and the foe is a threat (hostile by
+        /// nature, or hit it lately) — a slime that wandered off into the trees is not worth one.
+        /// </summary>
+        void ShootFlare(Unit foe, Vector2 lastSeen)
+        {
+            if (!IsGuildMember || IsVisitor || foe == null || !Services.TryGet<Flares.FlareService>(out var flares)) return;
+            bool threat = foe.IsHostileTo(this) || WasRecentlyAttackedBy(foe, Flares.FlareRules.ThreatMemorySeconds);
+            bool lit = Flares.FlareService.Covers(lastSeen, Flares.FlareRules.CoveredWithin);
+            if (!Flares.FlareRules.WouldFire(Data.flares, Time.time, _flareReadyAt, lit, threat)) return;
+            Data.flares--;
+            _flareReadyAt = Time.time + Flares.FlareRules.CooldownSeconds;
+            flares.Fire(this, Flares.FlareRules.AimPoint(Position, lastSeen));
+            Say("조명탄!", toFeed: false);
         }
 
         /// <summary>Drinks a potion or signals retreat when badly hurt/exhausted. Returns true if retreating.</summary>
