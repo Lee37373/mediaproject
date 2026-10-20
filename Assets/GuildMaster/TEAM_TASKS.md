@@ -2,8 +2,8 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-10-19
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-93**).
+- 마지막 갱신: 2026-10-20
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-94**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -101,6 +101,7 @@
 | P4-91 | NPC 행동 판단에서 LLM 제거(사용자 결정 2026-10-19): 의뢰·휴식·사냥 판단, 파티·사냥 초대 수락, 전리품 분배, 스킬 선택, 잡담을 규칙 기반으로. LLM은 영입 대화·설득 대화·의뢰 제안 카드에만 | 이재혁 | 완료 | Adventurers/LlmDecisionMaker·Prompts(Decision·Party·Skill·Split·Banter 삭제)·PartyService·PartySettlement·SkillChoiceService·BanterService·BanterLines(신규)·QuestRisk, Persuasion/PersuasionRules, Units/Unit, Session/GameBootstrap | 4b0f437 |
 | P4-92 | 사용자 요청(2026-10-19): 길드원 정원 제한을 처음부터 없앰, 대숙소는 스트레스 회복 건물(1~3레벨)로 바꿈, 등급 높은 유닛이 카이팅·옆걸음 때 그림이 좌우로 빠르게 뒤집히는 문제 | 이재혁 | 완료 | Adventurers/GuildRoster·Adventurer·AdventurerStates, Town/FacilityRules·FacilityService·UpgradeService, Recruitment/VisitorService, Data/DefaultContent·BuildingDefinition, Session/GameBalance·GameBootstrap, UI/BuildView·BuildingView, Visuals/CharacterVisual, World/PathFollower, Units/Combat, Session/SkirmishMonitor | aa0199e, acf8a24 |
 | P4-44 | 시간에 따른 생태 변화(사용자 결정 2026-10-19): 바깥 몬스터가 시간이 지날수록 레벨이 오르고, 밀려난 무리는 안쪽으로 와서 마을을 침공. 속도는 고정 주기 없이 게임 흐름에 맞춤 | 이재혁 | 완료 | Ecosystem/WildsPressure(신규)·EcosystemManager·MigrationService·TerritoryService·RoamingPackService, Monsters/Monster, Town/WaveManager, Session/GameLog·DebugCommands·WildlifeProbe | 731ccce |
+| P4-93 | 드래곤(사용자 결정 2026-10-20): 맵에 1마리, 먼 바깥 고정 둥지에서 평소엔 잠들고 매일 확률로 깨어나 맵을 무작위로 날아다니며 마주친 마을·길드원·몬스터에 불을 뿜음(숲은 산불, 마을 피해 제한 없음). 날 땐 원거리만 맞고 일정 피해를 입으면 내려와 근접도 가능, 언제든 처치 가능·다시 안 나옴. 코드로 그린 도트 그림(비행·잠·불 뿜기) | 이재혁 | 진행 중 | Visuals/DragonArt(신규), Dragon(신규), Monsters, Units, Disasters, Quests | |
 | P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
