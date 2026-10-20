@@ -130,18 +130,47 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void Strength_EightInTheirTwenties_ReadItAsTheFightTheyCanWin()
+        public void Strength_EightInTheirThirties_ReadItAsTheFightTheyCanWin_AndTheTwentiesAreTooGreen()
         {
-            // P4-94 (user decision: eight members in their twenties win it), with no stat buildings (×0.75): eight Lv22 gear 2
-            // won the test fights, eight Lv20 won with a death, eight Lv18 lost.
-            static string Read(int level, int gear, int party)
-                => QuestRisk.Label(QuestRisk.MarginAgainst((level + gear * 1.5f) * Town.FacilityRules.BaseStatFactor, party, Dragon.RiskRequirement));
-            Assert.That(Read(22, 2, 8), Is.EqualTo(QuestRisk.Fair));
-            Assert.That(Read(20, 2, 8), Is.EqualTo(QuestRisk.Risky));
-            Assert.That(Read(17, 1, 8), Is.EqualTo(QuestRisk.Reckless));
-            Assert.That(Read(25, 2, 4), Is.EqualTo(QuestRisk.Reckless), "half a party is no match");
+            // P4-95 (user decision: more skills, "더 세져도 됨"), with no stat buildings (×0.75): eight Lv30 gear 2 won the test
+            // fights with three dead, eight Lv25 lost.
+            static float Power(int level, int gear) => (level + gear * 1.5f) * Town.FacilityRules.BaseStatFactor;
+            static string Read(int level, int gear, int party) => QuestRisk.Label(QuestRisk.MarginAgainst(Power(level, gear), party, Dragon.RiskRequirement));
+            Assert.That(Read(30, 2, 8), Is.EqualTo(QuestRisk.Fair));
+            Assert.That(Read(28, 2, 8), Is.EqualTo(QuestRisk.Risky));
+            Assert.That(Read(22, 2, 8), Is.EqualTo(QuestRisk.Reckless));
+            Assert.That(Read(35, 3, 4), Is.EqualTo(QuestRisk.Reckless), "half a party is no match");
+            // The recommended level (gear counted) leaves the twenties too green to go at all.
+            float need = Dragon.RiskRequirement / (1f + 0.6f * 7) / Town.FacilityRules.BaseStatFactor;
+            int recommended = Mathf.CeilToInt(need - 0.001f);
+            Assert.That(recommended, Is.EqualTo(33));
+            Assert.That(25 + 2 * 1.5f, Is.LessThanOrEqualTo(recommended - QuestRisk.GreenGap), "Lv25 gear 2 is too green");
             Assert.That(Dragon.RiskRequirement, Is.GreaterThan(RegionLords.RiskRequirement), "still beyond a lord");
             Assert.That(Dragon.Level, Is.GreaterThan(RegionLords.Level));
+        }
+
+        [Test]
+        public void Skills_FiveOfThem_TheBombingRunIsALineThroughItsMark_AndTheNewOnesWarnBriefly()
+        {
+            var dragon = DefaultContent.Build().monsters.First(m => m.isDragon);
+            Assert.That(dragon.skillIds, Is.EqualTo(new[] { "dragon_breath", "dragon_tail", "dragon_roar", "dragon_rain", "dragon_bomb" }),
+                "the breath first: cooldowns are saved by position");
+            Assert.That(dragon.skillIds.Select(Units.SkillFactory.Create).All(s => s != null && !s.SavedForGroups), Is.True, "none held back for a crowd");
+            var from = new Vector2(10f, 10f);
+            var aim = new Vector2(14f, 10f);
+            var spots = Dragon.BombSpots(from, aim);
+            Assert.That(spots.Length, Is.EqualTo(Dragon.BombCount));
+            Assert.That(Vector2.Distance(spots[Dragon.BombCount / 2], aim), Is.LessThan(1e-4f), "centred on its mark");
+            for (int i = 1; i < spots.Length; i++)
+            {
+                Assert.That(Vector2.Distance(spots[i - 1], spots[i]), Is.EqualTo(Dragon.BombSpacing).Within(1e-4f));
+                Assert.That(spots[i].y, Is.EqualTo(10f).Within(1e-4f), "in line with its flight");
+            }
+            Assert.That(Dragon.BombSpacing, Is.LessThan(Dragon.BombRadius * 2f), "the blasts overlap: no gap to stand in");
+            Assert.That(Dragon.TailWindup, Is.LessThan(Dragon.BreathWindup));
+            Assert.That(Dragon.BombWindup, Is.LessThan(Dragon.BreathWindup));
+            Assert.That(Dragon.RainWindup, Is.LessThan(Dragon.BreathWindup));
+            Assert.That(Dragon.RainArea, Is.GreaterThan(Dragon.BreathRadius * 2f), "the rain covers far more than a breath");
         }
 
         [Test]

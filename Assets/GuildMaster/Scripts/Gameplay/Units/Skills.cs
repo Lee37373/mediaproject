@@ -702,18 +702,35 @@ namespace GuildMaster.Units
 
         static void Burn(Unit self, Vector2 point)
         {
-            float r = Monsters.Dragon.BreathRadius;
-            var mouth = self is Monsters.Monster m ? m.MouthPosition : self.Position;
-            if (Services.TryGet<DragonFireFx>(out var fire)) fire.Play(mouth, point);
-            foreach (var u in HostilesAround(self, point, r).ToArray()) Damage(self, u, Monsters.Dragon.BreathDamage);
-            BurnStructures(self, point, r);
-            if (Services.TryGet<Disasters.DisasterService>(out var disasters)) disasters.Kindle(point, r);
+            if (Services.TryGet<DragonFireFx>(out var fire)) fire.Play(MouthOf(self), point);
+            var (town, village) = Scorch(self, point, Monsters.Dragon.BreathRadius, Monsters.Dragon.BreathDamage, Monsters.Dragon.StructureDamage);
+            Plunder(town, village, point);
             ShakeIfVisible(point, 0.35f);
         }
 
-        static void BurnStructures(Unit self, Vector2 point, float r)
+        internal static Vector2 MouthOf(Unit self) => self is Monsters.Monster m ? m.MouthPosition : self.Position;
+
+        /// <summary>
+        /// Its fire on a spot (the breath, and since P4-95 each blast of a bombing run or a fire rain): everyone hostile in the
+        /// radius takes <paramref name="damage"/> × attack, buildings, gates and villages take <paramref name="structureDamage"/>,
+        /// forest there catches. Returns whether our town or a village burned (the caller plunders, <see cref="Plunder"/>).
+        /// </summary>
+        internal static (bool town, bool village) Scorch(Unit self, Vector2 point, float radius, float damage, float structureDamage)
         {
-            float dmg = Monsters.Dragon.StructureDamage;
+            foreach (var u in HostilesAround(self, point, radius).ToArray()) Damage(self, u, damage);
+            var hit = BurnStructures(self, point, radius, structureDamage);
+            if (Services.TryGet<Disasters.DisasterService>(out var disasters)) disasters.Kindle(point, radius);
+            return hit;
+        }
+
+        /// <summary>What burns is plundered for the hoard (P4-93).</summary>
+        internal static void Plunder(bool town, bool village, Vector2 point)
+        {
+            if ((town || village) && Services.TryGet<Dragons.DragonService>(out var dragon)) dragon.Plunder(town, village, point);
+        }
+
+        static (bool town, bool village) BurnStructures(Unit self, Vector2 point, float r, float dmg)
+        {
             bool townHit = false, villageHit = false;
             if (Services.TryGet<Town.TownService>(out var town))
                 foreach (var b in town.Buildings.ToList())
@@ -724,8 +741,187 @@ namespace GuildMaster.Units
             if (Services.TryGet<Villages.VillageService>(out var villages) && Services.TryGet<GameClock>(out var clock))
                 foreach (var v in villages.Villages)
                     if (v != null && !v.IsDestroyed && Vector2.Distance(v.WorldPosition, point) <= r + 1.5f) { v.Damage(dmg, self, clock.TotalHours); villageHit = true; }
-            // What burns is plundered for the hoard (P4-93).
-            if ((townHit || villageHit) && Services.TryGet<Dragons.DragonService>(out var dragon)) dragon.Plunder(townHit, villageHit, point);
+            return (townHit, villageHit);
+        }
+    }
+
+    /// <summary>
+    /// The blasts of one cast (a bombing run, a fire rain — P4-95): each burns its spot (<see cref="DragonBreathSkill.Scorch"/>),
+    /// and what they burned is plundered once, after the last (ten blasts over the town are one raid on the treasury).
+    /// </summary>
+    sealed class FireVolley
+    {
+        int _left;
+        bool _town, _village;
+        Vector2 _at;
+
+        public FireVolley(int blasts) { _left = blasts; }
+
+        public void Land(Unit self, Vector2 point, float radius, float damage)
+        {
+            var (town, village) = DragonBreathSkill.Scorch(self, point, radius, damage, Monsters.Dragon.VolleyStructureDamage);
+            if (town || village) { _town |= town; _village |= village; _at = point; }
+            if (--_left == 0) DragonBreathSkill.Plunder(_town, _village, _at);
+        }
+    }
+
+    /// <summary>
+    /// The dragon's bombing run (P4-95, user decision 2026-10-20: more skills, hard to dodge): on the wing it drops fire in a
+    /// line through what it circles — <see cref="Monsters.Dragon.BombCount"/> spots, each warned only briefly and one after
+    /// another, so stepping out of one can be stepping into the next.
+    /// </summary>
+    public class DragonBombingSkill : Skill
+    {
+        float _channelUntil;
+
+        public DragonBombingSkill() { Cooldown = Monsters.Dragon.BombCooldown; }
+        public override string Name => "화염 폭격";
+        public override string Description
+            => $"날면서 대상을 지나는 직선에 불 {Monsters.Dragon.BombCount}곳을 차례로 떨어뜨림(예고 {Monsters.Dragon.BombWindup}초부터, 반경 {Monsters.Dragon.BombRadius}, 공격력 {Monsters.Dragon.BombDamage * 100f:0}%).";
+        public override Color Color => new(1f, 0.38f, 0.1f);
+        public override float AreaRadius => Monsters.Dragon.BombRadius;
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override bool TryUse(Unit self, Unit target) => target != null && TryBombAt(self, target.Position);
+
+        public bool TryBombAt(Unit self, Vector2 aim)
+        {
+            if (!IsReady || !self.IsAirborne || self.IsStunned || Vector2.Distance(self.Position, aim) > Monsters.Dragon.BombRange) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            var spots = Monsters.Dragon.BombSpots(self.Position, aim);
+            var volley = new FireVolley(spots.Length);
+            for (int i = 0; i < spots.Length; i++)
+            {
+                var p = spots[i];
+                telegraphs.Create(self, p, Monsters.Dragon.BombRadius, Monsters.Dragon.BombWindup + i * Monsters.Dragon.BombStagger, () =>
+                {
+                    if (Services.TryGet<DragonFireFx>(out var fire)) fire.Play(DragonBreathSkill.MouthOf(self), p);
+                    volley.Land(self, p, Monsters.Dragon.BombRadius, Monsters.Dragon.BombDamage);
+                    ShakeIfVisible(p, 0.2f);
+                });
+            }
+            _channelUntil = Time.time + 0.3f;
+            self.Visual?.FaceTowards(aim);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Fire rain (P4-95): on the wing or on the ground, it calls fire down all over the ground round its foe —
+    /// <see cref="Monsters.Dragon.RainDrops"/> small blasts falling one after another, the first on the foe itself, so
+    /// wherever one steps out to there may be another coming.
+    /// </summary>
+    public class DragonFireRainSkill : Skill
+    {
+        float _channelUntil;
+
+        public DragonFireRainSkill() { Cooldown = Monsters.Dragon.RainCooldown; }
+        public override string Name => "화염 비";
+        public override string Description
+            => $"대상 둘레 {Monsters.Dragon.RainArea}칸에 작은 불({Monsters.Dragon.RainDrops}개, 반경 {Monsters.Dragon.RainRadius})이 차례로 떨어짐(예고 {Monsters.Dragon.RainWindup}초부터, 공격력 {Monsters.Dragon.RainDamage * 100f:0}%).";
+        public override Color Color => new(1f, 0.6f, 0.2f);
+        public override float AreaRadius => Monsters.Dragon.RainArea;
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override bool TryUse(Unit self, Unit target) => target != null && TryRainOn(self, target.Position);
+
+        public bool TryRainOn(Unit self, Vector2 centre)
+        {
+            if (!IsReady || self.IsStunned || Vector2.Distance(self.Position, centre) > Monsters.Dragon.RainRange) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            if (!self.IsAirborne) self.Mover.Stop();
+            var volley = new FireVolley(Monsters.Dragon.RainDrops);
+            var color = Color;
+            for (int i = 0; i < Monsters.Dragon.RainDrops; i++)
+            {
+                var p = i == 0 ? centre : centre + GameRandom.Shared.InsideUnitCircle() * Monsters.Dragon.RainArea;
+                telegraphs.Create(self, p, Monsters.Dragon.RainRadius, Monsters.Dragon.RainWindup + i * Monsters.Dragon.RainStagger, () =>
+                {
+                    Fx?.Beam(p + new Vector2(0.8f, 6f), p, color, 0.3f, 0.18f);
+                    Fx?.Spark(p, color, 1.4f, 0.3f);
+                    Fx?.Ring(p, Monsters.Dragon.RainRadius, color, 0.3f);
+                    volley.Land(self, p, Monsters.Dragon.RainRadius, Monsters.Dragon.RainDamage);
+                });
+            }
+            _channelUntil = Time.time + 0.6f;
+            self.Visual?.FaceTowards(centre);
+            ShakeIfVisible(centre, 0.15f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The dragon's roar (P4-95): no warning at all — everyone hostile within <see cref="Monsters.Dragon.RoarRadius"/> stands
+    /// frozen for <see cref="Monsters.Dragon.RoarStun"/> s, and a frozen member steps out of nothing; its fire comes next.
+    /// Kept for when <see cref="Monsters.Dragon.RoarMinFoes"/> or more are round it.
+    /// </summary>
+    public class DragonRoarSkill : Skill
+    {
+        public DragonRoarSkill() { Cooldown = Monsters.Dragon.RoarCooldown; }
+        public override string Name => "포효";
+        public override string Description => $"예고 없이 {Monsters.Dragon.RoarRadius}칸 안의 적을 {Monsters.Dragon.RoarStun}초 동안 얼어붙게 함(적 {Monsters.Dragon.RoarMinFoes}명 이상일 때).";
+        public override Color Color => new(1f, 0.85f, 0.45f);
+        public override float AreaRadius => Monsters.Dragon.RoarRadius;
+        public override bool AreaOnSelf => true;
+        public override bool SavedForGroups => false;
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (!IsReady || self.IsStunned) return false;
+            var foes = HostilesAround(self, self.Position, Monsters.Dragon.RoarRadius).Where(u => u.IsAlive).ToArray();
+            if (foes.Length < Monsters.Dragon.RoarMinFoes) return false;
+            foreach (var u in foes) u.Stun(Monsters.Dragon.RoarStun);
+            Fx?.Ring(self.Position, Monsters.Dragon.RoarRadius, Color, 0.7f);
+            Fx?.Ring(self.Position, Monsters.Dragon.RoarRadius * 0.55f, Color, 0.45f);
+            ShakeIfVisible(self.Position, 0.55f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The dragon's tail sweep (P4-95): on the ground, all round it at once — the warning is shorter than anyone can walk out
+    /// of — and whoever it hits is thrown back <see cref="Monsters.Dragon.TailKnockback"/> cells.
+    /// </summary>
+    public class DragonTailSkill : Skill
+    {
+        float _channelUntil;
+
+        public DragonTailSkill() { Cooldown = Monsters.Dragon.TailCooldown; }
+        public override string Name => "꼬리 휘두르기";
+        public override string Description
+            => $"땅에서 {Monsters.Dragon.TailWindup}초 예고 뒤 둘레 {Monsters.Dragon.TailRadius}칸을 휩쓸어 공격력 {Monsters.Dragon.TailDamage * 100f:0}% 피해, {Monsters.Dragon.TailKnockback}칸 밀쳐냄.";
+        public override Color Color => new(0.95f, 0.45f, 0.3f);
+        public override float AreaRadius => Monsters.Dragon.TailRadius;
+        public override bool AreaOnSelf => true;
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (!IsReady || self.IsAirborne || self.IsStunned || target == null) return false;
+            if (Combat.Distance(self, target) > Monsters.Dragon.TailRadius - 0.4f) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            var centre = self.Position;
+            self.Mover.Stop();
+            _channelUntil = Time.time + Monsters.Dragon.TailWindup;
+            var color = Color;
+            telegraphs.Create(self, centre, Monsters.Dragon.TailRadius, Monsters.Dragon.TailWindup, () =>
+            {
+                foreach (var u in HostilesAround(self, centre, Monsters.Dragon.TailRadius).ToArray())
+                {
+                    Damage(self, u, Monsters.Dragon.TailDamage);
+                    if (u.IsAlive && !u.IsAirborne) u.Knockback(u.Position - centre, Monsters.Dragon.TailKnockback);
+                }
+                Fx?.Ring(centre, Monsters.Dragon.TailRadius, color, 0.4f);
+                ShakeIfVisible(centre, 0.35f);
+            });
+            Announce(self);
+            return true;
         }
     }
 
@@ -759,6 +955,11 @@ namespace GuildMaster.Units
             "lord_call" => new LordCallSkill(),
             // The dragon (P4-93).
             "dragon_breath" => new DragonBreathSkill(),
+            // More of it (P4-95).
+            "dragon_tail" => new DragonTailSkill(),
+            "dragon_roar" => new DragonRoarSkill(),
+            "dragon_rain" => new DragonFireRainSkill(),
+            "dragon_bomb" => new DragonBombingSkill(),
             _ => null,
         };
 

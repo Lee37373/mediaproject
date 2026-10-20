@@ -140,7 +140,6 @@ namespace GuildMaster.Monsters
         {
             var m = Owner;
             if (!Services.TryGet<DragonService>(out var svc)) return;
-            var breath = m.FindReadySkill<DragonBreathSkill>();
             bool channeling = IsChanneling(m);
 
             // Brought down by shots: glide to open ground and fight there.
@@ -179,7 +178,7 @@ namespace GuildMaster.Monsters
             bool burning = TryGetTarget(m, out var aim);
             if (burning)
             {
-                if (breath != null && Vector2.Distance(m.Position, aim) <= Dragon.BreathRange) breath.TryBreatheAt(m, aim);
+                if (!channeling) UseFire(m, aim);
                 if (channeling || IsChanneling(m))
                 {
                     m.Visual.FaceTowards(aim);
@@ -208,6 +207,18 @@ namespace GuildMaster.Monsters
         {
             foreach (var s in m.Skills) if (s.IsChanneling) return true;
             return false;
+        }
+
+        /// <summary>
+        /// What it does to what it circles (P4-95): roars when several are round it (they freeze, and the fire that follows
+        /// finds them standing), rains fire on the area, bombs a line through it, and breathes between — one a tick.
+        /// </summary>
+        static void UseFire(Monster m, Vector2 aim)
+        {
+            if (m.FindReadySkill<DragonRoarSkill>() is { } roar && roar.TryUse(m, null)) return;
+            if (m.FindReadySkill<DragonFireRainSkill>() is { } rain && rain.TryRainOn(m, aim)) return;
+            if (m.FindReadySkill<DragonBombingSkill>() is { } bomb && bomb.TryBombAt(m, aim)) return;
+            if (m.FindReadySkill<DragonBreathSkill>() is { } breath && Vector2.Distance(m.Position, aim) <= Dragon.BreathRange) breath.TryBreatheAt(m, aim);
         }
 
         /// <summary>

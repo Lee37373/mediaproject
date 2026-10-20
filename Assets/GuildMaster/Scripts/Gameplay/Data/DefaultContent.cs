@@ -340,6 +340,8 @@ namespace GuildMaster.Data
             dragon.minNests = 0;
             dragon.pickupMode = MonsterPickupMode.None;
             dragon.skillIds.Add("dragon_breath");
+            // P4-95: appended (cooldowns are saved by position); on the ground the engagement tries them in this order.
+            dragon.skillIds.AddRange(new[] { "dragon_tail", "dragon_roar", "dragon_rain", "dragon_bomb" });
             var dragonHeart = Item("dragon_heart", "화염룡의 심장", ItemCategory.Material, 800, new Color(1f, 0.35f, 0.2f));
             dragonHeart.uniqueEffect = "dragon_trophy";
             Loot(dragon, dragonHeart, 1f);

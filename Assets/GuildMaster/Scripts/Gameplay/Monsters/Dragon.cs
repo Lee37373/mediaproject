@@ -20,8 +20,11 @@ namespace GuildMaster.Monsters
         // members gear 2 with no stat buildings. ×20 HP, ×4 attack, +5 defence: Lv22 wore it to half in a day and fell
         // back worn out. ×10/×6: Lv20 won with nobody hurt much (the priests healed the slow blows). ×10/×7 and ×10/×8:
         // four died and the rest fell back. ×11/×6.5: Lv20 won with one dead (23 game hours), Lv18 lost two and fell back.
+        // P4-95 (user decision: more skills, hard to dodge, "더 세져도 됨"): with its four new skills and members slower to
+        // step out of fire, ×6.5 wiped eight Lv20, Lv25 and Lv30 alike (Lv30 left it at two thirds). ×4.5: Lv30 won with
+        // three dead (186 s), Lv25 lost one and drove it home at under half.
         public const float HpMultiplier = 11f;
-        public const float AttackMultiplier = 6.5f;
+        public const float AttackMultiplier = 4.5f;
         public const float DefenseBonus = 0f;
         public const int ExpMultiplier = 15;
 
@@ -88,6 +91,35 @@ namespace GuildMaster.Monsters
         /// <summary>Flat damage to a building, gate or village in the blast (their durability has no HP scale).</summary>
         public const float StructureDamage = 60f;
 
+        // ---------------- More skills (P4-95, user decisions 2026-10-20: hard to dodge — short warnings, wide areas) ----------------
+
+        /// <summary>Bombing run (on the wing): fire dropped in a line through what it circles, one spot after another.</summary>
+        public const int BombCount = 5;
+        public const float BombSpacing = 2.2f, BombRadius = 2f, BombWindup = 0.5f, BombStagger = 0.15f, BombDamage = 1.2f;
+        public const float BombRange = 9f, BombCooldown = 12f;
+        /// <summary>Fire rain (sky or ground): small blasts all over the area round its foe, the first on the foe itself.</summary>
+        public const int RainDrops = 9;
+        public const float RainArea = 6f, RainRadius = 1.6f, RainWindup = 0.6f, RainStagger = 0.15f, RainDamage = 0.9f;
+        public const float RainRange = 10f, RainCooldown = 16f;
+        /// <summary>Roar (sky or ground): no warning; everyone round it stands frozen a moment — the fire comes next.</summary>
+        public const float RoarRadius = 8f, RoarStun = 1.6f, RoarCooldown = 20f;
+        public const int RoarMinFoes = 2;
+        /// <summary>Tail sweep (ground): all round it, hardly any warning, and those it hits are thrown back.</summary>
+        public const float TailRadius = 3.2f, TailWindup = 0.35f, TailDamage = 1.3f, TailKnockback = 2.5f, TailCooldown = 6f;
+        /// <summary>A bombing run's or a fire rain's blast on a building, gate or village (many of them land at once).</summary>
+        public const float VolleyStructureDamage = 30f;
+
+        /// <summary>The bombing run's spots: <see cref="BombCount"/> in a line from <paramref name="from"/> through <paramref name="aim"/>, centred on it.</summary>
+        public static Vector2[] BombSpots(Vector2 from, Vector2 aim)
+        {
+            var d = aim - from;
+            var dir = d.sqrMagnitude > 1e-4f ? d.normalized : Vector2.right;
+            var first = aim - dir * (BombSpacing * (BombCount - 1) * 0.5f);
+            var spots = new Vector2[BombCount];
+            for (int i = 0; i < BombCount; i++) spots[i] = first + dir * (BombSpacing * i);
+            return spots;
+        }
+
         // ---------------- The hoard (user decisions 2026-10-20) ----------------
 
         /// <summary>Gold on its hoard when the world begins; it grows by <see cref="HoardDaily"/> each midnight while it lives.</summary>
@@ -124,9 +156,10 @@ namespace GuildMaster.Monsters
         /// <summary>
         /// The strength a group needs to read its hunt as "적당" (<c>Adventurers.QuestRisk</c>), above a lord's 90. P4-94: 110
         /// read the eight Lv22s who win it as 위험 and too green (recommended Lv29); at 95 eight Lv22 gear 2 are 적당, eight Lv20
-        /// (who win with a death) 위험, recommended Lv25.
+        /// (who win with a death) 위험, recommended Lv25. P4-95: 125 — eight Lv30 gear 2 (who win it now) 적당, Lv28 위험,
+        /// recommended Lv33 so Lv27 and under (gear 2) are too green for it (Lv25 lost).
         /// </summary>
-        public const float RiskRequirement = 95f;
+        public const float RiskRequirement = 125f;
 
         /// <summary>What a raider takes now: sacks of its gold (whole sacks only) and things off the pile.</summary>
         public static int SacksTaken(int gold) => Mathf.Clamp(gold / SackValue, 0, TakeSacks);

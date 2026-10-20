@@ -28,10 +28,14 @@ namespace GuildMaster.Units
             public Action OnResolve;
             public GameObject Visual;
             public Transform Fill;
+            /// <summary>When each unit caught in it starts to get out (P4-95, <see cref="DodgeRules"/>).</summary>
+            public Dictionary<Unit, float> ReactAt;
         }
 
         readonly List<Telegraph> _active = new();
         PoolService _pool;
+        /// <summary>Reaction rolls on their own stream: they must not shift the seeded world's shared one.</summary>
+        readonly GameRandom _reactions = new(9173);
 
         public void Init(PoolService pool)
         {
@@ -84,7 +88,10 @@ namespace GuildMaster.Units
             }
         }
 
-        /// <summary>If the unit stands in a telegraph owned by an enemy, returns a nearby safe point.</summary>
+        /// <summary>
+        /// If the unit stands in a telegraph owned by an enemy and has taken it in (P4-95: after its reaction time, rolled
+        /// once per marker by tier — <see cref="DodgeRules"/>), returns a nearby safe point.
+        /// </summary>
         public bool TryGetEscape(Unit unit, out Vector2 safePoint)
         {
             safePoint = default;
@@ -94,6 +101,7 @@ namespace GuildMaster.Units
                 var d = unit.Position - t.Center;
                 float need = t.Radius + unit.Radius + 0.35f;
                 if (d.sqrMagnitude > need * need) continue;
+                if (!HasReacted(t, unit)) continue;
                 var world = Services.Get<WorldService>();
                 var dir = d.sqrMagnitude > 1e-4f ? d.normalized : UnityEngine.Random.insideUnitCircle.normalized;
                 // Try straight out, then rotate until a walkable exit is found.
@@ -105,6 +113,15 @@ namespace GuildMaster.Units
                 }
             }
             return false;
+        }
+
+        /// <summary>The unit's reaction to this marker is over (rolled the first time it is found standing in it).</summary>
+        bool HasReacted(Telegraph t, Unit unit)
+        {
+            t.ReactAt ??= new Dictionary<Unit, float>();
+            if (!t.ReactAt.TryGetValue(unit, out float at))
+                t.ReactAt[unit] = at = Time.time + DodgeRules.ReactionDelay(unit.Tier, _reactions.Value, _reactions.Value);
+            return Time.time >= at;
         }
 
         public bool IsInsideHostileTelegraph(Vector2 p, Unit viewer)

@@ -1010,6 +1010,48 @@ namespace GuildMaster.Tests
                 Assert.That(dragon.Fsm.Current, Is.EqualTo(dragon.DragonLanded), "it came down");
                 Assert.That((dragon.IsAirborne, Combat.CanReach(warrior, dragon)), Is.EqualTo((false, true)));
 
+                // Hard to dodge (P4-95, user decisions 2026-10-20). A marker is taken in before anyone steps out of it.
+                var telegraphs = Services.Get<TelegraphService>();
+                telegraphs.Create(dragon, warrior.Position, 2f, 5f, null);
+                Assert.That(telegraphs.TryGetEscape(warrior, out _), Is.False, "the very frame it appears, nobody is moving yet");
+                yield return WaitFor(() => telegraphs.TryGetEscape(warrior, out _), 3f);
+                Assert.That(telegraphs.TryGetEscape(warrior, out _), Is.True, "a moment later it is");
+                int marked = 0;
+                Action<TelegraphStartedEvent> onMark = e => { if (e.Owner == dragon) marked++; };
+                EventBus.Subscribe(onMark);
+                try
+                {
+                    // The tail sweep throws back whoever is at its side.
+                    var tail = dragon.Skills.OfType<DragonTailSkill>().Single();
+                    warrior.Mover.Stop();
+                    warrior.transform.position = dragon.Position + new Vector2(1.5f, 0f);
+                    tail.ResetCooldown(0f);
+                    Assert.That(tail.TryUse(dragon, warrior), Is.True);
+                    float before = Vector2.Distance(warrior.Position, dragon.Position);
+                    yield return WaitFor(() => Vector2.Distance(warrior.Position, dragon.Position) > before + 1f, 3f);
+                    Assert.That(Vector2.Distance(warrior.Position, dragon.Position), Is.GreaterThan(before + 1f), "thrown back");
+                    // The roar freezes everyone round it, without a warning.
+                    var roar = dragon.Skills.OfType<DragonRoarSkill>().Single();
+                    shooter.Mover.Stop();
+                    shooter.transform.position = dragon.Position + new Vector2(-3f, 1f);
+                    warrior.transform.position = dragon.Position + new Vector2(2f, -2f);
+                    yield return null; // the unit index takes positions once a frame
+                    roar.ResetCooldown(0f);
+                    int before2 = marked;
+                    Assert.That(roar.TryUse(dragon, null), Is.True);
+                    Assert.That((warrior.IsStunned, shooter.IsStunned, marked - before2), Is.EqualTo((true, true, 0)), "frozen, with no marker to read");
+                    // The fire rain falls all over the area; the bombing run is for the sky only.
+                    var rain = dragon.Skills.OfType<DragonFireRainSkill>().Single();
+                    rain.ResetCooldown(0f);
+                    before2 = marked;
+                    Assert.That(rain.TryRainOn(dragon, warrior.Position), Is.True);
+                    Assert.That(marked - before2, Is.EqualTo(Dragon.RainDrops));
+                    var bomb = dragon.Skills.OfType<DragonBombingSkill>().Single();
+                    bomb.ResetCooldown(0f);
+                    Assert.That(bomb.TryBombAt(dragon, warrior.Position), Is.False, "not on the ground");
+                }
+                finally { EventBus.Unsubscribe(onMark); }
+
                 // Robbed while away, it hunts the thief once home.
                 svc.FlyTo(town + new Vector2(-60f, 30f), 6f);
                 warrior.Mover.Stop();
@@ -1024,6 +1066,15 @@ namespace GuildMaster.Tests
                 yield return WaitFor(() => svc.Quarry == warrior, 30f);
                 Assert.That(svc.Quarry, Is.EqualTo(warrior), "home and robbed: after the thief — " + svc.Describe());
                 Assert.That(dragon.IsAirborne, Is.True);
+                // On the wing it bombs a line of fire through its mark (P4-95).
+                var run = dragon.Skills.OfType<DragonBombingSkill>().Single();
+                run.ResetCooldown(0f);
+                int runMarks = 0;
+                Action<TelegraphStartedEvent> onRun = e => { if (e.Owner == dragon) runMarks++; };
+                EventBus.Subscribe(onRun);
+                Assert.That(run.TryBombAt(dragon, dragon.Position + new Vector2(4f, 0f)), Is.True);
+                EventBus.Unsubscribe(onRun);
+                Assert.That(runMarks, Is.EqualTo(Dragon.BombCount));
 
                 // It falls for good: the title goes to the member who fought it.
                 DebugCommands.KillDragon(Roster.Members.ToList().IndexOf(warrior));
@@ -1074,6 +1125,10 @@ namespace GuildMaster.Tests
                 shooter.Mover.Stop();
                 shooter.transform.position = at;
                 shooter.Data.flares = 1;
+                // Picked again: in half a minute the first may have died and its pooled body come back as a slime. The farthest
+                // one, so it is not one the shooter is fighting meanwhile (a blow just taken tells it where the foe is).
+                foe = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && !m.IsDragon && m.Def.aggressiveToHumans && shooter.LastAttacker != m)
+                    .OrderByDescending(m => Vector2.Distance(m.Position, shooter.Position)).First();
                 foe.transform.position = at + new Vector2(Mathf.Min(sight + 1.5f, 13.5f), 0f);
                 Assume.That(FlareService.IsLit(foe.Position), Is.False);
                 // A fresh fight: it may have taken this foe on by itself meanwhile and already be searching for it.
@@ -1081,7 +1136,11 @@ namespace GuildMaster.Tests
                 shooter.Engage.SetTarget(foe);
                 fired = flares.Fired;
                 shooter.Engage.Tick(0.3f);
-                Assert.That((shooter.Engage.IsSearching, flares.Fired - fired, shooter.Data.flares), Is.EqualTo((true, 1, 0)), "lost it: a flare after it");
+                float readyAt = (float)typeof(Adventurer).GetField("_flareReadyAt", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(shooter);
+                Assert.That((shooter.Engage.IsSearching, flares.Fired - fired, shooter.Data.flares), Is.EqualTo((true, 1, 0)),
+                    $"lost it: a flare after it (now {Time.time:0.0}, ready {readyAt:0.0}, foe alive {foe.IsAlive} hostile {foe.IsHostileTo(shooter)}, "
+                    + $"lit {FlareService.Covers(shooter.Engage.LastSeenPosition, FlareRules.CoveredWithin)}, burning {FlareService.Burning.Count}, "
+                    + $"guild {shooter.IsGuildMember} visitor {shooter.IsVisitor}, target {shooter.Engage.Target?.name}, state {shooter.StateLabel})");
             }
             finally
             {
