@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-10-20
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-94**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-95**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -102,6 +102,7 @@
 | P4-92 | 사용자 요청(2026-10-19): 길드원 정원 제한을 처음부터 없앰, 대숙소는 스트레스 회복 건물(1~3레벨)로 바꿈, 등급 높은 유닛이 카이팅·옆걸음 때 그림이 좌우로 빠르게 뒤집히는 문제 | 이재혁 | 완료 | Adventurers/GuildRoster·Adventurer·AdventurerStates, Town/FacilityRules·FacilityService·UpgradeService, Recruitment/VisitorService, Data/DefaultContent·BuildingDefinition, Session/GameBalance·GameBootstrap, UI/BuildView·BuildingView, Visuals/CharacterVisual, World/PathFollower, Units/Combat, Session/SkirmishMonitor | aa0199e, acf8a24 |
 | P4-44 | 시간에 따른 생태 변화(사용자 결정 2026-10-19): 바깥 몬스터가 시간이 지날수록 레벨이 오르고, 밀려난 무리는 안쪽으로 와서 마을을 침공. 속도는 고정 주기 없이 게임 흐름에 맞춤 | 이재혁 | 완료 | Ecosystem/WildsPressure(신규)·EcosystemManager·MigrationService·TerritoryService·RoamingPackService, Monsters/Monster, Town/WaveManager, Session/GameLog·DebugCommands·WildlifeProbe | 731ccce |
 | P4-93 | 드래곤(사용자 결정 2026-10-20): 맵에 1마리, 먼 바깥 고정 둥지(보물 더미)에서 잠들고 매일 확률로 깨어나 곡선으로 날며 마주친 마을·길드원·몬스터에 불을 뿜음(숲은 산불, 건물 피해·금고 약탈 제한 없음). 날 땐 원거리만, 맞으면 내려와 근접 가능, 처치하면 다시 안 나옴. 보물 더미: 약탈·매일·전리품으로 쌓이고 마을 의뢰(보물 회수)·용감/탐욕 길드원이 파밍, 잘 때 다가가면 깰 수 있고 털리면 도둑 추격. 그림은 임시 코드 도트(나중에 에셋 교체) | 이재혁 | 완료 | Dragon/DragonService(신규), Monsters/Dragon·DragonStates(신규)·Monster, Visuals/DragonArt·DragonFireFx(신규)·CharacterVisual, Units/Combat·Unit·TargetSelector·Skills·CrowdSimulation, Disasters/DisasterService, Quests/Quest·QuestBoard, Adventurers/AdventurerStates·FreeHuntState·TownGuardState·QuestRisk, Data/DefaultContent·MonsterDefinition, Session/GameBootstrap·GameLog·DebugCommands, Notifications/NotificationSources | 1ea7d4f |
+| P4-94 | 드래곤 세기 조정·조명탄(사용자 결정 2026-10-20): 8명 Lv20대가 이기도록 시험 전투로 맞추고 토벌 요구치도 낮춤. 조명탄은 약방에서 만들어 가게에 두면 길드원이 사 두었다가 교전 상대가 시야 밖으로 나가면 저절로 쏨(쏜 자리 둘레를 잠시 밝혀 안개가 걷히고 그 안의 적을 길드원이 봄) | 이재혁 | 진행 중 | Monsters/Dragon, Adventurers/QuestRisk·Adventurer, Fog, Data/DefaultContent, Economy | |
 | P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
@@ -131,6 +132,7 @@
 ## 담당자별 요약
 
 ### 이재혁
+- **진행 중**: P4-94 드래곤 세기 조정·조명탄
 - **예정**: P5-5 Windows 빌드(맨 마지막)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-93, P5-1 ~ P5-4 (위 표 참고)
 
