@@ -35,6 +35,11 @@ namespace GuildMaster.Welfare
         public bool OnQuest;
         /// <summary>Free and in town (waiting, deciding, resting, at the guild): the only time they can quit.</summary>
         public bool InTownFree;
+        /// <summary>
+        /// In the middle of a fight, its own or its party's (P4-96): it does not walk off its quest then — that left a member
+        /// running home alone from a boss fight; it waits for the fight to be over.
+        /// </summary>
+        public bool InFight;
     }
 
     public readonly struct CareCheck
@@ -250,7 +255,7 @@ namespace GuildMaster.Welfare
                 ResignAt = 0f;
                 steps |= CareStep.Quit;
             }
-            else if (s.OnQuest && s.Stress >= StressRules.BreakingAt && roll() < CareRules.SabotageChancePerHour)
+            else if (s.OnQuest && !s.InFight && s.Stress >= StressRules.BreakingAt && roll() < CareRules.SabotageChancePerHour)
             {
                 steps |= CareStep.Sabotage;
             }

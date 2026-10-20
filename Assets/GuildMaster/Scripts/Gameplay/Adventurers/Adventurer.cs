@@ -160,7 +160,8 @@ namespace GuildMaster.Adventurers
         // ---------------- Party roles (P4-27) ----------------
 
         public PartyRole Role => Data != null ? PartyTactics.RoleOf(Data.cls) : PartyRole.Back;
-        public override bool IsBackLine => Role == PartyRole.Back;
+        /// <summary>Its party's back line: a ranged role, or one fallen back hurt (P4-96 — the front-liners guard it).</summary>
+        public override bool IsBackLine => Role == PartyRole.Back || FallingBack;
         /// <summary>Skilled+ warriors protect the back line.</summary>
         public override bool GuardsBackLine => Role == PartyRole.Front && Tier >= CombatTier.Skilled;
         public override Unit CalledTarget => Services.TryGet<PartyTactics>(out var party) ? party.CalledTargetFor(this) : null;
@@ -366,6 +367,8 @@ namespace GuildMaster.Adventurers
                 _dodging = false;
                 Mover.SpeedMultiplier = 1f;
             }
+            // Badly hurt with the party fighting on (P4-96): behind them, out of the fight, until mended.
+            if (TickFallingBack(dt)) return true;
 
             // What may be (re)targeted this frame: threats (aggressive monsters we see or that hit us)
             // and the caller's optional extra targets, limited to the optional zone.
@@ -488,29 +491,141 @@ namespace GuildMaster.Adventurers
                 Heal(Combat.ScaledHp(db.Item(DefaultContent.Potion)?.healAmount ?? 40f));
                 Say("물약을 마셨다!");
             }
-            if (HpRatio < RetreatThreshold || wearinessCounts && Data.fatigue >= 95f)
+            bool hurt = HpRatio < RetreatThreshold;
+            if (!hurt && !(wearinessCounts && Data.fatigue >= 95f)) return false;
+            // Badly hurt with its party out (P4-96, user decision 2026-10-20): it falls back behind them to be healed while
+            // they fight on (HandleCombat walks it there), or they all pull out with it when the fight is lost — never alone.
+            if (hurt)
             {
-                Data.stress = Mathf.Min(100f, Data.stress + 15f);
-                // Out with a party: it stops to mend or pulls back with us (P4-71), nobody leaves alone.
-                if (PartyRecovery.Handle(this))
+                switch (PartyRecovery.WhenHurt(this))
                 {
-                    if (HpRatio < RetreatThreshold && Fsm.Current == ReturnState && ReturnState.Retreating)
-                        EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker, WithParty = true });
-                    return true;
+                    case PartyRecovery.HurtCall.FallBack:
+                        return false;
+                    case PartyRecovery.HurtCall.PartyPulledOut:
+                        Data.stress = Mathf.Min(100f, Data.stress + 15f);
+                        if (Fsm.Current == ReturnState && ReturnState.Retreating)
+                            EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker, WithParty = true });
+                        return true;
                 }
-                if (HpRatio < RetreatThreshold)
-                    EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });
-                Engage.Clear();
-                Looting.Cancel();
-                ReturnState.RequestRetreat();
-                Fsm.ChangeState(ReturnState);
-                return true;
             }
+            Data.stress = Mathf.Min(100f, Data.stress + 15f);
+            // Worn out with a party: it stops to mend or pulls back with us (P4-71), nobody leaves alone.
+            if (!hurt && PartyRecovery.Handle(this)) return true;
+            if (hurt) EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = this, Threat = LastAttacker });
+            RetreatAlone();
+            return true;
+        }
+
+        /// <summary>Home on its own, running (nobody of its party out with it to fall back behind).</summary>
+        void RetreatAlone()
+        {
+            Engage.Clear();
+            Looting.Cancel();
+            ReturnState.RequestRetreat();
+            ChangeState(ReturnState);
+        }
+
+        // ---------------- Falling back (P4-96) ----------------
+
+        /// <summary>
+        /// Badly hurt with its party fighting on (P4-96, user decision 2026-10-20: "파티 뒤로 빠져 치료"): it stands behind them,
+        /// by the healer and away from the foe, out of the fight, until mended (<see cref="FallBackRules.RejoinAt"/>) or the
+        /// fight is over. It keeps its state (its quest, its hunt, its camp), so it stays one of the party.
+        /// </summary>
+        public bool FallingBack { get; private set; }
+        State<Adventurer> _fellBackIn;
+        float _fallBackRepath, _fallBackStressAt = float.NegativeInfinity;
+        static readonly List<Adventurer> s_fallBackParty = new();
+
+        /// <summary>Falls back behind its party (the party's call, <see cref="PartyRecovery.WhenHurt"/>; again while it lasts is nothing).</summary>
+        internal void FallBack()
+        {
+            if (FallingBack) return;
+            FallingBack = true;
+            _fellBackIn = Fsm.Current;
+            _fallBackRepath = 0f;
+            Engage.Clear();
+            Looting.Cancel();
+            if (Time.time - _fallBackStressAt >= FallBackRules.StressEverySeconds)
+            {
+                _fallBackStressAt = Time.time;
+                Data.stress = Mathf.Min(100f, Data.stress + FallBackRules.Stress);
+            }
+            Say("뒤로 빠질게! 치료 좀 부탁해!");
+        }
+
+        void StopFallingBack()
+        {
+            if (!FallingBack) return;
+            FallingBack = false;
+            _fellBackIn = null;
+            Mover.SpeedMultiplier = 1f;
+        }
+
+        /// <summary>
+        /// Walks it behind its party while it is falling back: true this frame (the caller does no fighting or walking of its
+        /// own). Over once mended, with no foe about (the party mends as it must, P4-71), when its party is gone (then it goes
+        /// home alone, <see cref="CheckRetreat"/>), or when its state changed under it.
+        /// </summary>
+        bool TickFallingBack(float dt)
+        {
+            if (!FallingBack) return false;
+            var foe = FoeToFallBackFrom();
+            bool partyLeft = PartyRecovery.GroupWith(this, s_fallBackParty).Count < 2;
+            if (Fsm.Current != _fellBackIn || foe == null || partyLeft || HpRatio >= FallBackRules.RejoinAt(RetreatThreshold))
+            {
+                bool mended = foe != null && !partyLeft && HpRatio >= FallBackRules.RejoinAt(RetreatThreshold);
+                StopFallingBack();
+                if (mended) Say("이제 괜찮아, 다시 간다!");
+                return false;
+            }
+            Visual?.FaceTowards(foe.Position);
+            _fallBackRepath -= dt;
+            if (_fallBackRepath > 0f) return true;
+            _fallBackRepath = FallBackRules.RepathSeconds;
+
+            Adventurer healer = null;
+            float healerDist = float.MaxValue;
+            Vector2 centre = default;
+            int fighters = 0;
+            foreach (var m in s_fallBackParty)
+            {
+                if (m == this || !m.IsAlive) continue;
+                if (!m.FallingBack) { centre += m.Position; fighters++; }
+                float d = (m.Position - Position).sqrMagnitude;
+                if (d < healerDist && Heals(m)) { healer = m; healerDist = d; }
+            }
+            centre = fighters > 0 ? centre / fighters : Position;
+            var spot = FallBackRules.Spot(Position, healer != null ? healer.Position : (Vector2?)null, centre, foe.Position);
+            if (Services.TryGet<World.WorldService>(out var world)
+                && world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(spot), 4, out var cell))
+                spot = World.GridMap.CellToWorld(cell);
+            Mover.SpeedMultiplier = 1.2f;
+            if ((spot - Position).sqrMagnitude > 0.6f * 0.6f) Mover.SetDestination(spot, 0.4f);
+            else if (Mover.IsMoving) Mover.Stop();
+            return true;
+        }
+
+        static bool Heals(Adventurer m)
+        {
+            foreach (var s in m.Skills) if (s is HealSkill || s is MassHealSkill) return true;
             return false;
         }
 
+        /// <summary>What it falls back from: the nearest monster in the fight round it (after it, or after one of ours), or null.</summary>
+        /// <summary>
+        /// In a fight, its own or its party's (P4-96): fighting or hit lately, fallen back, or a monster in the fight round it —
+        /// a dragon on the wing clears everyone's target for a moment, and that is no lull to walk off in.
+        /// </summary>
+        public bool InTheThickOfIt => IsInFight() || FallingBack || FoeToFallBackFrom() != null;
+
+        internal Unit FoeToFallBackFrom()
+            => UnitRegistry.FindNearest(Position, FallBackRules.ThreatRange, this,
+                (u, me) => u is Monster m && m.IsAlive && (m.IsHostileTo(me) || m.CombatEngagement?.Target is Adventurer { IsGuildMember: true }));
+
         public void ChangeState(State<Adventurer> s)
         {
+            StopFallingBack();
             Looting.Cancel();
             Fsm.ChangeState(s);
             EventBus.Publish(new AdventurerStateChangedEvent { Adventurer = this, Label = s.Label });
@@ -564,8 +679,9 @@ namespace GuildMaster.Adventurers
                 Engage.Clear();
                 Looting.Cancel();
                 ApplySpeedBuff(1.4f, Legacy.LegacyRules.GraceSeconds + 2f);
-                ReturnState.RequestRetreat();
-                ChangeState(ReturnState);
+                // Away from the blow (P4-96: it used to run home alone from the middle of its party's fight): behind its
+                // party if they fight on, with them if the fight is lost — home on its own only with nobody out with it.
+                if (PartyRecovery.WhenHurt(this) == PartyRecovery.HurtCall.Alone) RetreatAlone();
             }
         }
 

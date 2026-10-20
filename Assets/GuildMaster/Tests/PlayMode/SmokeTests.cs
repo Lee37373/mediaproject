@@ -2878,6 +2878,116 @@ namespace GuildMaster.Tests
             finally { Unit.GuildInvulnerable = false; }
         }
 
+        /// <summary>
+        /// P4-96 (user report 2026-10-20: "파티원들이 싸우다가 피 없어지면 혼자서 도망가는데"; decision: fall back behind the party to be
+        /// healed). With a priest along, one badly hurt member keeps its hunt and stands back behind them while the rest fight on,
+        /// and goes back in once mended; a last stand no longer sends it running home alone; half the party hurt, they all pull
+        /// back together; and pulling back, one calm member does not sit the party down by a fire while another is still hit.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ABadlyHurtMember_FallsBackBehindItsParty_ToBeHealed_AndOnlyALostFightPullsThemAllOut()
+        {
+            yield return Boot();
+            var bands = Services.Get<HuntBandService>();
+            var camps = Services.Get<CampService>();
+            var legacy = Services.Get<Legacy.GuildLegacy>();
+            Assume.That(GroundFarOut(out var spot), "open ground 40 cells out");
+            ClearStrangersNear(spot, 30f);
+            var priest = Roster.Members.First(a => a.IsAlive && a.Data.cls == AdventurerClass.Priest);
+            var front = Roster.Members.First(a => a.IsAlive && a.Data.cls == AdventurerClass.Warrior);
+            var hurt = Roster.Members.First(a => a.IsAlive && a.Data.cls != AdventurerClass.Priest && a.Data.cls != AdventurerClass.Warrior);
+            var trio = new[] { front, hurt, priest };
+            foreach (var other in Roster.Members.Where(a => a.IsAlive && !trio.Contains(a))) other.ChangeState(other.RestState);
+            foreach (var a in trio) a.ChangeState(a.FreeHuntState);
+            yield return null;
+            var band = bands.BandOf(front);
+            Assume.That(trio.All(a => bands.BandOf(a) == band), "one band");
+            band.MusterUntilHour = 0f;
+            yield return null;
+            for (int i = 0; i < trio.Length; i++)
+            {
+                trio[i].Mover.Stop();
+                trio[i].transform.position = spot + new Vector2(i * 1.2f, 0f);
+                trio[i].Data.potions = 0;
+                trio[i].Data.fatigue = 0f;
+                trio[i].Data.stress = 0f;
+            }
+            var goblin = SpawnMonster("goblin", spot + new Vector2(0f, 1.5f), meleeOnly: true);
+            goblin.ForceTarget(front);
+            yield return WaitFor(() => front.Engage.Target == goblin || front.WasRecentlyAttackedBy(goblin), 3f);
+
+            // 1. One of three badly hurt, a priest along: it falls back, keeping its hunt; the others fight on. (The heals wait a
+            // while first: at Lv1 one heal mends it outright, and it would be back in before it had stepped away.)
+            var heals = priest.Skills.Where(s => s is HealSkill || s is MassHealSkill).ToList();
+            foreach (var s in heals) s.ResetCooldown(1000f);
+            hurt.ReceiveDamage(hurt.Hp - hurt.Stats.MaxHp * 0.2f, null, false);
+            yield return null;
+            yield return null;
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                string states = string.Join(", ", trio.Select(a => $"{a.Data.name} {a.StateLabel}{(a.FallingBack ? " (뒤로)" : "")}"));
+                Assert.That(hurt.FallingBack, Is.True, "it falls back — " + states);
+                Assert.That(trio.All(a => a.Fsm.Current == a.FreeHuntState), Is.True, "nobody goes home, the hunt goes on — " + states);
+                Assert.That((front.FallingBack, priest.FallingBack), Is.EqualTo((false, false)));
+                Assert.That(hurt.IsBackLine, Is.True, "the front line guards it");
+                yield return WaitFor(() => Vector2.Distance(hurt.Position, goblin.Position) >= FallBackRules.KeepClear - 1f, 5f);
+                Assert.That(Vector2.Distance(hurt.Position, goblin.Position), Is.GreaterThanOrEqualTo(FallBackRules.KeepClear - 1f),
+                    $"back out of the fight (hurt {hurt.Position} moving {hurt.Mover.IsMoving} to {hurt.Mover.Destination} falling back {hurt.FallingBack} {hurt.StateLabel}, "
+                    + $"goblin {goblin.Position} on {goblin.CurrentTarget?.name} alive {goblin.IsAlive}, priest {priest.Position}, front {front.Position})");
+                Assert.That(Vector2.Distance(hurt.Position, priest.Position), Is.LessThan(6f), "within the priest's heal");
+
+                // 2. The priest mends it from where it stands, and it goes back in.
+                Assume.That(heals, Is.Not.Empty, "the priest heals");
+                foreach (var s in heals) s.ResetCooldown(0f);
+                yield return WaitFor(() => !hurt.FallingBack, 5f);
+                Assert.That(hurt.FallingBack, Is.False, $"mended by the priest, it goes back in (hp {hurt.HpRatio:P0})");
+                Assert.That(hurt.HpRatio, Is.GreaterThanOrEqualTo(FallBackRules.RejoinAt(hurt.RetreatThreshold)));
+                hurt.Heal(hurt.Stats.MaxHp);
+
+                // 3. A last stand in the middle of it no longer sends it running home alone.
+                Unit.GuildInvulnerable = false;
+                legacy.ForcedRoll = 0f;
+                hurt.ReceiveDamage(hurt.Hp + 1e6f, goblin, false);
+                legacy.ForcedRoll = null;
+                Unit.GuildInvulnerable = true;
+                Assert.That(hurt.IsAlive, Is.True, "it held on");
+                Assert.That((hurt.Fsm.Current == hurt.FreeHuntState, hurt.FallingBack), Is.EqualTo((true, true)), "behind the party, not on the road home");
+
+                // 4. Half of them badly hurt: the fight is lost, and they all pull back together.
+                Unit.GuildInvulnerable = false;
+                front.ReceiveDamage(front.Hp - front.Stats.MaxHp * 0.2f, goblin, false);
+                Unit.GuildInvulnerable = true;
+                yield return null;
+                yield return null;
+                states = string.Join(", ", trio.Select(a => $"{a.Data.name} {a.StateLabel}"));
+                Assert.That(trio.All(a => a.Fsm.Current == a.ReturnState && a.ReturnState.Retreating), Is.True, "all of them — " + states);
+                Assert.That(trio.All(a => !a.FallingBack), Is.True);
+
+                // 5. Pulling back far out, a foe none of the others can see still hitting the hurt one (the dragon out of their
+                // sight): the calm ones do not sit the party down by a fire. Before P4-96 they did, the hurt one pulled them all
+                // back up, and a moment later they sat down again — until it died.
+                goblin.Perish();
+                var unseen = SpawnMonster("goblin", spot + new Vector2(0f, 30f), meleeOnly: true);
+                Time.timeScale = 4f;
+                float until = Time.time + CampRules.QuietSeconds + 2f;
+                while (Time.time < until)
+                {
+                    for (int i = 0; i < trio.Length; i++) trio[i].transform.position = spot + new Vector2(i * 1.2f, 0f); // far out still
+                    hurt.ReceiveDamage(0f, unseen, false);
+                    Assert.That(camps.Camps.Count, Is.Zero, "no fire while one of them is still being hit");
+                    yield return null;
+                }
+                Assert.That(trio.All(a => a.Fsm.Current == a.ReturnState), Is.True, "still pulling back");
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = false;
+                legacy.ForcedRoll = null;
+                Time.timeScale = 1f;
+            }
+        }
+
         [UnityTest]
         public IEnumerator SkilledPack_Encircles_NovicePackDoesNot()
         {

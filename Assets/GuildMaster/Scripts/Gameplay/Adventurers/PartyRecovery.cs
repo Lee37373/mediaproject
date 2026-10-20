@@ -15,6 +15,8 @@ namespace GuildMaster.Adventurers
     ///   formation) and, once the fight is behind it and town is still far, camps and goes back
     ///   to what it was doing (<see cref="ReturnToTownState.ResumeAfter"/>).
     /// A hunting band is <see cref="HuntBand.Paused"/> meanwhile, so it is not broken up.
+    /// Since P4-96 (user decision 2026-10-20) a member badly hurt in a fight the party can still win falls back behind it to
+    /// be healed instead (<see cref="WhenHurt"/>, <see cref="FallBackRules"/>); the pull-out above is for a fight that is lost.
     /// </summary>
     public static class PartyRecovery
     {
@@ -22,6 +24,60 @@ namespace GuildMaster.Adventurers
         public const float CampBeyond = CampRules.FarFromTown * 0.5f;
 
         static readonly List<Adventurer> s_group = new();
+
+        /// <summary>What becomes of a badly hurt member (<see cref="WhenHurt"/>).</summary>
+        public enum HurtCall { Alone, FallBack, PartyPulledOut }
+
+        /// <summary>
+        /// A member is badly hurt, potions or none (P4-96, user decision 2026-10-20: "파티 뒤로 빠져 치료"). With its party in a
+        /// fight it can still win, it falls back behind them to be healed (<see cref="Adventurer.FallBack"/>). When the fight is
+        /// lost (<see cref="FallBackRules.PartyPullsOut"/>) the whole party pulls back with it, and with no fight about it stops
+        /// to mend (<see cref="Handle"/>, P4-71). On its own the caller sends it home as before.
+        /// </summary>
+        public static HurtCall WhenHurt(Adventurer hurt)
+        {
+            Services.TryGet<CampService>(out var camps);
+            var camp = camps != null ? camps.CampOf(hurt) : null;
+            var group = GroupOf(hurt, camp);
+            if (group.Count < 2) return HurtCall.Alone;
+            bool quiet = camp == null && camps != null && AllQuiet(group);
+            if (!quiet && !FallBackRules.PartyPullsOut(group.Count, CountOutOfTheFight(group), CanHeal(group)))
+            {
+                // With no foe round it the fight has just ended: it stays by them, and once all is quiet they mend (below).
+                if (hurt.FoeToFallBackFrom() != null) hurt.FallBack();
+                return HurtCall.FallBack;
+            }
+            return Handle(hurt) ? HurtCall.PartyPulledOut : HurtCall.Alone;
+        }
+
+        /// <summary>Who goes with <paramref name="a"/> (its camp, or its party out together) into <paramref name="into"/>; fewer than two: nobody.</summary>
+        internal static List<Adventurer> GroupWith(Adventurer a, List<Adventurer> into)
+        {
+            into.Clear();
+            var camp = Services.TryGet<CampService>(out var camps) ? camps.CampOf(a) : null;
+            into.AddRange(GroupOf(a, camp));
+            if (into.Count < 2) into.Clear();
+            return into;
+        }
+
+        /// <summary>Out of the fight: badly hurt, or still falling back to be healed.</summary>
+        static int CountOutOfTheFight(List<Adventurer> group)
+        {
+            int n = 0;
+            foreach (var m in group) if (m.HpRatio < m.RetreatThreshold || m.FallingBack) n++;
+            return n;
+        }
+
+        /// <summary>Someone in it can heal (a priest's heal, P4-29 — a hurt priest heals itself too).</summary>
+        static bool CanHeal(List<Adventurer> group)
+        {
+            foreach (var m in group)
+            {
+                if (!m.IsAlive) continue;
+                foreach (var s in m.Skills) if (s is Units.HealSkill || s is Units.MassHealSkill) return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// The party takes over <paramref name="hurt"/>'s pull-out. False when it is on its own

@@ -261,7 +261,8 @@ namespace GuildMaster.Units
     public class HealSkill : Skill
     {
         const float Range = 6f;
-        const float Below = 0.6f;
+        /// <summary>It heals allies below this ratio (a member falling back rejoins no higher, P4-96).</summary>
+        public const float HealsBelow = 0.6f;
 
         public HealSkill() { Cooldown = 6f; }
         public override string Name => "치유";
@@ -271,7 +272,7 @@ namespace GuildMaster.Units
 
         public override bool TryUse(Unit self, Unit target)
         {
-            var patient = MostEndangeredAlly(self, Range, Below);
+            var patient = MostEndangeredAlly(self, Range, HealsBelow);
             if (patient == null) return false;
             if (patient != self) Fx?.Beam(self.Position, patient.Position, Color, 0.08f, 0.3f);
             HealUnit(self, patient, self.Stats.Attack * 3f);

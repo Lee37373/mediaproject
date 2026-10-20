@@ -737,6 +737,9 @@ namespace GuildMaster.Adventurers
             // turn it into a retreat instead of fighting to the death.
             if (!Retreating && a.HpRatio < a.RetreatThreshold && a.CheckRetreat()) return;
             if (!Retreating && a.HandleCombat(dt)) return;
+            // Pulling back together (P4-96, user decision 2026-10-20): the fit ones turn on whatever catches up with them —
+            // within reach only, so the party keeps going — while the hurt run on.
+            if (Retreating && IsRearGuard(a) && a.HandleCombat(dt, allowed: _rearGuardZone ??= u => CaughtUp(Owner, u))) return;
             if (!Retreating && a.Looting.Tick(dt)) return;
             // The fight is over but they are badly hurt (user report 2026-09-22: the loot was left
             // lying): gather what fell close by — looting stops by itself when an enemy shows.
@@ -766,6 +769,13 @@ namespace GuildMaster.Adventurers
 
         /// <summary>One of a party out together (a quest, a band, a standing party on the way home).</summary>
         static bool InAParty(Adventurer a) => Services.TryGet<PartyTactics>(out var party) && party.LeaderOf(a) != null;
+
+        System.Func<Unit, bool> _rearGuardZone;
+
+        /// <summary>Fit enough to cover the party's retreat (as fit as one that may rejoin a fight, P4-96), and with a party.</summary>
+        static bool IsRearGuard(Adventurer a) => a.HpRatio >= FallBackRules.RejoinAt(a.RetreatThreshold) && InAParty(a);
+
+        static bool CaughtUp(Adventurer a, Unit u) => (u.Position - a.Position).sqrMagnitude <= FallBackRules.RearGuardReach * FallBackRules.RearGuardReach;
 
         // ---------------- Save (P5-4) ----------------
 

@@ -326,6 +326,7 @@ namespace GuildMaster.Welfare
                     Values = d.values,
                     OnQuest = q != null && q.IsActive,
                     InTownFree = q == null && a.IsAtLeisureInTown,
+                    InFight = a.InTheThickOfIt,
                 }, _roll);
                 if (step != CareStep.None) Apply(a, c, step, asked);
             }

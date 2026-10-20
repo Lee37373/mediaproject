@@ -218,6 +218,7 @@ namespace GuildMaster.Adventurers
         {
             if (Underground(a) || ComradesAtAFire(a) || !Quiet(a)) return false;
             var group = Companions(a);
+            if (!AllQuiet(group)) return false;
             bool alone = group.Count == 1;
             if (!CampRules.FarOut(DistanceToTown(a.Position), alone)) return false;
             if (group.Any(m => CampRules.NeedsRest(m.HpRatio, m.Data.fatigue, alone))) return Pitch(group, CampReason.Recover);
@@ -232,9 +233,21 @@ namespace GuildMaster.Adventurers
             if (Services.TryGet<PartyTactics>(out var tactics) && tactics.LeaderOf(a) is { } leader && leader != a) return false;
             if (ComradesAtAFire(a) || !Quiet(a)) return false;
             var group = Companions(a);
+            if (!AllQuiet(group)) return false;
             bool alone = group.Count == 1;
             if (!CampRules.FarOut(DistanceToTown(a.Position), alone)) return false;
             return ChoosesNightCamp(group[0], alone) && Pitch(group, CampReason.Night);
+        }
+
+        /// <summary>
+        /// Every one of them quiet, not only the one asking (P4-96): a member nothing had reached sat the whole party down by
+        /// a fire while the dragon, out of its sight, was still burning their hurt one — who pulled them all back, and a
+        /// moment later they sat down again, a dozen times, until it died.
+        /// </summary>
+        bool AllQuiet(List<Adventurer> group)
+        {
+            foreach (var m in group) if (!Quiet(m)) return false;
+            return true;
         }
 
         /// <summary>
