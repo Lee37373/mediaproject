@@ -104,7 +104,7 @@
 | P4-93 | 드래곤(사용자 결정 2026-10-20): 맵에 1마리, 먼 바깥 고정 둥지(보물 더미)에서 잠들고 매일 확률로 깨어나 곡선으로 날며 마주친 마을·길드원·몬스터에 불을 뿜음(숲은 산불, 건물 피해·금고 약탈 제한 없음). 날 땐 원거리만, 맞으면 내려와 근접 가능, 처치하면 다시 안 나옴. 보물 더미: 약탈·매일·전리품으로 쌓이고 마을 의뢰(보물 회수)·용감/탐욕 길드원이 파밍, 잘 때 다가가면 깰 수 있고 털리면 도둑 추격. 그림은 임시 코드 도트(나중에 에셋 교체) | 이재혁 | 완료 | Dragon/DragonService(신규), Monsters/Dragon·DragonStates(신규)·Monster, Visuals/DragonArt·DragonFireFx(신규)·CharacterVisual, Units/Combat·Unit·TargetSelector·Skills·CrowdSimulation, Disasters/DisasterService, Quests/Quest·QuestBoard, Adventurers/AdventurerStates·FreeHuntState·TownGuardState·QuestRisk, Data/DefaultContent·MonsterDefinition, Session/GameBootstrap·GameLog·DebugCommands, Notifications/NotificationSources | 1ea7d4f |
 | P4-94 | 드래곤 세기 조정·조명탄(사용자 결정 2026-10-20): 8명 Lv20대가 이기도록 시험 전투로 맞추고 토벌 요구치도 낮춤. 조명탄은 약방에서 만들어 가게에 두면 길드원이 사 두었다가 교전 상대가 시야 밖으로 나가면 저절로 쏨(쏜 자리 둘레를 잠시 밝혀 안개가 걷히고 그 안의 적을 길드원이 봄) | 이재혁 | 완료 | Flares/FlareRules·FlareService·SkyFlare(신규), Monsters/Dragon, Units/Combat(Engagement.LostSight)·Unit(CanSee), Adventurers/Adventurer·AdventurerData·AdventurerStates, Data/DefaultContent·ItemDefinition(ItemCategory.Tool), Session/GameBootstrap·DebugCommands·BalanceAutoPlayer, UI/Views 5개(조명탄 개수·도구 분류) | c1c2d0b |
 | P4-95 | 드래곤 스킬 추가·피하기 어렵게(사용자 결정 2026-10-20): 화염 폭격·포효·화염 비·꼬리 휘두르기(예고 짧게·범위 넓게), 예고 장판 회피 반응을 등급별 확률로(높은 등급일수록 빨리 반응할 확률↑ — 모든 장판에 적용). 기존 숨결은 그대로, 세져도 됨(몇 레벨에 이기는지 측정) | 이재혁 | 완료 | Units/Skills(드래곤 스킬 4개·Scorch·FireVolley)·TelegraphService(반응 시간)·DodgeRules(신규), Monsters/Dragon(공격 ×4.5·요구치 125·스킬 수치)·DragonStates(UseFire), Data/DefaultContent | d0c2def |
-| P4-96 | 크게 다친 파티원은 혼자 도망가지 않고 파티 뒤로 빠져 치료(사용자 결정 2026-10-20): 사제 곁으로 물러났다 회복되면 복귀, 파티 절반 이상이 크게 다쳤거나 치료할 사제가 없을 때만 전원 후퇴(멀쩡한 사람이 뒤따르는 적을 막음). 구사일생 혼자 도망·후퇴↔야영 반복 버그도 고침 | 이재혁 | 진행 중 | Adventurers/PartyRecovery·Adventurer·AdventurerStates·CampService | |
+| P4-96 | 크게 다친 파티원은 혼자 도망가지 않고 파티 뒤로 빠져 치료(사용자 결정 2026-10-20): 사제 곁으로 물러났다 회복되면 복귀, 파티 절반 이상이 크게 다쳤거나 치료할 사제가 없을 때만 전원 후퇴(멀쩡한 사람이 뒤따르는 적을 막음). 구사일생 혼자 도망·후퇴↔야영 반복 버그도 고침 | 이재혁 | 완료 | Adventurers/PartyRecovery(WhenHurt)·FallBackRules(신규)·Adventurer(뒤로 빠지기·구사일생)·AdventurerStates(후방 엄호)·CampService(전원 조용할 때만 야영), Welfare/MemberCare·GuildWelfare(싸우는 중 태업 안 함), Units/Skills(HealSkill.HealsBelow) | 90462e7 |
 | P5-5 | Windows 빌드 — 개발(사운드 포함)이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 개발 작업 중 가장 마지막에 진행(그 뒤 P5-5 빌드·P5-6 시연) | 미정 | 예정 | Audio(신규) | |
@@ -134,9 +134,8 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-96 다친 파티원 흐름
 - **예정**: P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-95, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-96, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
@@ -144,6 +143,7 @@
 - **바뀐 점 알림(2026-10-17, P4-82 완료 c7b8e68)**: 사용자 결정으로 의뢰 구조가 바뀌었습니다. 플레이어는 토벌을 직접 올리지 않고, 우리 마을이 길드가 본 둥지마다 토벌을 올립니다. 보상은 의뢰처가 내고 길드는 20%를 수수료로 받으며, 길드 EXP는 없어졌습니다. **F-8 제안 카드**: 게시판에 없는 둥지에 대한 "다른 의뢰인의 요청"이 되었고, 보상 조절 버튼과 금고 잔액 제한을 없앴습니다(고르기만, `ProposalRules.BuildPool(targets, power, members, rng)`). **P4-59 협상**: 그대로 길드 금고에서 얹습니다. F-5(의뢰 확장)를 할 때는 `QuestClient`·`QuestPricing`·`QuestBoard.TryPostRequest`를 쓰면 됩니다. P4-83(8d091f6)으로 지대 군주 넷을 잡으면 승리 화면이 뜹니다(`AllLordsSlainEvent`) — F-4의 승리 목표는 여기에 얹으면 됩니다
 - **바뀐 점 알림(2026-10-19, P4-87 완료 661026d)**: 사용자 결정으로 **모든 모험가의 공격·방어·최대 체력이 ×0.75로 시작**하고, 성벽 안에 짓는 내실 건물(무기고·방어구 공방·식당 각 3레벨)로 예전 세기까지 돌아옵니다(`Town/FacilityRules`, `AdventurerStats.Compute(…, StatScale)`). 판단의 힘 `AdventurerStats.Power`도 이 배율을 곱하고(`RawPower`가 예전 값), 위험 낮음 요구치는 0.75입니다. 피해 공식은 `Unit.EffectiveDefense`·`Unit.AttackCooldownNow`(방어 감소·둔화 반영)를 씁니다. 정원은 대숙소가 있으면 없어집니다(`GuildRoster.IsFull`·`CountText`)
 - **바뀐 점 알림(2026-10-19, P4-91 완료 4b0f437)**: 사용자 결정으로 **NPC 행동 판단에 LLM을 쓰지 않습니다**. 의뢰·휴식·사냥 판단(`RuleBasedDecisionMaker`만 등록), 초대 수락, 스킬 선택, 파티 분배, 잡담(고정 대사 `BanterLines`)이 모두 규칙이고, `LlmDecisionMaker`·`DecisionPrompt`·`PartyPrompt`·`SkillPrompt`·`SplitPrompt`·`BanterPrompt`는 지웠습니다. LLM은 영입 대화·설득 대화(P4-59)·의뢰 제안 카드(F-8)에만 씁니다. 위험도 문구는 `QuestRisk.RiskLabel`, 무모 허용은 `PersuasionRules.RecklessAllowed`로 옮겼습니다
+- **바뀐 점 알림(2026-10-21, P4-96 완료 90462e7)**: 사용자 결정으로 **크게 다친 파티원은 혼자 도망가지 않고 파티 뒤로 빠져 치료**받습니다(`PartyRecovery.WhenHurt`, `Adventurer.FallingBack`). F-2·F-6 쪽 변경: ① **태업**(`MemberCare.Tick`)은 싸우는 중에는 일어나지 않습니다 — `CareInput.InFight`(= `Adventurer.InTheThickOfIt`)를 추가했고 `GuildWelfare`가 채웁니다(전사들이 보스전 한가운데서 혼자 의뢰를 버리고 떠났음). ② **구사일생**(F-6) 뒤에는 파티가 있으면 혼자 마을로 가지 않고 파티 뒤로 빠집니다(파티가 없을 때만 예전처럼 귀환)
 - **완료**: F-1, F-2, F-3, F-6, F-8, P4-59 (자세한 내용은 `WORK_SUMMARY.md`, `FEATURE_IDEAS.md`, `NEGOTIATION.md`)
 
 ## 공용 파일 (충돌 주의)
