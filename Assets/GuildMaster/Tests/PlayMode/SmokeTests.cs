@@ -520,7 +520,7 @@ namespace GuildMaster.Tests
             SkillFactory.Assign(member, member.Data.skillIds);
 
             DebugCommands.SpawnNearMaster("goblin", 1, 2f);
-            var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.Home == null);
+            var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.Home == null && !m.IsDragon);
             goblin.transform.position = member.Position + new Vector2(1.5f, 0f);
             goblin.ForceTarget(member);
             yield return null;
@@ -639,7 +639,7 @@ namespace GuildMaster.Tests
             var at2 = member.Position + new Vector2(2f, 0f);
             DebugCommands.DropItem("slime_jelly", 1, at2.x, at2.y);
             DebugCommands.SpawnNearMaster("goblin", 1, 2f);
-            var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.Home == null);
+            var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.Home == null && !m.IsDragon);
             goblin.transform.position = member.Position + new Vector2(0f, 1.5f);
             yield return WaitFor(() => !member.Looting.IsBusy, 3f);
             Assert.That(member.Looting.IsBusy, Is.False, "fighting comes before tidying up");
@@ -950,6 +950,90 @@ namespace GuildMaster.Tests
                 Assert.That(Clock.IsHeld, Is.False, "and play goes on");
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+        }
+
+        /// <summary>
+        /// The dragon (P4-93, user decisions 2026-10-20), on one boot: asleep on its hoard far out it threatens nobody; on the
+        /// wing it banks and weaves rather than flying straight, only shots reach it, and it burns our town and plunders the
+        /// treasury for its hoard; shots enough bring it down where swords reach it; a member robbing its hoard while it is
+        /// away is hunted when it gets home; and it falls for good, its title to whoever fought it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Dragon_SleepsOnItsHoard_FliesInArcs_BurnsAndPlundersTheTown_ComesDownToShots_AndHuntsTheThief()
+        {
+            yield return Boot();
+            var svc = Services.Get<Dragons.DragonService>();
+            var world = Services.Get<World.WorldService>();
+            var dragon = svc.Dragon;
+            Assert.That(dragon, Is.Not.Null, "the test map has a lair");
+            Assert.That((dragon.Level, dragon.IsDragon, svc.Asleep, dragon.IsAirborne), Is.EqualTo((Dragon.Level, true, true, false)));
+            Assert.That(Vector2.Distance(svc.Lair, world.TownCenterWorld), Is.GreaterThan(EcosystemManager.InnerEdge), "far out");
+            Assert.That(svc.HoardGold, Is.EqualTo(Dragon.HoardStart));
+            var warrior = Roster.Members.First(a => a.IsAlive && !a.Stats.IsRanged);
+            var shooter = Roster.Members.First(a => a.IsAlive && a.Stats.IsRanged);
+            Assert.That(dragon.IsHostileTo(warrior), Is.False, "asleep it threatens nobody");
+
+            Unit.GuildInvulnerable = true;
+            Time.timeScale = 4f;
+            try
+            {
+                // On the wing: arcs, not a line; only shots reach it.
+                var town = world.TownCenterWorld;
+                var start = town + new Vector2(45f, -12f);
+                dragon.transform.position = start;
+                svc.FlyTo(town, 6f);
+                yield return null;
+                Assert.That(dragon.IsAirborne, Is.True);
+                Assert.That((Combat.CanReach(warrior, dragon), Combat.CanReach(shooter, dragon)), Is.EqualTo((false, true)));
+                float maxOff = 0f;
+                var line = (town - start).normalized;
+                yield return WaitFor(() =>
+                {
+                    var rel = dragon.Position - start;
+                    maxOff = Mathf.Max(maxOff, Mathf.Abs(rel.x * line.y - rel.y * line.x));
+                    return Vector2.Distance(dragon.Position, town) < 20f;
+                }, 20f);
+                Assert.That(maxOff, Is.GreaterThan(1f), "it weaves off the straight line");
+
+                // Over the town: its fire catches buildings and the treasury pays for its hoard.
+                var treasury = Services.Get<Economy.GuildTreasury>();
+                int goldBefore = treasury.Gold, hoardBefore = svc.HoardGold;
+                yield return WaitFor(() => svc.HoardGold > hoardBefore, 40f);
+                Assert.That(svc.HoardGold, Is.GreaterThan(hoardBefore), "plundered");
+                Assert.That(treasury.Gold, Is.LessThan(goldBefore));
+                Assert.That(Services.Get<Town.TownService>().Buildings.Any(b => b.Hp < b.MaxHp), Is.True, "something burned");
+
+                // Shots enough bring it down: then a sword reaches it.
+                dragon.ReceiveDamage(dragon.Stats.MaxHp * (Dragon.LandAfterDamage + 0.01f), shooter, false);
+                yield return WaitFor(() => dragon.Fsm.Current == dragon.DragonLanded, 15f);
+                Assert.That(dragon.Fsm.Current, Is.EqualTo(dragon.DragonLanded), "it came down");
+                Assert.That((dragon.IsAirborne, Combat.CanReach(warrior, dragon)), Is.EqualTo((false, true)));
+
+                // Robbed while away, it hunts the thief once home.
+                svc.FlyTo(town + new Vector2(-60f, 30f), 6f);
+                warrior.Mover.Stop();
+                world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(svc.Lair) + new Vector2Int(1, 0), 3, out var byLair);
+                warrior.transform.position = World.GridMap.CellToWorld(byLair);
+                int hoard = svc.HoardValue;
+                Assert.That(svc.Take(warrior), Is.True);
+                Assert.That(svc.HoardValue, Is.LessThan(hoard));
+                Assert.That(warrior.CarriedLoot.Any(s => s.itemId == "dragon_gold"), Is.True, "the gold is in its bag");
+                dragon.transform.position = svc.Lair + new Vector2(8f, 0f);
+                svc.FlyTo(svc.Lair, 0f); // its flight is over: straight home, minding no monster on the way
+                yield return WaitFor(() => svc.Quarry == warrior, 30f);
+                Assert.That(svc.Quarry, Is.EqualTo(warrior), "home and robbed: after the thief — " + svc.Describe());
+                Assert.That(dragon.IsAirborne, Is.True);
+
+                // It falls for good: the title goes to the member who fought it.
+                DebugCommands.KillDragon(Roster.Members.ToList().IndexOf(warrior));
+                Assert.That((svc.Slain, svc.Dragon), Is.EqualTo((true, (Monster)null)));
+                Assert.That(warrior.Data.titles, Does.Contain(Dragon.Title(dragon.Def.displayName)));
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = false;
+                Time.timeScale = 1f;
+            }
         }
 
         /// <summary>
@@ -1985,7 +2069,7 @@ namespace GuildMaster.Tests
 
             DebugCommands.SpawnNearMaster("goblin", 2, 2f);
             // The two just spawned (P4-81: the 512 map has homeless monsters of its own elsewhere).
-            var seen = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null && Vector2.Distance(m.Position, far) <= 6f).ToList();
+            var seen = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null && !m.IsDragon && Vector2.Distance(m.Position, far) <= 6f).ToList();
             Assert.That(seen, Is.Not.Empty, "monsters spawned next to the guild master");
             // The fog must actually judge them visible first: until then they were never seen, and
             // walking away would (correctly) leave nothing behind.
@@ -2174,7 +2258,7 @@ namespace GuildMaster.Tests
             try
             {
                 DebugCommands.SpawnNearMaster("goblin", 1, 3f);
-                var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.Home == null && m.IsAlive);
+                var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.Home == null && m.IsAlive && !m.IsDragon);
                 yield return WaitFor(() => !goblin.IsAlive || Roster.Members.Any(a => a.StateLabel == "마을 경비"), 15f);
                 Assert.That(!goblin.IsAlive || Roster.Members.Any(a => a.StateLabel == "마을 경비"), Is.True,
                     "members in town react to the intruder");
@@ -2193,7 +2277,7 @@ namespace GuildMaster.Tests
             {
                 var master = Services.Get<PlayerAvatar>();
                 DebugCommands.SpawnNearMaster("skull", 1, 2f, forceTarget: false);
-                var first = UnitRegistry.All.OfType<Monster>().First(m => m.Home == null && m.IsAlive);
+                var first = UnitRegistry.All.OfType<Monster>().First(m => m.Home == null && m.IsAlive && !m.IsDragon); // the dragon has no nest either (P4-93)
                 Assert.That(new PackHowlSkill().TryUse(first, master), Is.False, "a lone skeleton has nobody to call");
                 yield return null;
                 Assert.That(first.Mover.BuffMultiplier, Is.EqualTo(1f), "and no free haste");

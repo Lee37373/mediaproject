@@ -263,6 +263,12 @@ namespace GuildMaster.Quests
             => PostRequest(draft, QuestClient.Town, null, disaster);
 
         /// <summary>
+        /// The town posts a raid on the dragon's hoard the guild has seen (P4-93, user decision 2026-10-20): the town pays,
+        /// and whatever the raider carries home is theirs to sell besides. Done once someone on it reaches into the hoard.
+        /// </summary>
+        public Quest PostTreasureQuest(QuestDraft draft) => PostRequest(draft, QuestClient.Town, null);
+
+        /// <summary>
         /// A sudden incident's quest, posted when its rumour reaches the town (P4-85, user decision 2026-10-18): its
         /// client pays (the guild keeps its fee), and it is about the incident, not a den — so the species need not be
         /// known yet (the rumour names it) and the area is the rumour's rough circle.
@@ -339,6 +345,9 @@ namespace GuildMaster.Quests
                 case QuestType.Disaster:
                     d = q.Disaster != null ? Disasters.DisasterRules.DangerOf(q.Disaster.Kind) : DangerLevel.Medium;
                     break;
+                case QuestType.Treasure:
+                    d = DangerLevel.High; // a dragon's lair, asleep or not
+                    break;
             }
             return d;
         }
@@ -364,7 +373,7 @@ namespace GuildMaster.Quests
         /// (the town's emergency, P4-72). The guild's own (an escort) at any time.
         /// </summary>
         public static bool CanTakeDown(Quest q)
-            => q != null && q.IsActive && (!q.FundedByClient || (q.Assignees.Count == 0 && q.Type != QuestType.Disaster));
+            => q != null && q.IsActive && (!q.FundedByClient || (q.Assignees.Count == 0 && q.Type != QuestType.Disaster && q.Type != QuestType.Treasure));
 
         /// <summary>
         /// Takes a quest off the board. A client's quest nobody took simply comes down (the town will not post

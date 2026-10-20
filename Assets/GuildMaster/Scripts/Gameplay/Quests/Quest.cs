@@ -6,7 +6,8 @@ using UnityEngine;
 namespace GuildMaster.Quests
 {
     /// <summary><see cref="Disaster"/>: dealing with a natural disaster, posted by the town (P4-72).</summary>
-    public enum QuestType { Hunt, Escort, Defend, Disaster }
+    /// <summary>Saved by number: new kinds go at the end (Treasure: the dragon's hoard, P4-93).</summary>
+    public enum QuestType { Hunt, Escort, Defend, Disaster, Treasure }
     public enum QuestStatus { Open, InProgress, Completed, TurnedIn, Cancelled, Failed }
 
     /// <summary>
@@ -171,8 +172,8 @@ namespace GuildMaster.Quests
             RequiredCount = Mathf.Max(1, d.Count);
             RewardGold = Mathf.Max(0, d.RewardGold);
             RewardExp = Mathf.Max(0, d.RewardExp);
-            // Four at most, but a region lord's quest takes two parties (P4-83, RegionLords.QuestParty).
-            MaxParty = Mathf.Clamp(d.MaxParty, 1, d.Species != null && d.Species.isRegionLord ? Monsters.RegionLords.QuestParty : 4);
+            // Four at most, but a region lord's or the dragon's quest takes two parties (P4-83, RegionLords.QuestParty; P4-93).
+            MaxParty = Mathf.Clamp(d.MaxParty, 1, d.Species != null && (d.Species.isRegionLord || d.Species.isDragon) ? Monsters.RegionLords.QuestParty : 4);
             MaxHours = d.Type == QuestType.Escort ? Mathf.Clamp(d.Hours, 1, 24) : 0;
             PayGold = RewardGold;
             PayExp = RewardExp;
@@ -185,11 +186,13 @@ namespace GuildMaster.Quests
             QuestType.Hunt when Incident != null => Incidents.IncidentRules.QuestTitle(this),
             QuestType.Hunt when IsVillageDefence && Village != null => $"[방어] {Village.DisplayName} 습격 {Species?.displayName} x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
             QuestType.Hunt when Species != null && Species.isRegionLord => $"[지대 군주] {Species.displayName} 토벌 ({QuestBoard.DescribeArea(Point)})",
+            QuestType.Hunt when Species != null && Species.isDragon => $"[드래곤] {Species.displayName} 토벌 ({QuestBoard.DescribeArea(Point)})",
             QuestType.Hunt => $"{Species?.displayName} 토벌 x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
             QuestType.Escort => $"길드 마스터 호위 (최대 {MaxHours}시간)",
             QuestType.Defend => "마을 방어",
             QuestType.Disaster when Disaster != null
                 => $"{Disaster.Name} {Disasters.DisasterRules.WorkName(Disaster.Kind)} ({QuestBoard.DescribeArea(Point)}, 마을 의뢰)",
+            QuestType.Treasure => $"[드래곤 둥지] 보물 회수 ({QuestBoard.DescribeArea(Point)})",
             _ => Id,
         };
 
@@ -200,6 +203,7 @@ namespace GuildMaster.Quests
             QuestType.Escort => $"{EscortHours:0.0}/{MaxHours}시간",
             // Only the guild's own work: how much is left out there is not known (P4-72 information rule).
             QuestType.Disaster => Worked > 0 ? $"{Worked}곳 처리" : "작업 전",
+            QuestType.Treasure => Status == QuestStatus.Completed ? "보물을 챙김" : "둥지로",
             _ => "",
         };
 

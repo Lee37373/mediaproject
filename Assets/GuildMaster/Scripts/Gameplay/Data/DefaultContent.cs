@@ -326,6 +326,25 @@ namespace GuildMaster.Data
                 40, 8f, 4, 1.4f, 1.6f, 3.2f, Region.Wasteland, ashSkull, "boss_stone_slime", new Color(0.8f, 0.5f, 0.42f),
                 "lord_quake_stomp", "lord_heart_wasteland", "잿불 거인의 핵", new Color(0.95f, 0.45f, 0.2f));
 
+            // The dragon (P4-93, user decisions 2026-10-20): one, no habitat (never in a den, never a newcomer), asleep at
+            // its own lair or on the wing (Monsters/Dragon: level 40, health x20). Drawn by Visuals/DragonArt. Its heart
+            // always drops; its hoard at the lair is farmed (Dragon/DragonService).
+            var dragon = Mon("dragon", "화염룡 이그니스", MonsterShape.Brute, new Color(0.8f, 0.2f, 0.2f), new Color(0.95f, 0.75f, 0.35f), 1f,
+                40, 8f, 4, 1.8f, 1.6f, 3.4f, 10, DangerLevel.High, true, 1, 0f, 0, 30);
+            dragon.isDragon = true;
+            dragon.bossName = dragon.displayName; // it leads nobody, but answers to its own name like a lord
+            dragon.combatTier = CombatTier.Heroic;
+            dragon.leashRadius = 30f;
+            dragon.minNests = 0;
+            dragon.pickupMode = MonsterPickupMode.None;
+            dragon.skillIds.Add("dragon_breath");
+            var dragonHeart = Item("dragon_heart", "화염룡의 심장", ItemCategory.Material, 800, new Color(1f, 0.35f, 0.2f));
+            dragonHeart.uniqueEffect = "dragon_trophy";
+            Loot(dragon, dragonHeart, 1f);
+            Loot(dragon, Item("dragon_scale", "용의 비늘", ItemCategory.Material, 120, new Color(0.85f, 0.25f, 0.25f)), 1f, 3, 5);
+            // Its hoard is carried off in sacks of gold (Monsters/Dragon.SackValue) besides whatever it piled up.
+            Item("dragon_gold", "용의 금화 자루", ItemCategory.Material, Monsters.Dragon.SackValue, new Color(1f, 0.85f, 0.3f));
+
             AddTraits(db);
             AddBuildings(db);
             AddRecipes(db);

@@ -83,6 +83,11 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<RefugeeArrivedEvent>(OnRefugee);
             EventBus.Subscribe<Incidents.IncidentRumouredEvent>(OnIncidentRumoured);
             EventBus.Subscribe<Incidents.IncidentEndedEvent>(OnIncidentEnded);
+            EventBus.Subscribe<Dragons.DragonSightedEvent>(OnDragonSighted);
+            EventBus.Subscribe<Dragons.DragonLairFoundEvent>(OnDragonLair);
+            EventBus.Subscribe<Dragons.DragonSlainEvent>(OnDragonSlain);
+            EventBus.Subscribe<Dragons.DragonHoardRaidedEvent>(OnDragonHoard);
+            EventBus.Subscribe<Dragons.DragonEnragedEvent>(OnDragonEnraged);
         }
 
         public void Dispose()
@@ -98,6 +103,11 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Town.RaidEndedEvent>(OnRaidEnded);
             EventBus.Unsubscribe<Town.BuildingDestroyedEvent>(OnBuildingDestroyed);
             EventBus.Unsubscribe<Town.MerchantArrivedEvent>(OnMerchant);
+            EventBus.Unsubscribe<Dragons.DragonSightedEvent>(OnDragonSighted);
+            EventBus.Unsubscribe<Dragons.DragonLairFoundEvent>(OnDragonLair);
+            EventBus.Unsubscribe<Dragons.DragonSlainEvent>(OnDragonSlain);
+            EventBus.Unsubscribe<Dragons.DragonHoardRaidedEvent>(OnDragonHoard);
+            EventBus.Unsubscribe<Dragons.DragonEnragedEvent>(OnDragonEnraged);
             EventBus.Unsubscribe<Reports.DailyReportClosedEvent>(OnDailyReport);
             EventBus.Unsubscribe<Disasters.DisasterSightedEvent>(OnDisasterSighted);
             EventBus.Unsubscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
@@ -224,6 +234,46 @@ namespace GuildMaster.Notifications
             => _center.Post(NotificationKind.Success, "지대 정화",
                 $"{e.Lord.displayName}이(가) 쓰러졌습니다. {Monsters.RegionLords.RegionName(e.Region)} 바깥 땅에 더는 새 몬스터가 나타나지 않습니다. ({e.Fallen}/{e.Total})",
                 "cleansed:" + e.Lord.id, NotificationLink.Location(e.Position));
+
+        // ---------------- The dragon (P4-93) ----------------
+
+        void OnDragonSighted(Dragons.DragonSightedEvent e)
+        {
+            if (e.Dragon == null) return;
+            string name = e.Dragon.DisplayName;
+            _center.Post(NotificationKind.Danger, e.First ? "드래곤 발견" : "드래곤 출현",
+                e.First
+                    ? $"{name}(Lv.{e.Dragon.Level}){Adventurers.MemoryRecorder.Josa(name, "을", "를")} 처음 보았습니다. {(e.Flying ? "날고 있을 때는 원거리 공격만 닿고, 충분히 맞으면 땅으로 내려옵니다." : "")}"
+                    : $"{name}{Adventurers.MemoryRecorder.Josa(name, "이", "가")} {(e.Flying ? "하늘을 날고 있습니다" : "보입니다")}.",
+                "dragon-seen", NotificationLink.Location(e.Position));
+        }
+
+        void OnDragonLair(Dragons.DragonLairFoundEvent e)
+            => _center.PostOnce("dragon-lair", NotificationKind.Warning, "드래곤의 둥지",
+                (e.DragonAtHome ? "금화 더미 위에서 드래곤이 잠들어 있습니다. " : "드래곤이 잠드는 금화 더미를 찾았습니다. ")
+                + $"보물은 {e.HoardValue}G어치로 보입니다. 드래곤이 비운 틈에 털 수 있고, 잘 때 다가가면 깰 수 있습니다.",
+                NotificationLink.Location(e.Position));
+
+        void OnDragonSlain(Dragons.DragonSlainEvent e)
+            => _center.PostOnce("dragon-slain", NotificationKind.Success, "드래곤 처치",
+                $"{e.Def.displayName}{Adventurers.MemoryRecorder.Josa(e.Def.displayName, "이", "가")} 쓰러졌습니다. 둥지의 보물을 가져올 수 있습니다.",
+                NotificationLink.Location(e.Position));
+
+        void OnDragonHoard(Dragons.DragonHoardRaidedEvent e)
+        {
+            string name = e.By?.Data?.name ?? "길드원";
+            _center.Post(e.Woke ? NotificationKind.Danger : NotificationKind.Success, e.Woke ? "드래곤이 깨어남" : "드래곤의 보물",
+                $"{name}{Adventurers.MemoryRecorder.Josa(name, "이", "가")} 드래곤의 보물 {e.Value}G어치를 챙겼습니다.{(e.Woke ? " 드래곤이 깨어났습니다!" : " 드래곤이 알아채면 쫓아올 것입니다.")}",
+                "dragon-hoard", NotificationLink.Location(e.Position));
+        }
+
+        void OnDragonEnraged(Dragons.DragonEnragedEvent e)
+        {
+            if (!e.Seen || e.Thief?.Data == null) return;
+            _center.Post(NotificationKind.Danger, "드래곤의 분노",
+                $"보물을 도둑맞은 드래곤이 {e.Thief.Data.name}{Adventurers.MemoryRecorder.Josa(e.Thief.Data.name, "을", "를")} 쫓습니다!",
+                "dragon-enraged", NotificationLink.Location(e.Position));
+        }
 
         // ---------------- Guild members ----------------
 

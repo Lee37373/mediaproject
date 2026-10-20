@@ -215,6 +215,33 @@ namespace GuildMaster.Disasters
             Begin(e.Kind, cell);
         }
 
+        /// <summary>
+        /// Dragon fire (P4-93, user decision 2026-10-20: "숲에 옮겨 붙어 산불"): forest within <paramref name="radius"/> of
+        /// <paramref name="point"/> catches. A wildfire already burning nearby takes the new flames; otherwise one starts if
+        /// there is room for another (the usual limits). No chance roll: fire on a forest always takes.
+        /// </summary>
+        public void Kindle(Vector2 point, float radius)
+        {
+            if (_clock == null) return;
+            var at = GridMap.WorldToCell(point);
+            var fire = _active.FirstOrDefault(d => d.Kind == DisasterKind.Wildfire && !d.Over && !d.Ending
+                                                   && Vector2.Distance(d.WorldOrigin, point) < DisasterRules.MinSpacing);
+            int r = Mathf.CeilToInt(radius);
+            for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++)
+            {
+                if (dx * dx + dy * dy > radius * radius) continue;
+                var c = new Vector2Int(at.x + dx, at.y + dy);
+                if (!Eligible(DisasterKind.Wildfire, c) || Grid.Data.IsUnderground(c)) continue;
+                if (fire == null)
+                {
+                    if (!CanStartAt(c) || (fire = Begin(DisasterKind.Wildfire, c)) == null) return;
+                    continue;
+                }
+                Add(fire, c);
+            }
+        }
+
         /// <summary>Room for another one: not too many going, none too close.</summary>
         bool CanStartAt(Vector2Int cell)
         {
@@ -368,7 +395,7 @@ namespace GuildMaster.Disasters
         /// <summary>Snow or a crack opens under someone: hurt and thrown clear.</summary>
         void Bury(Vector2Int c)
         {
-            UnitRegistry.Collect(GridMap.CellToWorld(c), 1f, u => u.IsAlive && u is not Monsters.Monster { IsRegionLord: true } && GridMap.WorldToCell(u.Position) == c, s_units);
+            UnitRegistry.Collect(GridMap.CellToWorld(c), 1f, u => u.IsAlive && !Unharmed(u) && GridMap.WorldToCell(u.Position) == c, s_units);
             foreach (var u in s_units)
             {
                 u.ReceiveDamage(Mathf.Round(u.Stats.MaxHp * DisasterRules.BuriedDamage), null, false);
@@ -580,8 +607,7 @@ namespace GuildMaster.Disasters
             s_units.AddRange(UnitRegistry.All);
             foreach (var u in s_units)
             {
-                // A region lord is at home in its region's disasters (P4-83): it sets them off itself.
-                if (u == null || !u.IsAlive || u is Monsters.Monster { IsRegionLord: true }) continue;
+                if (u == null || !u.IsAlive || Unharmed(u)) continue;
                 var cell = GridMap.WorldToCell(u.Position);
                 var k = Grid.HazardAt(cell);
                 if (!Hazards.Hurts(k)) continue;
@@ -592,6 +618,12 @@ namespace GuildMaster.Disasters
                     u.Mover.SetDestination(GridMap.CellToWorld(safe), 0.2f);
             }
         }
+
+        /// <summary>
+        /// Untouched by any disaster: a region lord is at home in its region's (P4-83, it sets them off itself), and the
+        /// dragon (P4-93) is fireproof and flies over the rest.
+        /// </summary>
+        static bool Unharmed(Unit u) => u.IsAirborne || u is Monsters.Monster { IsRegionLord: true } or Monsters.Monster { IsDragon: true };
 
         /// <summary>The nearest walkable cell within 4 that neither burns nor poisons.</summary>
         bool SafeCellNear(Vector2Int from, out Vector2Int safe)

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using GuildMaster.CameraControl;
 using GuildMaster.Core;
 using GuildMaster.Fog;
@@ -70,7 +71,7 @@ namespace GuildMaster.Units
 
         protected static void Damage(Unit self, Unit target, float multiplier)
         {
-            if (target == null || !target.IsAlive) return;
+            if (target == null || !target.IsAlive || !Combat.CanReach(self, target)) return;
             float dmg = Combat.Mitigate(self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f), target.EffectiveDefense);
             target.ReceiveDamage(Mathf.Round(dmg), self, false);
         }
@@ -664,6 +665,70 @@ namespace GuildMaster.Units
         }
     }
 
+    /// <summary>
+    /// The dragon's fire (P4-93, <see cref="Monsters.Dragon"/>): after a short warning a blast round the spot it breathes at
+    /// burns everyone in it, sets buildings, town gates and villages alight (the town hall can fall: user decision, no
+    /// limit), and forest there catches (a wildfire, <see cref="Disasters.DisasterService.Kindle"/>). Breathed from the sky
+    /// at what it circles (<see cref="Monsters.DragonFlightState"/>) or on the ground at its foe.
+    /// </summary>
+    public class DragonBreathSkill : Skill
+    {
+        float _channelUntil;
+
+        public DragonBreathSkill() { Cooldown = Monsters.Dragon.BreathCooldown; }
+        public override string Name => "화염 숨결";
+        public override string Description
+            => $"{Monsters.Dragon.BreathWindup}초 예고 뒤 반경 {Monsters.Dragon.BreathRadius} 안을 불태워 공격력 {Monsters.Dragon.BreathDamage * 100f:0}% 피해. 건물·성문·마을도 타고, 숲에는 산불이 납니다.";
+        public override Color Color => new(1f, 0.5f, 0.15f);
+        public override float AreaRadius => Monsters.Dragon.BreathRadius;
+        // Its signature: breathed as soon as it can, never saved for a crowd.
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override bool TryUse(Unit self, Unit target) => target != null && TryBreatheAt(self, target.Position);
+
+        /// <summary>Breathes at a spot in range (a unit, or a building it circles); false when it cannot now.</summary>
+        public bool TryBreatheAt(Unit self, Vector2 point)
+        {
+            if (!IsReady || self.IsStunned || Vector2.Distance(self.Position, point) > Monsters.Dragon.BreathRange) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            if (!self.IsAirborne) self.Mover.Stop();
+            _channelUntil = Time.time + Monsters.Dragon.BreathWindup;
+            self.Visual?.FaceTowards(point);
+            telegraphs.Create(self, point, Monsters.Dragon.BreathRadius, Monsters.Dragon.BreathWindup, () => Burn(self, point));
+            Announce(self);
+            return true;
+        }
+
+        static void Burn(Unit self, Vector2 point)
+        {
+            float r = Monsters.Dragon.BreathRadius;
+            var mouth = self is Monsters.Monster m ? m.MouthPosition : self.Position;
+            if (Services.TryGet<DragonFireFx>(out var fire)) fire.Play(mouth, point);
+            foreach (var u in HostilesAround(self, point, r).ToArray()) Damage(self, u, Monsters.Dragon.BreathDamage);
+            BurnStructures(self, point, r);
+            if (Services.TryGet<Disasters.DisasterService>(out var disasters)) disasters.Kindle(point, r);
+            ShakeIfVisible(point, 0.35f);
+        }
+
+        static void BurnStructures(Unit self, Vector2 point, float r)
+        {
+            float dmg = Monsters.Dragon.StructureDamage;
+            bool townHit = false, villageHit = false;
+            if (Services.TryGet<Town.TownService>(out var town))
+                foreach (var b in town.Buildings.ToList())
+                    if (b != null && !b.IsDestroyed && Vector2.Distance(b.ClosestPoint(point), point) <= r) { b.Damage(dmg); townHit = true; }
+            if (Services.TryGet<Town.GateService>(out var gates))
+                foreach (var g in gates.Gates.ToList())
+                    if (g != null && !g.IsBroken && Vector2.Distance(g.ClosestPoint(point), point) <= r) g.Damage(dmg, self);
+            if (Services.TryGet<Villages.VillageService>(out var villages) && Services.TryGet<GameClock>(out var clock))
+                foreach (var v in villages.Villages)
+                    if (v != null && !v.IsDestroyed && Vector2.Distance(v.WorldPosition, point) <= r + 1.5f) { v.Damage(dmg, self, clock.TotalHours); villageHit = true; }
+            // What burns is plundered for the hoard (P4-93).
+            if ((townHit || villageHit) && Services.TryGet<Dragons.DragonService>(out var dragon)) dragon.Plunder(townHit, villageHit, point);
+        }
+    }
+
     public static class SkillFactory
     {
         public static Skill Create(string id) => id switch
@@ -692,6 +757,8 @@ namespace GuildMaster.Units
             "lord_sand_whirl" => new LordStrikeSkill(Disasters.DisasterKind.Sandstorm),
             "lord_quake_stomp" => new LordStrikeSkill(Disasters.DisasterKind.Quake),
             "lord_call" => new LordCallSkill(),
+            // The dragon (P4-93).
+            "dragon_breath" => new DragonBreathSkill(),
             _ => null,
         };
 

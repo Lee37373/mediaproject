@@ -561,10 +561,10 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
-        /// <summary>Kills every living nest-less monster (leftovers from <see cref="SpawnSkirmish"/>).</summary>
+        /// <summary>Kills every living nest-less monster (leftovers from <see cref="SpawnSkirmish"/>) — not the dragon (P4-93).</summary>
         public static int ClearSkirmish()
         {
-            var strays = Units.UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null).ToList();
+            var strays = Units.UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null && !m.IsDragon).ToList();
             foreach (var m in strays) m.Perish();
             return strays.Count;
         }
@@ -1654,6 +1654,91 @@ namespace GuildMaster.Session
             World.Pathfinder.CappedByCaller.Clear();
             World.Pathfinder.RecentCapped.Clear();
             return "reset";
+        }
+
+        // ---------------- The dragon (P4-93) ----------------
+
+        /// <summary>The dragon as it really is: lair, health, state, its round, the next day it wakes.</summary>
+        public static string Dragon() => Services.TryGet<Dragons.DragonService>(out var d) ? d.Describe() : "no dragon service";
+
+        /// <summary>Wakes it now for a flight of <paramref name="hours"/> on today's round.</summary>
+        public static string DragonWake(float hours = 8f)
+        {
+            Services.Get<Dragons.DragonService>().Wake(Services.Get<GameClock>().Day, hours);
+            return Dragon();
+        }
+
+        /// <summary>Sends it flying straight to (x, y) — our town when left out — then home.</summary>
+        public static string DragonTo(float x = -1f, float y = -1f, float hours = 4f)
+        {
+            var point = x < 0f ? Services.Get<World.WorldService>().TownCenterWorld : new Vector2(x, y);
+            Services.Get<Dragons.DragonService>().FlyTo(point, hours);
+            return Dragon();
+        }
+
+        /// <summary>Camera to the dragon (or its lair), the fog lifted round it.</summary>
+        public static string JumpToDragon()
+        {
+            var d = Services.Get<Dragons.DragonService>();
+            var at = d.Dragon != null ? d.Dragon.Position : d.Lair;
+            Services.Get<Fog.FogOfWar>().Reveal(at, 14f);
+            Services.Get<CameraControl.CameraController>().JumpTo(at);
+            return Dragon();
+        }
+
+        public static string KillDragon(int memberIndex = 0)
+        {
+            var d = Services.Get<Dragons.DragonService>();
+            if (d.Dragon == null) return "no living dragon";
+            var members = Services.Get<GuildRoster>().Members;
+            var by = memberIndex >= 0 && memberIndex < members.Count ? members[memberIndex] : null;
+            d.Dragon.ReceiveDamage(d.Dragon.Hp + 1e6f, by, false);
+            return Dragon();
+        }
+
+        /// <summary>
+        /// A test fight against the dragon asleep at home (debug, tuning): <paramref name="members"/> members (recruited up to it)
+        /// set to <paramref name="level"/> and gear tier <paramref name="gear"/>, put on a hunt for it a few cells from its lair, at
+        /// midday. Read the fight with <see cref="Dragon"/>.
+        /// </summary>
+        public static string DragonFight(int members, int level, int gear)
+        {
+            var svc = Services.Get<Dragons.DragonService>();
+            var dragon = svc.Dragon;
+            if (dragon == null) return "no living dragon";
+            var clock = Services.Get<GameClock>();
+            typeof(GameClock).GetField("_totalHours", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?.SetValue(clock, Mathf.Floor(clock.TotalHours / 24f) * 24f + 9f);
+            var roster = Services.Get<GuildRoster>();
+            var world = Services.Get<World.WorldService>();
+            while (roster.Members.Count < members) roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), world.TownCenterWorld);
+            Services.Get<GuildIntel>().MarkKnown(dragon.Def);
+            var board = Services.Get<QuestBoard>();
+            board.TryPostRequest(new QuestDraft
+            {
+                Type = QuestType.Hunt, Species = dragon.Def, Count = 1, Point = svc.Lair, HasPoint = true, Radius = QuestBoard.HuntRadius,
+                RewardGold = 1500, RewardExp = 900, MaxParty = members,
+            }, QuestClient.Town, out var q, out var err);
+            if (q == null) return "not posted: " + err;
+            var stand = svc.Lair + (world.TownCenterWorld - svc.Lair).normalized * 10f;
+            var team = roster.Members.Where(a => a.IsAlive).OrderBy(a => roster.Members.Where(b => b.Data.cls == a.Data.cls).ToList().IndexOf(a)).Take(members).ToList();
+            for (int i = 0; i < team.Count; i++)
+            {
+                var a = team[i];
+                a.Data.level = level;
+                a.Data.gearTier = gear;
+                a.Data.potions = 3;
+                a.RecalculateStats(fullHeal: true);
+                world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(stand + new Vector2(i % 3, i / 3)), 4, out var cell);
+                a.Mover.Stop();
+                a.transform.position = World.GridMap.CellToWorld(cell);
+                if (!board.TryAccept(q, a, invited: i > 0)) continue;
+                a.CurrentQuest = q;
+                a.ChangeState(a.TravelState);
+            }
+            Services.Get<Fog.FogOfWar>().Reveal(svc.Lair, 20f);
+            Services.Get<CameraControl.CameraController>().JumpTo(svc.Lair);
+            return $"{q.Id}: {string.Join(", ", team.Select(a => $"{a.Data.name}({a.Data.cls} {a.Stats.MaxHp:0}hp {a.Stats.Attack:0.#}atk)"))} vs {dragon.DisplayName} {dragon.Hp:0}hp";
         }
     }
 }

@@ -227,6 +227,14 @@ namespace GuildMaster.Session
             incidents.Init(clock, world, eco, board, fog);
             Services.Register(incidents);
             save.Register(incidents);
+            // The dragon (P4-93): asleep at its lair far out (placed without random draws), some days on the wing; its fire.
+            var dragonFire = AddSystem<DragonFireFx>();
+            dragonFire.Init(pool);
+            Services.Register(dragonFire);
+            var dragon = AddSystem<Dragons.DragonService>();
+            dragon.Init(world, clock, fog, db, Seed);
+            Services.Register(dragon);
+            save.Register(dragon);
 
             // --- AI: LLM gateway, for talk only (recruitment, persuasion, proposal cards; rules when no model) ---
             var llm = AddSystem<LlmGateway>();

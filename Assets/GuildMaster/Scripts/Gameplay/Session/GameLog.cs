@@ -221,6 +221,34 @@ namespace GuildMaster.Session
                 string who = e.Participants != null && e.Participants.Count > 0 ? $" (함께한 길드원: {string.Join(", ", e.Participants)})" : "";
                 Add($"[지대 정화] {e.Lord.displayName}이(가) 쓰러졌습니다 — {Monsters.RegionLords.RegionName(e.Region)} 바깥 땅에 더는 새 몬스터가 나타나지 않습니다. ({e.Fallen}/{e.Total}){who}", LogCategory.Quest);
             });
+            // The dragon (P4-93): what the guild saw of it, its lair, its fall, its hoard.
+            EventBus.Subscribe<Dragons.DragonSightedEvent>(e =>
+            {
+                if (e.Dragon == null) return;
+                string name = e.Dragon.DisplayName;
+                Add(e.First
+                    ? $"[드래곤] {name}(Lv.{e.Dragon.Level}){Adventurers.MemoryRecorder.Josa(name, "을", "를")} 처음 보았습니다! ({QuestBoard.DescribeArea(e.Position)})"
+                    : $"[드래곤] {name}{Adventurers.MemoryRecorder.Josa(name, "이", "가")} {(e.Flying ? "하늘을 날고 있습니다" : "보입니다")}! ({QuestBoard.DescribeArea(e.Position)})", LogCategory.Danger);
+            });
+            EventBus.Subscribe<Dragons.DragonLairFoundEvent>(e => Add(e.DragonAtHome
+                ? $"[드래곤] 금화 더미 위에 잠든 드래곤을 찾았습니다. ({QuestBoard.DescribeArea(e.Position)})"
+                : $"[드래곤] 드래곤이 잠드는 금화 더미를 찾았습니다. ({QuestBoard.DescribeArea(e.Position)})", LogCategory.Danger));
+            EventBus.Subscribe<Dragons.DragonSlainEvent>(e =>
+            {
+                string who = e.Participants != null && e.Participants.Count > 0 ? $" (함께한 길드원: {string.Join(", ", e.Participants)})" : "";
+                Add($"[드래곤 처치] {e.Def.displayName}{Adventurers.MemoryRecorder.Josa(e.Def.displayName, "이", "가")} 쓰러졌습니다!{who}", LogCategory.Quest);
+            });
+            EventBus.Subscribe<Dragons.DragonHoardRaidedEvent>(e =>
+            {
+                string name = e.By?.Data?.name ?? "길드원";
+                Add($"[드래곤 둥지] {name}{Adventurers.MemoryRecorder.Josa(name, "이", "가")} 보물 {e.Value}G어치를 챙겼습니다.{(e.Woke ? " 드래곤이 깨어났습니다!" : "")}", e.Woke ? LogCategory.Danger : LogCategory.Economy);
+            });
+            EventBus.Subscribe<Dragons.DragonEnragedEvent>(e =>
+            {
+                if (e.Seen && e.Thief?.Data != null)
+                    Add($"[드래곤] 보물을 도둑맞은 드래곤이 {e.Thief.Data.name}{Adventurers.MemoryRecorder.Josa(e.Thief.Data.name, "을", "를")} 쫓습니다!", LogCategory.Danger);
+            });
+            EventBus.Subscribe<Dragons.DragonPlunderedEvent>(e => Add($"[드래곤] 불길 속에 금고에서 {e.Gold}G를 빼앗겼습니다.", LogCategory.Danger));
             EventBus.Subscribe<AllLordsSlainEvent>(e => Add($"[승리] 지대 군주 {e.Lords}을 모두 쓰러뜨렸습니다! ({e.Day}일차)", LogCategory.Quest));
             EventBus.Subscribe<Units.UnitDiedEvent>(e =>
             {

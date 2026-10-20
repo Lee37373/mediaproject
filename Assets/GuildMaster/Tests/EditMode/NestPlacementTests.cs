@@ -119,8 +119,8 @@ namespace GuildMaster.Tests
                 }
             }
             Object.DestroyImmediate(balance);
-            // Region lords (P4-83) are never dealt a den: their lairs are set by the ecosystem (RegionLords.PickLairs).
-            foreach (var s in db.monsters.Where(m => !m.isRegionLord)) Assert.That(seen, Does.Contain(s.id), $"{s.id} never got a nest");
+            // Region lords (P4-83) and the dragon (P4-93) are never dealt a den: their lairs are set apart (RegionLords.PickLairs, Dragon.PickLair).
+            foreach (var s in db.monsters.Where(m => !m.isRegionLord && !m.isDragon)) Assert.That(seen, Does.Contain(s.id), $"{s.id} never got a nest");
         }
 
         [Test]

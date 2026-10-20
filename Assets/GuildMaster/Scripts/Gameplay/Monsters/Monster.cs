@@ -52,6 +52,10 @@ namespace GuildMaster.Monsters
         internal MonsterPickupState PickupState;
         internal MonsterRegroupState RegroupState;
         internal MonsterGateBreakState GateBreakState;
+        /// <summary>The dragon's life (P4-93): asleep on its hoard, on the wing, down on the ground to fight.</summary>
+        internal DragonSleepState DragonSleep;
+        internal DragonFlightState DragonFlight;
+        internal DragonLandedState DragonLanded;
         /// <summary>Earliest time the next fall-back-and-regroup may start (skilled+ monsters, P4-28).</summary>
         internal float NextRegroupTime;
 
@@ -81,6 +85,9 @@ namespace GuildMaster.Monsters
             PickupState = new MonsterPickupState();
             RegroupState = new MonsterRegroupState();
             GateBreakState = new MonsterGateBreakState();
+            DragonSleep = new DragonSleepState();
+            DragonFlight = new DragonFlightState();
+            DragonLanded = new DragonLandedState();
             Engage.ApproachSpot = EncircleSpot;
             // Town gates stay shut to monsters until broken (P4-39).
             if (Mover)
@@ -128,6 +135,18 @@ namespace GuildMaster.Monsters
             Fsm.ChangeState(WanderState);
         }
 
+        /// <summary>
+        /// The dragon (P4-93, <see cref="Dragon"/>): alone, with no nest — where it is set up is its lair — asleep. Only its
+        /// skill's first cooldown is drawn at random (<c>DragonService</c> sets it up on a stream of its own).
+        /// </summary>
+        public void SetupDragon(MonsterDefinition def)
+        {
+            Prepare(def, null, false, false, $"M_{++s_counter:0000}");
+            Finish(null);
+            _senseTimer = SenseInterval;
+            Fsm.ChangeState(DragonSleep);
+        }
+
         /// <summary>Who it is and its base numbers, at its nest's birth level, wearing nothing (no random draws).</summary>
         void Prepare(MonsterDefinition def, Nest home, bool boss, bool ranged, string id, int rare = -1)
         {
@@ -139,7 +158,7 @@ namespace GuildMaster.Monsters
             InHorde = false;
             // A region lord (P4-83) is always its lair's boss, under its own name.
             IsBoss = boss || def.isRegionLord;
-            DisplayName = def.isRegionLord ? def.displayName : boss ? MonsterBoss.Name(def.displayName, def.bossName)
+            DisplayName = def.isRegionLord || def.isDragon ? def.displayName : boss ? MonsterBoss.Name(def.displayName, def.bossName)
                         : rare >= 0 ? RareMonster.Name(rare, def.displayName) : def.displayName;
             name = $"{def.displayName}[{UnitId}]";
             Stats = new CombatStats
@@ -156,7 +175,13 @@ namespace GuildMaster.Monsters
                 Stats.AttackCooldown *= 1.2f;
                 if (!string.IsNullOrEmpty(def.rangedVariantName)) DisplayName = def.rangedVariantName;
             }
-            if (def.isRegionLord)
+            if (def.isDragon)
+            {
+                Stats.MaxHp *= Dragon.HpMultiplier;
+                Stats.Attack *= Dragon.AttackMultiplier;
+                Stats.Defense += Dragon.DefenseBonus;
+            }
+            else if (def.isRegionLord)
             {
                 Stats.MaxHp *= RegionLords.HpMultiplier;
                 Stats.Attack *= RegionLords.AttackMultiplier;
@@ -182,7 +207,7 @@ namespace GuildMaster.Monsters
             // Own level (user decision 2026-09-22): born higher the farther out the nest lies.
             _unlevelledStats = Stats;
             // A lord is born beyond the ordinary cap (P4-83), and never grows (it is already past the cap).
-            Level = def.isRegionLord ? RegionLords.Level
+            Level = def.isRegionLord ? RegionLords.Level : def.isDragon ? Dragon.Level
                 : Mathf.Min(MonsterLevel.MaxLevel, (home != null ? home.BirthLevel : 1) + (boss ? MonsterBoss.LevelBonus : 0));
             _lastFightTime = float.NegativeInfinity;
             Exp = 0;
@@ -200,12 +225,21 @@ namespace GuildMaster.Monsters
             var def = Def;
             RefreshStats(fullHeal: true);
             var art = ImportedArt(def, IsBoss, IsRangedVariant);
-            Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
+            if (def.isDragon) ShowPose(DragonPose.Sleeping, force: true);
+            else Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
             // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
             var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
             // A rare variant shines in its own colour instead of the land's (P4-85).
-            Visual.SetTint(IsRare ? RareMonster.Tint(RareVariant) : baseTint * def.artTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
-            GetComponent<HealthBar>().Init(this, 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
+            // The dragon keeps its own colours wherever it is (P4-93).
+            Visual.SetTint(def.isDragon ? Color.white
+                : IsRare ? RareMonster.Tint(RareVariant) : baseTint * def.artTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
+            if (!def.isDragon)
+            {
+                var bar = GetComponent<HealthBar>();
+                bar.Init(this, 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
+                bar.AlwaysVisible = false; // a pooled body may have been the dragon's
+                _poseShown = false;
+            }
             GetComponent<FogHideable>().Refresh();
             Engage.Clear();
             Engage.GiveUpDistance = def.leashRadius;
@@ -223,9 +257,10 @@ namespace GuildMaster.Monsters
             return art != null ? art : ArtLibrary.Monster(ranged && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
         }
 
-        /// <summary>How this kind is drawn (imported art, or the generated picture).</summary>
+        /// <summary>How this kind is drawn (imported art, or the generated picture; the dragon standing, P4-93).</summary>
         public static Sprite ArtFor(MonsterDefinition def, bool boss, bool ranged)
-            => ImportedArt(def, boss, ranged) is { } art ? art : PixelArt.Monster(def);
+            => def != null && def.isDragon ? DragonArt.Anim(DragonPose.Standing).Idle[0]
+             : ImportedArt(def, boss, ranged) is { } art ? art : PixelArt.Monster(def);
 
         /// <summary>The terrain region of its nest (or of where it appeared, when it has none).</summary>
         Region RegionOfHome(Nest home)
@@ -240,6 +275,42 @@ namespace GuildMaster.Monsters
         public bool IsBoss { get; private set; }
         /// <summary>One of the four region lords (P4-83, <see cref="RegionLords"/>); always also its lair's boss.</summary>
         public bool IsRegionLord => Def != null && Def.isRegionLord;
+        /// <summary>The dragon (P4-93, <see cref="Dragon"/>).</summary>
+        public bool IsDragon => Def != null && Def.isDragon;
+        /// <summary>On the wing (P4-93): only shots reach it.</summary>
+        public override bool IsAirborne => IsDragon && IsAlive && Fsm != null && Fsm.Current == DragonFlight;
+        /// <summary>Damage shots have done it since it last took off (P4-93: enough brings it down, <see cref="Dragon.ShouldLand"/>).</summary>
+        internal float AirDamage;
+        /// <summary>How the dragon is drawn now (P4-93).</summary>
+        public DragonPose Pose { get; private set; }
+        bool _poseShown;
+
+        /// <summary>Draws the dragon as it is now: on the wing above everything on the ground, its health bar over its head.</summary>
+        internal void ShowPose(DragonPose pose, bool force = false)
+        {
+            if (!force && _poseShown && Pose == pose) return;
+            Pose = pose;
+            _poseShown = true;
+            Visual.InitAnimated(DragonArt.Anim(pose), Scale);
+            Visual.SortingBoost = pose == DragonPose.Flying ? FlyingSortingBoost : 0;
+            var bar = GetComponent<HealthBar>();
+            bar.Init(this, DragonArt.Top(pose) * Scale + 0.2f, new Color(0.9f, 0.25f, 0.2f));
+            bar.AlwaysVisible = pose != DragonPose.Sleeping;
+        }
+
+        /// <summary>Above anything standing in the rows south of it (a row is 8 orders), still under the fog.</summary>
+        const int FlyingSortingBoost = 1200;
+
+        /// <summary>Where its fire leaves its mouth now (the way it faces, the pose it is in).</summary>
+        public Vector2 MouthPosition
+        {
+            get
+            {
+                var m = DragonArt.Mouth(Pose) * Scale;
+                if (Visual != null && Visual.Body != null && Visual.Body.flipX) m.x = -m.x;
+                return Position + m;
+            }
+        }
         /// <summary>Marching with a sudden incident's horde (P4-85, set and cleared by <see cref="MigrationService"/>).</summary>
         internal bool InHorde;
         /// <summary>Which rare variant it is (P4-85, <see cref="RareMonster"/>), or -1 for an ordinary member of its kind.</summary>
@@ -304,7 +375,7 @@ namespace GuildMaster.Monsters
         /// <summary>What killing this one is worth.</summary>
         public int ExpWorth => Def == null ? 0
             : MonsterLevel.ExpWorth(Def.expValue, Level)
-              * (IsRegionLord ? RegionLords.ExpMultiplier : IsBoss ? MonsterBoss.ExpMultiplier : IsRare ? RareMonster.ExpMultiplier : 1);
+              * (IsDragon ? Dragon.ExpMultiplier : IsRegionLord ? RegionLords.ExpMultiplier : IsBoss ? MonsterBoss.ExpMultiplier : IsRare ? RareMonster.ExpMultiplier : 1);
         CombatStats _unlevelledStats;
 
         /// <summary>Base stats = the species (and ranged variant) scaled by level; gear goes on top.</summary>
@@ -342,7 +413,7 @@ namespace GuildMaster.Monsters
         /// </summary>
         internal void GrowWithTheLand()
         {
-            if (!IsAlive || Level >= MonsterLevel.MaxLevel || Def.isRegionLord) return;
+            if (!IsAlive || Level >= MonsterLevel.MaxLevel || Def.isRegionLord || Def.isDragon) return;
             Level++;
             Exp = Mathf.Min(Exp, ExpToNext - 1);
             ApplyLevel();
@@ -456,6 +527,11 @@ namespace GuildMaster.Monsters
         public override void ForceTarget(Unit target)
         {
             if (!IsAlive || target == null || !target.IsAlive || Fsm.Current == FleeState) return;
+            if (IsDragon)
+            {
+                DragonStates.Provoke(this, target);
+                return;
+            }
             // Taunts and pack calls hold for a few seconds before normal retargeting resumes.
             Engage.Force(target, 4f);
             if (Fsm.Current != EngageState) Fsm.ChangeState(EngageState);
@@ -488,6 +564,8 @@ namespace GuildMaster.Monsters
         public override bool IsHostileTo(Unit other)
         {
             if (other == null || other == this || !other.IsAlive) return false;
+            // The dragon asleep threatens nobody (P4-93): raiders creep past it to the hoard; only a blow or a hunt wakes it.
+            if (IsDragon && Fsm.Current == DragonSleep) return false;
             // Residents at home drive intruders (other species, guild units) out of their territory.
             if (IsDefendingTerritory && Home.IsIntruder(other)) return true;
             // Every other species is an enemy (P4-45, user decision 2026-09-22: goblins and skulls
@@ -720,6 +798,8 @@ namespace GuildMaster.Monsters
 
         void Sense()
         {
+            // The dragon looks round in its own states (P4-93: asleep it sees nothing, on the wing it sees from the sky).
+            if (IsDragon) return;
             if (Fsm.Current == FleeState || Fsm.Current == LureState || Fsm.Current == RegroupState) return;
             // Raiders march together; they do not scatter from predators in their own wave.
             var predator = DefaultStateOverride == null || DefaultStateOverride == RoamState ? FindPredator() : null;
@@ -827,6 +907,11 @@ namespace GuildMaster.Monsters
 
         protected override void OnDamaged(float amount, Unit source)
         {
+            if (IsDragon)
+            {
+                DragonStates.OnHit(this, amount, source);
+                return;
+            }
             AlarmPack(source);
             // Retaliate immediately unless already fighting something.
             if (source != null && source.IsAlive && source.IsTargetableBy(this) && Fsm.Current != EngageState && Fsm.Current != FleeState
@@ -852,6 +937,12 @@ namespace GuildMaster.Monsters
             else if (killer is Monster rival) rival.GainKillExp(ExpWorth);
             Home?.OnMemberDied(this, killer);
             Roaming?.OnMemberDied(this);
+            // The dragon falls out of the sky and lies where it fell while it fades (P4-93).
+            if (IsDragon)
+            {
+                Visual.Init(DragonArt.Corpse(), Scale);
+                _poseShown = false;
+            }
         }
 
         static readonly System.Collections.Generic.List<ItemStack> s_noLoot = new();
@@ -1010,7 +1101,7 @@ namespace GuildMaster.Monsters
         State<Monster>[] AllStates => _allStates ??= new State<Monster>[]
         {
             WanderState, EngageState, FleeState, LureState, ReturnState, RaidState, MigrateState, RoamState,
-            PickupState, RegroupState, GateBreakState, VillageRaidState,
+            PickupState, RegroupState, GateBreakState, VillageRaidState, DragonSleep, DragonFlight, DragonLanded,
         };
 
         internal State<Monster> StateNamed(string name)
@@ -1052,7 +1143,7 @@ namespace GuildMaster.Monsters
             var pool = Services.Get<PoolService>();
             var m = pool.Spawn<Monster>(PoolKey, new Vector2(s.unit.x, s.unit.y));
             m.Prepare(def, home, s.boss, s.ranged, s.id, s.rare);
-            m.Level = Mathf.Clamp(s.level, 1, def.isRegionLord ? RegionLords.Level : MonsterLevel.MaxLevel);
+            m.Level = Mathf.Clamp(s.level, 1, def.isRegionLord ? RegionLords.Level : def.isDragon ? Dragon.Level : MonsterLevel.MaxLevel);
             m.Exp = s.exp;
             m.TierExp = s.tier_exp;
             m.ApplyLevel();

@@ -33,7 +33,7 @@ namespace GuildMaster.Units
                 var current = engage?.Target;
                 foreach (var u in near)
                 {
-                    if (u == self) continue;
+                    if (u == self || !Combat.CanReach(self, u)) continue;
                     // Scored first: the filter (a line-of-sight walk) only matters for whoever would win.
                     float s = Score(self, u, tier, current);
                     if (s <= bestScore) continue;

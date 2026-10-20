@@ -43,6 +43,13 @@ namespace GuildMaster.Units
 
         public static float Distance(Unit a, Unit b) => Vector2.Distance(a.Position, b.Position);
 
+        /// <summary>
+        /// Whether the attacker's blows can reach the target at all (P4-93, user decision 2026-10-20): something on the
+        /// wing is hit by shots only; once it comes down, by anyone. No attacker (a trap, a disaster) reaches anything.
+        /// </summary>
+        public static bool CanReach(Unit attacker, Unit target)
+            => target == null || !target.IsAirborne || attacker == null || attacker.Stats.IsRanged;
+
         public static bool InRange(Unit attacker, Unit target)
             => Distance(attacker, target) <= attacker.Stats.AttackRange + ContactPadding + target.Radius;
 
@@ -68,7 +75,7 @@ namespace GuildMaster.Units
         public static void ApplyHit(Unit attacker, Unit target)
         {
             attacker?.BreakStealth(); // hitting someone gives the hiding place away (P4-19)
-            if (target == null || !target.IsAlive) return;
+            if (target == null || !target.IsAlive || !CanReach(attacker, target)) return;
             var rng = GameRandom.Shared;
             float atk = attacker != null ? attacker.Stats.Attack : 5f;
             float raw = atk * rng.Range(0.9f, 1.1f);
@@ -93,6 +100,8 @@ namespace GuildMaster.Units
     {
         /// <summary>How long a target dropped as unreachable is ignored.</summary>
         const float IgnoreSeconds = 6f;
+        /// <summary>How long one gone up out of reach is ignored (it may land in a moment).</summary>
+        const float AirborneIgnoreSeconds = 1f;
         /// <summary>Closing in by less than this does not count as progress in a chase.</summary>
         const float ChaseProgress = 0.3f;
 
@@ -261,6 +270,8 @@ namespace GuildMaster.Units
 
             float dist = Combat.Distance(_self, Target);
             if (dist > GiveUpDistance) { Clear(); _self.Mover.Stop(); return EngageStatus.Lost; }
+            // Took to the air out of this unit's reach (P4-93): looked at again once it is down.
+            if (!Combat.CanReach(_self, Target)) { Ignore(Target, AirborneIgnoreSeconds); Clear(); _self.Mover.Stop(); return EngageStatus.Lost; }
 
             if (_self.IsStunned || IsChanneling()) return EngageStatus.Attacking;
 

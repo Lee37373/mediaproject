@@ -100,6 +100,12 @@ namespace GuildMaster.Units
         /// <summary>Combat intelligence tier (target choice, chase give-up, skill timing).</summary>
         public virtual CombatTier Tier => CombatTier.Novice;
 
+        /// <summary>
+        /// In the air (P4-93: the dragon on the wing): only shots reach it (<see cref="Combat.CanReach"/>), crowds do not
+        /// push it, and ground hazards do not touch it.
+        /// </summary>
+        public virtual bool IsAirborne => false;
+
         /// <summary>Fight behaviour, if this unit has one (debug gizmos).</summary>
         public virtual Engagement CombatEngagement => null;
         /// <summary>Current behaviour state for debug labels.</summary>

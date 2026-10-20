@@ -313,7 +313,8 @@ namespace GuildMaster.Adventurers
         float _formationRepath;
         float _campCheck;
 
-        public override string Label => Owner != null && Owner.CurrentQuest is { Type: QuestType.Disaster } ? "재해 대응" : "사냥 중";
+        public override string Label => Owner != null && Owner.CurrentQuest is { Type: QuestType.Treasure } ? "보물 털기"
+                                      : Owner != null && Owner.CurrentQuest is { Type: QuestType.Disaster } ? "재해 대응" : "사냥 중";
 
         public override void Enter()
         {
@@ -378,6 +379,12 @@ namespace GuildMaster.Adventurers
             if (a.CurrentQuest.Type == QuestType.Disaster)
             {
                 WorkTheDisaster(a, dt);
+                return;
+            }
+            // The dragon's hoard (P4-93): to the pile, a hand in it, and home (asleep, it may wake).
+            if (a.CurrentQuest.Type == QuestType.Treasure)
+            {
+                RaidTheHoard(a, dt);
                 return;
             }
             // A ruin whose way down the guild has found (P4-85): down and through the halls to the treasure.
@@ -458,6 +465,33 @@ namespace GuildMaster.Adventurers
             }
             if (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, chest) > 0.5f)
                 a.Mover.SetDestination(chest, 0.8f);
+        }
+
+        // ---------------- The dragon's hoard (P4-93) ----------------
+
+        float _hoardTry;
+
+        /// <summary>The party walks to the lair (followers keep formation); whoever reaches the pile first takes from it.</summary>
+        void RaidTheHoard(Adventurer a, float dt)
+        {
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out _)) return;
+                if (party.PaceLeader(a)) return;
+            }
+            if (!Services.TryGet<Dragons.DragonService>(out var dragon) || !dragon.HasLair) return;
+            var lair = dragon.Lair;
+            if (Vector2.Distance(a.Position, lair) <= Monsters.Dragon.TakeReach)
+            {
+                if (a.Mover.IsMoving) a.Mover.Stop();
+                _hoardTry -= dt;
+                if (_hoardTry > 0f) return;
+                _hoardTry = 0.5f;
+                if (dragon.Take(a)) a.Say("드래곤의 보물이다! 어서 챙겨!");
+                return;
+            }
+            if (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, lair) > 0.8f)
+                a.Mover.SetDestination(lair, Monsters.Dragon.TakeReach * 0.6f);
         }
 
         // ---------------- Natural disasters (P4-72) ----------------

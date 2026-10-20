@@ -56,16 +56,20 @@ namespace GuildMaster.Adventurers
         {
             var town = AdvCtx.Town;
             Services.TryGet<FogOfWar>(out var fog);
+            // One it cannot reach (the dragon on the wing, for a sword) it leaves to those who can (P4-93).
             return UnitRegistry.FindNearest(a.Position, 60f,
-                u => u is Monster m && m.IsAlive && IsIntruder(town, m) && (fog == null || fog.IsVisibleRaw(m.Position)));
+                u => u is Monster m && m.IsAlive && IsIntruder(town, m) && Combat.CanReach(a, m) && (fog == null || fog.IsVisibleRaw(m.Position)));
         }
 
         /// <summary>Just outside the wall counts too once it fights us there: it stops bashing the gate then.</summary>
         const float WallReach = 4f;
+        /// <summary>The dragon on the wing burns the town from beyond the wall (P4-93): this close, it is an intruder.</summary>
+        const float DragonReach = 10f;
 
         static bool IsIntruder(TownService town, Monster m)
         {
             if (town.IsInTown(m.Position) || m.IsBreakingGate) return true;
+            if (m.IsDragon && m.IsAirborne && town.WithinReachOfTown(m.Position, DragonReach)) return true;
             return m.CombatEngagement?.Target is Unit t && t.Faction == Faction.Guild && town.WithinReachOfTown(m.Position, WallReach);
         }
 

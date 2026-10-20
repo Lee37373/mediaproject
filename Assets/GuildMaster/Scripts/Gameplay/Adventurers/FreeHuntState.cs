@@ -173,9 +173,11 @@ namespace GuildMaster.Adventurers
                 return;
             }
 
-            // Waiting at the gate for company (user request: hunt as a party).
+            // Waiting at the gate for company (user request: hunt as a party) — fighting what comes at the town first
+            // (P4-93: archers waiting by the gate watched the dragon burn the smithy).
             if (_band != null && _band.Mustering)
             {
+                if (a.HandleCombat(dt)) return;
                 if (!a.Mover.IsMoving && Vector2.Distance(a.Position, AdvCtx.GuildDoor) > 2f)
                     a.Mover.SetDestination(AdvCtx.GuildDoor, 1.5f);
                 return;
@@ -185,6 +187,8 @@ namespace GuildMaster.Adventurers
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
             // Night out on a hunt: the band may make camp, then head home in the morning (P4-66).
             if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;
+            // A brave or greedy leader may make for the dragon's hoard instead (P4-93); the band follows it there.
+            if (Services.TryGet<Dragons.DragonService>(out var dragon) && dragon.RaidTick(a, _startHour, _band == null || _band.Leader == a)) return;
 
             _searchTimer -= dt;
             if (_searchTimer <= 0f)

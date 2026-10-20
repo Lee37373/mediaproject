@@ -90,6 +90,10 @@ namespace GuildMaster.Data
         [Tooltip("The kind that guards its lair (and breeds there while the lord lives).")]
         public MonsterDefinition lairEscort;
 
+        [Header("Dragon (P4-93)")]
+        [Tooltip("The dragon: one, nest-less, asleep at its lair or on the wing (no habitat), see Monsters/Dragon and Dragon/DragonService.")]
+        public bool isDragon;
+
         [Header("Ecosystem")]
         [Tooltip("Terrain regions this species lives in (P4-58, user decision: habitat by terrain only). " +
                  "Nests, newcomers, migrations and roaming packs keep to them.")]

@@ -93,6 +93,7 @@ namespace GuildMaster.Visuals
             }
             _body.sprite = sprite;
             _anim = null;
+            SortingBoost = 0;
             if (_shadow) _shadow.enabled = true;
             _bodyT.localScale = Vector3.one * scale;
             _shadow.transform.localScale = new Vector3(scale, 0.45f * scale, 1f);
@@ -105,6 +106,12 @@ namespace GuildMaster.Visuals
 
         /// <summary>Asleep by a campfire (P4-66): the body lies on its side, head away from the fire.</summary>
         public bool Lying { get; set; }
+
+        /// <summary>
+        /// Drawn this much above its row's usual order (P4-93: a flying dragon passes over what stands on the ground).
+        /// Reset by <see cref="Init"/>; stays below the fog.
+        /// </summary>
+        public int SortingBoost { get; set; }
 
         /// <summary>Extra transparency on top of the tint (1 = solid). Used by stealth, P4-19.</summary>
         public float Fade { get; set; } = 1f;
@@ -166,7 +173,7 @@ namespace GuildMaster.Visuals
                 _bodyT.localPosition = new Vector3(0f, -0.3f + bob, 0f);
             }
 
-            int order = BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f);
+            int order = BaseSortingOrder + SortingBoost - Mathf.RoundToInt(transform.position.y * 8f);
             _body.sortingOrder = order;
             _shadow.sortingOrder = order - 1;
 

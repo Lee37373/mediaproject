@@ -31,8 +31,12 @@ namespace GuildMaster.Adventurers
         {
             // An incident asks for its own (a rare variant: a full party of its level, P4-85).
             if (q.Incident != null && Incidents.IncidentRules.Requirement(q.Incident) is { } own) return own;
-            return IsLordWork(q) ? Monsters.RegionLords.RiskRequirement : RuleBasedDecisionMaker.DangerRequirement(q.Danger);
+            return IsDragonWork(q) ? Monsters.Dragon.RiskRequirement
+                 : IsLordWork(q) ? Monsters.RegionLords.RiskRequirement : RuleBasedDecisionMaker.DangerRequirement(q.Danger);
         }
+
+        /// <summary>A hunt for the dragon (P4-93): beyond a lord, and work for a whole party.</summary>
+        public static bool IsDragonWork(Quests.Quest q) => q?.Species != null && q.Species.isDragon && q.Type == Quests.QuestType.Hunt;
 
         /// <summary>A region lord's quest, or a hunt on a lair whose living lord the guild has seen there (P4-83).</summary>
         public static bool IsLordWork(Quests.Quest q)
@@ -50,7 +54,7 @@ namespace GuildMaster.Adventurers
         /// party that could go, not by one alone. The lord's requirement (90) alone was beyond anyone, so nobody took it.
         /// </summary>
         public static bool IsPartyWork(Quests.Quest q)
-            => q?.Incident != null && Incidents.IncidentRules.IsPartyWork(q.Incident) || IsLordWork(q);
+            => q?.Incident != null && Incidents.IncidentRules.IsPartyWork(q.Incident) || IsLordWork(q) || IsDragonWork(q);
 
         /// <summary>
         /// The party a member reckons with when weighing a quest: those already on it plus itself — and, for party work, as

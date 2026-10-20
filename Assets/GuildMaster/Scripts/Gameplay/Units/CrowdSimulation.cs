@@ -37,7 +37,8 @@ namespace GuildMaster.Units
             for (int i = 0; i < n; i++)
             {
                 var u = UnitRegistry.SlotUnit(i);
-                if (!u.IsAlive) { _push.Add(Vector2.zero); continue; }
+                // Nothing on the ground jostles what flies over it (P4-93).
+                if (!u.IsAlive || u.IsAirborne) { _push.Add(Vector2.zero); continue; }
                 var p = UnitRegistry.SlotPosition(i);
                 float ur = u.Radius, um = u.Mass;
                 int bx = UnitRegistry.BucketOf(p.x), by = UnitRegistry.BucketOf(p.y);
@@ -55,7 +56,7 @@ namespace GuildMaster.Units
                     if (sq >= MaxContact * MaxContact) continue;
                     var o = UnitRegistry.SlotUnit(j);
                     float min = ur + o.Radius;
-                    if (sq >= min * min || !o.IsAlive) continue;
+                    if (sq >= min * min || !o.IsAlive || o.IsAirborne) continue;
                     float dist = Mathf.Sqrt(sq);
                     // Deterministic sideways split for perfectly overlapping units.
                     var dir = dist > 1e-4f ? d / dist : new Vector2(Mathf.Sign(u.GetInstanceID() - o.GetInstanceID()), 0.3f).normalized;
