@@ -39,6 +39,11 @@ namespace GuildMaster.Session
         /// P4-41: 20 so the nearest nest stays outside the town's sight (18) and still has to be found.
         /// </summary>
         public int minNestDistanceFromTown = 20;
+        /// <summary>
+        /// P4-101 (user request 2026-10-21: "you just walk straight"): ridges and rivers on the region borders with 2–3
+        /// passes each, each region's own landforms, dens holding some passes. See <see cref="World.RegionBarriers"/>.
+        /// </summary>
+        public bool landforms = true;
 
         [Header("Fog of War")]
         public float fogTickInterval = 0.1f;

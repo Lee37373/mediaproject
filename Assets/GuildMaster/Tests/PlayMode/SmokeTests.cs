@@ -1330,6 +1330,10 @@ namespace GuildMaster.Tests
                 var open = eco.Nests.First(Outside);
                 yield return Watch(open);
                 MakeKnown(open.Species);
+                // Nobody free to take it before the hour it is settled on: the first den out may hold a pass near town
+                // (P4-101), close enough that someone took it in that hour and it came in as done.
+                var resting = Roster.Members.Where(a => a.IsAlive && a.CurrentQuest == null).ToList();
+                foreach (var a in resting) { a.Data.fatigue = 100f; a.Mover.Stop(); a.ChangeState(a.RestState); }
                 var unclaimed = board.FindById(DebugCommands.PostHunt(open.Species.id, 2, 40, 10, 1, open.WorldPosition.x, open.WorldPosition.y));
                 Assert.That(unclaimed.TargetNest, Is.EqualTo(open),
                     $"the den it was posted against (seen as {intel.SpeciesOf(open)?.id}, count {intel.Get(open).LastCount}, visible {intel.Get(open).VisibleNow}, real {open.Species.id}x{open.Population})");
@@ -1341,6 +1345,7 @@ namespace GuildMaster.Tests
                 foreach (var m in open.Members.ToList()) if (m.IsAlive) m.Perish();
                 yield return WaitFor(() => unclaimed.Status == QuestStatus.Cancelled, 10f);
                 EventBus.Unsubscribe(onFlow);
+                foreach (var a in resting) a.Data.fatigue = 0f;
                 Assert.That(unclaimed.Status, Is.EqualTo(QuestStatus.Cancelled), "an open hunt on a den seen empty comes down");
                 Assert.That(treasury.Gold - otherIncome, Is.EqualTo(gold), "the town's reward is not the guild's to get back");
 
@@ -1477,8 +1482,8 @@ namespace GuildMaster.Tests
         [UnityTest]
         public IEnumerator TownWalls_MoveOut_GatesFollow_TheWayIsCleared_AndAKnownDenHasToGoFirst()
         {
-            // The test seed has no den within reach of even the widest walls; on seed 2 one lies by the first step's.
-            yield return Boot(seed: 2);
+            // A seed with a den by the first step's walls (2 until the landforms of P4-101 moved the dens; 28 since).
+            yield return Boot(seed: 28);
             var expansion = Services.Get<Town.TownExpansion>();
             var construction = Services.Get<Town.ConstructionService>();
             var treasury = Services.Get<Economy.GuildTreasury>();
@@ -1504,7 +1509,7 @@ namespace GuildMaster.Tests
             // A den by the next walls: unfound, it does not hold them back; seen, it has to be cleared first.
             var den = eco.Nests.Where(n => !n.IsEmpty && !n.IsLair && Town.TownExpansionRules.Crowds(n.Cell, c, 15))
                               .OrderBy(n => (n.Cell - c).sqrMagnitude).FirstOrDefault();
-            Assert.That(den, Is.Not.Null, "seed 2 has a den by the first step's walls");
+            Assert.That(den, Is.Not.Null, "seed 28 has a den by the first step's walls");
             Assert.That(den.Discovered, Is.False);
             Assert.That(expansion.CannotExpandReason(), Is.Null, "a den nobody has found does not stop the walls");
             master.Mover.Warp(den.WorldPosition); // right at it: this one lies in a wood, which hides it from outside (P4-48)
@@ -2343,7 +2348,8 @@ namespace GuildMaster.Tests
             for (int x = 6; x < grid.Width - 6 && !found; x++)
             {
                 var c = new Vector2Int(x, y);
-                if (grid.IsWalkable(c) || grid.IsInTown(c) || !grid.TryFindNearestWalkable(c, 3, out var shore)) continue;
+                // Water: the middle of a ridge (P4-101) is as far from open ground, and its far side a long walk round.
+                if (grid.Data[c] != World.TileType.Water || grid.IsInTown(c) || !grid.TryFindNearestWalkable(c, 3, out var shore)) continue;
                 if ((shore - c).magnitude > 3.2f && HuntPointErrorFree(c)) { wet = c; found = true; }
             }
             Assume.That(found, "a pond whose shore is more than three cells off");
@@ -2830,16 +2836,101 @@ namespace GuildMaster.Tests
             return gap;
         }
 
+        /// <summary>
+        /// P4-101 (user request 2026-10-21: "you just walk straight"): the region borders are ridges and rivers with a few
+        /// ways across. Sent to the far side of a ridge, the master walks round by the pass — the walk's shortcuts never cut
+        /// through the rock — and the dens set to hold passes are there, peopled.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Landforms_SentPastARidge_TheMasterWalksRoundByThePass_AndDensHoldPasses()
+        {
+            yield return Boot();
+            var world = Services.Get<World.WorldService>();
+            var map = world.Map;
+            var grid = world.Grid;
+            var eco = Services.Get<EcosystemManager>();
+            var held = map.Passes.Where(p => p.GuardNest >= 0).ToList();
+            Assert.That(held.Count, Is.GreaterThan(0), "dens hold some passes");
+            foreach (var p in held)
+                Assert.That(eco.Nests[p.GuardNest].Population, Is.GreaterThan(0), $"the den by the pass at {p.Cell} is peopled");
+
+            // A pass through a ridge, off the roads, with rock between two points either side of the border beside it.
+            World.PassSite pass = default;
+            Vector2Int from = default, to = default;
+            bool found = false;
+            foreach (var p in map.Passes.Where(p => p.Kind == World.PassKind.MountainPass && p.A != p.B && !p.OnRoad))
+            {
+                var along = new Vector2(-p.Across.y, p.Across.x);
+                foreach (float side in new[] { 18f, -18f })
+                {
+                    var a = Vector2Int.RoundToInt((Vector2)p.Cell - p.Across * 12f + along * side);
+                    var b = Vector2Int.RoundToInt((Vector2)p.Cell + p.Across * 12f + along * side);
+                    if (!grid.TryFindNearestWalkable(a, 3, out a) || !grid.TryFindNearestWalkable(b, 3, out b)) continue;
+                    if (!world.Raycast(World.GridMap.CellToWorld(a), World.GridMap.CellToWorld(b), out _, out _)) continue;
+                    if (map.Passes.Any(o => o.Cell != p.Cell && Vector2.Distance(o.Cell, a) < 30f)) continue;
+                    (pass, from, to, found) = (p, a, b, true);
+                    break;
+                }
+                if (found) break;
+            }
+            Assume.That(found, "a ridge pass with rock either side of it");
+            var path = new System.Collections.Generic.List<Vector2Int>();
+            Assert.That(world.Pathfinder.FindPath(from, to, path), Is.True, $"{from} → {to}");
+            Assert.That(path.Min(c => Vector2.Distance(c, pass.Cell)), Is.LessThan(8f), $"the way round is by the pass at {pass.Cell}");
+
+            var master = Services.Get<PlayerAvatar>();
+            Services.Get<Fog.FogOfWar>().Reveal(World.GridMap.CellToWorld(pass.Cell), 30f); // walking known ground: this is not about exploring
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                master.Mover.Warp(World.GridMap.CellToWorld(from));
+                Assert.That(master.MoveTo(World.GridMap.CellToWorld(to)), Is.True);
+                Clock.SetSpeed(2);
+                float nearest = float.MaxValue;
+                bool inRock = false;
+                float end = Time.realtimeSinceStartup + 40f;
+                while (Time.realtimeSinceStartup < end && Vector2.Distance(master.Position, World.GridMap.CellToWorld(to)) > 1.5f)
+                {
+                    nearest = Mathf.Min(nearest, Vector2.Distance(master.Position, World.GridMap.CellToWorld(pass.Cell)));
+                    if (!grid.IsWalkable(World.GridMap.WorldToCell(master.Position))) inRock = true;
+                    yield return null;
+                }
+                Assert.That(Vector2.Distance(master.Position, World.GridMap.CellToWorld(to)), Is.LessThan(1.5f), "it gets there");
+                Assert.That(nearest, Is.LessThan(8f), "by the pass");
+                Assert.That(inRock, Is.False, "never inside the rock");
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+        }
+
         /// <summary>Open ground about 40 cells out, well away from any den.</summary>
         static bool GroundFarOut(out Vector2 spot)
         {
             spot = default;
             var world = Services.Get<World.WorldService>();
             var eco = Services.Get<EcosystemManager>();
+            var grid = world.Grid;
+            // Open round about, as far as a campfire's light: the grassland's rim is a ridge or a river now (P4-101),
+            // and a camp against the rocks had no spot in its light a monster could come from.
+            bool Open(Vector2Int c)
+            {
+                int cells = 0, open = 0, wood = 0;
+                for (int dy = -10; dy <= 10; dy++)
+                for (int dx = -10; dx <= 10; dx++)
+                {
+                    if (dx * dx + dy * dy > 100) continue;
+                    var at = c + new Vector2Int(dx, dy);
+                    if (grid.IsHardCover(at.x, at.y)) return false;
+                    cells++;
+                    if (grid.IsWalkable(at)) open++;
+                    if (grid.IsForest(at)) wood++;
+                }
+                return open >= cells * 0.8f && wood <= cells * 0.25f;
+            }
+            foreach (float r in new[] { 40f, 36f, 44f, 32f })
             for (int k = 0; k < 16; k++)
             {
                 var d = new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f));
-                if (!world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(world.TownCenterWorld + d * 40f), 3, out var c)) continue;
+                if (!grid.TryFindNearestWalkable(World.GridMap.WorldToCell(world.TownCenterWorld + d * r), 3, out var c) || !Open(c)) continue;
                 var p = World.GridMap.CellToWorld(c);
                 if (eco.Nests.Any(n => Vector2.Distance(n.WorldPosition, p) < 20f)) continue;
                 spot = p;
@@ -3136,9 +3227,14 @@ namespace GuildMaster.Tests
             };
             Quest Hunt(string id, Vector2 at, int count) => new(id, HuntDraft(at, count), Clock.TotalHours);
             var taker = members.Last(a => a != veteran && a != rookie);
-            taker.Data.level = 3;
             taker.Data.gearTier = 0;
-            taker.RecalculateStats(fullHeal: true);
+            // Lv3, or as little past it as the near ring allows for a member who is not a newcomer (the test seed's nearest
+            // den lies 22 cells out since P4-101, 46 before: the young 40 cells out are level 3, not 1).
+            for (taker.Data.level = 3; ; taker.Data.level++)
+            {
+                taker.RecalculateStats(fullHeal: true);
+                if (!taker.IsNewcomer || taker.Data.level >= 6) break;
+            }
             (taker.Data.potions, taker.Data.fatigue, taker.Data.stress) = (2, 0f, 0f);
             Assume.That(taker.IsNewcomer, Is.False);
             Services.Get<GuildIntel>().MarkKnown(skull);

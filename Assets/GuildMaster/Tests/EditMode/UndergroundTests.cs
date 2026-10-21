@@ -25,7 +25,7 @@ namespace GuildMaster.Tests
                 {
                     Width = balance.mapWidth, Height = balance.mapHeight, Seed = 20260920, TownHalfSize = balance.townHalfSize,
                     NestCount = balance.nestCount, MinNestDistanceFromTown = balance.minNestDistanceFromTown,
-                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount,
+                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount, Landforms = balance.landforms,
                 });
                 s_map = Underground.Extend(s_surface, 20260920);
             }

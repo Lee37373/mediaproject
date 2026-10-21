@@ -85,6 +85,7 @@ namespace GuildMaster.Session
                 MinNestDistanceFromTown = Balance.minNestDistanceFromTown,
                 InnerHalfSize = Balance.innerHalfSize,
                 InnerNestCount = Balance.innerNestCount,
+                Landforms = Balance.landforms,
             });
             // The ruins' dungeons (P4-85): an underground band above the surface, from its own stream of the seed.
             map = Underground.Extend(map, Seed);

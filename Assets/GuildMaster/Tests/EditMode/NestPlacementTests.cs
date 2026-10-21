@@ -107,7 +107,7 @@ namespace GuildMaster.Tests
                     NestCount = balance.nestCount,
                     MinNestDistanceFromTown = balance.minNestDistanceFromTown,
                     InnerHalfSize = balance.innerHalfSize,
-                    InnerNestCount = balance.innerNestCount,
+                    InnerNestCount = balance.innerNestCount, Landforms = balance.landforms,
                 });
                 var assignment = EcosystemManager.AssignSpecies(db.monsters, map.Nests, new GameRandom(seed));
                 for (int i = 0; i < assignment.Count; i++)
@@ -135,7 +135,7 @@ namespace GuildMaster.Tests
                 {
                     Width = balance.mapWidth, Height = balance.mapHeight, Seed = 7, TownHalfSize = balance.townHalfSize,
                     NestCount = balance.nestCount, MinNestDistanceFromTown = balance.minNestDistanceFromTown,
-                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount,
+                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount, Landforms = balance.landforms,
                 });
                 var c = map.TownCenter;
                 int inner = map.Nests.Count(n => Mathf.Abs(n.Cell.x - c.x) <= balance.innerHalfSize && Mathf.Abs(n.Cell.y - c.y) <= balance.innerHalfSize);

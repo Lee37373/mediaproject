@@ -34,9 +34,11 @@ namespace GuildMaster.World
         /// P4-81: and this many per cell of straight distance, so long walks on the 512 map are not cut
         /// short — a forest-loving band's 137-cell trip needed 20,554 nodes, just over the old flat cap,
         /// and failed every time. P4-85: 200 → 300 — from the town to a ruin 256 cells out in the desert took
-        /// 51,290 nodes (cap 51,200; the way back 36,620). 360 cells (half the map's diagonal) → 108,000.
+        /// 51,290 nodes (cap 51,200; the way back 36,620). P4-101: 300 → 500 — the walk from the town to a den
+        /// deep in the swamp or the snow (slow ground, round the ridges and rivers) took up to 1.6 times the cap
+        /// (and 1.2 before the barriers: 2–4 of 64 dens out of reach on every map). 360 cells → 180,000 (~80 ms).
         /// </summary>
-        public const float NodesPerCellOfDistance = 300f;
+        public const float NodesPerCellOfDistance = 500f;
 
         /// <summary>The cap of the search in progress.</summary>
         int _cap;

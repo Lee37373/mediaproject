@@ -52,6 +52,7 @@ namespace GuildMaster.World
             map.Gates.AddRange(surface.Gates);
             map.Nests.AddRange(surface.Nests);
             map.EdgeSpawnCells.AddRange(surface.EdgeSpawnCells);
+            map.Passes.AddRange(surface.Passes);
             for (int i = w * h; i < map.Tiles.Length; i++) map.Tiles[i] = TileType.Void;
 
             var rng = StreamFor(seed);

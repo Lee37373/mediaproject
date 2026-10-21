@@ -245,7 +245,7 @@ namespace GuildMaster.World
             Overlay(ref c, _forest, u, v, forestPal.ForestFloor, forestPal.ForestEdge, 0.05f, 0.5f);
             Overlay(ref c, _sand, u, v, wetPal.Sand, wetPal.SandEdge, 0.05f, 0.45f);
             WaterOverlay(ref c, u, v, wetPal);
-            Overlay(ref c, _road, u, v, Road, RoadEdge, 0.07f, 0.3f);
+            if (!BridgeOverlay(ref c, u, v, cx, cy)) Overlay(ref c, _road, u, v, Road, RoadEdge, 0.07f, 0.3f);
             MountainOverlay(ref c, u, v);
             return c;
         }
@@ -385,6 +385,35 @@ namespace GuildMaster.World
             float fx = bx - Mathf.Floor(bx), fy = ly * 2f - Mathf.Floor(ly * 2f);
             if (fx < 0.07f || fy < 0.07f) return RuinLine;
             return RuinBlock;
+        }
+
+        /// <summary>
+        /// A road with water either side is a wooden bridge (P4-101: the bridges over the rivers, and the gates' roads
+        /// where they cross a river or a lake): planks across the way, dark rails along its sides, straight edges.
+        /// </summary>
+        bool BridgeOverlay(ref Color32 c, float u, float v, int cx, int cy)
+        {
+            if (_road[cy * _w + cx] == 0) return false;
+            bool northward = WaterBeside(cx, cy, 1, 0) && WaterBeside(cx, cy, -1, 0);
+            if (!northward && !(WaterBeside(cx, cy, 0, 1) && WaterBeside(cx, cy, 0, -1))) return false;
+            float f = Field(_road, u, v, out _);
+            if (f < 0.5f) return true; // the water beside the deck
+            if (f < 0.62f) { c = WoodLine; return true; }
+            float along = (northward ? v : u) * 3f;
+            float plank = along - Mathf.Floor(along);
+            c = plank < 0.12f ? WoodLine : (Mathf.FloorToInt(along) & 1) == 0 ? Wood : WoodDark;
+            return true;
+        }
+
+        /// <summary>Water within two cells this way, with only road between.</summary>
+        bool WaterBeside(int x, int y, int dx, int dy)
+        {
+            for (int k = 1; k <= 2; k++)
+            {
+                if (At(_water, x + dx * k, y + dy * k) != 0) return true;
+                if (At(_road, x + dx * k, y + dy * k) == 0) return false;
+            }
+            return false;
         }
 
         Color32 GatePixel(float lx, float ly, int cx, int cy)

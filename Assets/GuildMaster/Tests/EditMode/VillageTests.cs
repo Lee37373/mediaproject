@@ -26,7 +26,7 @@ namespace GuildMaster.Tests
                 {
                     Width = balance.mapWidth, Height = balance.mapHeight, Seed = seed, TownHalfSize = balance.townHalfSize,
                     NestCount = balance.nestCount, MinNestDistanceFromTown = balance.minNestDistanceFromTown,
-                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount,
+                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount, Landforms = balance.landforms,
                 });
             }
             finally { Object.DestroyImmediate(balance); }

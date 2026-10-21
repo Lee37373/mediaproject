@@ -18,6 +18,11 @@ namespace GuildMaster.World
         /// </summary>
         public int InnerHalfSize;
         public int InnerNestCount;
+        /// <summary>
+        /// P4-101: ridges and rivers on the region borders with passes, each region's own landforms, and dens holding
+        /// some of the passes. Off = the map as before (small test maps).
+        /// </summary>
+        public bool Landforms;
     }
 
     /// <summary>
@@ -113,8 +118,10 @@ namespace GuildMaster.World
             float ox = rng.Range(0f, 10000f), oy = rng.Range(0f, 10000f);
             float mx = rng.Range(0f, 10000f), my = rng.Range(0f, 10000f);
             // Regions (P4-55): grassland round the town, then by direction desert, snow, swamp and wasteland.
+            float rotation = rng.Range(0f, Mathf.PI * 2f);
+            if (s.Landforms) rotation = DiagonalBorders(rotation);
             var layout = TerrainRegions.Layout(new Vector2(s.Width / 2f, s.Height / 2f), Mathf.Min(s.Width, s.Height),
-                rng.Range(0f, Mathf.PI * 2f), rng.Range(0f, 5000f), rng.Range(0f, 5000f));
+                rotation, rng.Range(0f, 5000f), rng.Range(0f, 5000f));
             map.RegionLayout = layout;
 
             // 1. Terrain from height + moisture noise; each region has its own mix (few trees in the
@@ -137,19 +144,34 @@ namespace GuildMaster.World
                 else t = TileType.Grass;
                 map[x, y] = t;
             }
+            // The regions as laid out, before snapping: the barriers run on these smooth borders (P4-101).
+            var raw = s.Landforms ? (Region[])map.Regions.Clone() : null;
             // Regions snap to the terrain before roads and the town clearing cut features in two.
             SnapRegionsToFeatures(map);
 
-            // 2. Town: cleared surroundings, floor, walls and 4 gates.
             var c = new Vector2Int(s.Width / 2, s.Height / 2);
+            // P4-101 draws from its own stream, so the draws below stay as they were on a map without it.
+            var land = new GameRandom(s.Seed ^ 0x51F1);
+            RegionBarriers.Layout borders = null;
+            if (s.Landforms)
+            {
+                borders = RegionBarriers.Lay(map, raw, c, s.TownHalfSize, land);
+                RegionLandforms.Lay(map, raw, borders, c, s.TownHalfSize, land);
+            }
+
+            // 2. Town: cleared surroundings, floor, walls and 4 gates.
             TownWalls.Lay(map, c, s.TownHalfSize);
             for (int g = 0; g < TownWalls.GateDirections.Length; g++)
                 CarveRoad(map, map.Gates[g] + TownWalls.GateDirections[g], TownWalls.GateDirections[g], rng);
             TownWalls.LayPlazaRoads(map);
+            if (s.Landforms) RegionBarriers.OpenPasses(map, raw, borders, c, s.TownHalfSize, land);
 
             // Trees on forest cells (partial cover). Deterministic from the seed.
             for (int i = 0; i < map.Tiles.Length; i++)
                 map.Trees[i] = map.Tiles[i] == TileType.Forest && rng.Chance(0.55f);
+
+            // Land the barriers and landforms shut in gets a way out (smaller pockets are filled at the end).
+            if (s.Landforms) ConnectStranded(map, c, StrandedMinCells);
 
             // 3. Reachability from town.
             var dist = FloodDistances(map, c);
@@ -173,9 +195,13 @@ namespace GuildMaster.World
             // the town; the inner ones are placed first, then the outer land, then anywhere left.
             bool split = s.InnerHalfSize > 0 && s.InnerNestCount > 0;
             bool Inner(Vector2Int cell) => Mathf.Abs(cell.x - c.x) <= s.InnerHalfSize && Mathf.Abs(cell.y - c.y) <= s.InnerHalfSize;
+            // P4-101: dens holding passes come first; they count towards the inner and outer shares like any other.
+            if (s.Landforms) PlaceGuards(map, dist, c, s, land);
             if (split)
             {
-                PlaceNests(map, candidates, Mathf.Min(s.InnerNestCount, s.NestCount), dist, Inner);
+                int outerGuards = 0;
+                foreach (var n in map.Nests) if (!Inner(n.Cell)) outerGuards++;
+                PlaceNests(map, candidates, Mathf.Min(s.InnerNestCount + outerGuards, s.NestCount), dist, Inner);
                 PlaceNests(map, candidates, s.NestCount, dist, cell => !Inner(cell));
             }
             PlaceNests(map, candidates, s.NestCount, dist, null);
@@ -218,6 +244,163 @@ namespace GuildMaster.World
                     Region = map.RegionOf(cell.x, cell.y),
                     DistanceFromTown = dist[map.Index(cell.x, cell.y)],
                 });
+            }
+        }
+
+        /// <summary>
+        /// P4-101: the borders between the outer regions turned onto the diagonals (from a rotation drawn anywhere, so each
+        /// seed still puts the regions elsewhere): the gates' straight roads run between them instead of along a ridge.
+        /// </summary>
+        static float DiagonalBorders(float rotation)
+        {
+            const float quarter = Mathf.PI / 2f;
+            int k = Mathf.FloorToInt(rotation / quarter);
+            float within = rotation / quarter - k;
+            return k * quarter + quarter / 2f + (within - 0.5f) * 0.3f;
+        }
+
+        /// <summary>A patch shut in by the barriers and landforms at least this big gets a way out; smaller ones are filled.</summary>
+        const int StrandedMinCells = 80;
+        /// <summary>A den holding a pass (P4-101) for this share of them, this far past the pass on the side away from the town.</summary>
+        const float GuardChance = 0.6f, GuardMin = 8f, GuardMax = 13f;
+
+        /// <summary>
+        /// P4-101: walkable land of at least <paramref name="minCells"/> the town cannot reach gets the shortest way through
+        /// to ground it can (rocks cut back to grass, water forded with sand, three cells wide), recorded as a pass within
+        /// its region. Several rounds, as one cut can leave another patch nearer to land now reached.
+        /// </summary>
+        static void ConnectStranded(MapData map, Vector2Int town, int minCells)
+        {
+            int w = map.Width, h = map.Height, n = w * h;
+            var parent = new int[n];
+            var stamp = new int[n];
+            int mark = 0;
+            var patch = new List<int>();
+            var stack = new Stack<int>();
+            var queue = new Queue<int>();
+            for (int round = 0; round < 4; round++)
+            {
+                var dist = FloodDistances(map, town);
+                var seen = new bool[n];
+                bool cut = false;
+                for (int start = 0; start < n; start++)
+                {
+                    if (seen[start] || dist[start] >= 0 || !MapData.IsWalkable(map.Tiles[start])) continue;
+                    patch.Clear();
+                    seen[start] = true;
+                    stack.Push(start);
+                    while (stack.Count > 0)
+                    {
+                        int i = stack.Pop();
+                        patch.Add(i);
+                        int x = i % w, y = i / w;
+                        for (int k = 0; k < 4; k++)
+                        {
+                            int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                            int j = ny * w + nx;
+                            if (seen[j] || dist[j] >= 0 || !MapData.IsWalkable(map.Tiles[j])) continue;
+                            seen[j] = true;
+                            stack.Push(j);
+                        }
+                    }
+                    if (patch.Count < minCells) continue;
+
+                    // Outward from the patch through any ground but the town's walls, to the nearest reached cell.
+                    mark++;
+                    queue.Clear();
+                    foreach (int i in patch) { stamp[i] = mark; parent[i] = -1; queue.Enqueue(i); }
+                    int found = -1;
+                    while (queue.Count > 0 && found < 0)
+                    {
+                        int i = queue.Dequeue();
+                        int x = i % w, y = i / w;
+                        for (int k = 0; k < 4; k++)
+                        {
+                            int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                            int j = ny * w + nx;
+                            if (stamp[j] == mark || map.Tiles[j] is TileType.Wall or TileType.Gate or TileType.TownFloor) continue;
+                            stamp[j] = mark;
+                            parent[j] = i;
+                            if (dist[j] >= 0) { found = j; break; }
+                            queue.Enqueue(j);
+                        }
+                    }
+                    if (found < 0) continue;
+
+                    var way = new List<int>();
+                    for (int i = parent[found]; i >= 0 && parent[i] >= 0; i = parent[i]) way.Add(i);
+                    bool water = false;
+                    foreach (int i in way)
+                    {
+                        int x = i % w, y = i / w;
+                        for (int k = 0; k < 5; k++)
+                        {
+                            int nx = x + (k == 1 ? 1 : k == 2 ? -1 : 0), ny = y + (k == 3 ? 1 : k == 4 ? -1 : 0);
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                            int j = ny * w + nx;
+                            if (map.Tiles[j] == TileType.Water) { map.Tiles[j] = TileType.Sand; water = true; }
+                            else if (map.Tiles[j] == TileType.Mountain) map.Tiles[j] = TileType.Grass;
+                            else continue;
+                            map.Trees[j] = false;
+                        }
+                    }
+                    // The patch is reached now: later patches this round may make for it.
+                    foreach (int i in patch) dist[i] = 0;
+                    foreach (int i in way) dist[i] = 0;
+                    if (way.Count > 0)
+                    {
+                        int mid = way[way.Count / 2];
+                        var from = new Vector2(patch[0] % w, patch[0] / w);
+                        var region = map.Regions[mid];
+                        map.Passes.Add(new PassSite
+                        {
+                            Cell = new Vector2Int(mid % w, mid / w), Kind = water ? PassKind.Ford : PassKind.MountainPass,
+                            A = region, B = region, Across = (new Vector2(found % w, found / w) - from).normalized, GuardNest = -1,
+                        });
+                    }
+                    cut = true;
+                }
+                if (!cut) return;
+            }
+        }
+
+        /// <summary>
+        /// P4-101 (user decision: dens hold the passes): a den for <see cref="GuardChance"/> of the passes between regions,
+        /// a little past the pass on the side away from the town (either side on a border running outward).
+        /// </summary>
+        static void PlaceGuards(MapData map, int[] dist, Vector2Int town, MapGenSettings s, GameRandom rng)
+        {
+            for (int p = 0; p < map.Passes.Count; p++)
+            {
+                var pass = map.Passes[p];
+                if (pass.A == pass.B || !rng.Chance(GuardChance)) continue;
+                var outward = (Vector2)(pass.Cell - town);
+                float facing = Vector2.Dot(pass.Across, outward.normalized);
+                float side = Mathf.Abs(facing) < 0.3f ? (rng.Chance(0.5f) ? 1f : -1f) : Mathf.Sign(facing);
+                var along = new Vector2(-pass.Across.y, pass.Across.x);
+                for (int attempt = 0; attempt < 16; attempt++)
+                {
+                    var spot = (Vector2)pass.Cell + pass.Across * side * rng.Range(GuardMin, GuardMax) + along * rng.Range(-4f, 4f);
+                    var cell = new Vector2Int(Mathf.RoundToInt(spot.x), Mathf.RoundToInt(spot.y));
+                    if (cell.x < 2 || cell.y < 2 || cell.x >= s.Width - 2 || cell.y >= s.Height - 2) continue;
+                    int d = dist[map.Index(cell.x, cell.y)];
+                    if (d < s.MinNestDistanceFromTown || (cell - town).sqrMagnitude < s.MinNestDistanceFromTown * s.MinNestDistanceFromTown) continue;
+                    var t = map[cell.x, cell.y];
+                    if (t == TileType.Road || !MapData.IsWalkable(t)) continue;
+                    bool crowded = false;
+                    foreach (var other in map.Nests)
+                        if ((other.Cell - cell).sqrMagnitude < 15 * 15) { crowded = true; break; }
+                    if (crowded) continue;
+                    pass.GuardNest = map.Nests.Count;
+                    map.Passes[p] = pass;
+                    map.Nests.Add(new NestSite
+                    {
+                        Cell = cell, Biome = ClassifyBiome(map, cell), Region = map.RegionOf(cell.x, cell.y), DistanceFromTown = d,
+                    });
+                    break;
+                }
             }
         }
 

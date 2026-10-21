@@ -48,6 +48,26 @@ namespace GuildMaster.World
 
     public enum Biome : byte { Plains, Forest, Mountain, Shore }
 
+    /// <summary>How a pass crosses its barrier (P4-101).</summary>
+    public enum PassKind : byte { MountainPass, Bridge, Ford }
+
+    /// <summary>
+    /// A way across the ridge or river between two regions (P4-101, <see cref="RegionBarriers"/>), or one cut to land
+    /// the barriers and landforms had shut in (<see cref="A"/> == <see cref="B"/>).
+    /// </summary>
+    public struct PassSite
+    {
+        public Vector2Int Cell;
+        public PassKind Kind;
+        public Region A, B;
+        /// <summary>Unit vector across the barrier, from <see cref="A"/>'s side to <see cref="B"/>'s.</summary>
+        public Vector2 Across;
+        /// <summary>One of the gates' roads runs through it.</summary>
+        public bool OnRoad;
+        /// <summary>The den placed to hold it (index into <see cref="MapData.Nests"/>), or -1.</summary>
+        public int GuardNest;
+    }
+
     public struct NestSite
     {
         public Vector2Int Cell;
@@ -82,6 +102,8 @@ namespace GuildMaster.World
         public readonly List<Vector2Int> Gates = new();
         public readonly List<NestSite> Nests = new();
         public readonly List<Vector2Int> EdgeSpawnCells = new();
+        /// <summary>The ways across the region barriers (P4-101); none on a map made without landforms.</summary>
+        public readonly List<PassSite> Passes = new();
 
         /// <summary>Forest cells that contain a tree (walkable, but give partial cover against projectiles).</summary>
         public readonly bool[] Trees;

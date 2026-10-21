@@ -1806,5 +1806,109 @@ namespace GuildMaster.Session
             Services.Get<GuildMaster.Flares.FlareService>().Fire(null, at);
             return Flares();
         }
+
+        // ---------------- Landforms (P4-101) ----------------
+
+        static string PassLabel(World.PassKind k) => k switch { World.PassKind.Bridge => "다리", World.PassKind.Ford => "여울", _ => "고개" };
+
+        /// <summary>The ways across the region barriers in this game: kind, borders, distance, road, the den holding it (real values).</summary>
+        public static string Passes()
+        {
+            var world = Services.Get<World.WorldService>();
+            var eco = Services.TryGet<EcosystemManager>(out var e) ? e : null;
+            var sb = new StringBuilder();
+            var town = world.Map.TownCenter;
+            foreach (var p in world.Map.Passes.OrderBy(p => (p.Cell - town).sqrMagnitude))
+            {
+                string guard = "";
+                if (p.GuardNest >= 0 && eco != null && p.GuardNest < eco.Nests.Count)
+                {
+                    var n = eco.Nests[p.GuardNest];
+                    guard = $" · 지킴 {n.NestId} {(n.Species != null ? n.Species.displayName : "빈 둥지")} {n.Population}마리";
+                }
+                string border = p.A == p.B ? $"{World.TerrainRegions.Label(p.A)} 안" : $"{World.TerrainRegions.Label(p.A)}–{World.TerrainRegions.Label(p.B)}";
+                sb.AppendLine($"{PassLabel(p.Kind)} {border} ({p.Cell.x}, {p.Cell.y}) {Vector2.Distance(p.Cell, town):0}칸{(p.OnRoad ? " · 길" : "")}{guard}");
+            }
+            sb.AppendLine($"모두 {world.Map.Passes.Count}곳, 지킴 둥지 {world.Map.Passes.Count(p => p.GuardNest >= 0)}");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Makes the map for <paramref name="seed"/> (the game's settings; works outside play) and saves a picture of it to
+        /// <paramref name="file"/>: regions, ridges, rivers, landforms, dens (red, holding a pass: orange), ways across
+        /// (magenta, cuts within a region: cyan). Reports the ground, the ways per border and how much the walk to a den bends.
+        /// </summary>
+        public static string MapPreview(int seed, string file, bool landforms = true)
+        {
+            var balance = ScriptableObject.CreateInstance<GameBalance>();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var map = World.MapGenerator.Generate(new World.MapGenSettings
+            {
+                Width = balance.mapWidth, Height = balance.mapHeight, Seed = seed, TownHalfSize = balance.townHalfSize,
+                NestCount = balance.nestCount, MinNestDistanceFromTown = balance.minNestDistanceFromTown,
+                InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount, Landforms = balance.landforms && landforms,
+            });
+            long ms = watch.ElapsedMilliseconds;
+            Object.DestroyImmediate(balance);
+            var sb = new StringBuilder($"시드 {seed}: 만들기 {ms}ms\n");
+            foreach (var g in map.Tiles.GroupBy(t => t).OrderBy(g => g.Key))
+                sb.Append($"{g.Key} {100f * g.Count() / map.Tiles.Length:0.0}% ");
+            var town = map.TownCenter;
+            var dist = World.MapGenerator.FloodDistances(map, town);
+            // Steps over a walk with no obstacle (4 directions: |dx| + |dy|); 1 = straight.
+            float Bend(Vector2Int c) => (float)dist[map.Index(c.x, c.y)] / (Mathf.Abs(c.x - town.x) + Mathf.Abs(c.y - town.y));
+            var bends = map.Nests.Select(n => Bend(n.Cell)).ToList();
+            sb.Append($"\n둥지 {map.Nests.Count}곳까지 걸음/직선: 평균 {bends.Average():0.000} · 최대 {bends.Max():0.000} · 1.2 넘는 둥지 {bends.Count(b => b > 1.2f)}");
+            foreach (var g in map.Passes.GroupBy(p => p.A == p.B ? $"{World.TerrainRegions.Label(p.A)} 안" : $"{World.TerrainRegions.Label(p.A)}–{World.TerrainRegions.Label(p.B)}"))
+                sb.Append($"\n  {g.Key}: {string.Join(", ", g.Select(p => PassLabel(p.Kind) + (p.OnRoad ? "(길)" : "") + (p.GuardNest >= 0 ? "(지킴)" : "")))}");
+
+            var tex = new Texture2D(map.Width, map.SurfaceHeight);
+            var rock = new Color32(0x5A, 0x55, 0x50, 255);
+            var road = new Color32(0x9A, 0x6A, 0x3A, 255);
+            for (int y = 0; y < map.SurfaceHeight; y++)
+            for (int x = 0; x < map.Width; x++)
+            {
+                var pal = World.CartoonGroundPainter.PaletteOf(map.Regions[map.Index(x, y)]);
+                tex.SetPixel(x, y, map[x, y] switch
+                {
+                    World.TileType.Forest => pal.ForestEdge,
+                    World.TileType.Sand => pal.Sand,
+                    World.TileType.Water => pal.Water,
+                    World.TileType.Mountain => rock,
+                    World.TileType.Road => road,
+                    World.TileType.Grass => pal.Grass,
+                    _ => Color.white,
+                });
+            }
+            void Mark(Vector2Int c, int r, Color col, bool ring)
+            {
+                for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++)
+                    if ((!ring || Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dy)) == r) && map.InBounds(c.x + dx, c.y + dy)) tex.SetPixel(c.x + dx, c.y + dy, col);
+            }
+            // The walk from the town to every den, as the pathfinder plans it knowing the ground (black), and what it cost.
+            var world = new World.WorldService(map);
+            var path = new List<Vector2Int>();
+            int failed = 0;
+            var expanded = new List<int>();
+            float walked = 0f, straight = 0f;
+            foreach (var n in map.Nests)
+            {
+                if (!world.Pathfinder.FindPath(town, n.Cell, path)) { failed++; continue; }
+                expanded.Add(world.Pathfinder.LastExpanded);
+                for (int i = 1; i < path.Count; i++) walked += Vector2Int.Distance(path[i - 1], path[i]);
+                straight += Vector2Int.Distance(town, n.Cell);
+                foreach (var c in path) tex.SetPixel(c.x, c.y, Color.black);
+            }
+            if (expanded.Count > 0)
+                sb.Append($"\n경로(A*): 실패 {failed} · 길이/직선 {walked / Mathf.Max(1f, straight):0.000} · 탐색 칸 평균 {expanded.Average():0} · 최대 {expanded.Max()}");
+            var guarded = new HashSet<int>(map.Passes.Where(p => p.GuardNest >= 0).Select(p => p.GuardNest));
+            for (int i = 0; i < map.Nests.Count; i++) Mark(map.Nests[i].Cell, 2, guarded.Contains(i) ? new Color(1f, 0.6f, 0f) : Color.red, false);
+            foreach (var p in map.Passes) Mark(p.Cell, 4, p.A == p.B ? Color.cyan : Color.magenta, true);
+            tex.Apply();
+            System.IO.File.WriteAllBytes(file, tex.EncodeToPNG());
+            Object.DestroyImmediate(tex);
+            return sb.ToString();
+        }
     }
 }
