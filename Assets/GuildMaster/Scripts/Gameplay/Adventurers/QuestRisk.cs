@@ -85,7 +85,7 @@ namespace GuildMaster.Adventurers
             {
                 int green = RecommendedLevel(q) - GreenGap;
                 foreach (var m in roster.Members)
-                    if (CouldGather(m) && AdventurerStats.RawPower(m.Data) > green) could++;
+                    if (CouldGather(m) && AdventurerStats.RawPower(m.Data) > green && !BeyondNewcomer(m, q)) could++;
             }
             return Mathf.Min(could, q.MaxParty);
         }
@@ -141,6 +141,17 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public static bool TooGreen(AdventurerData d, Quests.Quest q, string riskLabel)
             => (riskLabel == Risky || riskLabel == Reckless) && AdventurerStats.RawPower(d) <= RecommendedLevel(q) - GreenGap;
+
+        /// <summary>
+        /// A newcomer's quest out where the young are born stronger than it (P4-99, user decision 2026-10-21: newcomers hunt
+        /// weak monsters first): it neither takes nor joins it, nor is it taken along — no dare. The danger steps rate young of
+        /// level 3 as 낮음, and Lv1–2 newcomers took skull hunts 52 cells out on their own and died there (two runs of three).
+        /// An escort's spot is only where the guild master stood when it was posted: not judged.
+        /// </summary>
+        public static bool BeyondNewcomer(Adventurer a, Quests.Quest q)
+            => a != null && q != null && q.Type != Quests.QuestType.Escort && a.IsNewcomer
+               && Core.Services.TryGet<Ecosystem.EcosystemManager>(out var eco)
+               && !NewcomerRules.WithinReach(AdventurerStats.Power(a.Data), eco.BirthLevelAt(q.Point));
 
         /// <summary>Odds a too-green member takes or joins such a quest anyway: the bold dare twice as often.</summary>
         public static float GreenDareChance(float dangerAversion) => dangerAversion < 0f ? 0.3f : 0.15f;

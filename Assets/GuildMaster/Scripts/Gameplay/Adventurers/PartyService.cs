@@ -211,7 +211,8 @@ namespace GuildMaster.Adventurers
                 .Where(a => a != leader && FreeInTown(a) && !band.Has(a) && !IsInvited(a)
                             && (parties == null || parties.PartyOf(a) == null)
                             && a.HpRatio >= HuntMinHp && a.Data.fatigue < HuntMaxFatigue
-                            && Relationships.Get(leader, a) > HostileThreshold)
+                            && Relationships.Get(leader, a) > HostileThreshold
+                            && HuntBandService.SameFooting(a, leader)) // newcomers hunt with newcomers (P4-99)
                 .OrderByDescending(a => Relationships.Get(leader, a))
                 .Take(slots)
                 .ToList();
@@ -308,6 +309,9 @@ namespace GuildMaster.Adventurers
             foreach (var m in party.Members)
             {
                 if (m == leader || !FreeInTown(m) || IsInvited(m) || !q.HasFreeSlot) continue;
+                // Far too green for it, it stays home rather than follow its party out (P4-99, as an invitee holds back, P4-88),
+                // and so does a newcomer when the quest is out where the young are stronger than it.
+                if (QuestRisk.TooGreen(m.Data, q, QuestRisk.RiskLabel(m, q)) || QuestRisk.BeyondNewcomer(m, q)) continue;
                 if (_board.TryAccept(q, m, invited: true)) list.Add(m);
             }
             return list;
@@ -350,7 +354,7 @@ namespace GuildMaster.Adventurers
         static (bool accept, string say) RuleDecide(Adventurer c, Adventurer leader, Quest quest = null)
         {
             if (c == null) return (false, null);
-            if (quest != null && QuestRisk.HoldsBack(c, quest)) return (false, TooGreenLine);
+            if (quest != null && (QuestRisk.BeyondNewcomer(c, quest) || QuestRisk.HoldsBack(c, quest))) return (false, TooGreenLine);
             float chance = AcceptChanceOverride ?? Math.Min(0.95f, RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f, Relationships.Get(c, leader))
                                                                + (QuestRisk.IsBossWork(quest) ? BossWorkEagerness : 0f));
             bool accept = GameRandom.Shared.Value < chance;
@@ -542,7 +546,8 @@ namespace GuildMaster.Adventurers
                 // Still settling the last outing, or one of them still resting: it does not go out yet (P4-79).
                 if (parties.OutingUnfinished(head) || parties.MembersGettingReady(head)) continue;
                 if (Relationships.Get(leader, head) <= HostileThreshold) continue;
-                var block = p.Members.Where(m => FreeInTown(m) && !IsInvited(m)).ToList();
+                // Its newcomers out of their depth stay home: they do not wait for their leader (P4-99).
+                var block = p.Members.Where(m => FreeInTown(m) && !IsInvited(m) && !QuestRisk.BeyondNewcomer(m, q)).ToList();
                 if (!block.Contains(head) || block.Count > q.MaxParty - q.Assignees.Count) continue;
                 AskParty(g, head, block);
             }

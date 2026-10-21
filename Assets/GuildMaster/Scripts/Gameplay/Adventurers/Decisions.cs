@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace GuildMaster.Adventurers
 {
-    public enum AdventurerAction { AcceptQuest, Rest, Shop, Idle, Hunt }
+    public enum AdventurerAction { AcceptQuest, Rest, Shop, Idle, Hunt, Train }
 
     public struct AdventurerDecision
     {
@@ -84,6 +84,11 @@ namespace GuildMaster.Adventurers
             if (best != null)
                 return new AdventurerDecision { Action = AdventurerAction.AcceptQuest, QuestId = best.Id, Reason = "보상 대비 위험이 적당하다", Say = $"{best.Title}, 내가 맡지!" };
 
+            // Weaker than the monsters round the town (P4-99, user decision 2026-10-21): it trains while the training ground
+            // teaches; otherwise it hunts — alone and close in (FreeHuntState).
+            if (a.IsNewcomer && Services.TryGet<Town.UpgradeService>(out var upgrades) && upgrades.Trains)
+                return new AdventurerDecision { Action = AdventurerAction.Train, Reason = "아직 마을 밖 몬스터보다 약하다", Say = "훈련장에서 실력부터 쌓자." };
+
             // No quest worth taking: go out and hunt rather than stand in the plaza (P4-37). Timid
             // members and those who value safety stay in more often — the LLM path gives this its
             // own personality, this is the fallback's version of it.
@@ -128,6 +133,8 @@ namespace GuildMaster.Adventurers
             if (risk == QuestRisk.Reckless) return 0f;
             // Far under the quest's level, a 위험 one is not for it (P4-88): the rules never dare (the model may, rarely).
             if (QuestRisk.TooGreen(d, q, risk)) return 0f;
+            // A newcomer works only where the young are no stronger than it (P4-99).
+            if (QuestRisk.BeyondNewcomer(a, q)) return 0f;
 
             float value = q.RewardGold / (float)partySize + q.RewardExp * 1.2f / partySize;
             // Personality flavour for the rule-based fallback.

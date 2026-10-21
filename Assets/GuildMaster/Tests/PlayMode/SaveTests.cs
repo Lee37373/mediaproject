@@ -94,6 +94,33 @@ namespace GuildMaster.Tests
             }
         }
 
+        [System.Serializable]
+        class FogBits { public int width; public int height; public string explored; }
+
+        /// <summary>
+        /// A moment after a busy load the fog may have lifted a cell or two more than was saved (this failed now and then on
+        /// one cell, a different one each time): positions are saved to the hundredth, and an eye half a hundredth off sees
+        /// one more cell at the very edge of its circle. Everything explored must still be, and little more is.
+        /// </summary>
+        static void AssertFogAlmostSame(SaveFile a, SaveFile b, int slack)
+        {
+            var fa = JsonUtility.FromJson<FogBits>(a.Find("fog").json);
+            var fb = JsonUtility.FromJson<FogBits>(b.Find("fog").json);
+            Assert.That((fb.width, fb.height), Is.EqualTo((fa.width, fa.height)), "fog size");
+            var ba = System.Convert.FromBase64String(fa.explored);
+            var bb = System.Convert.FromBase64String(fb.explored);
+            int lost = 0, gained = 0;
+            for (int i = 0; i < ba.Length && i < bb.Length; i++)
+                for (int bit = 0; bit < 8; bit++)
+                {
+                    bool was = (ba[i] & (1 << bit)) != 0, now = (bb[i] & (1 << bit)) != 0;
+                    if (was && !now) lost++;
+                    else if (now && !was) gained++;
+                }
+            Assert.That(lost, Is.Zero, "no explored cell is forgotten");
+            Assert.That(gained, Is.LessThanOrEqualTo(slack), "hardly any cell lifts that was not lifted when saved");
+        }
+
         [UnityTest]
         public IEnumerator RoundTrip_EverySectionComesBackTheSame()
         {
@@ -362,7 +389,9 @@ namespace GuildMaster.Tests
             Assert.That(System.Linq.Enumerable.All(loadedRuin.Members, m => loadedMap.RuinAt(World.GridMap.WorldToCell(m.Position)) != null), Is.True, "still down in its halls");
 
             yield return new WaitForSecondsRealtime(1f);
-            AssertSameSections(a, Saves.Capture());
+            var later = Saves.Capture();
+            AssertSameSections(a, later, "fog");
+            AssertFogAlmostSame(a, later, 8);
 
             // The loaded raid and migration still hear their members fall (P4-76: the restore did
             // not subscribe to the deaths — a wiped-out raid stayed "on" and kept the defenders

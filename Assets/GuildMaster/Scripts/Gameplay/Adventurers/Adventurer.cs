@@ -63,6 +63,8 @@ namespace GuildMaster.Adventurers
         internal ReturnToTownState ReturnState;
         internal GuildVisitState VisitState;
         internal RestState RestState;
+        /// <summary>A newcomer at the training ground (P4-99).</summary>
+        internal TrainState TrainState;
         /// <summary>At a campfire out in the wild (P4-66).</summary>
         internal CampState CampState;
         internal DeadState DeadState;
@@ -104,8 +106,21 @@ namespace GuildMaster.Adventurers
         /// <summary>Idling on the plaza or making up its mind: free to be asked along on something.</summary>
         public bool IsIdleInTown => Fsm != null && (Fsm.Current == IdleState || Fsm.Current == DecidingState);
 
-        /// <summary>In town with nothing on: idling, resting, or at the guild counter.</summary>
-        public bool IsAtLeisureInTown => IsIdleInTown || Fsm != null && (Fsm.Current == RestState || Fsm.Current == VisitState);
+        /// <summary>In town with nothing on: idling, resting, training (P4-99), or at the guild counter.</summary>
+        public bool IsAtLeisureInTown => IsIdleInTown || Fsm != null && (Fsm.Current == RestState || Fsm.Current == VisitState || Fsm.Current == TrainState);
+
+        /// <summary>
+        /// Weaker than the monsters round the town (P4-99, <see cref="NewcomerRules"/>): it trains while the training ground
+        /// teaches, else hunts alone close in, and does not go out with a stronger band.
+        /// </summary>
+        public bool IsNewcomer => Data != null && IsGuildMember && !IsVisitor && Services.TryGet<Ecosystem.EcosystemManager>(out var eco)
+                                  && NewcomerRules.IsNewcomer(AdventurerStats.Power(Data), eco.BirthLevelAtDistance(NewcomerRules.NearRing));
+
+        /// <summary>How far from the town this newcomer hunts on its own (P4-99).</summary>
+        internal float NewcomerReach
+            => Services.TryGet<Ecosystem.EcosystemManager>(out var eco)
+                ? NewcomerRules.Reach(AdventurerStats.Power(Data), eco.InnermostDistance, eco.BirthLevelAtDistance)
+                : NewcomerRules.NearRing;
 
         public string StateLabel => Fsm?.Current?.Label ?? "-";
         public override string DebugState => StateLabel;
@@ -142,6 +157,7 @@ namespace GuildMaster.Adventurers
             ReturnState = new ReturnToTownState();
             VisitState = new GuildVisitState();
             RestState = new RestState();
+            TrainState = new TrainState();
             CampState = new CampState();
             DeadState = new DeadState();
             VisitorWanderState = new VisitorWanderState();
@@ -741,7 +757,7 @@ namespace GuildMaster.Adventurers
         {
             IdleState, DecidingState, TravelState, HuntState, FreeHuntState, EscortState, GatherState, DefendState,
             ReturnState, VisitState, RestState, CampState, DeadState, VisitorWanderState, VisitorLeaveState, LureState,
-            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState,
+            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState, TrainState,
         };
 
         /// <summary>One of this member's states by class name (saved states refer to each other this way), or null.</summary>

@@ -186,6 +186,12 @@ namespace GuildMaster.Ecosystem
         /// </summary>
         public int BirthLevelAt(Vector2 p) => WildsPressure.BirthLevel(Depth(p), Days);
 
+        /// <summary>The same by distance from the town, whichever way (P4-99: the near ring a newcomer is measured by).</summary>
+        public int BirthLevelAtDistance(float distance) => WildsPressure.BirthLevel(DepthAt(distance, _innermost, _outermost), Days);
+
+        /// <summary>Nearest nest site to the town (cells).</summary>
+        public float InnermostDistance => _innermost;
+
         /// <summary>Game days gone (fractional), which the wilds' pressure follows.</summary>
         public static float Days => Services.TryGet<GameClock>(out var clock) ? clock.TotalHours / 24f : 0f;
 

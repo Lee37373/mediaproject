@@ -9,9 +9,9 @@ namespace GuildMaster.Town
 {
     /// <summary>
     /// Building upgrades (P4-1): pays gold and stored materials, raises the level instantly
-    /// (user decision) and applies the level's effects — guild hall: EXP/hour, roster size, visitor
-    /// level; town hall: max durability, daily tax; training ground: idle members gain EXP every
-    /// hour. Blacksmith/apothecary levels are read by crafting (P4-2).
+    /// (user decision) and applies the level's effects — guild hall: visitor level; town hall: max
+    /// durability, daily tax; training ground: idle members gain EXP every hour, and newcomers train
+    /// there (P4-99). Blacksmith/apothecary levels are read by crafting (P4-2).
     /// </summary>
     public class UpgradeService : IDisposable
     {
@@ -98,17 +98,44 @@ namespace GuildMaster.Town
         /// <summary>Visitors arrive this many levels higher (guild hall reputation).</summary>
         public int VisitorLevelBonus => Current(BuildingType.GuildHall)?.visitorLevelBonus ?? 0;
 
-        /// <summary>Training ground: members idling in town gain a little EXP every game hour.</summary>
+        /// <summary>
+        /// What the standing training ground's level gives an hour before the day and the catch-up (P4-99), 0 when it
+        /// teaches nothing: level 1, or fallen (P4-76, as crafting stops, P4-74).
+        /// </summary>
+        public float TrainingBaseExp
+        {
+            get
+            {
+                var ground = _town.Get(BuildingType.TrainingGround);
+                return ground == null || ground.IsDestroyed ? 0f : Current(BuildingType.TrainingGround)?.idleExpPerHour ?? 0f;
+            }
+        }
+
+        /// <summary>The training ground teaches now: newcomers train there instead of going out (P4-99).</summary>
+        public bool Trains => TrainingBaseExp > 0f;
+
+        /// <summary>
+        /// Training ground: members idling in town gain EXP every game hour — more as the days go by and the further a
+        /// member is behind the guild's best (P4-99, user decision 2026-10-21, <see cref="NewcomerRules.TrainingExp"/>).
+        /// </summary>
         void OnHour(HourPassedEvent e)
         {
-            // A fallen training ground trains nobody until it is rebuilt (P4-76, as crafting stops, P4-74).
-            var ground = _town.Get(BuildingType.TrainingGround);
-            if (ground == null || ground.IsDestroyed) return;
-            int exp = (int)(Current(BuildingType.TrainingGround)?.idleExpPerHour ?? 0f);
-            if (exp <= 0) return;
-            foreach (var a in _roster.Members.ToList())
-                if (a != null && a.IsAlive && !a.IsVisitor && a.CurrentQuest == null && _town.IsInTown(a.Position))
-                    a.GainExp(exp);
+            float baseExp = TrainingBaseExp;
+            if (baseExp <= 0f) return;
+            var members = _roster.Members.Where(a => a != null && a.IsAlive && !a.IsVisitor).ToList();
+            int top = members.Count == 0 ? 1 : members.Max(a => a.Data.level);
+            float days = Ecosystem.EcosystemManager.Days;
+            foreach (var a in members)
+                if (a.CurrentQuest == null && _town.IsInTown(a.Position))
+                    a.GainExp(NewcomerRules.TrainingExp(baseExp, days, top - a.Data.level));
+        }
+
+        /// <summary>What a member of this level gains an hour at the training ground now (shown in the building window).</summary>
+        public int TrainingExpFor(int level)
+        {
+            int top = 1;
+            foreach (var a in _roster.Members) if (a != null && a.IsAlive && !a.IsVisitor) top = Math.Max(top, a.Data.level);
+            return NewcomerRules.TrainingExp(TrainingBaseExp, Ecosystem.EcosystemManager.Days, top - level);
         }
     }
 }

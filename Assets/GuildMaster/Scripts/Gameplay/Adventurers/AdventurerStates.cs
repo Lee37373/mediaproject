@@ -128,11 +128,13 @@ namespace GuildMaster.Adventurers
             if (_decisionTimer > 0f) return;
             // A pending party invitation is this member's decision for now.
             if (Services.TryGet<PartyService>(out var party) && party.IsInvited(a)) { _decisionTimer = 2f; return; }
-            // A standing party's members go where their leader takes them (P4-50).
+            // A standing party's members go where their leader takes them (P4-50) — but one its leader does not take out
+            // hunting (P4-99: a newcomer, or one that outgrew a newcomer leader) decides on its own.
             // The leader too while the last outing is not settled yet (the others are still coming back),
             // and while one of them is still resting or at the counter (P4-79: they go out together).
             if (Services.TryGet<GuildParties>(out var parties)
-                && (parties.FollowsALeader(a) || parties.OutingUnfinished(a) || parties.MembersGettingReady(a))) { _decisionTimer = 2f; return; }
+                && (parties.FollowsALeader(a) && HuntBandService.SameFooting(a, parties.PartyOf(a).Leader) && !a.IsNewcomer
+                    || parties.OutingUnfinished(a) || parties.MembersGettingReady(a))) { _decisionTimer = 2f; return; }
             a.ChangeState(a.DecidingState);
         }
     }
@@ -217,6 +219,10 @@ namespace GuildMaster.Adventurers
                 case AdventurerAction.Hunt:
                     a.Say(d.Say);
                     a.ChangeState(a.FreeHuntState);
+                    return;
+                case AdventurerAction.Train:
+                    a.Say(d.Say);
+                    a.ChangeState(a.TrainState);
                     return;
             }
             if (!string.IsNullOrEmpty(d.Say)) a.Say(d.Say);

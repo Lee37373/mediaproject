@@ -2819,6 +2819,12 @@ namespace GuildMaster.Tests
             ClearStrangersNear(spot, 30f);
 
             var pair = Roster.Members.Where(a => a.IsAlive && a.Data.cls != AdventurerClass.Priest).Take(2).ToList();
+            // Past newcomers (P4-99): a band of newcomers hunting close in makes no standing party.
+            foreach (var a in pair)
+            {
+                while (a.IsNewcomer) a.Data.level++;
+                a.RecalculateStats(fullHeal: true);
+            }
             // Nobody else free to be invited along (P4-51).
             foreach (var other in Roster.Members.Where(a => a.IsAlive && !pair.Contains(a))) other.ChangeState(other.RestState);
             foreach (var a in pair) a.ChangeState(a.FreeHuntState);
@@ -2909,6 +2915,12 @@ namespace GuildMaster.Tests
             var front = Roster.Members.First(a => a.IsAlive && a.Data.cls == AdventurerClass.Warrior);
             var hurt = Roster.Members.First(a => a.IsAlive && a.Data.cls != AdventurerClass.Priest && a.Data.cls != AdventurerClass.Warrior);
             var trio = new[] { front, hurt, priest };
+            // A band that fights on (P4-99: newcomers judge a foe on their own and back off from a goblin a band would take).
+            foreach (var a in trio)
+            {
+                while (a.IsNewcomer) a.Data.level++;
+                a.RecalculateStats(fullHeal: true);
+            }
             foreach (var other in Roster.Members.Where(a => a.IsAlive && !trio.Contains(a))) other.ChangeState(other.RestState);
             foreach (var a in trio) a.ChangeState(a.FreeHuntState);
             yield return null;
@@ -3014,6 +3026,137 @@ namespace GuildMaster.Tests
                 legacy.ForcedRoll = null;
                 Time.timeScale = 1f;
             }
+        }
+
+        /// <summary>
+        /// P4-99 (user decisions 2026-10-21: newcomers hunt weak monsters first or level up in town; the training ground pays
+        /// more as the days go by and the further behind the guild's best). A member weaker than the near ring's young is a
+        /// newcomer: a stronger member's hunt neither invites it nor takes it in, and with the training ground teaching it
+        /// trains there, gaining more an hour than the guild's best.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Newcomers_StayOutOfStrongBands_TrainOnceTheGroundTeaches_AndCatchUp()
+        {
+            yield return Boot();
+            var town = Services.Get<Town.TownService>();
+            var upgrades = Services.Get<Town.UpgradeService>();
+            var bands = Services.Get<HuntBandService>();
+            var members = Roster.Members.Where(a => a.IsAlive).ToList();
+            var veteran = members.First(a => a.Data.cls != AdventurerClass.Priest);
+            var rookie = members.First(a => a != veteran && a.Data.cls != AdventurerClass.Priest);
+            veteran.Data.level = 12;
+            veteran.RecalculateStats(fullHeal: true);
+            rookie.Data.level = 1;
+            rookie.Data.gearTier = 0;
+            rookie.RecalculateStats(fullHeal: true);
+            foreach (var a in new[] { veteran, rookie })
+            {
+                a.Data.potions = 2;
+                a.Data.gold = 0;
+                a.Data.fatigue = 0f;
+                a.Data.stress = 0f;
+            }
+            Assert.That((veteran.IsNewcomer, rookie.IsNewcomer), Is.EqualTo((false, true)), "weaker than the near ring's young: a newcomer");
+            Assert.That(rookie.NewcomerReach, Is.LessThanOrEqualTo(NewcomerRules.NearRing), "it hunts no further than the near ring");
+
+            // The ground at level 1 teaches nothing: no training — it goes out close in (or waits), as before.
+            var none = new System.Collections.Generic.List<Quest>();
+            Assert.That(upgrades.Trains, Is.False);
+            Assert.That(RuleBasedDecisionMaker.Decide(rookie, none).Action, Is.Not.EqualTo(AdventurerAction.Train));
+
+            // A stronger member goes hunting: it does not ask the newcomer along, and the newcomer does not join its band.
+            foreach (var a in members.Where(a => a != veteran && a != rookie)) a.ChangeState(a.RestState);
+            rookie.ChangeState(rookie.IdleState);
+            PartyService.AcceptChanceOverride = 1f; // asked, it would say yes
+            veteran.ChangeState(veteran.FreeHuntState);
+            yield return null;
+            var band = bands.BandOf(veteran);
+            Assert.That(band, Is.Not.Null);
+            Assert.That(band.Has(rookie), Is.False, "not asked along");
+            rookie.ChangeState(rookie.FreeHuntState);
+            yield return null;
+            Assert.That(bands.BandOf(rookie), Is.Not.EqualTo(band), "nor does it tag along");
+            rookie.ChangeState(rookie.IdleState);
+            veteran.ChangeState(veteran.RestState);
+
+            // Newcomers of a stronger leader's standing party hunt close in by themselves: their band leaves the party at home
+            // (measured run: it set the party's outing going, and its leader waited in town half a day for an outing it was
+            // never on), and the leader does not wait for them to finish resting either.
+            var parties = Services.Get<GuildParties>();
+            var rookie2 = members.First(a => a != veteran && a != rookie);
+            rookie2.Data.level = 1;
+            rookie2.Data.gearTier = 0;
+            rookie2.RecalculateStats(fullHeal: true);
+            (rookie2.Data.potions, rookie2.Data.fatigue, rookie2.Data.stress) = (2, 0f, 0f);
+            Assume.That(rookie2.IsNewcomer, Is.True);
+            var trio = new System.Collections.Generic.List<Adventurer> { veteran, rookie, rookie2 };
+            foreach (var x in trio)
+                foreach (var y in trio)
+                    if (x != y) Relationships.Add(x, y, -Relationships.Get(x, y), "test");
+            var standing = parties.SetOut(trio);
+            Assert.That(standing?.Leader, Is.EqualTo(veteran));
+            foreach (var m in trio) { m.Mover.Stop(); m.ChangeState(m.IdleState); } // home again: the outing settles
+            yield return WaitFor(() => !standing.OnOuting, 5f);
+            Assume.That((standing.OnOuting, parties.PartyOf(rookie2)), Is.EqualTo((false, standing)), "settled, still one party");
+            veteran.ChangeState(veteran.RestState);
+            rookie.ChangeState(rookie.FreeHuntState);
+            rookie2.ChangeState(rookie2.FreeHuntState);
+            var rookies = bands.BandOf(rookie);
+            Assert.That((rookies?.Has(rookie2), rookies?.Has(veteran)), Is.EqualTo(((bool?)true, (bool?)false)), "a band of newcomers");
+            yield return WaitFor(() => !rookies.Mustering, 10f);
+            Assert.That(rookies.Mustering, Is.False, "the band set out");
+            Assert.That((standing.OnOuting, parties.OutingUnfinished(veteran)), Is.EqualTo((false, false)), "their party stays at home");
+            var door = town.Get(Town.BuildingType.GuildHall).DoorPosition;
+            foreach (var r in new[] { rookie, rookie2 })
+            {
+                r.Mover.Stop();
+                r.transform.position = door;
+                r.ChangeState(r.RestState);
+            }
+            Assert.That(parties.MembersGettingReady(veteran), Is.False, "the leader does not wait for newcomers it does not take out");
+            rookie.ChangeState(rookie.IdleState);
+            rookie2.ChangeState(rookie2.RestState);
+
+            // Its quests keep to the same ground (two measured runs: Lv1–2 newcomers took skull hunts 52 cells out, where the
+            // young are level 3 and the danger steps still say 낮음, and died there): not out where the young are stronger.
+            var eco = Services.Get<EcosystemManager>();
+            var centre = town.Get(Town.BuildingType.TownHall).Center;
+            var far = centre;
+            for (float r = 30f; r < 250f && eco.BirthLevelAt(far) < 3; r += 5f) far = centre + Vector2.right * r;
+            Assume.That(eco.BirthLevelAt(far), Is.GreaterThanOrEqualTo(3), "ground where level 3 young are born");
+            var skull = Services.Get<GameDatabase>().Monster("skull");
+            Quest Hunt(string id, Vector2 at) => new(id, new QuestDraft
+            {
+                Type = QuestType.Hunt, Species = skull, Count = 5, Point = at, HasPoint = true, Radius = QuestBoard.HuntRadius,
+                RewardGold = 40, RewardExp = 30, MaxParty = 1,
+            }, Clock.TotalHours);
+            var farHunt = Hunt("Q_far", far);
+            var nearHunt = Hunt("Q_near", centre);
+            Assert.That((QuestRisk.BeyondNewcomer(rookie, farHunt), QuestRisk.BeyondNewcomer(rookie, nearHunt), QuestRisk.BeyondNewcomer(veteran, farHunt)),
+                Is.EqualTo((true, false, false)), "beyond a newcomer only: out where the young are stronger than it");
+            Assert.That(RuleBasedDecisionMaker.Score(rookie, farHunt), Is.Zero, "it does not take that one");
+            Assert.That(RuleBasedDecisionMaker.Score(rookie, nearHunt), Is.GreaterThan(0f), "one close in it does");
+            Assert.That(RuleBasedDecisionMaker.Score(veteran, farHunt), Is.GreaterThan(0f), "and the veteran the far one");
+
+            // The ground at level 2 teaches: the newcomer trains in its yard, and catches up faster than the best.
+            var ground = town.Get(Town.BuildingType.TrainingGround);
+            ground.SetLevel(2);
+            Assert.That(upgrades.Trains, Is.True);
+            Assert.That(RuleBasedDecisionMaker.Decide(rookie, none).Action, Is.EqualTo(AdventurerAction.Train));
+            rookie.ChangeState(rookie.TrainState);
+            yield return WaitFor(() => !rookie.Mover.IsMoving, 10f);
+            Assert.That(rookie.Fsm.Current, Is.EqualTo(rookie.TrainState), rookie.StateLabel);
+            Assert.That(Vector2.Distance(rookie.Position, ground.Center), Is.LessThan(5f), "at the training yard");
+            Assert.That(upgrades.TrainingExpFor(rookie.Data.level), Is.GreaterThan(upgrades.TrainingExpFor(veteran.Data.level)), "behind the best, it gains more");
+
+            int before = rookie.Data.exp, level = rookie.Data.level, toNext = rookie.Data.ExpToNextLevel;
+            int expected = upgrades.TrainingExpFor(level);
+            Clock.SetSpeed(3);
+            float hour = Mathf.Floor(Clock.TotalHours) + 1f;
+            yield return WaitFor(() => Clock.TotalHours >= hour + 0.05f, 10f);
+            Assert.That(rookie.Fsm.Current, Is.EqualTo(rookie.TrainState), "still training an hour on");
+            int gained = rookie.Data.level == level ? rookie.Data.exp - before : rookie.Data.exp + (toNext - before);
+            Assert.That(gained, Is.GreaterThanOrEqualTo(expected - 1).And.GreaterThan(3 * 2), $"an hour at the yard (lv {level} → {rookie.Data.level})");
         }
 
         [UnityTest]

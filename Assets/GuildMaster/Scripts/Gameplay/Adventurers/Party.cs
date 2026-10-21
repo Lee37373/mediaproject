@@ -349,6 +349,7 @@ namespace GuildMaster.Adventurers
             foreach (var m in p.Members)
             {
                 if (m == leader || m == null || !m.IsAlive || !m.IsGuildMember) continue;
+                if (!HuntBandService.SameFooting(m, leader)) continue; // not taken out by this leader (P4-99)
                 var s = m.Fsm.Current;
                 if (s != m.RestState && s != m.VisitState && s != m.TownGuardState) continue;
                 if (m.CurrentQuest != null && m.CurrentQuest.IsActive) continue;

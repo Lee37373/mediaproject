@@ -390,9 +390,10 @@ namespace GuildMaster.Data
                 new BuildingLevel { goldCost = 450, itemCosts = { I("royal_jelly", 2), I("slime_jelly", 20) }, craftTier = 1, craftSpeed = 2f, effectText = "물약 제작 속도 ×2" });
 
             B(Town.BuildingType.TrainingGround,
-                new BuildingLevel { idleExpPerHour = 0, effectText = "훈련 없음" },
-                new BuildingLevel { goldCost = 200, itemCosts = { I("stone_shard", 6), I("old_arrowhead", 4) }, idleExpPerHour = 3, effectText = "대기 중인 모험가 EXP 시간당 3" },
-                new BuildingLevel { goldCost = 550, itemCosts = { I("bone_shard", 12), I("stone_shard", 10) }, idleExpPerHour = 6, effectText = "대기 중인 모험가 EXP 시간당 6" });
+                new BuildingLevel { idleExpPerHour = 0, effectText = "훈련 없음 (신입은 가까운 약한 몬스터만 사냥)" },
+                // P4-99: the base grows each day and with how far a member is behind the guild's best; newcomers train here.
+                new BuildingLevel { goldCost = 200, itemCosts = { I("stone_shard", 6), I("old_arrowhead", 4) }, idleExpPerHour = 3, effectText = "대기 중 EXP 시간당 3+ (날마다·뒤처진 만큼 더), 신입 훈련" },
+                new BuildingLevel { goldCost = 550, itemCosts = { I("bone_shard", 12), I("stone_shard", 10) }, idleExpPerHour = 6, effectText = "대기 중 EXP 시간당 6+ (날마다·뒤처진 만큼 더), 신입 훈련" });
 
             // P5-1: the hall fell in seconds to the first raid, so it is much sturdier now and
             // raiders only land a fraction of their attack on it (GameBalance.monsterBuildingDamageMul).

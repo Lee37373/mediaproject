@@ -311,13 +311,20 @@ namespace GuildMaster.Adventurers
                     _nestNearby = Mathf.Max(_nestNearby, intel.Get(n).LastCount);
         }
 
-        /// <summary>Ourselves first, then every living member within <see cref="FreeHunt.AllyRadius"/>.</summary>
+        /// <summary>Ourselves first, then every living member within <see cref="FreeHunt.AllyRadius"/> — a newcomer only itself (P4-99).</summary>
         void CountBand(Adventurer a)
         {
             _bandStats.Clear();
             _bandHp.Clear();
             _bandStats.Add(a.Stats);
             _bandHp.Add(a.Hp);
+            // A newcomer (P4-99, user decision 2026-10-21) hunts what it can take on its own, close in: no further than where
+            // the young are born no stronger than it — not out to the near ring every other hunt reaches.
+            if (a.IsNewcomer)
+            {
+                _reach = a.NewcomerReach;
+                return;
+            }
             UnitRegistry.Collect(a.Position, FreeHunt.AllyRadius, u => u != a && u is Adventurer m && m.IsGuildMember, AllyBuffer);
             foreach (var u in AllyBuffer)
             {

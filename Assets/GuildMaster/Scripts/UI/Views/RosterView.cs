@@ -228,6 +228,8 @@ namespace GuildMaster.UI
                 string star = leader ? UIBuilder.Colored("★ ", UITheme.Accent) : "";
                 // Titles (P4-83): one for each region lord this member helped bring down.
                 string titles = d.titles.Count > 0 ? " " + UIBuilder.Colored($"[군주 토벌 {d.titles.Count}]", UITheme.Accent) : "";
+                // Weaker than the monsters round the town (P4-99): it trains, or hunts close in on its own.
+                if (a.IsNewcomer) titles += " " + UIBuilder.Colored("[신입]", UITheme.Exp);
                 _main.text = $"{star}{d.name} {InspectorView.GradeTag(d.grade)}{titles}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
                              $"<color=#{hpColor}>HP {a.Hp:0}/{a.Stats.MaxHp:0}</color>  {UIBuilder.Colored(a.StateLabel, UITheme.Accent)}";
                 string quest = a.CurrentQuest != null ? $" · 의뢰 {a.CurrentQuest.Title}" : "";

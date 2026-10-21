@@ -147,7 +147,7 @@ namespace GuildMaster.Adventurers
             {
                 foreach (var b in _bands)
                 {
-                    if (!b.Mustering || b.Members.Count >= _capacity) continue;
+                    if (!b.Mustering || b.Members.Count >= _capacity || !SameFooting(a, b.Leader)) continue;
                     b.Members.Add(a);
                     return b;
                 }
@@ -161,6 +161,7 @@ namespace GuildMaster.Adventurers
                 {
                     if (m == a || band.Members.Count >= _capacity || !m.IsAlive || m.CurrentQuest != null) continue;
                     if (!m.IsIdleInTown || !Welfare.GuildWelfare.MayGoOut(m)) continue; // on leave, wounded or breaking: stays home
+                    if (!SameFooting(m, a)) continue; // a newcomer trains or hunts close in on its own (P4-99)
                     band.Members.Add(m); // before the state change, so its Enter finds this band
                     m.Say("같이 가자!");
                     m.ChangeState(m.FreeHuntState);
@@ -171,6 +172,13 @@ namespace GuildMaster.Adventurers
                 invites.InviteToHunt(a, band, _capacity - band.Members.Count);
             return band;
         }
+
+        /// <summary>
+        /// Both newcomers or neither (P4-99, user decision 2026-10-21): a newcomer does not go out with a stronger band — a
+        /// band's reach and prey go by its strength, and newcomers who tagged along died out there — and a band of newcomers,
+        /// which keeps close in, is no place for one who has outgrown it.
+        /// </summary>
+        public static bool SameFooting(Adventurer a, Adventurer leader) => leader == null || a.IsNewcomer == leader.IsNewcomer;
 
         public void Leave(Adventurer a)
         {
@@ -199,10 +207,25 @@ namespace GuildMaster.Adventurers
                 {
                     b.Mustering = false;
                     b.SetOutHour = hour;
-                    // Setting out together: a standing party forms or goes on an outing (P4-50).
-                    if (b.Members.Count >= 2 && Services.TryGet<GuildParties>(out var parties)) parties.SetOut(b.Members);
+                    // Setting out together: a standing party forms or goes on an outing (P4-50). Not newcomers hunting close in
+                    // (P4-99): a standing party's newcomers, left at home by their leader's hunts, set its outing going without
+                    // it, and the leader back in town waited half a day for an outing it was never on.
+                    if (b.Members.Count >= 2 && !b.Leader.IsNewcomer && Services.TryGet<GuildParties>(out var parties))
+                        parties.SetOut(WithTheirLeaders(b, parties));
                 }
             }
+        }
+
+        /// <summary>
+        /// The band's members with no standing party, or whose party's leader is out with them: one whose leader stays
+        /// home — it outgrew a newcomer leader (P4-99) — goes along on its own account and leaves its party at home.
+        /// </summary>
+        static List<Adventurer> WithTheirLeaders(HuntBand b, GuildParties parties)
+        {
+            var goers = new List<Adventurer>();
+            foreach (var m in b.Members)
+                if (parties.PartyOf(m) is not { } p || b.Has(p.Leader)) goers.Add(m);
+            return goers;
         }
     }
 }
