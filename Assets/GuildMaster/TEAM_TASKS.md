@@ -109,6 +109,7 @@
 | P4-98 | 전체 오류 점검(2026-10-21) 후속 버그 수정: 후퇴 뒤 교전 대상이 안 지워져 귀환길 야영·회복이 막힘, 이동 지름길이 재해 칸(눈더미·균열·불)을 가로지름, 불러온 뒤 잠든 야영자가 원래 시야로 안개를 걷음, 드래곤 토벌 의뢰는 게시판에서 못 내림(사용자 결정) | 이재혁 | 완료 | Adventurers/AdventurerStates·CampState, World/WorldService·Hazards, Quests/QuestBoard, UI/QuestBoardView | 55c1713 |
 | P4-99 | 신입 성장(사용자 결정 2026-10-21): 근처 몬스터보다 약한 길드원은 훈련소에서 훈련하거나 혼자 감당할 사냥감만 사냥, 의뢰도 자기보다 센 몬스터가 태어나는 곳의 것은 안 맡음, 훈련 EXP는 날짜가 갈수록 + 길드 최고 레벨보다 낮을수록 많이. 신입이 강한 사냥 무리·먼 의뢰에서 2~4일차에 죽던 문제. 신입 무리가 상설 파티 외출을 열던 회귀도 같이 고침 | 이재혁 | 완료 | Adventurers(NewcomerRules·TrainState 신규, HuntBandService·Party·PartyService·QuestRisk·Decisions 등), Town/UpgradeService, Ecosystem/EcosystemManager, Data/DefaultContent, UI/RosterView | 6063058 |
 | P4-100 | P4-99 후속(사용자 결정 2026-10-21): 신입의 먼 의뢰는 막지 않고 위험도·확률·성격으로 판단, 5마리 이상 토벌을 혼자 맡으면 위험 한 단계 위로(동료를 부를 수 있으면 파티로, 끝내 혼자면 내려놓음), 마을에서 쉬다 맞으면 반격하거나(침공 중에도) 너무 다쳤으면 피신 | 이재혁 | 완료 | Adventurers(QuestRisk·NewcomerRules·Decisions·PartyService·TownGuardState, 피신 상태 신규) | b966207 |
+| P4-101 | 맵 지형(사용자 요청 2026-10-21 "직진만 하면 돼서 재미없음"): 지대 사이 산맥·강과 고개·다리(지대마다 2~3곳), 지대마다 특색 지형(사막 협곡·설원 얼음 틈·늪 물길·황무지 용암 강), 길목을 지키는 둥지·거처. 안 본 땅은 평지로 가정(지금 규칙) | 이재혁 | 진행 중 | World/MapGenerator·TerrainRegions·MapData, Ecosystem(둥지 배치), Visuals | |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로 | 미정 | 보류 | Audio(신규) | |
