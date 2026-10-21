@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-10-21
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-98**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-100**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -106,6 +106,8 @@
 | P4-95 | 드래곤 스킬 추가·피하기 어렵게(사용자 결정 2026-10-20): 화염 폭격·포효·화염 비·꼬리 휘두르기(예고 짧게·범위 넓게), 예고 장판 회피 반응을 등급별 확률로(높은 등급일수록 빨리 반응할 확률↑ — 모든 장판에 적용). 기존 숨결은 그대로, 세져도 됨(몇 레벨에 이기는지 측정) | 이재혁 | 완료 | Units/Skills(드래곤 스킬 4개·Scorch·FireVolley)·TelegraphService(반응 시간)·DodgeRules(신규), Monsters/Dragon(공격 ×4.5·요구치 125·스킬 수치)·DragonStates(UseFire), Data/DefaultContent | d0c2def |
 | P4-96 | 크게 다친 파티원은 혼자 도망가지 않고 파티 뒤로 빠져 치료(사용자 결정 2026-10-20): 사제 곁으로 물러났다 회복되면 복귀, 파티 절반 이상이 크게 다쳤거나 치료할 사제가 없을 때만 전원 후퇴(멀쩡한 사람이 뒤따르는 적을 막음). 구사일생 혼자 도망·후퇴↔야영 반복 버그도 고침 | 이재혁 | 완료 | Adventurers/PartyRecovery(WhenHurt)·FallBackRules(신규)·Adventurer(뒤로 빠지기·구사일생)·AdventurerStates(후방 엄호)·CampService(전원 조용할 때만 야영), Welfare/MemberCare·GuildWelfare(싸우는 중 태업 안 함), Units/Skills(HealSkill.HealsBelow) | 90462e7 |
 | P4-97 | 보스 의뢰 모집(사용자 결정 2026-10-21): 드래곤·지대 군주 같은 파티용 의뢰를 한 명이 먼저 잡고 '모집 중'으로 마을에서 기다리면, 돌아오는 길드원(다른 상설 파티는 리더를 통해 통째로)이 차례로 합류하고 인원이 차면 출발, 정해진 시간(24시간) 안에 안 차면 포기. 예전엔 마을에서 동시에 한가한 인원으로만 세어 아무도 안 맡았음 | 이재혁 | 완료 | Adventurers/PartyService(모집·저장)·QuestRisk(GatherableCount·ReadyToSetOut·IsBossWork)·Decisions·Party(다른 파티는 따로 외출·모집 중 해산 안 함), Session/GameBootstrap·GameLog·AnomalyWatch·DebugCommands(Recruits), UI/QuestBoardView | 24f1337 |
+| P4-98 | 전체 오류 점검(2026-10-21) 후속 버그 수정: 후퇴 뒤 교전 대상이 안 지워져 귀환길 야영·회복이 막힘, 이동 지름길이 재해 칸(눈더미·균열·불)을 가로지름, 불러온 뒤 잠든 야영자가 원래 시야로 안개를 걷음, 드래곤 토벌 의뢰는 게시판에서 못 내림(사용자 결정) | 이재혁 | 진행 중 | Adventurers/AdventurerStates·Adventurer·CampState, World/WorldService·PathFollower, Quests/QuestBoard | |
+| P4-99 | 신입 성장(사용자 결정 2026-10-21): 근처 몬스터보다 약한 길드원은 훈련소에서 훈련하거나 혼자 감당할 사냥감만 사냥, 훈련 EXP는 날짜가 갈수록 + 길드 최고 레벨보다 낮을수록 많이. 신입이 강한 사냥 무리에 끼어 2~4일차에 죽던 문제 | 이재혁 | 예정 | Adventurers, Town/UpgradeService, Data/DefaultContent | |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로 | 미정 | 보류 | Audio(신규) | |
