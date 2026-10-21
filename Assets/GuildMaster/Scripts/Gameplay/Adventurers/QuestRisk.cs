@@ -43,9 +43,51 @@ namespace GuildMaster.Adventurers
             => q != null && (q.Species != null && q.Species.isRegionLord
                              || q.TargetNest != null && q.TargetNest.IsLair && Core.Services.TryGet<Ecosystem.GuildIntel>(out var intel) && intel.KnownLordAt(q.TargetNest) != null);
 
-        /// <summary>The margin for this quest (its own requirement, see <see cref="Requirement"/>).</summary>
+        /// <summary>The margin for this quest with this many going (its own requirement, see <see cref="Requirement(Quests.Quest, int)"/>).</summary>
         public static float Margin(float leaderPower, int partySize, Quests.Quest q)
-            => MarginAgainst(leaderPower, partySize, Requirement(q));
+            => MarginAgainst(leaderPower, partySize, Requirement(q, partySize));
+
+        // ---------------- A big hunt alone (P4-100) ----------------
+
+        /// <summary>A hunt for this many or more is a step more dangerous for one going alone.</summary>
+        public const int SoloRaiseCount = 5;
+
+        /// <summary>
+        /// One going alone on a big hunt (P4-100, user decision 2026-10-21): the danger steps rate a spot by the level its young
+        /// are born at, and Lv3–5 members took five Lv3 skulls on alone as 낮음 and died — two to four in every measured run.
+        /// Rated a step higher alone, it is work for two, unless the taker is strong enough by itself.
+        /// </summary>
+        public static bool SoloRaises(Quests.Quest q, int partySize)
+            => partySize <= 1 && q != null && q.Type == Quests.QuestType.Hunt && q.RequiredCount >= SoloRaiseCount
+               && q.Incident == null && !IsBossWork(q);
+
+        /// <summary>What the quest asks of this many: <see cref="Requirement(Quests.Quest)"/>, a danger step up for a big hunt alone.</summary>
+        public static float Requirement(Quests.Quest q, int partySize)
+            => SoloRaises(q, partySize)
+                ? RuleBasedDecisionMaker.DangerRequirement(Quests.QuestBoard.Raise(q.Danger, 1))
+                : Requirement(q);
+
+        /// <summary>
+        /// Members the taker of a big hunt could ask along this moment (P4-100): in town and idle, fit to go out (P4-69), no
+        /// quest — of no standing party, or of the taker's own (it comes unasked). The taker asks them at once
+        /// (<see cref="PartyService"/>); should they all say no, it puts the hunt down rather than go alone.
+        /// </summary>
+        static int AskableNow(Quests.Quest q, Adventurer taker)
+        {
+            if (!Core.Services.TryGet<GuildRoster>(out var roster)) return 0;
+            Core.Services.TryGet<GuildParties>(out var parties);
+            var own = taker != null ? parties?.PartyOf(taker) : null;
+            int n = 0;
+            foreach (var m in roster.Members)
+            {
+                if (m == taker || m == null || !m.IsAlive || m.IsVisitor || !m.IsGuildMember || m.CurrentQuest != null || q.IsAssigned(m)) continue;
+                if (!m.IsIdleInTown || !Welfare.GuildWelfare.MayGoOut(m)) continue;
+                var p = parties?.PartyOf(m);
+                if (p != null && (p != own || own.Leader != taker)) continue;
+                n++;
+            }
+            return n;
+        }
 
         // ---------------- Work for a party (P4-85) ----------------
 
@@ -67,10 +109,15 @@ namespace GuildMaster.Adventurers
         /// quest who may go out and is not far too green for it counts. Counting the idle alone, nobody ever took the
         /// dragon or a lord: the guild was out hunting, and three at most stood in town at once in three days.
         /// </summary>
-        public static int ExpectedParty(Quests.Quest q)
+        public static int ExpectedParty(Quests.Quest q, Adventurer taker = null)
         {
             int now = q.Assignees.Count + 1;
-            if (!IsPartyWork(q)) return now;
+            if (!IsPartyWork(q))
+            {
+                // A big hunt nobody is on yet (P4-100): with those it can ask along now, as it will ask them at once.
+                if (SoloRaises(q, now) && q.MaxParty > 1) return Mathf.Min(q.MaxParty, now + AskableNow(q, taker));
+                return now;
+            }
             return Mathf.Clamp(Mathf.Max(now, GatherableCount(q)), now, Mathf.Max(now, q.MaxParty));
         }
 
@@ -94,9 +141,12 @@ namespace GuildMaster.Adventurers
         public static bool CouldGather(Adventurer m)
             => m != null && m.IsAlive && m.IsGuildMember && !m.IsVisitor && m.CurrentQuest == null && Welfare.GuildWelfare.MayGoOut(m);
 
-        /// <summary>The party that actually set out is too small for party work: "무모" with this many (the leader's power).</summary>
+        /// <summary>
+        /// The party that actually set out is too small: "무모" with this many (the leader's power) — for party work, and for a
+        /// big hunt its taker would go on alone (P4-100: everyone it asked said no).
+        /// </summary>
         public static bool TooFewFor(Quests.Quest q, float leaderPower, int partySize)
-            => IsPartyWork(q) && Label(Margin(leaderPower, partySize, q)) == Reckless;
+            => (IsPartyWork(q) || SoloRaises(q, partySize)) && Label(Margin(leaderPower, partySize, q)) == Reckless;
 
         /// <summary>
         /// A gathering for party work may set out (P4-97): when the quest is full, or when this many are up to it — for a
@@ -116,7 +166,7 @@ namespace GuildMaster.Adventurers
 
         /// <summary>This member's risk on this quest as words (the party it reckons with, see <see cref="ExpectedParty"/>).</summary>
         public static string RiskLabel(Adventurer a, Quests.Quest q)
-            => Label(Margin(AdventurerStats.Power(a.Data), ExpectedParty(q), q));
+            => Label(Margin(AdventurerStats.Power(a.Data), ExpectedParty(q, a), q));
 
         // ---------------- Too green for it (P4-88) ----------------
 
@@ -143,15 +193,29 @@ namespace GuildMaster.Adventurers
             => (riskLabel == Risky || riskLabel == Reckless) && AdventurerStats.RawPower(d) <= RecommendedLevel(q) - GreenGap;
 
         /// <summary>
-        /// A newcomer's quest out where the young are born stronger than it (P4-99, user decision 2026-10-21: newcomers hunt
-        /// weak monsters first): it neither takes nor joins it, nor is it taken along — no dare. The danger steps rate young of
-        /// level 3 as 낮음, and Lv1–2 newcomers took skull hunts 52 cells out on their own and died there (two runs of three).
-        /// An escort's spot is only where the guild master stood when it was posted: not judged.
+        /// A newcomer's quest out where the young are born stronger than it (P4-99): the danger steps rate young of level 3 as
+        /// 낮음, and Lv1–2 newcomers took skull hunts 52 cells out on their own and died there (two runs of three). It is a
+        /// dare (<see cref="NewcomerHoldsBack"/>). An escort's spot is only where the guild master stood when it was posted:
+        /// not judged.
         /// </summary>
         public static bool BeyondNewcomer(Adventurer a, Quests.Quest q)
             => a != null && q != null && q.Type != Quests.QuestType.Escort && a.IsNewcomer
                && Core.Services.TryGet<Ecosystem.EcosystemManager>(out var eco)
                && !NewcomerRules.WithinReach(AdventurerStats.Power(a.Data), eco.BirthLevelAt(q.Point));
+
+        /// <summary>
+        /// The roll behind a newcomer's quest beyond its ground (P4-100, user decision 2026-10-21: not barred — by the danger,
+        /// the dice and its nature, <see cref="NewcomerRules.DareChance"/>): true when it holds back (not pure: dice). One answer
+        /// per quest at each risk to it (<see cref="Adventurer.Dares"/>) — its own choice, an invitation, its leader taking it
+        /// along all ask the same: rolled at every look, a 30% dare came up within a day, and pairs of newcomers took five
+        /// Lv3 skulls 52 cells out and died there.
+        /// </summary>
+        public static bool NewcomerHoldsBack(Adventurer a, Quests.Quest q)
+        {
+            if (!BeyondNewcomer(a, q)) return false;
+            string risk = RiskLabel(a, q);
+            return !a.Dares(q, risk, NewcomerRules.DareChance(risk, a.Traits?.DangerAversion ?? 0f, a.Data.values));
+        }
 
         /// <summary>Odds a too-green member takes or joins such a quest anyway: the bold dare twice as often.</summary>
         public static float GreenDareChance(float dangerAversion) => dangerAversion < 0f ? 0.3f : 0.15f;

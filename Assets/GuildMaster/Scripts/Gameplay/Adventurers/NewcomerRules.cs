@@ -39,9 +39,37 @@ namespace GuildMaster.Adventurers
 
         /// <summary>
         /// Ground a newcomer may work: the young there are born no stronger than it (level 1 ground always). Its hunts keep
-        /// to it, and so do its quests — it neither takes nor joins one out where they are stronger (<see cref="QuestRisk.BeyondNewcomer"/>).
+        /// to it; a quest out beyond it is a dare (<see cref="DareChance"/>, <see cref="QuestRisk.BeyondNewcomer"/>).
         /// </summary>
         public static bool WithinReach(float power, int levelThere) => levelThere <= Mathf.Max(1f, power);
+
+        // ---------------- Quests beyond its ground (P4-100) ----------------
+
+        /// <summary>Odds a newcomer takes or joins a quest beyond its ground at this risk to it, before its nature.</summary>
+        public const float DareEasy = 0.5f, DareFair = 0.3f, DareRisky = 0.1f;
+        /// <summary>The brave dare twice as often, the timid half as often; those who value safety half, honour half again more.</summary>
+        public const float BraveDare = 2f, TimidDare = 0.5f, SafetyDare = 0.5f, HonourDare = 1.5f, MaxDare = 0.9f;
+
+        /// <summary>
+        /// Odds a newcomer takes, or says yes to, a quest out where the young are stronger than it (P4-100, user decision
+        /// 2026-10-21: "by the danger, the dice and its nature" instead of never): by the risk to it (<see cref="QuestRisk.Label"/>
+        /// words — never when 무모), times its nature (<paramref name="dangerAversion"/> below 0 is brave), times its values.
+        /// </summary>
+        public static float DareChance(string riskLabel, float dangerAversion, string values)
+        {
+            float chance = riskLabel switch
+            {
+                QuestRisk.Easy => DareEasy,
+                QuestRisk.Fair => DareFair,
+                QuestRisk.Risky => DareRisky,
+                _ => 0f,
+            };
+            if (dangerAversion < 0f) chance *= BraveDare;
+            else if (dangerAversion > 0f) chance *= TimidDare;
+            if (values == "안전") chance *= SafetyDare;
+            else if (values == "명예") chance *= HonourDare;
+            return Mathf.Clamp(chance, 0f, MaxDare);
+        }
 
         // ---------------- Training ----------------
 

@@ -220,6 +220,10 @@ namespace GuildMaster.Adventurers
         /// </summary>
         void OnQuestPartyFormed(PartyFormedEvent e)
         {
+            // Led by one of a standing party whose leader stays home — a newcomer deciding for itself (P4-99): it goes on its
+            // own account. Its party's outing is not set going without its leader, nor does a party form round it (P4-100
+            // measured run: the leader, and a member waiting for it, stood in town half a day for an outing they were never on).
+            if (PartyOf(e.Leader) is { } led && led.Leader != e.Leader && !Goes(e, led.Leader)) return;
             var goers = new List<Adventurer> { e.Leader };
             var own = PartyOf(e.Leader);
             var others = new List<Party>();
@@ -238,6 +242,12 @@ namespace GuildMaster.Adventurers
                 foreach (var m in p.Members) if (going.Contains(m)) theirs.Add(m);
                 SetOut(theirs);
             }
+        }
+
+        static bool Goes(PartyFormedEvent e, Adventurer a)
+        {
+            foreach (var m in e.Members) if (m == a) return true;
+            return false;
         }
 
         public Party PartyOf(Adventurer a) => a != null && _of.TryGetValue(a, out var p) ? p : null;

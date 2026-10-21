@@ -76,6 +76,8 @@ namespace GuildMaster.Adventurers
         internal RefugeeState RefugeeState;
         internal LureState LureState;
         internal TownGuardState TownGuardState;
+        /// <summary>Hit in town too hurt to fight: running for cover (P4-100).</summary>
+        internal TakeCoverState TakeCoverState;
         /// <summary>Sent out to bring a fallen comrade's relics home (F-6).</summary>
         internal Legacy.RelicRetrievalState RetrievalState;
         /// <summary>Picking loot off the ground (P4-21).</summary>
@@ -115,6 +117,24 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public bool IsNewcomer => Data != null && IsGuildMember && !IsVisitor && Services.TryGet<Ecosystem.EcosystemManager>(out var eco)
                                   && NewcomerRules.IsNewcomer(AdventurerStats.Power(Data), eco.BirthLevelAtDistance(NewcomerRules.NearRing));
+
+        /// <summary>A newcomer's answers to quests beyond its ground, by quest and risk to it (P4-100; not saved — asked afresh after a load).</summary>
+        readonly Dictionary<(Quests.Quest, string), bool> _dares = new();
+
+        /// <summary>
+        /// Whether this newcomer dares the quest at this risk to it (<see cref="QuestRisk.NewcomerHoldsBack"/>): rolled once with
+        /// <paramref name="chance"/>, then the same answer — a lower risk (company came) is a new question.
+        /// </summary>
+        internal bool Dares(Quests.Quest q, string risk, float chance)
+        {
+            if (_dares.TryGetValue((q, risk), out var dare)) return dare;
+            if (_dares.Count >= 16)
+                foreach (var key in new List<(Quests.Quest, string)>(_dares.Keys))
+                    if (!key.Item1.IsActive) _dares.Remove(key);
+            dare = GameRandom.Shared.Chance(chance);
+            _dares[(q, risk)] = dare;
+            return dare;
+        }
 
         /// <summary>How far from the town this newcomer hunts on its own (P4-99).</summary>
         internal float NewcomerReach
@@ -166,6 +186,7 @@ namespace GuildMaster.Adventurers
             RefugeeState = new RefugeeState();
             LureState = new LureState();
             TownGuardState = new TownGuardState();
+            TakeCoverState = new TakeCoverState();
             RetrievalState = new Legacy.RelicRetrievalState();
             Looting = new AdventurerLooting(this);
             // Party back line (P4-27): ranged members fall back behind a front-liner while reloading.
@@ -757,7 +778,7 @@ namespace GuildMaster.Adventurers
         {
             IdleState, DecidingState, TravelState, HuntState, FreeHuntState, EscortState, GatherState, DefendState,
             ReturnState, VisitState, RestState, CampState, DeadState, VisitorWanderState, VisitorLeaveState, LureState,
-            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState, TrainState,
+            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState, TrainState, TakeCoverState,
         };
 
         /// <summary>One of this member's states by class name (saved states refer to each other this way), or null.</summary>

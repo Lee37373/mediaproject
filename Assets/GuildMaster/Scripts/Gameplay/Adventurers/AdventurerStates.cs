@@ -202,12 +202,16 @@ namespace GuildMaster.Adventurers
                     // Still on it after the accept: party work nobody could be asked along for is dropped at once (P4-85).
                     if (q != null && AdvCtx.Board.TryAccept(q, a) && q.IsAssigned(a))
                     {
+                        // A big hunt taken counting on company that all said no (P4-100): put down, not walked into alone.
+                        if (Services.TryGet<PartyService>(out var asked) && asked.PutDownIfAlone(q, a)) return;
                         a.CurrentQuest = q;
                         a.Say(d.Say);
                         a.ChangeState(a.TravelState);
                         return;
                     }
-                    break;
+                    // Not on it after all (taken, or put down at once — P4-100): no "I'll take it!" after the leader's "too few".
+                    a.ChangeState(a.IdleState);
+                    return;
                 case AdventurerAction.Rest:
                     a.Say(d.Say);
                     a.ChangeState(a.RestState);
@@ -747,6 +751,9 @@ namespace GuildMaster.Adventurers
             // within reach only, so the party keeps going — while the hurt run on.
             if (Retreating)
             {
+                // Hit inside the walls on the way to the guild (raiders broke in, P4-100): it runs from them, not to the door
+                // they may stand at — then walks to the counter once it is quiet.
+                if (TakeCoverState.TryStart(a, a.ReturnState)) return;
                 if (IsRearGuard(a)) { if (a.HandleCombat(dt, allowed: _rearGuardZone ??= u => CaughtUp(Owner, u))) return; }
                 // No longer covering the rear (hurt below the line, or its party gone): it lets go of the foe it held. That foe
                 // stayed its target all the way home and into town, and a member "still fighting" is never quiet — its party

@@ -42,6 +42,9 @@ namespace GuildMaster.Session
             if (s == a.CampState) return 13f;
             if (s == a.DefendState) return 12f;
             if (s == a.TownGuardState) return 4f;
+            // Lying low until no monster is at it (P4-100); a newcomer thinks again after two hours' training (P4-99).
+            if (s == a.TakeCoverState) return 4f;
+            if (s == a.TrainState) return NewcomerRules.TrainHours + 1f;
             if (s == a.LureState) return 1f;
             // Idling decides every hour and a half; a follower waits for its leader, but not for half a
             // day (P4-76: an outing that never settled held a whole party in town for days).

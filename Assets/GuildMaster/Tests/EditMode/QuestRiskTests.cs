@@ -17,6 +17,22 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void ABigHuntAlone_IsADangerStepHarder_AndPutDownWhenNobodyComes()
+        {
+            // P4-100 (user decision 2026-10-21): Lv3–5 members took five Lv3 skulls on alone as 낮음 and died.
+            Quests.Quest Hunt(int count) => new("Q_" + count, new Quests.QuestDraft { Type = Quests.QuestType.Hunt, Count = count, RewardGold = 40, MaxParty = 2 }, 0f);
+            var five = Hunt(QuestRisk.SoloRaiseCount);
+            var four = Hunt(QuestRisk.SoloRaiseCount - 1);
+            float lv3 = 3 * 0.75f, lv7 = 7 * 0.75f;
+            Assert.That(QuestRisk.Label(QuestRisk.Margin(lv3, 1, five)), Is.EqualTo(QuestRisk.Reckless), "a Lv3 alone on five: a step up (보통)");
+            Assert.That(QuestRisk.Label(QuestRisk.Margin(lv3, 2, five)), Is.EqualTo(QuestRisk.Easy), "two of them: as posted (낮음)");
+            Assert.That(QuestRisk.Label(QuestRisk.Margin(lv3, 1, four)), Is.EqualTo(QuestRisk.Easy), "four alone: as posted");
+            Assert.That(QuestRisk.TooFewFor(five, lv3, 1), Is.True, "alone, it puts the five down");
+            Assert.That(QuestRisk.TooFewFor(five, lv3, 2), Is.False);
+            Assert.That(QuestRisk.TooFewFor(five, lv7, 1), Is.False, "a Lv7 goes alone");
+        }
+
+        [Test]
         public void Advice_GivesSoloLevelAndPartySize()
         {
             Assert.That(QuestRisk.SoloLevel(DangerLevel.High, 0), Is.EqualTo(9)); // P4-58: levels run 1..15 across the map

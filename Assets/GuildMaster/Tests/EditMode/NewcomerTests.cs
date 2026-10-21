@@ -44,6 +44,22 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void AQuestBeyondItsGround_IsADare_ByTheRiskAndItsNature()
+        {
+            // P4-100 (user decision 2026-10-21): not barred — by the danger, the dice and its nature.
+            float fair = NewcomerRules.DareChance(QuestRisk.Fair, 0f, "돈");
+            Assert.That(fair, Is.EqualTo(NewcomerRules.DareFair));
+            Assert.That(NewcomerRules.DareChance(QuestRisk.Easy, 0f, "돈"), Is.GreaterThan(fair), "the easier, the likelier");
+            Assert.That(NewcomerRules.DareChance(QuestRisk.Risky, 0f, "돈"), Is.LessThan(fair));
+            Assert.That(NewcomerRules.DareChance(QuestRisk.Reckless, -1f, "명예"), Is.Zero, "never when 무모");
+            Assert.That(NewcomerRules.DareChance(QuestRisk.Fair, -1f, "돈"), Is.GreaterThan(fair), "the brave dare more");
+            Assert.That(NewcomerRules.DareChance(QuestRisk.Fair, 1f, "돈"), Is.LessThan(fair), "the timid less");
+            Assert.That(NewcomerRules.DareChance(QuestRisk.Fair, 0f, "안전"), Is.LessThan(fair), "those who value safety less");
+            Assert.That(NewcomerRules.DareChance(QuestRisk.Fair, 0f, "명예"), Is.GreaterThan(fair), "those who value honour more");
+            Assert.That(NewcomerRules.DareChance(QuestRisk.Easy, -1f, "명예"), Is.EqualTo(NewcomerRules.MaxDare), "within a cap");
+        }
+
+        [Test]
         public void Training_PaysMore_AsTheDaysGoBy_AndTheFurtherBehindTheBest()
         {
             Assert.That(NewcomerRules.TrainingExp(0f, 10f, 10), Is.Zero, "a ground that teaches nothing pays nothing");

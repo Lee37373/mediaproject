@@ -78,6 +78,8 @@ namespace GuildMaster.Adventurers
             float bestScore = 0f;
             foreach (var q in available)
             {
+                // A newcomer's quest out beyond its ground is a dare (P4-100): rolled here, once a look.
+                if (QuestRisk.NewcomerHoldsBack(a, q)) continue;
                 float score = Score(a, q);
                 if (score > bestScore) { bestScore = score; best = q; }
             }
@@ -124,17 +126,17 @@ namespace GuildMaster.Adventurers
             if (Welfare.GuildWelfare.QuestRefusal(a, q.Danger) != null) return 0f;
             // Party work gathered for lately in vain (P4-97): not taken up again at once, to stand in the plaza for nothing.
             if (Services.TryGet<PartyService>(out var parties) && parties.RestingAfterFailure(q)) return 0f;
+            // A big hunt it put down lately for want of company (P4-100): not taken up again at once to ask the same people.
+            if (parties != null && parties.PutDownLately(a, q)) return 0f;
             // Party work (a rare monster P4-85, a region lord P4-90) counts the party that could go along —
             // everyone the guild could gather for it, not only those idle in town this moment (P4-97).
-            int partySize = QuestRisk.ExpectedParty(q);
+            int partySize = QuestRisk.ExpectedParty(q, a);
             // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused.
             float margin = QuestRisk.Margin(AdventurerStats.Power(d), partySize, q);
             string risk = QuestRisk.Label(margin);
             if (risk == QuestRisk.Reckless) return 0f;
             // Far under the quest's level, a 위험 one is not for it (P4-88): the rules never dare (the model may, rarely).
             if (QuestRisk.TooGreen(d, q, risk)) return 0f;
-            // A newcomer works only where the young are no stronger than it (P4-99).
-            if (QuestRisk.BeyondNewcomer(a, q)) return 0f;
 
             float value = q.RewardGold / (float)partySize + q.RewardExp * 1.2f / partySize;
             // Personality flavour for the rule-based fallback.

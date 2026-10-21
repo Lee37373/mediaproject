@@ -100,6 +100,8 @@ namespace GuildMaster.Adventurers
         readonly Dictionary<Quest, Gathering> _gatherings = new();
         /// <summary>Game hour each quest's gathering came to nothing (P4-97).</summary>
         readonly Dictionary<Quest, float> _failedAt = new();
+        /// <summary>Game hour a taker put a big hunt down for want of company (P4-100): not taken up by it again at once.</summary>
+        readonly Dictionary<(Quest, Adventurer), float> _putDownAt = new();
 
         public PartyService(QuestBoard board, GuildRoster roster, GameClock clock = null)
         {
@@ -117,6 +119,7 @@ namespace GuildMaster.Adventurers
             _hunts.Clear();
             _gatherings.Clear();
             _failedAt.Clear();
+            _putDownAt.Clear();
         }
 
         float Hour => _clock != null ? _clock.TotalHours : Time.time / 10f;
@@ -163,6 +166,18 @@ namespace GuildMaster.Adventurers
             if (q == null || !_failedAt.TryGetValue(q, out var at)) return false;
             if (Hour - at < RestAfterFailedHours) return true;
             _failedAt.Remove(q);
+            return false;
+        }
+
+        /// <summary>
+        /// This member put the big hunt down lately, everyone it asked having said no (P4-100): it does not take it up again
+        /// until <see cref="AskAgainHours"/> have passed — or it would take it, ask the same people, and put it down again.
+        /// </summary>
+        public bool PutDownLately(Adventurer a, Quest q)
+        {
+            if (a == null || q == null || !_putDownAt.TryGetValue((q, a), out var at)) return false;
+            if (Hour - at < AskAgainHours) return true;
+            _putDownAt.Remove((q, a));
             return false;
         }
 
@@ -310,8 +325,8 @@ namespace GuildMaster.Adventurers
             {
                 if (m == leader || !FreeInTown(m) || IsInvited(m) || !q.HasFreeSlot) continue;
                 // Far too green for it, it stays home rather than follow its party out (P4-99, as an invitee holds back, P4-88),
-                // and so does a newcomer when the quest is out where the young are stronger than it.
-                if (QuestRisk.TooGreen(m.Data, q, QuestRisk.RiskLabel(m, q)) || QuestRisk.BeyondNewcomer(m, q)) continue;
+                // and so may a newcomer when the quest is out where the young are stronger than it (P4-100: a dare).
+                if (QuestRisk.TooGreen(m.Data, q, QuestRisk.RiskLabel(m, q)) || QuestRisk.NewcomerHoldsBack(m, q)) continue;
                 if (_board.TryAccept(q, m, invited: true)) list.Add(m);
             }
             return list;
@@ -354,7 +369,7 @@ namespace GuildMaster.Adventurers
         static (bool accept, string say) RuleDecide(Adventurer c, Adventurer leader, Quest quest = null)
         {
             if (c == null) return (false, null);
-            if (quest != null && (QuestRisk.BeyondNewcomer(c, quest) || QuestRisk.HoldsBack(c, quest))) return (false, TooGreenLine);
+            if (quest != null && (QuestRisk.NewcomerHoldsBack(c, quest) || QuestRisk.HoldsBack(c, quest))) return (false, TooGreenLine);
             float chance = AcceptChanceOverride ?? Math.Min(0.95f, RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f, Relationships.Get(c, leader))
                                                                + (QuestRisk.IsBossWork(quest) ? BossWorkEagerness : 0f));
             bool accept = GameRandom.Shared.Value < chance;
@@ -399,8 +414,9 @@ namespace GuildMaster.Adventurers
             var q = g.Quest;
             // Everyone on it but the leader: those who joined, and a whole standing party come along (P4-97).
             var goers = q.Assignees.OfType<Adventurer>().Where(a => a != g.Leader && a.IsAlive && a.CurrentQuest == q).ToList();
-            // Party work (P4-85) that too few said yes to: the group does not set out to be killed.
-            if (QuestRisk.TooFewFor(q, AdventurerStats.Power(g.Leader.Data), q.Assignees.Count))
+            // Party work (P4-85) that too few said yes to: the group does not set out to be killed. (A big hunt alone is its
+            // taker's own call, P4-100: PutDownIfAlone.)
+            if (QuestRisk.IsPartyWork(q) && QuestRisk.TooFewFor(q, AdventurerStats.Power(g.Leader.Data), q.Assignees.Count))
             {
                 GiveUp(q, g.Leader, goers);
                 // Gathered for and still too few (P4-97): left alone a while, or the next one to take it would wait again at once.
@@ -414,8 +430,11 @@ namespace GuildMaster.Adventurers
         /// <summary>Said by a leader whose party work found too few to go along.</summary>
         public const string TooFewLine = "이 인원으로는 무리야. 다음에 다시 모이자.";
 
+        /// <summary>Said by the taker of a big hunt that nobody would come along on (P4-100).</summary>
+        public const string AloneLine = "혼자서는 무리야. 같이 갈 사람이 있을 때 다시 맡자.";
+
         /// <summary>The quest goes back on the board; the leader and whoever had joined stay in town.</summary>
-        void GiveUp(Quest q, Adventurer leader, List<Adventurer> joined)
+        void GiveUp(Quest q, Adventurer leader, List<Adventurer> joined, string line = TooFewLine)
         {
             foreach (var a in joined.Append(leader).ToList())
             {
@@ -424,7 +443,24 @@ namespace GuildMaster.Adventurers
                 if (a.CurrentQuest == q) a.CurrentQuest = null;
                 if (a.IsAlive) a.ChangeState(a.IdleState);
             }
-            if (leader != null && leader.IsAlive) leader.Say(TooFewLine);
+            if (leader != null && leader.IsAlive) leader.Say(line);
+        }
+
+        /// <summary>
+        /// A big hunt a member took on its own judgement, counting on company it could ask (P4-100, <see cref="QuestRisk.ExpectedParty"/>):
+        /// the answers are in the moment it takes it, and if nobody said yes and it is not up to it alone, it puts the hunt back
+        /// on the board, and leaves it a while (<see cref="PutDownLately"/>). True when it did. Not for one persuaded by the
+        /// guild master or sent by a debug command: the guild master's word stands.
+        /// </summary>
+        public bool PutDownIfAlone(Quest q, Adventurer taker)
+        {
+            if (q == null || taker == null || !q.IsAssigned(taker) || q.Assignees.Count > 1) return false;
+            if (_gatherings.TryGetValue(q, out var g) && (g.Recruiting || g.Pending > 0)) return false;
+            if (!QuestRisk.TooFewFor(q, AdventurerStats.Power(taker.Data), 1)) return false;
+            _gatherings.Remove(q);
+            _putDownAt[(q, taker)] = Hour;
+            GiveUp(q, taker, new List<Adventurer>(), AloneLine);
+            return true;
         }
 
         // ---------------- Gathering for party work (P4-97) ----------------
@@ -546,8 +582,8 @@ namespace GuildMaster.Adventurers
                 // Still settling the last outing, or one of them still resting: it does not go out yet (P4-79).
                 if (parties.OutingUnfinished(head) || parties.MembersGettingReady(head)) continue;
                 if (Relationships.Get(leader, head) <= HostileThreshold) continue;
-                // Its newcomers out of their depth stay home: they do not wait for their leader (P4-99).
-                var block = p.Members.Where(m => FreeInTown(m) && !IsInvited(m) && !QuestRisk.BeyondNewcomer(m, q)).ToList();
+                // Its newcomers out of their depth may stay home (P4-100: a dare): they do not wait for their leader (P4-99).
+                var block = p.Members.Where(m => FreeInTown(m) && !IsInvited(m) && !QuestRisk.NewcomerHoldsBack(m, q)).ToList();
                 if (!block.Contains(head) || block.Count > q.MaxParty - q.Assignees.Count) continue;
                 AskParty(g, head, block);
             }

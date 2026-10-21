@@ -2387,6 +2387,48 @@ namespace GuildMaster.Tests
                 yield return WaitFor(() => !goblin.IsAlive || Roster.Members.Any(a => a.StateLabel == "마을 경비"), 15f);
                 Assert.That(!goblin.IsAlive || Roster.Members.Any(a => a.StateLabel == "마을 경비"), Is.True,
                     "members in town react to the intruder");
+                if (goblin.IsAlive) goblin.Perish();
+
+                // P4-100 (user decision 2026-10-21: "맞으면 반격·도망" — raiders killed members resting under half health where
+                // they lay): hit while resting too hurt to fight with nothing to drink, a member runs for cover and goes back to
+                // resting once nothing is at it; with a potion it turns on its attacker (and drinks, CheckRetreat); a little less hurt it
+                // fights back. Badly hurt (5%): a priest guarding nearby may mend it a little, not past the line.
+                var door = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+                var setHp = typeof(Unit).GetMethod("SetHp", BindingFlags.NonPublic | BindingFlags.Instance);
+                var lying = Roster.Members.First(a => a.IsAlive);
+                Monster BiteWhileResting(float hpRatio, int potions)
+                {
+                    lying.Mover.Stop();
+                    lying.transform.position = door;
+                    lying.Data.potions = potions;
+                    lying.Data.gold = 0; // at the guild door: no buying another one meanwhile
+                    lying.ChangeState(lying.RestState);
+                    setHp.Invoke(lying, new object[] { lying.Stats.MaxHp * hpRatio });
+                    var biter = SpawnMonster("goblin", door + Vector2.right * 1.5f, meleeOnly: true, level: 8); // outlasts the guards a while
+                    biter.ForceTarget(lying);
+                    lying.ReceiveDamage(0f, biter, false); // damage-free (invulnerable), but a hit
+                    return biter;
+                }
+                var first = BiteWhileResting(0.05f, 0);
+                var bitAt = first.Position;
+                yield return WaitFor(() => lying.Fsm.Current == lying.TakeCoverState, 3f);
+                Assert.That(lying.StateLabel, Is.EqualTo("피신 중"), "too hurt to fight, nothing to drink: it runs for cover");
+                float gap = Vector2.Distance(lying.Position, bitAt);
+                yield return WaitFor(() => Vector2.Distance(lying.Position, bitAt) > gap + 3f, 5f);
+                Assert.That(Vector2.Distance(lying.Position, bitAt), Is.GreaterThan(gap + 3f), "away from where it was bitten");
+                first.Perish();
+                yield return WaitFor(() => lying.Fsm.Current == lying.RestState, 25f);
+                Assert.That(lying.Fsm.Current, Is.EqualTo(lying.RestState), $"quiet again: back to resting ({lying.StateLabel})");
+
+                var second = BiteWhileResting(0.05f, 1);
+                yield return WaitFor(() => lying.Fsm.Current == lying.TownGuardState, 3f);
+                Assert.That(lying.StateLabel, Is.EqualTo("마을 경비"), "with a potion: it turns on its attacker");
+                second.Perish();
+
+                var third = BiteWhileResting(Mathf.Min(0.49f, lying.RetreatThreshold + 0.05f), 0);
+                yield return WaitFor(() => lying.Fsm.Current == lying.TownGuardState, 3f);
+                Assert.That(lying.StateLabel, Is.EqualTo("마을 경비"), "able to fight: it fights back");
+                third.Perish();
             }
             finally { Unit.GuildInvulnerable = false; }
         }
@@ -3079,6 +3121,47 @@ namespace GuildMaster.Tests
             rookie.ChangeState(rookie.IdleState);
             veteran.ChangeState(veteran.RestState);
 
+            // A big hunt alone is a danger step harder (P4-100, user decision 2026-10-21: Lv3–5 members took five Lv3 skulls on
+            // alone as 낮음 and died): a Lv3 with nobody to ask along leaves five alone; with someone idle in town it takes them
+            // and asks — and when everyone says no, it puts the hunt down rather than go alone, and leaves it a while.
+            var eco = Services.Get<EcosystemManager>();
+            var board = Services.Get<QuestBoard>();
+            var partyService = Services.Get<PartyService>();
+            var centre = town.Get(Town.BuildingType.TownHall).Center;
+            var skull = Services.Get<GameDatabase>().Monster("skull");
+            QuestDraft HuntDraft(Vector2 at, int count) => new()
+            {
+                Type = QuestType.Hunt, Species = skull, Count = count, Point = at, HasPoint = true, Radius = QuestBoard.HuntRadius,
+                RewardGold = 40, RewardExp = 30, MaxParty = 2,
+            };
+            Quest Hunt(string id, Vector2 at, int count) => new(id, HuntDraft(at, count), Clock.TotalHours);
+            var taker = members.Last(a => a != veteran && a != rookie);
+            taker.Data.level = 3;
+            taker.Data.gearTier = 0;
+            taker.RecalculateStats(fullHeal: true);
+            (taker.Data.potions, taker.Data.fatigue, taker.Data.stress) = (2, 0f, 0f);
+            Assume.That(taker.IsNewcomer, Is.False);
+            Services.Get<GuildIntel>().MarkKnown(skull);
+            var outside = centre;
+            for (float r = 5f; r < 60f && town.IsInTown(outside); r += 1f) outside = centre + Vector2.right * r;
+            Assume.That((town.IsInTown(outside), eco.BirthLevelAt(outside)), Is.EqualTo((false, 1)), "level 1 ground just outside the walls");
+            Assert.That(board.TryPostRequest(HuntDraft(outside, QuestRisk.SoloRaiseCount), QuestClient.Town, out var five, out var postError), Is.True, postError);
+            rookie.ChangeState(rookie.RestState);
+            Assert.That(RuleBasedDecisionMaker.Score(taker, five), Is.Zero, "nobody to ask: five are 무모 for a Lv3 alone");
+            rookie.ChangeState(rookie.IdleState);
+            Assert.That(QuestRisk.ExpectedParty(five, taker), Is.EqualTo(2), "one idle in town to ask along");
+            Assert.That(RuleBasedDecisionMaker.Score(taker, five), Is.GreaterThan(0f), "so it takes them on");
+            PartyService.AcceptChanceOverride = 0f; // asked, it says no
+            Assert.That(board.TryAccept(five, taker), Is.True, "taken on its own judgement (the decision's accept)…");
+            Assert.That(partyService.PutDownIfAlone(five, taker), Is.True, "…and, everyone it asked saying no, put down at once");
+            Assert.That((five.IsAssigned(taker), taker.CurrentQuest, five.Status), Is.EqualTo((false, (Quest)null, QuestStatus.Open)),
+                "back on the board, nobody on it");
+            Assert.That((partyService.PutDownLately(taker, five), RuleBasedDecisionMaker.Score(taker, five)), Is.EqualTo((true, 0f)),
+                "and does not take them up again at once");
+            board.Cancel(five);
+            PartyService.AcceptChanceOverride = null;
+            taker.ChangeState(taker.RestState);
+
             // Newcomers of a stronger leader's standing party hunt close in by themselves: their band leaves the party at home
             // (measured run: it set the party's outing going, and its leader waited in town half a day for an outing it was
             // never on), and the leader does not wait for them to finish resting either.
@@ -3116,27 +3199,31 @@ namespace GuildMaster.Tests
             Assert.That(parties.MembersGettingReady(veteran), Is.False, "the leader does not wait for newcomers it does not take out");
             rookie.ChangeState(rookie.IdleState);
             rookie2.ChangeState(rookie2.RestState);
+            // Nor does a quest one of them leads (P4-100 measured run: a newcomer's quest set its party's outing going, and the
+            // leader and a member waiting for it stood in town half a day): it goes on its own account.
+            EventBus.Publish(new PartyFormedEvent
+            {
+                Quest = Hunt("Q_led", centre, 2), Leader = rookie, Members = new System.Collections.Generic.List<Adventurer> { taker },
+            });
+            Assert.That((standing.OnOuting, parties.OutingUnfinished(veteran), parties.PartyOf(taker)), Is.EqualTo((false, false, (Party)null)),
+                "a newcomer's quest leaves its party at home, and forms none round it");
 
-            // Its quests keep to the same ground (two measured runs: Lv1–2 newcomers took skull hunts 52 cells out, where the
-            // young are level 3 and the danger steps still say 낮음, and died there): not out where the young are stronger.
-            var eco = Services.Get<EcosystemManager>();
-            var centre = town.Get(Town.BuildingType.TownHall).Center;
+            // Its quests out where the young are stronger than it (two measured runs: Lv1–2 newcomers took skull hunts 52 cells
+            // out, where the young are level 3 and the danger steps still say 낮음, and died there) are a dare — by the risk to it,
+            // the dice and its nature (P4-100, user decision 2026-10-21), not barred.
             var far = centre;
             for (float r = 30f; r < 250f && eco.BirthLevelAt(far) < 3; r += 5f) far = centre + Vector2.right * r;
             Assume.That(eco.BirthLevelAt(far), Is.GreaterThanOrEqualTo(3), "ground where level 3 young are born");
-            var skull = Services.Get<GameDatabase>().Monster("skull");
-            Quest Hunt(string id, Vector2 at) => new(id, new QuestDraft
-            {
-                Type = QuestType.Hunt, Species = skull, Count = 5, Point = at, HasPoint = true, Radius = QuestBoard.HuntRadius,
-                RewardGold = 40, RewardExp = 30, MaxParty = 1,
-            }, Clock.TotalHours);
-            var farHunt = Hunt("Q_far", far);
-            var nearHunt = Hunt("Q_near", centre);
+            var farHunt = Hunt("Q_far", far, 2);
+            var nearHunt = Hunt("Q_near", centre, 2);
             Assert.That((QuestRisk.BeyondNewcomer(rookie, farHunt), QuestRisk.BeyondNewcomer(rookie, nearHunt), QuestRisk.BeyondNewcomer(veteran, farHunt)),
                 Is.EqualTo((true, false, false)), "beyond a newcomer only: out where the young are stronger than it");
-            Assert.That(RuleBasedDecisionMaker.Score(rookie, farHunt), Is.Zero, "it does not take that one");
-            Assert.That(RuleBasedDecisionMaker.Score(rookie, nearHunt), Is.GreaterThan(0f), "one close in it does");
-            Assert.That(RuleBasedDecisionMaker.Score(veteran, farHunt), Is.GreaterThan(0f), "and the veteran the far one");
+            float dare = NewcomerRules.DareChance(QuestRisk.RiskLabel(rookie, farHunt), rookie.Traits?.DangerAversion ?? 0f, rookie.Data.values);
+            Assert.That(dare, Is.GreaterThan(0f).And.LessThan(1f), "a dare, not a bar");
+            Assert.That(RuleBasedDecisionMaker.Score(rookie, farHunt), Is.GreaterThan(0f), "worth taking, should it dare");
+            bool answer = QuestRisk.NewcomerHoldsBack(rookie, farHunt);
+            Assert.That(Enumerable.Range(0, 20).All(_ => QuestRisk.NewcomerHoldsBack(rookie, farHunt) == answer), Is.True,
+                "one answer per quest and risk, not a fresh roll at every look (a 30% dare came up within a day)");
 
             // The ground at level 2 teaches: the newcomer trains in its yard, and catches up faster than the best.
             var ground = town.Get(Town.BuildingType.TrainingGround);

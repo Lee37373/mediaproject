@@ -21,7 +21,7 @@ namespace GuildMaster.Adventurers
         /// <summary>Hurt members only fight back when hit themselves.</summary>
         const float MinHpToJoin = 0.5f;
 
-        public State<Adventurer> Next { get; private set; }
+        public State<Adventurer> Next { get; internal set; }
         float _calm;
         float _repath;
 
@@ -37,10 +37,15 @@ namespace GuildMaster.Adventurers
             if (timer > 0f) return false;
             timer = CheckInterval;
             if (!a.IsAlive || a.IsVisitor || !a.IsGuildMember) return false;
-            if (Services.TryGet<WaveManager>(out var waves) && waves.RaidSighted) return false;
             bool hitNow = a.LastAttacker is Monster attacker && a.WasRecentlyAttackedBy(attacker, 3f);
-            // Too hurt to fight at all (it would retreat right away): stay put and let others handle it.
-            if (a.HpRatio < a.RetreatThreshold || (a.HpRatio < MinHpToJoin && !hitNow)) return false;
+            // A raid the guild has seen is the defence's (DefendState) — but one hit fights back or runs even then (P4-100,
+            // user decision 2026-10-21: members resting under half health were left out of the defence and killed lying down).
+            if (!hitNow && Services.TryGet<WaveManager>(out var waves) && waves.RaidSighted) return false;
+            // Hit, too hurt to fight and nothing to drink: it runs for cover (P4-100).
+            if (TakeCoverState.TryStart(a, resume)) return true;
+            // Too hurt to fight at all and not hit (it would retreat right away): stay put and let others handle it. Hit with a
+            // potion, it turns on its attacker and drinks (CheckRetreat).
+            if (!hitNow && (a.HpRatio < a.RetreatThreshold || a.HpRatio < MinHpToJoin)) return false;
             if (!hitNow && FindIntruder(a) == null) return false;
             a.TownGuardState.Next = resume;
             a.ChangeState(a.TownGuardState);
@@ -97,6 +102,8 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
+            // Badly hurt inside the walls with nothing to drink (P4-100): it runs for cover, not "home" past the intruder.
+            if (TakeCoverState.TryStart(a, Next)) return;
             if (a.CheckRetreat(wearinessCounts: false)) return;
             var town = AdvCtx.Town;
             bool Allowed(Unit u) => (u is Monster m && IsIntruder(town, m)) || a.WasRecentlyAttackedBy(u);
