@@ -739,7 +739,14 @@ namespace GuildMaster.Adventurers
             if (!Retreating && a.HandleCombat(dt)) return;
             // Pulling back together (P4-96, user decision 2026-10-20): the fit ones turn on whatever catches up with them —
             // within reach only, so the party keeps going — while the hurt run on.
-            if (Retreating && IsRearGuard(a) && a.HandleCombat(dt, allowed: _rearGuardZone ??= u => CaughtUp(Owner, u))) return;
+            if (Retreating)
+            {
+                if (IsRearGuard(a)) { if (a.HandleCombat(dt, allowed: _rearGuardZone ??= u => CaughtUp(Owner, u))) return; }
+                // No longer covering the rear (hurt below the line, or its party gone): it lets go of the foe it held. That foe
+                // stayed its target all the way home and into town, and a member "still fighting" is never quiet — its party
+                // could neither camp nor mend on the way (P4-98).
+                else if (a.Engage.Target != null) a.Engage.Clear();
+            }
             if (!Retreating && a.Looting.Tick(dt)) return;
             // The fight is over but they are badly hurt (user report 2026-09-22: the loot was left
             // lying): gather what fell close by — looting stops by itself when an enemy shows.
@@ -838,6 +845,8 @@ namespace GuildMaster.Adventurers
         public override void Enter()
         {
             var a = Owner;
+            // Home: whatever it was fighting out there is behind it (P4-98: a foe left over from the way back stayed its target).
+            a.Engage.Clear();
             _shopped = false;
             _goingToDoor = Vector2.Distance(a.Position, AdvCtx.GuildDoor) > 1.2f;
             if (_goingToDoor) a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
@@ -950,6 +959,7 @@ namespace GuildMaster.Adventurers
 
         public override void Enter()
         {
+            Owner.Engage.Clear(); // resting, not fighting (P4-98)
             Owner.Mover.SetDestination(AdvCtx.GuildDoor + GameRandom.Shared.InsideUnitCircle() * 1.2f, 0.3f);
         }
 

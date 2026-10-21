@@ -370,10 +370,12 @@ namespace GuildMaster.Quests
         /// <summary>
         /// Whether the guild master may take this quest down now. A client's quest only while nobody has
         /// taken it (P4-82: once taken the work is the members' and the client's), and never a disaster
-        /// (the town's emergency, P4-72). The guild's own (an escort) at any time.
+        /// (the town's emergency, P4-72), a raid on the dragon's hoard or the dragon's hunt (P4-98, user decision
+        /// 2026-10-21: the town put the hunt back up within the hour). The guild's own (an escort) at any time.
         /// </summary>
         public static bool CanTakeDown(Quest q)
-            => q != null && q.IsActive && (!q.FundedByClient || (q.Assignees.Count == 0 && q.Type != QuestType.Disaster && q.Type != QuestType.Treasure));
+            => q != null && q.IsActive && (!q.FundedByClient || (q.Assignees.Count == 0 && q.Type != QuestType.Disaster && q.Type != QuestType.Treasure
+                                                                 && !(q.Species != null && q.Species.isDragon)));
 
         /// <summary>
         /// Takes a quest off the board. A client's quest nobody took simply comes down (the town will not post

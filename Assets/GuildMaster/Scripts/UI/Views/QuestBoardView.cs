@@ -199,7 +199,7 @@ namespace GuildMaster.UI
                 string client = UIBuilder.Colored(q.ClientLabel, q.FundedByClient ? UITheme.Text : UITheme.Warn);
                 string fee = q.FundedByClient ? $" · {UIBuilder.Colored($"수수료 {q.FeeGold}G", UITheme.Accent)}" : " (예치)";
                 _detail.text = $"{client} · 보상 {q.RewardGold}G / {q.RewardExp}EXP{fee} · 인원 {q.Assignees.Count}/{q.MaxParty} ({members}) · 진행 {q.ProgressText}";
-                // A client's quest comes down only while untaken, a disaster never (QuestBoard.CanTakeDown); the guild's escort ends any time.
+                // A client's quest comes down only while untaken, a disaster or the dragon never (QuestBoard.CanTakeDown); the guild's escort ends any time.
                 bool canTakeDown = QuestBoard.CanTakeDown(q);
                 _cancel.gameObject.SetActive(canTakeDown);
                 _cancel.SetLabel(q.FundedByClient ? "내리기" : "취소");

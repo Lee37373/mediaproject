@@ -58,5 +58,12 @@ namespace GuildMaster.World
 
         /// <summary>Harmful to stand in (damage over time).</summary>
         public static bool Hurts(HazardKind k) => k is HazardKind.Fire or HazardKind.Poison;
+
+        /// <summary>
+        /// Ground a straight line never cuts across (<see cref="WorldService.HasClearLine"/>): a wall of snow or a crack, fire,
+        /// poison. A path goes round them where it can; a shortcut across one the plan avoided crawled through it at a
+        /// 25th of the pace, or walked into the fire (P4-98).
+        /// </summary>
+        public static bool KeepsLinesOff(HazardKind k) => Blocks(k) || Hurts(k);
     }
 }

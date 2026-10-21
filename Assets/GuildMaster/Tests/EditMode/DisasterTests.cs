@@ -73,6 +73,33 @@ namespace GuildMaster.Tests
             Assert.That(Hazards.Hurts(HazardKind.Snow), Is.False);
         }
 
+        /// <summary>
+        /// P4-98: a walker's shortcut does not cut across the hazards its path went round — a wall of snow or a crack (it crawled
+        /// through at a 25th of the pace), fire or poison (it walked into the burn). Burnt ground and a sandstorm are no bar.
+        /// </summary>
+        [Test]
+        public void Shortcuts_GoRoundSnowCracksFireAndPoison_LikeThePath()
+        {
+            var map = new MapData(12, 5);
+            for (int i = 0; i < map.Tiles.Length; i++) map.Tiles[i] = TileType.Grass;
+            var world = new WorldService(map);
+            var from = new Vector2(1.5f, 2.5f);
+            var to = new Vector2(10.5f, 2.5f);
+            var across = new Vector2Int(6, 2);
+            Assert.That(world.HasClearLine(from, to), Is.True, "open grass");
+            foreach (var kind in new[] { HazardKind.Snow, HazardKind.Fissure, HazardKind.Fire, HazardKind.Poison })
+            {
+                world.Grid.SetHazard(across, kind);
+                Assert.That(world.HasClearLine(from, to), Is.False, $"not across {kind}");
+                Assert.That(world.HasClearLine(from, new Vector2(4.5f, 2.5f)), Is.True, $"short of the {kind} it is clear");
+            }
+            foreach (var kind in new[] { HazardKind.Burnt, HazardKind.Sandstorm })
+            {
+                world.Grid.SetHazard(across, kind);
+                Assert.That(world.HasClearLine(from, to), Is.True, $"{kind} is no bar to a line");
+            }
+        }
+
         [Test]
         public void TheTownPaysMore_TheNearerItIs()
         {

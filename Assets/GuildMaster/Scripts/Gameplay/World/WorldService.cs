@@ -174,7 +174,10 @@ namespace GuildMaster.World
 
         static float Sq(float x) => x * x;
 
-        /// <summary>True if a straight segment crosses only walkable cells (used for path smoothing).</summary>
+        /// <summary>
+        /// True if a straight segment crosses only walkable cells free of the hazards a path goes round (used for path
+        /// smoothing, footwork and kiting spots; P4-98: <see cref="Hazards.KeepsLinesOff"/>).
+        /// </summary>
         public bool HasClearLine(Vector2 a, Vector2 b)
         {
             float dist = Vector2.Distance(a, b);
@@ -183,14 +186,16 @@ namespace GuildMaster.World
             {
                 var p = Vector2.Lerp(a, b, i / (float)steps);
                 var c = GridMap.WorldToCell(p);
-                if (!Grid.IsWalkable(c)) return false;
+                if (!Open(c)) return false;
                 // Reject lines that clip wall corners.
                 var off = new Vector2(p.x - c.x - 0.5f, p.y - c.y - 0.5f);
                 var sx = new Vector2Int(c.x + (off.x > 0.3f ? 1 : off.x < -0.3f ? -1 : 0), c.y);
                 var sy = new Vector2Int(c.x, c.y + (off.y > 0.3f ? 1 : off.y < -0.3f ? -1 : 0));
-                if (!Grid.IsWalkable(sx) || !Grid.IsWalkable(sy)) return false;
+                if (!Open(sx) || !Open(sy)) return false;
             }
             return true;
         }
+
+        bool Open(Vector2Int c) => Grid.IsWalkable(c) && !Hazards.KeepsLinesOff(Grid.HazardAt(c));
     }
 }

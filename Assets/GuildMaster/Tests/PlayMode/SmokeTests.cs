@@ -1077,6 +1077,17 @@ namespace GuildMaster.Tests
                 EventBus.Unsubscribe(onRun);
                 Assert.That(runMarks, Is.EqualTo(Dragon.BombCount));
 
+                // The town's hunt for it stays up: taken down, it was posted again within the hour (P4-98, user decision 2026-10-21).
+                var board = Services.Get<QuestBoard>();
+                Services.Get<GuildIntel>().MarkKnown(dragon.Def);
+                Assert.That(board.TryPostRequest(new QuestDraft
+                {
+                    Type = QuestType.Hunt, Species = dragon.Def, Count = 1, Point = svc.Lair, HasPoint = true, Radius = QuestBoard.HuntRadius,
+                    RewardGold = 2000, RewardExp = 1200, MaxParty = RegionLords.QuestParty,
+                }, QuestClient.Town, out var hunt, out var huntError), Is.True, huntError);
+                Assert.That((QuestBoard.CanTakeDown(hunt), board.Cancel(hunt), hunt.IsActive), Is.EqualTo((false, false, true)),
+                    "the guild master cannot take the dragon's hunt down");
+
                 // It falls for good: the title goes to the member who fought it.
                 DebugCommands.KillDragon(Roster.Members.ToList().IndexOf(warrior));
                 Assert.That((svc.Slain, svc.Dragon), Is.EqualTo((true, (Monster)null)));
@@ -2980,6 +2991,22 @@ namespace GuildMaster.Tests
                     yield return null;
                 }
                 Assert.That(trio.All(a => a.Fsm.Current == a.ReturnState), Is.True, "still pulling back");
+
+                // 6. P4-98: one pulling back hurt (not the rear guard) holds no foe — a foe it had taken stayed its target all the
+                // way home and into town, and "still fighting" it kept its party from camping or mending on the way. Home, at
+                // the counter or resting, nobody holds one either.
+                foreach (var s in heals) s.ResetCooldown(1000f);
+                Unit.GuildInvulnerable = false;
+                hurt.ReceiveDamage(Mathf.Max(0f, hurt.Hp - hurt.Stats.MaxHp * 0.2f), null, false);
+                Unit.GuildInvulnerable = true;
+                Assume.That(hurt.HpRatio, Is.LessThan(FallBackRules.RejoinAt(hurt.RetreatThreshold)), "too hurt to cover the rear");
+                hurt.Engage.SetTarget(unseen);
+                yield return null;
+                yield return null;
+                Assert.That(hurt.Engage.Target, Is.Null, $"it lets go ({hurt.StateLabel})");
+                priest.Engage.SetTarget(unseen);
+                priest.ChangeState(priest.RestState);
+                Assert.That(priest.Engage.Target, Is.Null, "resting, not fighting");
             }
             finally
             {

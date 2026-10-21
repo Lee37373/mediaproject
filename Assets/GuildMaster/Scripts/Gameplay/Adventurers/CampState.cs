@@ -60,6 +60,22 @@ namespace GuildMaster.Adventurers
             if (!a.Mover.SetDestination(_camp.SeatOf(a), 0.1f)) CannotGetThere();
         }
 
+        /// <summary>
+        /// Back by the fire after a load (P4-98): as on entering, and one already at its seat sits, keeps watch or lies down at
+        /// once. Entering afresh left a sleeper with its full sight until its first step — through a paused load, for good —
+        /// and the fog lifted round the camp as far as an awake eye sees.
+        /// </summary>
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            Enter();
+            var a = Owner;
+            if (_camp == null || a.Fsm.Current != this || _camp.Alarmed) return; // no camp (it went on), or everyone is up
+            if (Vector2.Distance(a.Position, _camp.SeatOf(a)) > SeatReached) return; // still on its way to its seat
+            a.Mover.Stop();
+            Seated = true;
+            SetAsleep(!_camp.Sitting(AdvCtx.Clock.TotalHours) && _camp.Watcher != a);
+        }
+
         public override void Tick(float dt)
         {
             var a = Owner;
