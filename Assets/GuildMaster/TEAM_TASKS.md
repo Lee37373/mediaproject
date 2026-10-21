@@ -108,7 +108,7 @@
 | P4-97 | 보스 의뢰 모집(사용자 결정 2026-10-21): 드래곤·지대 군주 같은 파티용 의뢰를 한 명이 먼저 잡고 '모집 중'으로 마을에서 기다리면, 돌아오는 길드원(다른 상설 파티는 리더를 통해 통째로)이 차례로 합류하고 인원이 차면 출발, 정해진 시간(24시간) 안에 안 차면 포기. 예전엔 마을에서 동시에 한가한 인원으로만 세어 아무도 안 맡았음 | 이재혁 | 완료 | Adventurers/PartyService(모집·저장)·QuestRisk(GatherableCount·ReadyToSetOut·IsBossWork)·Decisions·Party(다른 파티는 따로 외출·모집 중 해산 안 함), Session/GameBootstrap·GameLog·AnomalyWatch·DebugCommands(Recruits), UI/QuestBoardView | 24f1337 |
 | P4-98 | 전체 오류 점검(2026-10-21) 후속 버그 수정: 후퇴 뒤 교전 대상이 안 지워져 귀환길 야영·회복이 막힘, 이동 지름길이 재해 칸(눈더미·균열·불)을 가로지름, 불러온 뒤 잠든 야영자가 원래 시야로 안개를 걷음, 드래곤 토벌 의뢰는 게시판에서 못 내림(사용자 결정) | 이재혁 | 완료 | Adventurers/AdventurerStates·CampState, World/WorldService·Hazards, Quests/QuestBoard, UI/QuestBoardView | 55c1713 |
 | P4-99 | 신입 성장(사용자 결정 2026-10-21): 근처 몬스터보다 약한 길드원은 훈련소에서 훈련하거나 혼자 감당할 사냥감만 사냥, 의뢰도 자기보다 센 몬스터가 태어나는 곳의 것은 안 맡음, 훈련 EXP는 날짜가 갈수록 + 길드 최고 레벨보다 낮을수록 많이. 신입이 강한 사냥 무리·먼 의뢰에서 2~4일차에 죽던 문제. 신입 무리가 상설 파티 외출을 열던 회귀도 같이 고침 | 이재혁 | 완료 | Adventurers(NewcomerRules·TrainState 신규, HuntBandService·Party·PartyService·QuestRisk·Decisions 등), Town/UpgradeService, Ecosystem/EcosystemManager, Data/DefaultContent, UI/RosterView | 6063058 |
-| P4-100 | P4-99 후속(사용자 결정 2026-10-21): 신입의 먼 의뢰는 막지 않고 위험도·확률·성격으로 판단, 5마리 이상 토벌을 혼자 맡으면 위험 한 단계 위로(동료를 부를 수 있으면 파티로, 끝내 혼자면 내려놓음), 마을에서 쉬다 맞으면 반격하거나(침공 중에도) 너무 다쳤으면 피신 | 이재혁 | 진행 중 | Adventurers(QuestRisk·NewcomerRules·Decisions·PartyService·TownGuardState, 피신 상태 신규) | |
+| P4-100 | P4-99 후속(사용자 결정 2026-10-21): 신입의 먼 의뢰는 막지 않고 위험도·확률·성격으로 판단, 5마리 이상 토벌을 혼자 맡으면 위험 한 단계 위로(동료를 부를 수 있으면 파티로, 끝내 혼자면 내려놓음), 마을에서 쉬다 맞으면 반격하거나(침공 중에도) 너무 다쳤으면 피신 | 이재혁 | 완료 | Adventurers(QuestRisk·NewcomerRules·Decisions·PartyService·TownGuardState, 피신 상태 신규) | b966207 |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로 | 미정 | 보류 | Audio(신규) | |
@@ -139,10 +139,10 @@
 
 ### 이재혁
 - **예정**: P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-99, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-100, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
-- **진행 중**: P4-100
+- **진행 중**: 없음
 - **예정**: F-4(명성·길드 등급·승리 목표), F-7(개발용 검증 명령). F-5(의뢰 종류·보상 확장)는 `QuestBoard.cs`를 건드려야 해서 P4-22와 조율이 필요합니다
 - **바뀐 점 알림(2026-10-17, P4-82 완료 c7b8e68)**: 사용자 결정으로 의뢰 구조가 바뀌었습니다. 플레이어는 토벌을 직접 올리지 않고, 우리 마을이 길드가 본 둥지마다 토벌을 올립니다. 보상은 의뢰처가 내고 길드는 20%를 수수료로 받으며, 길드 EXP는 없어졌습니다. **F-8 제안 카드**: 게시판에 없는 둥지에 대한 "다른 의뢰인의 요청"이 되었고, 보상 조절 버튼과 금고 잔액 제한을 없앴습니다(고르기만, `ProposalRules.BuildPool(targets, power, members, rng)`). **P4-59 협상**: 그대로 길드 금고에서 얹습니다. F-5(의뢰 확장)를 할 때는 `QuestClient`·`QuestPricing`·`QuestBoard.TryPostRequest`를 쓰면 됩니다. P4-83(8d091f6)으로 지대 군주 넷을 잡으면 승리 화면이 뜹니다(`AllLordsSlainEvent`) — F-4의 승리 목표는 여기에 얹으면 됩니다
 - **바뀐 점 알림(2026-10-19, P4-87 완료 661026d)**: 사용자 결정으로 **모든 모험가의 공격·방어·최대 체력이 ×0.75로 시작**하고, 성벽 안에 짓는 내실 건물(무기고·방어구 공방·식당 각 3레벨)로 예전 세기까지 돌아옵니다(`Town/FacilityRules`, `AdventurerStats.Compute(…, StatScale)`). 판단의 힘 `AdventurerStats.Power`도 이 배율을 곱하고(`RawPower`가 예전 값), 위험 낮음 요구치는 0.75입니다. 피해 공식은 `Unit.EffectiveDefense`·`Unit.AttackCooldownNow`(방어 감소·둔화 반영)를 씁니다. 정원은 대숙소가 있으면 없어집니다(`GuildRoster.IsFull`·`CountText`)
