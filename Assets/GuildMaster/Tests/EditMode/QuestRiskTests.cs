@@ -79,6 +79,30 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void ALordsGathering_WaitsUntilThePartyIsFair_ButGoesOnARiskyOneWhenTimeIsUp()
+        {
+            // P4-97 (user decision 2026-10-21): the first taker gathers the rest as they come home — when does it set out?
+            var lord = UnityEngine.ScriptableObject.CreateInstance<MonsterDefinition>();
+            lord.isRegionLord = true;
+            try
+            {
+                var q = QuestOf(DangerLevel.High, lord, Monsters.RegionLords.QuestParty);
+                Assert.That(QuestRisk.IsBossWork(q), Is.True);
+                // A power at which eight are 적당 and seven 위험.
+                float power = QuestRisk.Requirement(q) / (1f + 0.6f * 7) * 1.01f;
+                Assert.That(QuestRisk.Label(QuestRisk.Margin(power, 7, q)), Is.EqualTo(QuestRisk.Risky));
+                Assert.That(QuestRisk.ReadyToSetOut(q, power, 7), Is.False, "nobody walks into a lord on 위험 while more could still come");
+                Assert.That(QuestRisk.ReadyToSetOut(q, power, 8), Is.True);
+                Assert.That(QuestRisk.TooFewFor(q, power, 7), Is.False, "when time is up the seven go");
+                Assert.That(QuestRisk.TooFewFor(q, power, 5), Is.True, "five give it up");
+                Assert.That(QuestRisk.ReadyToSetOut(q, power * 10f, 1), Is.True, "one strong enough alone does not wait");
+                Assert.That(QuestRisk.ReadyToSetOut(q, 0.01f, q.MaxParty), Is.True, "a full one stops gathering (TooFewFor decides the rest)");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(lord); }
+            Assert.That(QuestRisk.IsBossWork(QuestOf(DangerLevel.High)), Is.False);
+        }
+
+        [Test]
         public void FarUnderItsLevel_ARiskyQuestIsTooGreen_ButAFairOneIsNot()
         {
             // P4-88 (user decision 2026-10-18): new members followed their party to far 위험 quests and died.

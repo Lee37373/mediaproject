@@ -646,6 +646,35 @@ namespace GuildMaster.Session
         }
 
         /// <summary>Makes up to 'count' idle members take the quest, skipping the decision step.</summary>
+        /// <summary>
+        /// Party work on the board (P4-97): who is on it, whether its first taker is still gathering and for how long, how
+        /// many the guild could gather, the margin of those on it — then every member: level, state, quest, party.
+        /// </summary>
+        public static string Recruits()
+        {
+            var board = Services.Get<QuestBoard>();
+            var invites = Services.Get<PartyService>();
+            Services.TryGet<GuildParties>(out var parties);
+            var sb = new StringBuilder();
+            foreach (var q in board.Quests.Where(q => q.IsActive && QuestRisk.IsPartyWork(q)))
+            {
+                var lead = q.Assignees.OfType<Adventurer>().FirstOrDefault();
+                sb.Append($"{q.Id} {q.Title} {q.Status} on {q.Assignees.Count}/{q.MaxParty} ({string.Join(",", q.Assignees.Select(a => a.TakerName))})");
+                sb.Append($" gathering={invites.IsRecruiting(q)} left={invites.RecruitHoursLeft(q):0.0}h resting={invites.RestingAfterFailure(q)}");
+                sb.Append($" gatherable={QuestRisk.GatherableCount(q)} rec=Lv{QuestRisk.RecommendedLevel(q)}");
+                if (lead != null)
+                {
+                    float power = AdventurerStats.Power(lead.Data);
+                    sb.Append($" margin={QuestRisk.Margin(power, q.Assignees.Count, q):0.00} ready={QuestRisk.ReadyToSetOut(q, power, q.Assignees.Count)}");
+                }
+                sb.AppendLine();
+            }
+            if (sb.Length == 0) sb.AppendLine("no party work");
+            foreach (var a in Services.Get<GuildRoster>().Members.Where(a => a.IsAlive))
+                sb.AppendLine($"  {a.Data.name} Lv{a.Data.level} {a.StateLabel} quest={a.CurrentQuest?.Id ?? "-"} party={parties?.PartyOf(a)?.Name ?? "-"}");
+            return sb.ToString();
+        }
+
         public static string ForceAccept(string questId, int count)
         {
             var board = Services.Get<QuestBoard>();

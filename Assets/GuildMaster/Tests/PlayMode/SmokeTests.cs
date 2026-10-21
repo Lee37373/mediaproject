@@ -62,6 +62,7 @@ namespace GuildMaster.Tests
             GameSettings.PaintGround = true;
             TownQuestPoster.Enabled = true;
             Incidents.IncidentService.Enabled = true;
+            PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
             if (_scene.IsValid() && _scene.isLoaded) yield return SceneManager.UnloadSceneAsync(_scene);
@@ -3871,6 +3872,175 @@ namespace GuildMaster.Tests
                             "every member moved in");
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; MigrationService.NoNewcomers = false; }
+        }
+
+        /// <summary>
+        /// Gathering for party work (P4-97, user decision 2026-10-21): nobody ever took the dragon or a lord — party work
+        /// counted only those idle in town, and the guild was out hunting. Now one in town takes a lord's quest because the
+        /// whole guild could go, asks those free at once, and waits in town asking whoever comes home; too few by the end of
+        /// the wait give it up (and it is left alone a while). Gathered again: a standing party comes home and joins through
+        /// its leader as a whole, staying its own party; seven on a 위험 margin keep waiting; the eighth makes it 적당 and
+        /// all set out together. The gathering is saved.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PartyWork_TheFirstTakerGathersTheRestAsTheyComeHome_APartyComesWhole_AndTooFewInTimeGiveUp()
+        {
+            yield return Boot();
+            var board = Services.Get<QuestBoard>();
+            var invites = Services.Get<PartyService>();
+            var parties = Services.Get<GuildParties>();
+            var world = Services.Get<World.WorldService>();
+            var lords = Services.Get<RegionLordService>();
+            Assume.That(lords.Lords.Count, Is.GreaterThan(0));
+            var lair = lords.Lords[0].Lair;
+            var lord = lair.LivingLord;
+            Services.Get<GuildIntel>().MarkKnown(lord.Def);
+            board.TryPostRequest(new QuestDraft
+            {
+                Type = QuestType.Hunt, Species = lord.Def, Count = 1, Point = lair.WorldPosition, HasPoint = true, Radius = QuestBoard.HuntRadius,
+                RewardGold = 1000, RewardExp = 600, MaxParty = RegionLords.QuestParty,
+            }, QuestClient.Town, out var quest, out var error, lair);
+            Assert.That(quest, Is.Not.Null, error);
+            Assert.That((QuestRisk.IsBossWork(quest), quest.MaxParty), Is.EqualTo((true, 8)));
+
+            while (Roster.Members.Count(a => a.IsAlive) < 8) Roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared), world.TownCenterWorld);
+            var m = Roster.Members.Where(a => a.IsAlive).ToList();
+            Assume.That(m, Has.Count.EqualTo(8));
+            // A level at which eight are 적당 against the lord and seven only 위험.
+            int level = 0;
+            for (int l = 1; l <= 60 && level == 0; l++)
+            {
+                m[0].Data.level = l;
+                m[0].Data.gearTier = 0;
+                float p = AdventurerStats.Power(m[0].Data);
+                if (QuestRisk.Margin(p, 8, quest) >= 1f && !QuestRisk.ReadyToSetOut(quest, p, 7)) level = l;
+            }
+            Assume.That(level, Is.GreaterThan(0));
+            for (int i = 0; i < m.Count; i++)
+            {
+                var a = m[i];
+                a.Data.level = level;
+                a.Data.gearTier = 0;
+                a.Data.gold = 0;
+                a.Data.potions = 2;
+                a.Data.stress = 0f;
+                a.Data.fatigue = i < 3 ? 0f : 100f;
+                a.RecalculateStats(fullHeal: true);
+                a.Mover.Stop();
+                world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(world.TownCenterWorld + new Vector2(i % 4 - 1.5f, i / 4)), 4, out var cell);
+                a.transform.position = World.GridMap.CellToWorld(cell);
+                // Three idle in town; five out of the way (resting off a long day — "not home yet").
+                a.ChangeState(i < 3 ? a.IdleState : a.RestState);
+            }
+            int recruiting = 0, formed = 0;
+            Adventurer formedBy = null;
+            Action<PartyRecruitingEvent> onRecruiting = _ => recruiting++;
+            Action<PartyFormedEvent> onFormed = e => { if (e.Quest == quest) { formed++; formedBy = e.Leader; } };
+            EventBus.Subscribe(onRecruiting);
+            EventBus.Subscribe(onFormed);
+            var totalHours = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+            var lastWholeHour = typeof(GameClock).GetField("_lastWholeHour", BindingFlags.NonPublic | BindingFlags.Instance);
+            void Jump(float hours)
+            {
+                float to = Clock.TotalHours + hours;
+                totalHours.SetValue(Clock, to);
+                lastWholeHour.SetValue(Clock, Mathf.FloorToInt(to));
+            }
+            PartyService.AcceptChanceOverride = 1f;
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                // Weighed by the whole guild (only three are idle in town): one of them takes it and asks the other two.
+                Assert.That(QuestRisk.GatherableCount(quest), Is.EqualTo(8));
+                Assert.That(RuleBasedDecisionMaker.Score(m[0], quest), Is.GreaterThan(0f), "worth taking for the party the guild could gather");
+                Clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+                yield return WaitFor(() => quest.Assignees.Count > 0, 15f);
+                Assert.That(quest.Assignees.Count, Is.EqualTo(3), "the first taker asked the two free in town at once");
+                Assert.That(m.Take(3).All(a => a.CurrentQuest == quest && a.Fsm.Current == a.GatherState), Is.True, "and they wait in town with it");
+                Assert.That((invites.IsRecruiting(quest), recruiting, formed), Is.EqualTo((true, 1, 0)));
+                Assert.That(invites.RecruitHoursLeft(quest), Is.InRange(PartyService.RecruitHours - 1f, PartyService.RecruitHours));
+
+                // Saved and put back: the same gathering, the same time left.
+                string json = invites.Capture();
+                Assert.That(json, Does.Contain(quest.Id));
+                var ctx = new SaveContext(0);
+                ctx.Register(quest.Id, quest);
+                foreach (var a in m) ctx.Register(a.Data.id, a);
+                float left = invites.RecruitHoursLeft(quest);
+                invites.Restore(json, ctx);
+                invites.Link(ctx);
+                Assert.That((invites.IsRecruiting(quest), ctx.Warnings.Count), Is.EqualTo((true, 0)));
+                Assert.That(invites.RecruitHoursLeft(quest), Is.EqualTo(left).Within(0.01f));
+
+                // Nobody else came home in time: three are 무모, so the quest goes back on the board — and is left alone a while.
+                Clock.SetSpeed(1);
+                Jump(PartyService.RecruitHours + 0.1f);
+                yield return WaitFor(() => !invites.IsRecruiting(quest), 3f);
+                Assert.That((quest.Status, quest.Assignees.Count), Is.EqualTo((QuestStatus.Open, 0)));
+                Assert.That(m.Take(3).All(a => a.CurrentQuest == null && a.Fsm.Current != a.GatherState), Is.True);
+                Assert.That(formed, Is.EqualTo(0));
+                Assert.That(invites.RestingAfterFailure(quest), Is.True);
+                Assert.That(RuleBasedDecisionMaker.Score(m[1], quest), Is.EqualTo(0f), "not taken up again at once");
+
+                // Later: a standing party of two is out of the way too, the other three still resting.
+                Jump(PartyService.RestAfterFailedHours + 0.1f);
+                Assert.That(invites.RestingAfterFailure(quest), Is.False);
+                var standing = parties.SetOut(new System.Collections.Generic.List<Adventurer> { m[6], m[7] });
+                parties.Finish(standing);
+                standing.SettledAtHour = -1f; // no breaking up idle in town while the test runs
+                foreach (var a in m.Skip(3))
+                {
+                    a.Data.fatigue = 100f;
+                    if (a.Fsm.Current != a.RestState) a.ChangeState(a.RestState);
+                }
+                Clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+                yield return WaitFor(() => quest.Assignees.Count > 0, 15f);
+                Assert.That((quest.Assignees.Count, invites.IsRecruiting(quest)), Is.EqualTo((3, true)), "taken up again, gathering again");
+                var leader = (Adventurer)quest.Assignees[0];
+
+                // The party comes home: asked through its leader, it comes whole — and stays its own party.
+                foreach (var a in new[] { m[6], m[7] })
+                {
+                    a.Data.fatigue = 0f;
+                    a.ChangeState(a.IdleState);
+                }
+                yield return WaitFor(() => quest.Assignees.Count == 5, 5f);
+                Assert.That(quest.Assignees.Count, Is.EqualTo(5));
+                Assert.That(quest.IsAssigned(m[6]) && quest.IsAssigned(m[7]), Is.True);
+                Assert.That((parties.PartyOf(m[6]), parties.PartyOf(m[7])), Is.EqualTo((standing, standing)));
+
+                // Two more: seven are only 위험 against a lord, so they wait for the eighth.
+                foreach (var a in new[] { m[3], m[4] })
+                {
+                    a.Data.fatigue = 0f;
+                    a.ChangeState(a.IdleState);
+                }
+                yield return WaitFor(() => quest.Assignees.Count == 7, 5f);
+                Assert.That(quest.Assignees.Count, Is.EqualTo(7));
+                float until = Clock.TotalHours + 1f;
+                yield return WaitFor(() => Clock.TotalHours >= until, 10f);
+                Assert.That((invites.IsRecruiting(quest), quest.Assignees.Count, formed), Is.EqualTo((true, 7, 0)), "seven do not set out on 위험 while more could come");
+
+                // The eighth: 적당 — all set out together.
+                m[5].Data.fatigue = 0f;
+                m[5].ChangeState(m[5].IdleState);
+                yield return WaitFor(() => formed > 0, 5f);
+                yield return null;
+                Assert.That((formed, invites.IsRecruiting(quest), quest.Assignees.Count), Is.EqualTo((1, false, 8)));
+                Assert.That(formedBy, Is.EqualTo(leader), "the one who took it leads it out (it was handed to the first one asked)");
+                Assert.That(m.All(a => a.CurrentQuest == quest && a.Fsm.Current != a.GatherState), Is.True, "all on their way");
+                var leaders = parties.PartyOf(leader);
+                Assert.That(leaders, Is.Not.Null.And.Not.EqualTo(standing));
+                Assert.That((leaders.Members.Count, leaders.OnOuting), Is.EqualTo((6, true)), "the leader's party: the six who had none");
+                Assert.That((standing.Members.Count, standing.OnOuting), Is.EqualTo((2, true)), "the standing party goes out as itself");
+            }
+            finally
+            {
+                PartyService.AcceptChanceOverride = null;
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+                EventBus.Unsubscribe(onRecruiting);
+                EventBus.Unsubscribe(onFormed);
+            }
         }
 
         /// <summary>

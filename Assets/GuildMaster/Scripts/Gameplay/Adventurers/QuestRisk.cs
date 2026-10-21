@@ -56,24 +56,60 @@ namespace GuildMaster.Adventurers
         public static bool IsPartyWork(Quests.Quest q)
             => q?.Incident != null && Incidents.IncidentRules.IsPartyWork(q.Incident) || IsLordWork(q) || IsDragonWork(q);
 
+        /// <summary>A region lord's or the dragon's quest: the guild's biggest fights, gathered for until the party is up to it (P4-97).</summary>
+        public static bool IsBossWork(Quests.Quest q) => IsLordWork(q) || IsDragonWork(q);
+
         /// <summary>
         /// The party a member reckons with when weighing a quest: those already on it plus itself — and, for party work, as
-        /// many as are free in town to be invited (up to the quest's limit). Without this the rules weighed a rare hunt
-        /// as a lone walk and never took it.
+        /// many as the guild could gather for it (up to the quest's limit). Without this the rules weighed a rare hunt
+        /// as a lone walk and never took it. P4-97 (user decision 2026-10-21): not only those idle in town this moment —
+        /// the first taker gathers the rest as they come home (<see cref="PartyService"/>), so every member without a
+        /// quest who may go out and is not far too green for it counts. Counting the idle alone, nobody ever took the
+        /// dragon or a lord: the guild was out hunting, and three at most stood in town at once in three days.
         /// </summary>
         public static int ExpectedParty(Quests.Quest q)
         {
             int now = q.Assignees.Count + 1;
-            if (!IsPartyWork(q) || !Core.Services.TryGet<GuildRoster>(out var roster)) return now;
-            int free = 0;
-            foreach (var m in roster.Members)
-                if (m.IsAlive && !m.IsVisitor && m.CurrentQuest == null && m.IsIdleInTown) free++;
-            return Mathf.Clamp(Mathf.Max(now, free), now, Mathf.Max(now, q.MaxParty));
+            if (!IsPartyWork(q)) return now;
+            return Mathf.Clamp(Mathf.Max(now, GatherableCount(q)), now, Mathf.Max(now, q.MaxParty));
         }
+
+        /// <summary>
+        /// Those on the quest and every member a gathering could still win for it, not far too green (P4-88), up to the
+        /// quest's limit (P4-97). A gathering that could not get past "무모" even with all of them is not begun.
+        /// </summary>
+        public static int GatherableCount(Quests.Quest q)
+        {
+            int could = q.Assignees.Count;
+            if (Core.Services.TryGet<GuildRoster>(out var roster))
+            {
+                int green = RecommendedLevel(q) - GreenGap;
+                foreach (var m in roster.Members)
+                    if (CouldGather(m) && AdventurerStats.RawPower(m.Data) > green) could++;
+            }
+            return Mathf.Min(could, q.MaxParty);
+        }
+
+        /// <summary>A member a gathering for party work could still win: in the guild, with no quest, fit to go out (P4-69).</summary>
+        public static bool CouldGather(Adventurer m)
+            => m != null && m.IsAlive && m.IsGuildMember && !m.IsVisitor && m.CurrentQuest == null && Welfare.GuildWelfare.MayGoOut(m);
 
         /// <summary>The party that actually set out is too small for party work: "무모" with this many (the leader's power).</summary>
         public static bool TooFewFor(Quests.Quest q, float leaderPower, int partySize)
             => IsPartyWork(q) && Label(Margin(leaderPower, partySize, q)) == Reckless;
+
+        /// <summary>
+        /// A gathering for party work may set out (P4-97): when the quest is full, or when this many are up to it — for a
+        /// lord or the dragon "적당" (nobody walks into the guild's biggest fight on a 위험 margin while more could still
+        /// come), for an incident no longer "무모" (as before: a rare monster or a horde does not wait). When time runs
+        /// out a gathering goes on what <see cref="TooFewFor"/> allows.
+        /// </summary>
+        public static bool ReadyToSetOut(Quests.Quest q, float leaderPower, int partySize)
+        {
+            if (partySize >= q.MaxParty) return true;
+            float margin = Margin(leaderPower, partySize, q);
+            return IsBossWork(q) ? margin >= 1f : Label(margin) != Reckless;
+        }
 
         public static string Label(float margin)
             => margin >= 2f ? Easy : margin >= 1f ? Fair : margin >= 0.8f ? Risky : Reckless;

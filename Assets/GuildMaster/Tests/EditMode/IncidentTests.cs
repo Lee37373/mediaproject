@@ -76,6 +76,12 @@ namespace GuildMaster.Tests
             Assert.That(QuestRisk.TooFewFor(rare, level, 1), Is.True, "one alone does not set out");
             Assert.That(QuestRisk.TooFewFor(rare, level, IncidentRules.RareParty), Is.False, "a full party of its level does");
             Assert.That(QuestRisk.RecommendedLevel(rare), Is.InRange(level - 2, level), "per member of a full party");
+            // P4-97: a gathering for it sets out as soon as it is past 무모 (it does not wait for 적당 — a rare one slips away).
+            float need = QuestRisk.Requirement(rare);
+            float risky = need / (1f + 0.6f * (IncidentRules.RareParty - 2)) * 0.85f; // three are 위험
+            Assume.That(QuestRisk.Label(QuestRisk.Margin(risky, IncidentRules.RareParty - 1, rare)), Is.EqualTo(QuestRisk.Risky));
+            Assert.That(QuestRisk.ReadyToSetOut(rare, risky, IncidentRules.RareParty - 1), Is.True);
+            Assert.That(QuestRisk.ReadyToSetOut(rare, level, 1), Is.False, "one alone keeps gathering");
 
             var den = new Quest("Q_2", draft, 0f) { Danger = DangerLevel.High };
             Assert.That(QuestRisk.IsPartyWork(den), Is.False);

@@ -179,9 +179,13 @@ namespace GuildMaster.UI
                 _persuade.interactable = canPersuade;
                 if (waiting)
                     _persuade.SetLabel(canPersuade ? "협상" : $"협상 {Mathf.CeilToInt(persuasion != null ? persuasion.HoursUntilOpen(q) : PersuasionRules.OpenAfterHours)}시간 후");
+                // Party work its first taker is still gathering for in town (P4-97).
+                Services.TryGet<Adventurers.PartyService>(out var invites);
+                bool gathering = q.Status == QuestStatus.InProgress && invites != null && invites.IsRecruiting(q);
                 string status = q.Status switch
                 {
                     QuestStatus.Open => UIBuilder.Colored("모집 중", UITheme.Accent) + (canPersuade ? " " + UIBuilder.Colored("협상 가능", UITheme.Warn) : ""),
+                    QuestStatus.InProgress when gathering => UIBuilder.Colored($"동료 모으는 중 · {Mathf.CeilToInt(invites.RecruitHoursLeft(q))}시간 남음", UITheme.Warn),
                     QuestStatus.InProgress => UIBuilder.Colored("진행 중", UITheme.Exp),
                     QuestStatus.Completed => UIBuilder.Colored("보고 대기", UITheme.Good),
                     _ => q.Status.ToString(),

@@ -36,7 +36,8 @@ namespace GuildMaster.Session
             if (s == a.FreeHuntState) return 12f;
             if (s == a.ReturnState) return 8f;
             if (s == a.VisitState) return 4f;
-            if (s == a.GatherState) return 2f;
+            // Party work is gathered for up to half a day (P4-97); an ordinary gathering ends the moment it begins.
+            if (s == a.GatherState) return PartyService.RecruitHours + 1f;
             if (s == a.DecidingState) return 3f;
             if (s == a.CampState) return 13f;
             if (s == a.DefendState) return 12f;

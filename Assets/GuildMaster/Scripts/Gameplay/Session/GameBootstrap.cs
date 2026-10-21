@@ -254,8 +254,11 @@ namespace GuildMaster.Session
             Services.Register(new FacilityService(town, roster));
             // Per-adventurer memories; before recruiting so the starting members remember joining.
             Services.Register(new MemoryRecorder(clock, roster));
-            // Multi-person quests: the first taker invites idle members (each answers by the rules).
-            Services.Register(new PartyService(board, roster));
+            // Multi-person quests: the first taker invites idle members (each answers by the rules);
+            // party work is gathered for over hours as members come home (P4-97), so it is saved.
+            var partyInvites = new PartyService(board, roster, clock);
+            Services.Register(partyInvites);
+            save.Register(partyInvites);
             // Quests nobody takes for 6 game hours can be talked into by the guild master (P4-24).
             Services.Register(new Persuasion.PersuasionService(board, roster, clock));
             // Notifications (F-1): the list behind the toasts and the HUD badge, fed by gameplay events.

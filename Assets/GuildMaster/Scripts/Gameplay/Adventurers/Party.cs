@@ -212,12 +212,32 @@ namespace GuildMaster.Adventurers
             EventBus.Unsubscribe<PartyFormedEvent>(OnQuestPartyFormed);
         }
 
-        /// <summary>A quest party leaves town: it becomes (or stays) a standing party on an outing.</summary>
+        /// <summary>
+        /// A quest party leaves town: it becomes (or stays) a standing party on an outing. Another standing party that came
+        /// along as a whole (party work, P4-97) goes out as itself and splits its own pool: folded into the leader's party it
+        /// would stay one party of eight, and its members, left over by the next quest's four places, would wait in town
+        /// for their leader the whole of it (P4-77). On the way they are one group all the same (PartyTactics: by quest).
+        /// </summary>
         void OnQuestPartyFormed(PartyFormedEvent e)
         {
             var goers = new List<Adventurer> { e.Leader };
-            foreach (var m in e.Members) if (m != e.Leader) goers.Add(m);
+            var own = PartyOf(e.Leader);
+            var others = new List<Party>();
+            var going = new HashSet<Adventurer>();
+            foreach (var m in e.Members)
+            {
+                if (m == e.Leader) continue;
+                going.Add(m);
+                if (PartyOf(m) is { } p && p != own) { if (!others.Contains(p)) others.Add(p); }
+                else goers.Add(m);
+            }
             SetOut(goers);
+            foreach (var p in others)
+            {
+                var theirs = new List<Adventurer>();
+                foreach (var m in p.Members) if (going.Contains(m)) theirs.Add(m);
+                SetOut(theirs);
+            }
         }
 
         public Party PartyOf(Adventurer a) => a != null && _of.TryGetValue(a, out var p) ? p : null;
@@ -348,12 +368,23 @@ namespace GuildMaster.Adventurers
                 var p = _parties[i];
                 p.Members.RemoveAll(m => m == null || !m.IsGuildMember);
                 if (p.Members.Count < 2) { Disband(p, "인원 부족"); continue; }
-                if (!p.OnOuting && p.SettledAtHour >= 0f && Hour - p.SettledAtHour >= DisbandIdleHours) { Disband(p, "마을에서 해산"); continue; }
+                if (!p.OnOuting && p.SettledAtHour >= 0f && Hour - p.SettledAtHour >= DisbandIdleHours && !Gathering(p)) { Disband(p, "마을에서 해산"); continue; }
                 if (p.OnOuting && !p.Settling)
                     foreach (var m in p.Out.Keys)
                         if (!p.Arrived.Contains(m) && HomeWithoutReport(m)) MarkArrived(p, m);
                 if (p.OnOuting && !p.Settling && p.Arrived.Count > 0) TrySettle(p);
             }
+        }
+
+        /// <summary>
+        /// One of it has taken a quest and waits in town for the rest of its party work (P4-97): it is going out together,
+        /// not idle — two parties broke up "in town" while gathering for a lord in a natural run.
+        /// </summary>
+        static bool Gathering(Party p)
+        {
+            foreach (var m in p.Members)
+                if (m != null && m.CurrentQuest != null && m.CurrentQuest.IsActive) return true;
+            return false;
         }
 
         void TrySettle(Party p)

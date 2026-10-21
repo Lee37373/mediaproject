@@ -100,6 +100,8 @@ namespace GuildMaster.Session
                 (!e.Warned ? "자다가 기습당했습니다." : e.Camp.Watcher != null ? "불침번이 먼저 알아챘습니다." : "불가에 깨어 있다가 알아챘습니다."), LogCategory.Danger));
             EventBus.Subscribe<PartyInviteAnsweredEvent>(e => Add(
                 $"{e.Invitee.Data.name}이(가) {e.Leader.Data.name}의 파티 제안을 {(e.Accepted ? "수락" : "거절")}했습니다.", LogCategory.Quest));
+            EventBus.Subscribe<PartyRecruitingEvent>(e => Add(
+                $"[모집] {e.Leader.Data.name}이(가) '{e.Quest.Title}'에 함께 갈 동료를 모읍니다 ({e.Count}/{e.Quest.MaxParty}명, 최대 {PartyService.RecruitHours:0}시간).", LogCategory.Quest));
             EventBus.Subscribe<PartyFormedEvent>(e => Add(
                 $"파티 출발: {e.Leader.Data.name}, {string.Join(", ", e.Members.Select(m => m.Data.name))} → '{e.Quest.Title}'", LogCategory.Quest));
             // Standing parties (P4-50): who joins or leaves, and how the leader split the pay.
