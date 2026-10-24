@@ -110,7 +110,7 @@
 | P4-99 | 신입 성장(사용자 결정 2026-10-21): 근처 몬스터보다 약한 길드원은 훈련소에서 훈련하거나 혼자 감당할 사냥감만 사냥, 의뢰도 자기보다 센 몬스터가 태어나는 곳의 것은 안 맡음, 훈련 EXP는 날짜가 갈수록 + 길드 최고 레벨보다 낮을수록 많이. 신입이 강한 사냥 무리·먼 의뢰에서 2~4일차에 죽던 문제. 신입 무리가 상설 파티 외출을 열던 회귀도 같이 고침 | 이재혁 | 완료 | Adventurers(NewcomerRules·TrainState 신규, HuntBandService·Party·PartyService·QuestRisk·Decisions 등), Town/UpgradeService, Ecosystem/EcosystemManager, Data/DefaultContent, UI/RosterView | 6063058 |
 | P4-100 | P4-99 후속(사용자 결정 2026-10-21): 신입의 먼 의뢰는 막지 않고 위험도·확률·성격으로 판단, 5마리 이상 토벌을 혼자 맡으면 위험 한 단계 위로(동료를 부를 수 있으면 파티로, 끝내 혼자면 내려놓음), 마을에서 쉬다 맞으면 반격하거나(침공 중에도) 너무 다쳤으면 피신 | 이재혁 | 완료 | Adventurers(QuestRisk·NewcomerRules·Decisions·PartyService·TownGuardState, 피신 상태 신규) | b966207 |
 | P4-101 | 맵 지형(사용자 요청 2026-10-21 "직진만 하면 돼서 재미없음"): 지대 경계마다 산맥·강과 통로 2~3곳(고개·다리·여울, 성문 길이 지나는 곳 포함), 지대마다 특색 지형(사막 협곡 벽·설원 얼음 틈·늪 물길·황무지 용암 줄기), 통로의 60%에 길목 둥지, 강 위 길은 나무 다리. 안 본 땅은 평지로 가정(지금 규칙). 저장 버전 4(예전 저장 못 불러옴) | 이재혁 | 완료 | World(RegionBarriers·RegionLandforms 신규, MapGenerator·MapData·Pathfinder·CartoonGroundPainter·Underground), Save/SaveFile, Session/GameBalance·DebugCommands, Tests | bfba081 |
-| P4-102 | 맵 다시 만들기(사용자 요청 2026-10-24 "맵이 너무 이상해", 게임성 재설계 G1): 지대를 각도 부채꼴로 나누고 경계에 벽을 긋던 방식을 버리고, 구역(이름·위험 단계·랜드마크) 그래프 → 지형(높낮이·산맥·강) → 지형을 따라 굽은 길망 순으로 만듦. 마을은 정중앙 그대로, 몬스터 위험은 구역별 + 거리. 둥지는 구역 안에 무리 지어. 저장 버전 5(예전 저장 못 불러옴) | 이재혁 | 진행 중 | World(MapGenerator·TerrainRegions·RegionBarriers·RegionLandforms 등), Ecosystem(둥지 배치·태어남 레벨), Save, Tests | |
+| P4-102 | 맵 다시 만들기(사용자 요청 2026-10-24 "맵이 너무 이상해", 게임성 재설계 G1): 지대를 각도 부채꼴로 나누고 경계에 벽을 긋던 방식을 버리고, 이름 있는 구역 약 25개를 지대 4개가 이웃 그래프로 나눠 갖고, 구역마다 성격(트임·호수·숲·바위)·랜드마크(화산·메사·얼음 호수·대수렁)·위험(위험 주머니·안식처), 지대 경계 산맥·강은 자연스럽게 휘고(통로 2~3곳은 그대로), 성문에서 42칸 뒤로는 지형 따라 굽은 길망, 둥지는 구역마다 무리(최대 5), 구역 이름은 중심을 보면 앎(로그·알림·의뢰 위치·미니맵). 마을은 정중앙 그대로. 떠돌이 무리 길 찾기 헛돎·야영 불러오기 결함도 고침. 저장 버전 5(예전 저장 못 불러옴) | 이재혁 | 완료 | World(ZoneMap·ZoneTerrain·ZoneLore·RoadNetwork·ZoneDiscovery 신규, MapGenerator·MapData·RegionBarriers·TerrainRegions·CartoonGroundPainter·Underground, RegionLandforms 삭제), Ecosystem(EcosystemManager·RoamingPackService), Villages/VillagePlacement, Quests/QuestBoard, Adventurers/CampState, Monsters/RoamState, UI/MinimapView, Save, Session, Tests | 43ee376 |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로 | 미정 | 보류 | Audio(신규) | |
@@ -141,7 +141,7 @@
 
 ### 이재혁
 - **예정**: P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-100, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-102, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
@@ -152,6 +152,7 @@
 - **바뀐 점 알림(2026-10-21, P4-96 완료 90462e7)**: 사용자 결정으로 **크게 다친 파티원은 혼자 도망가지 않고 파티 뒤로 빠져 치료**받습니다(`PartyRecovery.WhenHurt`, `Adventurer.FallingBack`). F-2·F-6 쪽 변경: ① **태업**(`MemberCare.Tick`)은 싸우는 중에는 일어나지 않습니다 — `CareInput.InFight`(= `Adventurer.InTheThickOfIt`)를 추가했고 `GuildWelfare`가 채웁니다(전사들이 보스전 한가운데서 혼자 의뢰를 버리고 떠났음). ② **구사일생**(F-6) 뒤에는 파티가 있으면 혼자 마을로 가지 않고 파티 뒤로 빠집니다(파티가 없을 때만 예전처럼 귀환)
 - **바뀐 점 알림(2026-10-21, P4-97 완료 24f1337)**: 사용자 결정으로 **파티용 일(드래곤·지대 군주·희귀·대규모 무리·유적)은 첫 수락자가 마을에서 최대 24시간 동료를 모읍니다**(`PartyService` 모집, 저장 섹션 `party_gathering`). P4-59 협상 쪽 영향: `QuestRisk.RiskLabel`(→ `ExpectedParty`)이 파티용 일을 "지금 마을에서 한가한 인원"이 아니라 **길드가 모을 수 있는 인원**(`QuestRisk.GatherableCount`)으로 셉니다 — 설득 창의 위험도가 전보다 낮게 나옵니다. 모집이 실패한 의뢰는 12시간 동안 규칙 판단 점수가 0입니다(`PartyService.RestingAfterFailure`)
 - **바뀐 점 알림(2026-10-21, P4-101 완료 bfba081)**: 사용자 요청으로 **맵 지형이 바뀌었습니다**. 지대 경계가 산맥·강으로 막히고 통로(`MapData.Passes`, `PassSite`)로만 건널 수 있으며, 지대마다 협곡·얼음 틈·물길·용암 줄기가 있고, 통로 일부에 둥지가 있습니다(`World/RegionBarriers`, `World/RegionLandforms`). **같은 시드라도 맵·둥지 위치가 달라져 저장 버전이 4로 올라갔고 예전 저장은 불러올 수 없습니다.** 맵 좌표나 "마을 근처에 둥지가 없다"에 기대는 테스트·코드는 확인이 필요합니다(테스트 시드의 가장 가까운 둥지가 45.7칸 → 21.6칸). 맵 미리보기는 `DebugCommands.MapPreview(시드, 파일)`로 플레이 밖에서도 볼 수 있습니다
+- **바뀐 점 알림(2026-10-24, P4-102 완료 43ee376)**: 사용자 요청으로 **맵을 다시 만들었습니다**. 지대는 각도 부채꼴이 아니라 구역(`MapData.Zones`·`ZoneIds`·`ZoneAt`, `ZoneSite`) 약 25개를 나눠 가지며, `TerrainRegions.At`·`RegionLayout`·`RegionLandforms`는 지웠습니다(칸의 지대는 `MapData.Regions`). 길은 성문 밖 42칸부터 지형 따라 굽고(`World/RoadNetwork`), 몬스터 태어남 깊이 `EcosystemManager.Depth`에 구역 위험(`ZoneSite.DangerShift`)이 더해지며, 둥지는 구역마다 무리 지어 있습니다. 구역 이름은 `World/ZoneDiscovery`(`ZoneDiscoveredEvent`)로 알고 `QuestBoard.DescribeArea`가 아는 구역 이름을 앞에 붙입니다. **저장 버전이 5로 올라 예전 저장은 불러올 수 없습니다.** 맵 좌표·둥지 위치에 기대는 테스트·코드는 확인이 필요합니다. 미리보기 `DebugCommands.MapPreview(시드, 파일)`, 플레이 중 `Zones()`
 - **완료**: F-1, F-2, F-3, F-6, F-8, P4-59 (자세한 내용은 `WORK_SUMMARY.md`, `FEATURE_IDEAS.md`, `NEGOTIATION.md`)
 
 ## 공용 파일 (충돌 주의)
