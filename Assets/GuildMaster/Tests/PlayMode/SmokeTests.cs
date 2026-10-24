@@ -427,7 +427,8 @@ namespace GuildMaster.Tests
             yield return Boot();
             var eco = Services.Get<EcosystemManager>();
             var nest = eco.Nests
-                .First(n => n.Species.pickupMode == MonsterPickupMode.Equip && n.Species.packHunter && n.Population >= 2);
+                .First(n => n.Species.pickupMode == MonsterPickupMode.Equip && n.Species.packHunter && n.Population >= 2
+                            && !Services.Get<World.WorldService>().Map.IsDeep(n.Cell.x, n.Cell.y)); // not a den in the deep woods (P4-103: blind in there)
             var at = nest.WorldPosition + new Vector2(1f, 0f);
             DebugCommands.DropItem("gear_t2", 1, at.x, at.y);
             Clock.SetSpeed(3);
@@ -450,7 +451,8 @@ namespace GuildMaster.Tests
             {
                 // Fight 10 cells out (past the home range, inside the leash), spoils 13 cells out.
                 var grid = Services.Get<World.WorldService>().Grid;
-                bool Open(Vector2 p) => grid.IsWalkable(World.GridMap.WorldToCell(p)) && !grid.IsInTown(World.GridMap.WorldToCell(p));
+                // Open ground (not in a wood, whose shade would hide the spoils from the fighter beside them).
+                bool Open(Vector2 p) => grid.IsWalkable(World.GridMap.WorldToCell(p)) && !grid.IsInTown(World.GridMap.WorldToCell(p)) && !grid.IsForest(World.GridMap.WorldToCell(p));
                 var dir = Enumerable.Range(0, 16).Select(k => new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f)))
                     .FirstOrDefault(d => Open(nest.WorldPosition + d * 10f) && Open(nest.WorldPosition + d * 13f) && Open(nest.WorldPosition + d * 11.5f));
                 Assume.That(dir, Is.Not.EqualTo(Vector2.zero), "open ground beside the nest");
@@ -1103,6 +1105,13 @@ namespace GuildMaster.Tests
                 float sight = shooter.Stats.SightRadius;
                 Assume.That(sight, Is.LessThan(12f), "the light reaches past the shooter's own sight");
                 world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(Vector2.Lerp(town, svc.Lair, 0.5f)), 8, out var outCell);
+                // Open ground (P4-103: halfway out may be in a wood or the deep woods, where the shooter sees a cell or two).
+                for (int r = 1; r <= 30 && world.Grid.IsForest(outCell); r++)
+                for (int k = 0; k < 16; k++)
+                {
+                    var c = outCell + Vector2Int.RoundToInt(new Vector2(Mathf.Cos(k * Mathf.PI / 8f), Mathf.Sin(k * Mathf.PI / 8f)) * r);
+                    if (world.Grid.IsWalkable(c) && !world.Grid.IsForest(c)) { outCell = c; break; }
+                }
                 var at = World.GridMap.CellToWorld(outCell);
                 shooter.Mover.Stop();
                 shooter.transform.position = at;
@@ -1137,6 +1146,7 @@ namespace GuildMaster.Tests
                 shooter.Mover.Stop();
                 shooter.transform.position = at;
                 shooter.Data.flares = 1;
+                ClearStrangersNear(at, 25f); // nobody else in view to turn to (P4-102/103 maps put dens near this spot)
                 // Picked again: in half a minute the first may have died and its pooled body come back as a slime. The farthest
                 // one, so it is not one the shooter is fighting meanwhile (a blow just taken tells it where the foe is).
                 foe = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && !m.IsDragon && m.Def.aggressiveToHumans && shooter.LastAttacker != m)
@@ -1920,7 +1930,7 @@ namespace GuildMaster.Tests
                 bool block = true;
                 for (int dy = -2; dy <= 2 && block; dy++)
                 for (int dx = -2; dx <= 2 && block; dx++)
-                    if (!grid.IsForest(c + new Vector2Int(dx, dy)) || !grid.IsWalkable(c + new Vector2Int(dx, dy))) block = false;
+                    if (!grid.IsForest(c + new Vector2Int(dx, dy)) || !grid.IsWalkable(c + new Vector2Int(dx, dy)) || grid.IsDeep(c + new Vector2Int(dx, dy))) block = false; // plain forest (P4-103)
                 if (!block) continue;
                 var o = c + new Vector2Int(-5, 0);
                 bool clear = true;
@@ -1954,7 +1964,7 @@ namespace GuildMaster.Tests
                 bool block = true;
                 for (int dy = -2; dy <= 2 && block; dy++)
                 for (int dx = -2; dx <= 2 && block; dx++)
-                    if (!grid.IsForest(c + new Vector2Int(dx, dy))) block = false;
+                    if (!grid.IsForest(c + new Vector2Int(dx, dy)) || grid.IsDeep(c + new Vector2Int(dx, dy))) block = false; // plain forest (the deep woods are darker still, P4-103)
                 if (!block) continue;
                 var o = c + new Vector2Int(-5, 0);
                 bool clear = true;
@@ -2837,15 +2847,17 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
-        /// P4-101 (user request 2026-10-21: "you just walk straight"): the region borders are ridges and rivers with a few
-        /// ways across. Sent to the far side of a ridge, the master walks round by the pass — the walk's shortcuts never cut
-        /// through the rock — and the dens set to hold passes are there, peopled.
+        /// P4-101 (user request 2026-10-21: "you just walk straight"): the region borders are shut with a few ways across, and
+        /// the dens set to hold them are there, peopled. Sent to the far side of a river, the master walks round by its
+        /// crossing and never into the water.
+        /// P4-103 (user request 2026-10-24: "a very dangerous forest instead of rock"): a den deep in the woods, the miasma
+        /// hurts, a hidden trap springs (hurt, held fast, told) and is not set again at once.
         /// P4-102 (user request 2026-10-24 "the map looks wrong"): the zones — the town's fields are known from the start, a
         /// zone is learnt (and told) when its heart is seen and then names the area, and a pocket of danger breeds stronger
         /// than its distance says.
         /// </summary>
         [UnityTest]
-        public IEnumerator Landforms_SentPastARidge_TheMasterWalksRoundByThePass_AndZonesAreLearnt()
+        public IEnumerator Landforms_DeepWoodsHurtAndTrap_ARiverIsCrossedAtItsCrossing_AndZonesAreLearnt()
         {
             yield return Boot();
             var world = Services.Get<World.WorldService>();
@@ -2880,29 +2892,85 @@ namespace GuildMaster.Tests
             float byDistance = EcosystemManager.DepthAt(Vector2.Distance(inPocket, world.TownCenterWorld), eco.InnermostDistance, eco.OutermostDistance);
             Assert.That(eco.Depth(inPocket), Is.GreaterThan(byDistance + 0.2f), $"{pocket.Name} breeds deeper than its distance");
 
-            // A pass through a ridge, off the roads, with rock between two points either side of the border beside it.
+            // P4-103: the deep woods. A den in them, peopled; a member standing in the miasma is hurt; a trap springs on a
+            // member — hurt, held fast, told — and is not set again at once.
+            Assert.That(eco.Nests.Any(n => map.IsDeep(n.Cell.x, n.Cell.y) && n.Population > 0), Is.True, "a peopled den in the deep woods");
+            var woods = Services.Get<World.DeepWoods>();
+            Assert.That(woods.TrapCount, Is.GreaterThan(0), "traps hidden in the woods");
+            var member = Roster.Members.First(m => m.IsAlive);
+            Unit.GuildUntargetable = true;
+            try
+            {
+                Vector2Int mist = default;
+                bool misty = false;
+                for (int y = 0; y < map.SurfaceHeight && !misty; y++)
+                for (int x = 0; x < map.Width && !misty; x++)
+                    if (grid.HazardAt(x, y) == World.HazardKind.Miasma && grid.IsWalkable(new Vector2Int(x, y))) { mist = new Vector2Int(x, y); misty = true; }
+                Assert.That(misty, Is.True, "miasma in the woods");
+                member.Mover.Stop();
+                member.Mover.Warp(World.GridMap.CellToWorld(mist));
+                float hp = member.Hp;
+                float until = Time.realtimeSinceStartup + 3f;
+                while (member.Hp >= hp - 0.01f && Time.realtimeSinceStartup < until) yield return null;
+                Assert.That(member.Hp, Is.LessThan(hp), "hurt by the miasma");
+
+                member.Heal(member.Stats.MaxHp);
+                var trapCell = new Vector2Int(woods.TrapCells.First() % map.Width, woods.TrapCells.First() / map.Width);
+                Assert.That(woods.IsTrapSet(trapCell), Is.True);
+                int sprung = 0;
+                Action<World.TrapSprungEvent> onTrap = e => { if (e.Victim == member) sprung++; };
+                EventBus.Subscribe(onTrap);
+                try
+                {
+                    member.Mover.Stop();
+                    member.Mover.Warp(World.GridMap.CellToWorld(trapCell));
+                    hp = member.Hp;
+                    until = Time.realtimeSinceStartup + 2f;
+                    while (sprung == 0 && Time.realtimeSinceStartup < until) yield return null;
+                }
+                finally { EventBus.Unsubscribe(onTrap); }
+                Assert.That(sprung, Is.EqualTo(1), "the trap springs once");
+                Assert.That(member.Hp, Is.LessThan(hp - member.Stats.MaxHp * 0.1f), "it bites");
+                Assert.That(member.IsStunned, Is.True, "and holds fast");
+                Assert.That(woods.IsTrapSet(trapCell), Is.False, "not set again at once");
+            }
+            finally { Unit.GuildUntargetable = false; }
+
+            // A river's crossing (P4-101), off the roads, with water between two points either side of the border beside it.
             World.PassSite pass = default;
             Vector2Int from = default, to = default;
             bool found = false;
-            foreach (var p in map.Passes.Where(p => p.Kind == World.PassKind.MountainPass && p.A != p.B && !p.OnRoad))
+            bool WaterBetween(Vector2Int a, Vector2Int b)
+            {
+                for (float t = 0f; t <= 1f; t += 0.02f)
+                {
+                    var c = Vector2Int.RoundToInt(Vector2.Lerp(a, b, t));
+                    if (map.InBounds(c) && map[c] == World.TileType.Water) return true;
+                }
+                return false;
+            }
+            foreach (var p in map.Passes.Where(p => p.Kind != World.PassKind.Trail && p.A != p.B))
             {
                 var along = new Vector2(-p.Across.y, p.Across.x);
-                foreach (float side in new[] { 18f, -18f })
+                foreach (float side in new[] { 16f, -16f, 24f, -24f })
                 {
-                    var a = Vector2Int.RoundToInt((Vector2)p.Cell - p.Across * 12f + along * side);
-                    var b = Vector2Int.RoundToInt((Vector2)p.Cell + p.Across * 12f + along * side);
+                    var a = Vector2Int.RoundToInt((Vector2)p.Cell - p.Across * 20f + along * side);
+                    var b = Vector2Int.RoundToInt((Vector2)p.Cell + p.Across * 20f + along * side);
                     if (!grid.TryFindNearestWalkable(a, 3, out a) || !grid.TryFindNearestWalkable(b, 3, out b)) continue;
-                    if (!world.Raycast(World.GridMap.CellToWorld(a), World.GridMap.CellToWorld(b), out _, out _)) continue;
-                    if (map.Passes.Any(o => o.Cell != p.Cell && Vector2.Distance(o.Cell, a) < 30f)) continue;
+                    if (!WaterBetween(a, b) || map.IsDeep(a.x, a.y) || map.IsDeep(b.x, b.y)) continue;
                     (pass, from, to, found) = (p, a, b, true);
                     break;
                 }
                 if (found) break;
             }
-            Assume.That(found, "a ridge pass with rock either side of it");
+            Assume.That(found, "a river crossing with water either side of it");
+            // That river's crossings (it may have two close together): the way is by one of them.
+            var crossings = map.Passes.Where(o => o.Kind != World.PassKind.Trail && World.RegionBarriers.Key(o.A, o.B) == World.RegionBarriers.Key(pass.A, pass.B))
+                .Select(o => World.GridMap.CellToWorld(o.Cell)).ToList();
+            float ToCrossing(Vector2 p) => crossings.Min(c => Vector2.Distance(c, p));
             var path = new System.Collections.Generic.List<Vector2Int>();
             Assert.That(world.Pathfinder.FindPath(from, to, path), Is.True, $"{from} → {to}");
-            Assert.That(path.Min(c => Vector2.Distance(c, pass.Cell)), Is.LessThan(8f), $"the way round is by the pass at {pass.Cell}");
+            Assert.That(path.Min(c => ToCrossing(World.GridMap.CellToWorld(c))), Is.LessThan(8f), $"the way round is by a crossing of the river at {pass.Cell}");
 
             var master = Services.Get<PlayerAvatar>();
             Services.Get<Fog.FogOfWar>().Reveal(World.GridMap.CellToWorld(pass.Cell), 30f); // walking known ground: this is not about exploring
@@ -2917,13 +2985,13 @@ namespace GuildMaster.Tests
                 float end = Time.realtimeSinceStartup + 40f;
                 while (Time.realtimeSinceStartup < end && Vector2.Distance(master.Position, World.GridMap.CellToWorld(to)) > 1.5f)
                 {
-                    nearest = Mathf.Min(nearest, Vector2.Distance(master.Position, World.GridMap.CellToWorld(pass.Cell)));
+                    nearest = Mathf.Min(nearest, ToCrossing(master.Position));
                     if (!grid.IsWalkable(World.GridMap.WorldToCell(master.Position))) inRock = true;
                     yield return null;
                 }
                 Assert.That(Vector2.Distance(master.Position, World.GridMap.CellToWorld(to)), Is.LessThan(1.5f), "it gets there");
-                Assert.That(nearest, Is.LessThan(8f), "by the pass");
-                Assert.That(inRock, Is.False, "never inside the rock");
+                Assert.That(nearest, Is.LessThan(8f), "by the crossing");
+                Assert.That(inRock, Is.False, "never in the water");
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
@@ -2945,7 +3013,7 @@ namespace GuildMaster.Tests
                 {
                     if (dx * dx + dy * dy > 100) continue;
                     var at = c + new Vector2Int(dx, dy);
-                    if (grid.IsHardCover(at.x, at.y)) return false;
+                    if (grid.IsHardCover(at.x, at.y) || grid.IsDeep(at)) return false; // and no deep woods (P4-103: blind in there)
                     cells++;
                     if (grid.IsWalkable(at)) open++;
                     if (grid.IsForest(at)) wood++;
@@ -3123,7 +3191,7 @@ namespace GuildMaster.Tests
                 // 2. The priest mends it from where it stands, and it goes back in.
                 Assume.That(heals, Is.Not.Empty, "the priest heals");
                 foreach (var s in heals) s.ResetCooldown(0f);
-                yield return WaitFor(() => !hurt.FallingBack, 5f);
+                yield return WaitFor(() => !hurt.FallingBack, 9f); // a second heal may be needed (6 s cooldown)
                 Assert.That(hurt.FallingBack, Is.False, $"mended by the priest, it goes back in (hp {hurt.HpRatio:P0})");
                 Assert.That(hurt.HpRatio, Is.GreaterThanOrEqualTo(FallBackRules.RejoinAt(hurt.RetreatThreshold)));
                 hurt.Heal(hurt.Stats.MaxHp);
@@ -3553,6 +3621,8 @@ namespace GuildMaster.Tests
         {
             yield return Boot();
             var member = Roster.Members.First(a => a.IsAlive);
+            // No last stand (F-6: a lethal blow may leave a member at 1 HP — the roll fell that way on the P4-103 map).
+            Services.Get<Legacy.GuildLegacy>().ForcedRoll = 1f;
             member.ReceiveDamage(member.Hp + 999f, null, false);
             Assert.That(member.IsAlive, Is.False);
             // A projectile fired before death can still land the killing blow and its EXP.
@@ -4037,7 +4107,7 @@ namespace GuildMaster.Tests
                     Assert.That(svc.TryArrive(target, species), Is.True);
                     var band = svc.Bands.Single(b => b.Arrival && b.Target == target);
                     Assert.That(band.Members.All(m => (m.Position - target.WorldPosition).magnitude >= ToEdge(target) - 3f), Is.True, "they appear at the edge");
-                    Assert.That(band.Members.All(m => m.Level == target.BirthLevel), Is.True, "born to the outer site's level");
+                    Assert.That(band.Members.Where(m => !m.IsBoss).All(m => m.Level == target.BirthLevel), Is.True, "born to the outer site's level (a boss among them a few more)");
                     Clock.SetSpeed(3);
                     yield return WaitFor(() => settled, 60f);
                 }

@@ -1809,9 +1809,8 @@ namespace GuildMaster.Session
 
         // ---------------- Landforms (P4-101) ----------------
 
-        static string PassLabel(World.PassKind k) => k switch { World.PassKind.Bridge => "다리", World.PassKind.Ford => "여울", _ => "고개" };
+        static string PassLabel(World.PassKind k) => k switch { World.PassKind.Bridge => "다리", World.PassKind.Ford => "여울", _ => "숲길" };
 
-        /// <summary>The ways across the region barriers in this game: kind, borders, distance, road, the den holding it (real values).</summary>
         /// <summary>
         /// P4-102: this game's zones, real values — name, region, lie of the land, danger shift, distance, known to the guild,
         /// road, landmark, dens and the kinds holding them, the birth level at the heart now.
@@ -1835,6 +1834,7 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        /// <summary>The ways across the region barriers in this game: kind, borders, distance, road, the den holding it (real values).</summary>
         public static string Passes()
         {
             var world = Services.Get<World.WorldService>();
@@ -1894,7 +1894,7 @@ namespace GuildMaster.Session
                 var pal = World.CartoonGroundPainter.PaletteOf(map.Regions[map.Index(x, y)]);
                 tex.SetPixel(x, y, map[x, y] switch
                 {
-                    World.TileType.Forest => pal.ForestEdge,
+                    World.TileType.Forest => map.Deep[map.Index(x, y)] ? Color.Lerp(pal.ForestEdge, new Color(0.05f, 0.18f, 0.08f), 0.55f) : (Color)pal.ForestEdge,
                     World.TileType.Sand => pal.Sand,
                     World.TileType.Water => pal.Water,
                     World.TileType.Mountain => rock,

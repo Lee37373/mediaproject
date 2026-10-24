@@ -610,8 +610,13 @@ namespace GuildMaster.Disasters
                 if (u == null || !u.IsAlive || Unharmed(u)) continue;
                 var cell = GridMap.WorldToCell(u.Position);
                 var k = Grid.HazardAt(cell);
-                if (!Hazards.Hurts(k)) continue;
-                float share = k == HazardKind.Fire ? DisasterRules.FireDamagePerHour : DisasterRules.PoisonDamagePerHour;
+                if (!Hazards.Hurts(k, u is Monsters.Monster)) continue;
+                float share = k switch
+                {
+                    HazardKind.Fire => DisasterRules.FireDamagePerHour,
+                    HazardKind.Miasma => DeepWoodRules.MiasmaDamagePerHour, // the deep woods' (P4-103), people only
+                    _ => DisasterRules.PoisonDamagePerHour,
+                };
                 float dmg = u.Stats.MaxHp * share * hours;
                 if (dmg > 0f) u.ReceiveDamage(dmg, null, false);
                 if (u.IsAlive && u.Mover != null && !u.Mover.IsMoving && SafeCellNear(cell, out var safe))

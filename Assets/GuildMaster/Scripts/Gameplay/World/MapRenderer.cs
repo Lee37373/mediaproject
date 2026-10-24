@@ -25,6 +25,8 @@ namespace GuildMaster.World
         Tilemap _decor;
         MapData _map;
         readonly List<Tile> _trees = new();
+        readonly List<Tile> _deepTrees = new();
+        static readonly Color DeepTint = new(0.55f, 0.62f, 0.58f);
         readonly List<Tile> _rocks = new();
         /// <summary>Textures, sprites and tiles made here: runtime assets outlive the scene unless destroyed
         /// (PlayMode tests boot the game 40-odd times in one session; each boot leaked ~256 MB of ground).</summary>
@@ -45,6 +47,10 @@ namespace GuildMaster.World
                 for (int v = 0; v < Variants; v++)
                 {
                     _trees.Add(MakeTile(CartoonArt.Tree(v, (Region)r)));
+                    // The deep woods' trees (P4-103): the same, in the canopy's gloom.
+                    var deep = MakeTile(CartoonArt.Tree(v, (Region)r));
+                    deep.color = DeepTint;
+                    _deepTrees.Add(deep);
                     _rocks.Add(MakeTile(CartoonArt.Rock(v, (Region)r)));
                 }
             }
@@ -67,7 +73,7 @@ namespace GuildMaster.World
         {
             int i = _map.Index(x, y);
             int hash = Hash(x, y);
-            if (_map.Trees[i]) return _trees[(int)_map.Regions[i] * Variants + (hash / 7) % Variants];
+            if (_map.Trees[i]) return (_map.Deep[i] ? _deepTrees : _trees)[(int)_map.Regions[i] * Variants + (hash / 7) % Variants];
             if (_map.Tiles[i] == TileType.Mountain && hash % 100 < 30) return _rocks[(int)_map.Regions[i] * Variants + (hash / 7) % Variants];
             return null;
         }
@@ -379,7 +385,7 @@ namespace GuildMaster.World
             int i = _map.Index(cell.x, cell.y);
             int variant = (Hash(cell.x, cell.y) / 7) % Variants;
             var region = burnt ? (int)Region.Wasteland : (int)_map.Regions[i];
-            _decor.SetTile(new Vector3Int(cell.x, cell.y, 0), _trees[region * Variants + variant]);
+            _decor.SetTile(new Vector3Int(cell.x, cell.y, 0), (!burnt && _map.Deep[i] ? _deepTrees : _trees)[region * Variants + variant]);
         }
 
         public void ClearDecor(RectInt area)

@@ -78,6 +78,7 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
             EventBus.Subscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
             EventBus.Subscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
+            EventBus.Subscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
             EventBus.Subscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
             EventBus.Subscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
@@ -115,6 +116,7 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
             EventBus.Unsubscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
             EventBus.Unsubscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
+            EventBus.Unsubscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
             EventBus.Unsubscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
             EventBus.Unsubscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
@@ -301,6 +303,12 @@ namespace GuildMaster.Notifications
             => _center.Post(e.Zone.Kind == World.ZoneKind.Pocket ? NotificationKind.Warning : NotificationKind.Info, "새 지역 발견",
                 $"{e.Zone.Name}({World.ZoneDiscovery.Describe(e.Zone)})", "zone:" + e.Zone.Index,
                 NotificationLink.Location(World.GridMap.CellToWorld(e.Zone.Heart)));
+
+        // The deep woods (P4-103): once, the first time the guild sees them.
+        void OnDeepWoods(World.DeepWoodsSightedEvent e)
+            => _center.Post(NotificationKind.Warning, "깊은 숲",
+                "독 안개와 숨은 덫, 매복하는 둥지가 있는 위험한 숲입니다. 길이 난 숲길로 지나는 것이 안전합니다.", "deepwoods",
+                NotificationLink.Location(World.GridMap.CellToWorld(e.Cell)));
 
         // ---------------- Other villages (P4-84): only what the guild has seen ----------------
 

@@ -28,7 +28,9 @@ namespace GuildMaster.World
             if (elevated) return radius;
             var cell = GridMap.WorldToCell(eye);
             float r = radius * TerrainRegions.SightMultiplier(world.Map.RegionOf(cell.x, cell.y)) * Hazards.SightFactor(world.Grid.HazardAt(cell));
-            return InForest(world, eye) ? r * InForestFactor : r;
+            if (!InForest(world, eye)) return r;
+            // The deep woods shut out more of the light (P4-103).
+            return r * InForestFactor * (world.Grid.IsDeep(cell) ? DeepWoodRules.SightFactor : 1f);
         }
 
         /// <summary>Forests block this eye's view (it stands outside one and is not elevated).</summary>

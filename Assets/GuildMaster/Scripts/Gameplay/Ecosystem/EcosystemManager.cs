@@ -181,7 +181,9 @@ namespace GuildMaster.Ecosystem
         {
             if (_map == null) return 0f;
             var c = GridMap.WorldToCell(p);
-            return _map.ZoneAt(c.x, c.y)?.DangerShift ?? 0f;
+            // The deep woods breed strong (P4-103: their dens ambush whoever cuts through).
+            float deep = _map.IsDeep(c.x, c.y) ? DeepWoodRules.DepthShift : 0f;
+            return (_map.ZoneAt(c.x, c.y)?.DangerShift ?? 0f) + deep;
         }
 
         public static float DepthAt(float distance, float innermost, float outermost)

@@ -16,6 +16,11 @@ namespace GuildMaster.World
         Sandstorm,
         /// <summary>An earthquake's crack: walls the cell in (see <see cref="Hazards.Blocks"/>).</summary>
         Fissure,
+        /// <summary>
+        /// The deep woods' miasma (P4-103, <see cref="DeepWoods"/>): always there, hurts people (the woods' monsters live with
+        /// it) and shortens sight. Not a disaster's: none lays it down or clears it.
+        /// </summary>
+        Miasma,
     }
 
     /// <summary>
@@ -39,7 +44,7 @@ namespace GuildMaster.World
         public static float CostFactor(HazardKind k) => k switch
         {
             HazardKind.Fire => 4f,
-            HazardKind.Poison => 2f,
+            HazardKind.Poison or HazardKind.Miasma => 2f,
             HazardKind.Sandstorm => 1.8f,
             HazardKind.Snow or HazardKind.Fissure => WallCost,
             _ => 1f,
@@ -48,7 +53,7 @@ namespace GuildMaster.World
         /// <summary>Sight factor for an eye standing in it.</summary>
         public static float SightFactor(HazardKind k) => k switch
         {
-            HazardKind.Poison => 0.5f,
+            HazardKind.Poison or HazardKind.Miasma => 0.5f,
             HazardKind.Sandstorm => 0.35f,
             _ => 1f,
         };
@@ -57,7 +62,10 @@ namespace GuildMaster.World
         public static bool ClearsForest(HazardKind k) => k == HazardKind.Burnt;
 
         /// <summary>Harmful to stand in (damage over time).</summary>
-        public static bool Hurts(HazardKind k) => k is HazardKind.Fire or HazardKind.Poison;
+        public static bool Hurts(HazardKind k) => k is HazardKind.Fire or HazardKind.Poison or HazardKind.Miasma;
+
+        /// <summary>Harmful to this kind of unit: the deep woods' miasma hurts people only (P4-103).</summary>
+        public static bool Hurts(HazardKind k, bool monster) => Hurts(k) && !(monster && k == HazardKind.Miasma);
 
         /// <summary>
         /// Ground a straight line never cuts across (<see cref="WorldService.HasClearLine"/>): a wall of snow or a crack, fire,

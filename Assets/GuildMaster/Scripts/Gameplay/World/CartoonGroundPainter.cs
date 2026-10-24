@@ -16,7 +16,7 @@ namespace GuildMaster.World
         readonly MapData _map;
         readonly int _w, _h;
         // Per-layer indicator per tile (0/1): smoothed at paint time.
-        readonly byte[] _forest, _sand, _water, _road, _mountain, _nearBorder;
+        readonly byte[] _forest, _sand, _water, _road, _mountain, _nearBorder, _deep;
 
         // ---- Palette ----
         static readonly Color32 Grass = C(0x7C, 0xCF, 0x4F), GrassLight = C(0x8E, 0xDA, 0x5C);
@@ -30,6 +30,9 @@ namespace GuildMaster.World
         static readonly Color32 Wood = C(0xB5, 0x7C, 0x45), WoodDark = C(0x8A, 0x5A, 0x30), WoodLine = C(0x4A, 0x30, 0x1C);
 
         static Color32 C(int r, int g, int b) => new((byte)r, (byte)g, (byte)b, 255);
+
+        /// <summary>The deep woods' shade of a colour (P4-103).</summary>
+        static Color32 Dim(Color32 c) => new((byte)(c.r * 0.58f), (byte)(c.g * 0.64f), (byte)(c.b * 0.62f), 255);
 
         // ---- Regions (P4-55): the same shapes in each region's colours ----
 
@@ -154,7 +157,7 @@ namespace GuildMaster.World
             _h = map.Height;
             PixelsPerTile = pixelsPerTile;
             int n = _w * _h;
-            _forest = new byte[n]; _sand = new byte[n]; _water = new byte[n]; _road = new byte[n]; _mountain = new byte[n];
+            _forest = new byte[n]; _sand = new byte[n]; _water = new byte[n]; _road = new byte[n]; _mountain = new byte[n]; _deep = new byte[n];
             for (int i = 0; i < n; i++) ReadTile(i);
             _nearBorder = NearBorder();
         }
@@ -163,6 +166,7 @@ namespace GuildMaster.World
         {
             var t = _map.Tiles[i];
             _forest[i] = (byte)(t == TileType.Forest ? 1 : 0);
+            _deep[i] = (byte)(t == TileType.Forest && _map.Deep[i] ? 1 : 0);
             // Beaches: sand also rings every body of water.
             _sand[i] = (byte)(t == TileType.Sand || t == TileType.Water ? 1 : 0);
             _water[i] = (byte)(t == TileType.Water ? 1 : 0);
@@ -243,6 +247,8 @@ namespace GuildMaster.World
             var forestPal = Palettes[(int)LayerRegion(_forest, cx, cy, region)];
             var wetPal = Palettes[(int)LayerRegion(_sand, cx, cy, region)];
             Overlay(ref c, _forest, u, v, forestPal.ForestFloor, forestPal.ForestEdge, 0.05f, 0.5f);
+            // The deep woods (P4-103): the same floor in the canopy's gloom.
+            Overlay(ref c, _deep, u, v, Dim(forestPal.ForestFloor), Dim(forestPal.ForestEdge), 0.05f, 0.6f);
             Overlay(ref c, _sand, u, v, wetPal.Sand, wetPal.SandEdge, 0.05f, 0.45f);
             WaterOverlay(ref c, u, v, wetPal);
             if (!BridgeOverlay(ref c, u, v, cx, cy)) Overlay(ref c, _road, u, v, Road, RoadEdge, 0.07f, 0.3f);

@@ -6,7 +6,7 @@ namespace GuildMaster.World
 {
     /// <summary>
     /// The land inside the regions (P4-102): each zone's lie of the land (open, lakes, woods, rocky), the softer lines
-    /// between zones of one region (a broken rock ridge, an ice brook, a bog channel, a lava brook, a belt of wood — with
+    /// between zones of one region (a belt of scrub or wood, an ice brook, a bog channel, a lava brook — with
     /// gaps), and each outer region's landmark (a volcano, mesas, a frozen lake, a great mire). Replaces the rings of
     /// P4-101 (<c>RegionLandforms</c>), which read as combed stripes round the town.
     /// </summary>
@@ -14,8 +14,8 @@ namespace GuildMaster.World
     {
         /// <summary>Share of the borders between zones of one region that get a line, and the share of such a line left open.</summary>
         const float DividerChance = 0.55f, DividerGap = 0.42f;
-        /// <summary>Half widths: a rock ridge, a brook, a belt of wood.</summary>
-        const float RidgeHalfMin = 1.3f, RidgeHalfMax = 2.8f, BrookHalfMin = 0.8f, BrookHalfMax = 1.3f, WoodHalfMin = 2.5f, WoodHalfMax = 4.5f;
+        /// <summary>Half widths: a brook, a belt of wood or scrub.</summary>
+        const float BrookHalfMin = 0.8f, BrookHalfMax = 1.3f, WoodHalfMin = 2.5f, WoodHalfMax = 4.5f;
         /// <summary>A landmark's zone lies at least this far from the town (cells).</summary>
         const float LandmarkMinDistance = 140f;
 
@@ -78,9 +78,9 @@ namespace GuildMaster.World
         // ---------------- Lines between zones of one region ----------------
 
         /// <summary>
-        /// About half of the borders between zones of one outer region get a line with gaps: the desert a rock ridge,
-        /// the snowfield an ice brook or a rock ridge, the swamp a bog channel or a belt of wood, the wasteland a lava
-        /// brook or a rock ridge. Not near the town, not within reach of a region border (its barrier is there).
+        /// About half of the borders between zones of one outer region get a line with gaps: the desert a belt of scrub,
+        /// the snowfield an ice brook or a wood, the swamp a bog channel or a wood, the wasteland a lava brook or dead
+        /// wood (P4-103, user decision: no rock lines between lands). Not near the town, not within reach of a region border (its barrier is there).
         /// </summary>
         public static void Dividers(MapData map, RegionBarriers.Layout regionBorders, Vector2Int town, int townHalf, GameRandom rng)
         {
@@ -88,7 +88,7 @@ namespace GuildMaster.World
             var labels = new int[w * h];
             for (int i = 0; i < labels.Length; i++) labels[i] = map.ZoneIds[i];
             var field = RegionBarriers.Field(labels, w, h);
-            var kinds = new Dictionary<int, int>(); // 0 none, 1 rock, 2 brook, 3 wood
+            var kinds = new Dictionary<int, int>(); // 0 none, 2 brook, 3 wood (P4-103: no rock lines)
             var keys = new SortedSet<int>();
             foreach (int p in field.Pair) if (p >= 0) keys.Add(p);
             foreach (int key in keys)
@@ -101,10 +101,10 @@ namespace GuildMaster.World
                 }
                 kinds[key] = map.Zones[a].Region switch
                 {
-                    Region.Desert => 1,
-                    Region.Snow => rng.Chance(0.6f) ? 2 : 1,
+                    Region.Desert => 3,
+                    Region.Snow => rng.Chance(0.6f) ? 2 : 3,
                     Region.Swamp => rng.Chance(0.6f) ? 2 : 3,
-                    Region.Wasteland => rng.Chance(0.5f) ? 2 : 1,
+                    Region.Wasteland => rng.Chance(0.5f) ? 2 : 3,
                     _ => 3,
                 };
             }
@@ -124,9 +124,6 @@ namespace GuildMaster.World
                 if (t is TileType.Road or TileType.TownFloor or TileType.Wall or TileType.Gate) continue;
                 switch (kind)
                 {
-                    case 1 when d <= Mathf.Lerp(RidgeHalfMin, RidgeHalfMax, n):
-                        Set(map, i, TileType.Mountain);
-                        break;
                     case 2 when d <= Mathf.Lerp(BrookHalfMin, BrookHalfMax, n):
                         Set(map, i, TileType.Water);
                         break;

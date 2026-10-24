@@ -428,6 +428,8 @@ namespace GuildMaster.Adventurers
                     // Not fog the ground seen round it walls in, though (P4-80).
                     if (ExplorationRoute.Unseen(fog, cell0) && !ExplorationRoute.OpensOut(world.Grid, a.Mover.UnknownToMe, cell0)) continue;
                     if (world.Grid.IsInTown(cell0)) continue;
+                    // Not into deep woods it knows of (P4-103): a scout sees a cell or two in there, and is ambushed for it.
+                    if (fog != null && fog.IsExploredRaw(cell0) && world.Grid.IsDeep(cell0)) continue;
                     if (avoid != null && Vector2.Distance(p, avoid.Value) < _reach * 0.3f) continue;
                     float unseen = fog == null ? 0f : 1f - fog.ExploredFraction(p, 10f);
                     if (unseen <= bestUnseen) continue;

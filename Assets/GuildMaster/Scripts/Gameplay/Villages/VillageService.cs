@@ -349,7 +349,8 @@ namespace GuildMaster.Villages
         public bool TryFound(out Village village)
         {
             village = null;
-            var standing = Standing.Select(v => new VillageSite { Cell = v.Cell, Region = v.Region }).ToList();
+            // Apart from the ruins too (P4-102: the kept village sites made the ruins' own site the likeliest pick — built on top of them).
+            var standing = _villages.Select(v => new VillageSite { Cell = v.Cell, Region = v.Region }).ToList();
             var names = _villages.Select(v => v.Name).ToList();
             Services.TryGet<RegionLordService>(out var lords);
             float Weight(Region r) => lords != null && lords.IsCleansed(r) ? VillageRules.CleansedWeight : 1f;

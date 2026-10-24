@@ -5,38 +5,45 @@ using UnityEngine;
 namespace GuildMaster.World
 {
     /// <summary>
-    /// Ridges and rivers on the region borders (P4-101, user request 2026-10-21: "on this map you just walk straight").
-    /// Every border — the grassland's rim and the lines between the outer regions — is shut by a mountain ridge or a
-    /// river and crossed at 2–3 passes, bridges or fords (user decision), plus wherever a gate's road meets it.
-    /// Borders touching the wasteland are ridges: its "water" is lava, and a river there would run half lava, half water.
+    /// Wood belts and rivers on the region borders (P4-101, user request 2026-10-21: "on this map you just walk straight";
+    /// P4-103, user request 2026-10-24: "not rock between the lands, a very dangerous forest"). Every border — the
+    /// grassland's rim and the lines between the outer regions — is a belt of deep woods (walkable, but slow and dark, with
+    /// miasma, traps and dens: <see cref="DeepWoods"/>) or a river, crossed at 2–3 trails, bridges or fords (user decision).
+    /// Borders touching the wasteland are woods: its "water" is lava, and a river there would run half lava, half water.
     /// </summary>
     public static class RegionBarriers
     {
-        public enum Kind : byte { Ridge, River }
+        public enum Kind : byte { Wood, River }
 
         /// <summary>No barrier this close (cells past the starting walls, either axis): the walls move out up to 12 (P4-86).</summary>
         public const int TownClearance = 18;
         /// <summary>
-        /// Half widths (cells either side of the barrier's line), the low and high ends of their swell. P4-102: wider-ranging
-        /// than P4-101's (2.6–4.8), so a ridge swells to a massif and thins to a saddle instead of running as one even band.
+        /// Half widths (cells either side of the barrier's line), the low and high ends of their swell. P4-103: a wood belt is
+        /// walkable, so it is broad — a long, slow, dark walk across.
         /// </summary>
-        const float RidgeHalfMin = 2.2f, RidgeHalfMax = 7f, RiverHalfMin = 1.3f, RiverHalfMax = 2.6f;
-        /// <summary>A ridge's edge is cut ragged by a fine noise up to this share of its half width either way (its core stays whole).</summary>
+        const float WoodHalfMin = 4f, WoodHalfMax = 9f, RiverHalfMin = 1.3f, RiverHalfMax = 2.6f;
+        /// <summary>The woods bulge out into broad masses this far past a belt's edge where a slow noise is high, so a belt is no even band.</summary>
+        const float Bulge = 8f;
+        /// <summary>Round the town's fields a belt lies this share of its widest half out beyond the border: the fields stay open.</summary>
+        const float FieldsKeepClear = 0.6f;
+        /// <summary>The woods round the town's fields are this much of a belt's width, with no masses.</summary>
+        const float FieldsRim = 0.6f;
+        /// <summary>A belt's edge is cut ragged by a fine noise up to this share of its half width either way (its core stays whole).</summary>
         const float Ragged = 0.55f, Core = 0.45f;
         /// <summary>
         /// P4-102: how far the barrier's line strays from the border either way (a slow noise), so it bends and wanders
         /// instead of tracing the regions' outline.
         /// </summary>
         const float Stray = 8f;
-        /// <summary>Spurs and knolls off a ridge, out to this far past its flank.</summary>
+        /// <summary>Tongues and copses of (plain) forest off a belt, out to this far past its edge.</summary>
         const float SpurReach = 14f;
         /// <summary>Sand bank either side of a river.</summary>
         const float Bank = 1.2f;
         /// <summary>The farthest from its border a barrier's cell can be.</summary>
-        const float BarrierReach = Stray + RidgeHalfMax * (1f + Ragged);
+        const float BarrierReach = Stray + WoodHalfMax * (1f + Ragged + FieldsKeepClear) + Bulge;
         /// <summary>Ways across each border (user decision: 2–3).</summary>
         const int MinPasses = 2, MaxPasses = 3;
-        /// <summary>Rivers on a map at least (where the borders allow): the user asked for ridges and rivers both.</summary>
+        /// <summary>Rivers on a map at least (where the borders allow): the user asked for barriers of both kinds.</summary>
         const int MinRivers = 2;
         const float RiverChance = 0.5f, BridgeChance = 0.6f;
         /// <summary>A way across this close to another border (where three regions meet) could open into the wrong one.</summary>
@@ -44,8 +51,8 @@ namespace GuildMaster.World
         /// <summary>A pass slot this close to a road crossing or another pass is taken by it.</summary>
         const float SlotSpacing = 25f;
         const int EdgeMargin = 8;
-        /// <summary>Half widths of the ways across: the cut between the rocks, a bridge's deck, a ford's shallows.</summary>
-        const float PassHalf = 3f, BridgeHalf = 1f, FordHalf = 2.5f;
+        /// <summary>Half widths of the ways across: the trail cleared through the woods, a bridge's deck, a ford's shallows.</summary>
+        const float PassHalf = 2.5f, BridgeHalf = 1f, FordHalf = 2.5f;
         /// <summary>How far past the barrier a way across also clears lakes and rocks, so it opens onto land.</summary>
         const float Approach = 5f;
         /// <summary>A lake a river runs into takes the river's colours up to this size; a bigger one is kept apart by a sand bar.</summary>
@@ -84,9 +91,9 @@ namespace GuildMaster.World
             => Mathf.Max(Mathf.Abs(x - town.x), Mathf.Abs(y - town.y)) <= townHalf + TownClearance;
 
         /// <summary>
-        /// Lays the ridges and rivers along the borders of <paramref name="raw"/> (the regions as the zones laid them,
+        /// Lays the wood belts and rivers along the borders of <paramref name="raw"/> (the regions as the zones laid them,
         /// before they were snapped to lakes and woods). The ways across come later (<see cref="OpenPasses"/>).
-        /// P4-102: the line strays off the border, swells and thins, and a ridge throws out spurs and knolls.
+        /// P4-102: the line strays off the border, swells and thins. P4-103: deep woods where the ridges were, forest tongues off them.
         /// </summary>
         public static Layout Lay(MapData map, Region[] raw, Vector2Int town, int townHalf, GameRandom rng)
         {
@@ -111,21 +118,31 @@ namespace GuildMaster.World
                 // Where three regions meet the lines come back to the borders, so the barriers join with no gap.
                 float fade = Mathf.Clamp01((junction[i] - JunctionCalm) / JunctionFade);
                 float off = (Mathf.PerlinNoise(x * 0.012f + l.NoiseY, y * 0.012f + l.NoiseX) - 0.5f) * 2f * Stray * fade;
+                bool wood = l.Kinds[key] == Kind.Wood || NearWasteland(raw, w, h, x, y);
+                // The town's fields keep their open ground: a belt round them lies out beyond the border (grassland is a pair's first).
+                if (wood && key / KeyBase == (int)Region.Grassland) off -= WoodHalfMax * FieldsKeepClear * fade;
                 float e = Mathf.Abs(side * l.Distance[i] - off);
-                bool ridge = l.Kinds[key] == Kind.Ridge || NearWasteland(raw, w, h, x, y);
-                if (ridge)
+                if (wood)
                 {
-                    // Where a river meets the wasteland (three regions at a point) it rises in the rocks instead.
-                    float half = l.Kinds[key] == Kind.Ridge ? Half(Kind.Ridge, x, y, l) : Half(Kind.River, x, y, l);
-                    // A ragged edge: crags and notches by a fine noise, the core whole so the ridge never breaks.
+                    // Where a river meets the wasteland (three regions at a point) it runs into the woods instead.
+                    float half = l.Kinds[key] == Kind.Wood ? Half(Kind.Wood, x, y, l) : Half(Kind.River, x, y, l) + 2f;
+                    // Round the town's fields a thinner rim, no masses: the first hunts and the first scouting go out through it
+                    // (a measured run with the full belt there knew 12 dens of 64 after ten days).
+                    bool fields = key / KeyBase == (int)Region.Grassland;
+                    if (fields) half *= FieldsRim;
+                    // A ragged edge: glades and outliers by a fine noise, the core whole so the belt never breaks.
                     float jag = (Mathf.PerlinNoise(x * 0.11f + l.NoiseX + 13f, y * 0.11f + l.NoiseY + 7f) - 0.5f) * 2f;
                     half = Mathf.Max(half * Core, half * (1f + Ragged * jag));
-                    if (e <= half)
+                    // Broad masses where a slow noise is high: the belt bulges into the land on either side.
+                    bool bulge = l.Kinds[key] == Kind.Wood && !fields && e <= half + Bulge
+                                 && Mathf.PerlinNoise(x * 0.035f + l.NoiseY + 51f, y * 0.035f + l.NoiseX + 17f) > 0.58f + 0.012f * (e - half);
+                    if (e <= half || bulge)
                     {
-                        Set(map, i, TileType.Mountain);
-                        l.Barrier[i] = true;
+                        // Deep woods; a lake inside stays a forest lake.
+                        if (map.Tiles[i] != TileType.Water) Set(map, i, TileType.Forest);
+                        map.Deep[i] = map.Tiles[i] == TileType.Forest;
                     }
-                    else if (l.Kinds[key] == Kind.Ridge) flank[i] = e - half;
+                    else if (l.Kinds[key] == Kind.Wood) flank[i] = e - half;
                     continue;
                 }
                 if (l.Distance[i] > BarrierReach + Bank + 1f) continue;
@@ -185,8 +202,8 @@ namespace GuildMaster.World
         }
 
         /// <summary>
-        /// Spurs (thin ridges where a ridged noise peaks, fewer the farther out) and knolls off a ridge's flanks: rock the
-        /// way across does not need is cut later, and land they shut in is joined up by the generator.
+        /// Tongues (where a ridged noise peaks, fewer the farther out) and copses of plain forest off a belt's edges (P4-103: they
+        /// were rock spurs off the ridges), so the deep woods fade into the land instead of ending at a line.
         /// </summary>
         static void Spurs(MapData map, Layout l, float[] flank)
         {
@@ -194,11 +211,11 @@ namespace GuildMaster.World
             for (int i = 0; i < flank.Length; i++)
             {
                 float f = flank[i];
-                if (f > SpurReach || map.Tiles[i] is TileType.Mountain or TileType.Water) continue;
+                if (f > SpurReach || map.Tiles[i] is TileType.Mountain or TileType.Water or TileType.Forest) continue;
                 int x = i % w, y = i / w;
                 float ridged = 1f - Mathf.Abs(2f * Mathf.PerlinNoise(x * 0.07f + l.NoiseX + 31f, y * 0.07f + l.NoiseY) - 1f);
                 float knoll = Mathf.PerlinNoise(x * 0.16f + l.NoiseY + 77f, y * 0.16f + l.NoiseX);
-                if (ridged > 0.92f + 0.007f * f || knoll > 0.8f + 0.012f * f) Set(map, i, TileType.Mountain);
+                if (ridged > 0.86f + 0.008f * f || knoll > 0.7f + 0.014f * f) Set(map, i, TileType.Forest);
             }
         }
 
@@ -211,10 +228,10 @@ namespace GuildMaster.World
         /// <summary>The barrier's half width here: it swells and narrows along its length.</summary>
         static float Half(Kind kind, int x, int y, Layout l)
         {
-            // Slow along a ridge (long massifs and long saddles), quicker along a river.
-            float f = kind == Kind.Ridge ? 0.022f : 0.05f;
+            // Slow along a belt (long broad woods and long narrow ones), quicker along a river.
+            float f = kind == Kind.Wood ? 0.022f : 0.05f;
             float n = Mathf.PerlinNoise(x * f + l.NoiseX, y * f + l.NoiseY);
-            return kind == Kind.Ridge ? Mathf.Lerp(RidgeHalfMin, RidgeHalfMax, n) : Mathf.Lerp(RiverHalfMin, RiverHalfMax, n);
+            return kind == Kind.Wood ? Mathf.Lerp(WoodHalfMin, WoodHalfMax, n) : Mathf.Lerp(RiverHalfMin, RiverHalfMax, n);
         }
 
         static bool NearWasteland(Region[] raw, int w, int h, int x, int y)
@@ -292,7 +309,7 @@ namespace GuildMaster.World
             foreach (int key in keys)
             {
                 bool waste = First(key) == Region.Wasteland || Second(key) == Region.Wasteland;
-                var kind = !waste && rng.Chance(RiverChance) ? Kind.River : Kind.Ridge;
+                var kind = !waste && rng.Chance(RiverChance) ? Kind.River : Kind.Wood;
                 l.Kinds[key] = kind;
                 if (kind == Kind.River) rivers++;
                 else if (!waste) open.Add(key);
@@ -460,7 +477,7 @@ namespace GuildMaster.World
         static void Open(MapData map, Region[] raw, Layout l, int i, int key, Vector2Int town, GameRandom rng)
         {
             var cell = new Vector2Int(i % map.Width, i / map.Width);
-            var kind = l.Kinds[key] == Kind.Ridge ? PassKind.MountainPass : rng.Chance(BridgeChance) ? PassKind.Bridge : PassKind.Ford;
+            var kind = l.Kinds[key] == Kind.Wood ? PassKind.Trail : rng.Chance(BridgeChance) ? PassKind.Bridge : PassKind.Ford;
             var across = Across(raw, map.Width, map.Height, cell, First(key), Second(key), town);
             Carve(map, l, cell, across, kind);
             map.Passes.Add(new PassSite { Cell = cell, Kind = kind, A = First(key), B = Second(key), Across = across, GuardNest = -1 });
@@ -505,7 +522,7 @@ namespace GuildMaster.World
                     }
                 }
                 int key = l.Pair[start];
-                bool ridge = l.Kinds[key] == Kind.Ridge;
+                bool ridge = l.Kinds[key] == Kind.Wood;
                 var sum = Vector2.zero;
                 foreach (int i in cells)
                 {
@@ -533,7 +550,7 @@ namespace GuildMaster.World
                 var cell = new Vector2Int(best % w, best / w);
                 map.Passes.Add(new PassSite
                 {
-                    Cell = cell, Kind = ridge ? PassKind.MountainPass : PassKind.Bridge, A = First(key), B = Second(key),
+                    Cell = cell, Kind = ridge ? PassKind.Trail : PassKind.Bridge, A = First(key), B = Second(key),
                     Across = Across(raw, w, h, cell, First(key), Second(key), town), OnRoad = true, GuardNest = -1,
                 });
             }
@@ -619,12 +636,12 @@ namespace GuildMaster.World
             return d.normalized;
         }
 
-        /// <summary>Cuts a way across: a gap in the rocks, a road deck over the river, or sand shallows through it.</summary>
+        /// <summary>Cuts a way across: a trail cleared through the woods (safe from their dangers), a road deck over the river, or sand shallows through it.</summary>
         static void Carve(MapData map, Layout l, Vector2Int at, Vector2 across, PassKind kind)
         {
-            float half = kind switch { PassKind.MountainPass => PassHalf, PassKind.Bridge => BridgeHalf, _ => FordHalf };
+            float half = kind switch { PassKind.Trail => PassHalf, PassKind.Bridge => BridgeHalf, _ => FordHalf };
             // The barrier may lie anywhere its line strays to (P4-102), so the cut reaches that far either way.
-            float barrier = kind == PassKind.MountainPass ? BarrierReach : Stray + RiverHalfMax + Bank;
+            float barrier = kind == PassKind.Trail ? BarrierReach : Stray + RiverHalfMax + Bank;
             float reach = barrier + Approach;
             var along = new Vector2(-across.y, across.x);
             int r = Mathf.CeilToInt(reach + half + 2f);
@@ -665,6 +682,11 @@ namespace GuildMaster.World
                         break;
                     case PassKind.Ford when t == TileType.Water:
                         Set(map, i, TileType.Sand);
+                        break;
+                    case PassKind.Trail when map.Deep[i] || t == TileType.Forest && depth <= barrier:
+                        // The trail: the trees felled, no deep woods on it (P4-103: it is the safe way through).
+                        Set(map, i, TileType.Grass);
+                        map.Deep[i] = false;
                         break;
                     default:
                         if (t is TileType.Water or TileType.Mountain) Set(map, i, TileType.Grass);

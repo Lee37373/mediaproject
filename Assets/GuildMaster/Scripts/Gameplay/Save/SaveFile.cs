@@ -16,8 +16,9 @@ namespace GuildMaster.Save
         /// 3: the underground band above the surface (P4-85 ruins) — the fog of a version-2 save no longer fits the map.
         /// 4: ridges, rivers and landforms (P4-101) — a seed makes another map, with the dens elsewhere.
         /// 5: zones, their landmarks and the road network (P4-102) — again another map for the same seed.
+        /// 6: deep woods instead of the ridges on the region borders (P4-103) — another map again.
         /// </summary>
-        public const int CurrentVersion = 5;
+        public const int CurrentVersion = 6;
 
         public int version = CurrentVersion;
         public int seed;

@@ -231,6 +231,10 @@ namespace GuildMaster.Session
             Services.Register(disasters);
             save.Register(disasters);
             AddSystem<Disasters.HazardOverlay>().Init(world, fog);
+            // P4-103: the deep woods' miasma and traps (after the overlay, which draws the miasma as it is laid).
+            var woods = AddSystem<DeepWoods>();
+            woods.Init(world, fog, clock, Seed);
+            Services.Register(woods);
             // Sudden incidents (P4-85): heard of by rumour, dealt with through the quests their clients post.
             var incidents = AddSystem<Incidents.IncidentService>();
             incidents.Init(clock, world, eco, board, fog);

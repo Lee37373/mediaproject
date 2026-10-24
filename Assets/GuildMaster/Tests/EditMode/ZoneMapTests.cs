@@ -111,55 +111,53 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void WithTheWaysAcrossBlocked_EveryRegionIsShutIn()
+        public void EveryBorder_IsDeepWoodsOrARiver_CutOnlyAtItsCrossings_AndNoRoadRunsThroughTheWoods()
         {
+            // P4-103 (user request 2026-10-24: "a very dangerous forest instead of rock"): the woods can be walked, so the
+            // borders are not shut any more — but away from its crossings every border lies under deep woods or a river.
             foreach (int seed in Seeds)
             {
                 var map = Map(seed);
                 int w = map.Width, h = map.SurfaceHeight;
-                // A barrier's line strays off its border (P4-102), so the land runs on a little past it: a leak is ground of
-                // another region reached deeper than any barrier lies.
-                var labels = new int[w * h];
-                for (int i = 0; i < labels.Length; i++) labels[i] = (int)Raw(map, i);
-                var border = RegionBarriers.Field(labels, w, h);
-                var blocked = new bool[w * h];
-                foreach (var p in map.Passes.Where(p => p.A != p.B))
-                    for (int dy = -26; dy <= 26; dy++)
-                    for (int dx = -26; dx <= 26; dx++)
-                        if (dx * dx + dy * dy <= 26 * 26 && map.InBounds(p.Cell.x + dx, p.Cell.y + dy)) blocked[map.Index(p.Cell.x + dx, p.Cell.y + dy)] = true;
-                // From the town and from each outer region's biggest zone: no other region is reached.
-                var starts = new List<Vector2Int> { map.TownCenter };
-                foreach (var r in new[] { Region.Desert, Region.Snow, Region.Swamp, Region.Wasteland })
+                Assert.That(Enumerable.Range(0, w * h).Count(i => map.Deep[i]), Is.GreaterThan(2000), $"seed {seed}: deep woods");
+                Assert.That(Enumerable.Range(0, w * h).All(i => !map.Deep[i] || map.Tiles[i] == TileType.Forest), Is.True, "deep woods are forest");
+                Assert.That(Enumerable.Range(0, w * h).Any(i => map.Deep[i] && map.Tiles[i] == TileType.Road), Is.False, $"seed {seed}: a road through the deep woods");
+                foreach (var p in map.Passes.Where(p => p.Kind == PassKind.Trail && p.A != p.B))
+                    Assert.That(map.IsDeep(p.Cell.x, p.Cell.y), Is.False, $"seed {seed}: the trail at {p.Cell} is cleared");
+                var covered = new bool[w * h];
+                for (int i = 0; i < w * h; i++) covered[i] = map.Deep[i] || map.Tiles[i] == TileType.Water;
+                var open = new List<string>();
+                for (int y = 8; y < h - 8; y++)
+                for (int x = 8; x + 1 < w - 8; x++)
                 {
-                    var big = map.Zones.Where(z => z.Region == r).OrderByDescending(z => z.Cells).First();
-                    starts.Add(big.Heart);
+                    if (Raw(map, map.Index(x, y)) == Raw(map, map.Index(x + 1, y))) continue;
+                    if (RegionBarriers.NearTown(x, y, map.TownCenter, map.BaseTownHalfSize + 4)) continue;
+                    var cell = new Vector2Int(x, y);
+                    if (map.Passes.Any(p => (p.Cell - cell).sqrMagnitude <= 34 * 34)) continue;
+                    bool any = false;
+                    for (int dy = -20; dy <= 20 && !any; dy++)
+                    for (int dx = -20; dx <= 20; dx++)
+                        if (map.InBounds(x + dx, y + dy) && y + dy < h && covered[map.Index(x + dx, y + dy)]) { any = true; break; }
+                    if (!any && open.Count < 3) open.Add(cell.ToString());
                 }
-                foreach (var start in starts)
-                {
-                    var own = Raw(map, map.Index(start.x, start.y));
-                    var seen = new bool[w * h];
-                    var queue = new Queue<int>();
-                    seen[map.Index(start.x, start.y)] = true;
-                    queue.Enqueue(map.Index(start.x, start.y));
-                    var leak = new List<string>();
-                    while (queue.Count > 0)
-                    {
-                        int i = queue.Dequeue();
-                        int x = i % w, y = i / w;
-                        if (Raw(map, i) != own && border.Distance[i] > 20f && leak.Count < 3)
-                            leak.Add($"({x},{y}) {Raw(map, i)}");
-                        foreach (var (ax, ay) in new[] { (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1) })
-                        {
-                            if (ax < 0 || ay < 0 || ax >= w || ay >= h) continue;
-                            int j = ay * w + ax;
-                            if (seen[j] || blocked[j] || !MapData.IsWalkable(map.Tiles[j])) continue;
-                            seen[j] = true;
-                            queue.Enqueue(j);
-                        }
-                    }
-                    Assert.That(leak, Is.Empty, $"seed {seed}: from {own} at {start} the land runs on into another region");
-                }
+                Assert.That(open, Is.Empty, $"seed {seed}: a border with neither woods nor water near it, away from any crossing");
             }
+        }
+
+        [Test]
+        public void DeepWoods_AreSlowerAndDarker_RiskierToCross_AndTheirMiasmaSparesMonsters()
+        {
+            var map = new MapData(3, 1);
+            map[0, 0] = TileType.Grass; map[1, 0] = TileType.Forest; map[2, 0] = TileType.Forest;
+            map.Deep[2] = true;
+            var grid = new GridMap(map);
+            Assert.That(grid.Cost(2, 0), Is.EqualTo(grid.Cost(1, 0) * DeepWoodRules.MoveFactor).Within(1e-4f), "slower than a plain forest");
+            Assert.That(RouteRisk.Of(map, 2, 0), Is.GreaterThan(RouteRisk.Of(map, 1, 0)), "riskier to cross");
+            var world = new WorldService(map);
+            Assert.That(ForestSight.Radius(world, new Vector2(2.5f, 0.5f), 9f), Is.EqualTo(9f * ForestSight.InForestFactor * DeepWoodRules.SightFactor).Within(1e-4f), "darker");
+            Assert.That(Hazards.Hurts(HazardKind.Miasma, monster: false), Is.True, "miasma hurts people");
+            Assert.That(Hazards.Hurts(HazardKind.Miasma, monster: true), Is.False, "the woods' monsters live with it");
+            Assert.That(Hazards.Hurts(HazardKind.Poison, monster: true), Is.True, "a disaster's poison hurts monsters as before");
         }
 
         [Test]

@@ -48,8 +48,8 @@ namespace GuildMaster.World
 
     public enum Biome : byte { Plains, Forest, Mountain, Shore }
 
-    /// <summary>How a pass crosses its barrier (P4-101).</summary>
-    public enum PassKind : byte { MountainPass, Bridge, Ford }
+    /// <summary>A way across: a trail cleared through a wood belt (P4-103; a cut through rock before), a bridge, a ford.</summary>
+    public enum PassKind : byte { Trail, Bridge, Ford }
 
     /// <summary>
     /// A way across the ridge or river between two regions (P4-101, <see cref="RegionBarriers"/>), or one cut to land
@@ -168,6 +168,14 @@ namespace GuildMaster.World
         public readonly List<ZoneSite> Zones = new();
         /// <summary>Zone of each cell (index into <see cref="Zones"/>), -1 where there is none (the underground, a hand-made map).</summary>
         public readonly short[] ZoneIds;
+        /// <summary>
+        /// The deep woods (P4-103, user request 2026-10-24: "not rock between the lands, a very dangerous forest"): forest
+        /// cells of the belts on the region borders — slow, dark, with miasma, traps and dens in them (<see cref="DeepWoods"/>).
+        /// </summary>
+        public readonly bool[] Deep;
+
+        public bool IsDeep(int x, int y) => InBounds(x, y) && Deep[y * Width + x];
+
         /// <summary>Spots kept for villages (P4-102): open ground at road ends in the havens and the quieter zones.</summary>
         public readonly List<Vector2Int> SettlementSites = new();
 
@@ -189,6 +197,7 @@ namespace GuildMaster.World
             Tiles = new TileType[width * height];
             Trees = new bool[width * height];
             Regions = new Region[width * height];
+            Deep = new bool[width * height];
             ZoneIds = new short[width * height];
             System.Array.Fill(ZoneIds, (short)-1);
         }

@@ -28,7 +28,7 @@ namespace GuildMaster.World
             if (map == null || !map.InBounds(x, y)) return 0f;
             int i = map.Index(x, y);
             float sight = TerrainRegions.SightMultiplier(map.Regions[i]);
-            if (map.Tiles[i] == TileType.Forest && !cleared) sight *= ForestSight.InForestFactor;
+            if (map.Tiles[i] == TileType.Forest && !cleared) sight *= ForestSight.InForestFactor * (map.Deep[i] ? DeepWoodRules.SightFactor : 1f);
             return Mathf.Clamp01(1f - sight);
         }
 

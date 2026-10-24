@@ -122,6 +122,8 @@ namespace GuildMaster.UI
             {
                 int i = y * w + x;
                 _base[i] = TileColor(_mapData.Tiles[i], _mapData.Regions[i]);
+                // The deep woods darker (P4-103).
+                if (_mapData.Deep[i] && _mapData.Tiles[i] == TileType.Forest) _base[i] = Color32.Lerp(_base[i], new Color32(0x10, 0x1C, 0x12, 255), 0.45f);
                 if (_mapData.Trees[i]) _base[i] = Color32.Lerp(_base[i], new Color32(0x2F, 0x6E, 0x2A, 255), 0.5f);
             }
         }

@@ -45,6 +45,7 @@ namespace GuildMaster.World
             System.Array.Copy(surface.Trees, map.Trees, w * h);
             System.Array.Copy(surface.Regions, map.Regions, w * h);
             System.Array.Copy(surface.ZoneIds, map.ZoneIds, w * h);
+            System.Array.Copy(surface.Deep, map.Deep, w * h);
             map.Zones.AddRange(surface.Zones);
             map.SettlementSites.AddRange(surface.SettlementSites);
             map.TownRect = surface.TownRect;

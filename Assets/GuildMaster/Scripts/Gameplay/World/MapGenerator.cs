@@ -194,9 +194,9 @@ namespace GuildMaster.World
                 RoadNetwork.Lay(map, c, map.SettlementSites, land);
             }
 
-            // Trees on forest cells (partial cover). Deterministic from the seed.
+            // Trees on forest cells (partial cover; the deep woods thick with them, P4-103). Deterministic from the seed.
             for (int i = 0; i < map.Tiles.Length; i++)
-                map.Trees[i] = map.Tiles[i] == TileType.Forest && rng.Chance(0.55f);
+                map.Trees[i] = map.Tiles[i] == TileType.Forest && rng.Chance(map.Deep[i] ? DeepTrees : 0.55f);
 
             // 3. Reachability from town.
             var dist = FloodDistances(map, c);
@@ -213,8 +213,8 @@ namespace GuildMaster.World
                 if ((new Vector2Int(x, y) - c).sqrMagnitude < s.MinNestDistanceFromTown * s.MinNestDistanceFromTown) continue;
                 var t = map[x, y];
                 if (t == TileType.Road || !MapData.IsWalkable(t)) continue;
-                // P4-102: dens keep off the roads and the village sites.
-                if (s.Landforms && (NearRoad(map, x, y, DenRoadClearance) || NearSettlement(map, x, y))) continue;
+                // P4-102: dens keep off the roads and the village sites; P4-103: the deep woods have their own (PlaceWoodDens).
+                if (s.Landforms && (NearRoad(map, x, y, DenRoadClearance) || NearSettlement(map, x, y) || map.Deep[map.Index(x, y)])) continue;
                 candidates.Add(new Vector2Int(x, y));
             }
             rng.Shuffle(candidates);
@@ -223,7 +223,12 @@ namespace GuildMaster.World
             bool split = s.InnerHalfSize > 0 && s.InnerNestCount > 0;
             bool Inner(Vector2Int cell) => Mathf.Abs(cell.x - c.x) <= s.InnerHalfSize && Mathf.Abs(cell.y - c.y) <= s.InnerHalfSize;
             // P4-101: dens holding passes come first; they count towards the inner and outer shares like any other.
-            if (s.Landforms) PlaceGuards(map, dist, c, s, land);
+            if (s.Landforms)
+            {
+                PlaceGuards(map, dist, c, s, land);
+                // P4-103: dens deep in the woods (ambushers, born strong there).
+                PlaceWoodDens(map, dist, c, land);
+            }
             if (split)
             {
                 int outerGuards = 0;
@@ -251,6 +256,8 @@ namespace GuildMaster.World
             //    (a campfire, the start of a path for someone pushed into the rock), and whoever ended up
             //    there was walled in for good: a ranger stood in a two-cell hole in the rock for ten days.
             FillPockets(map, dist);
+            // The deep woods are forest only: a landmark, a bridge or a cut later laid on a cell of them made it something else (P4-103).
+            for (int i = 0; i < map.Tiles.Length; i++) map.Deep[i] &= map.Tiles[i] == TileType.Forest;
 
             return map;
         }
@@ -410,6 +417,8 @@ namespace GuildMaster.World
 
         /// <summary>A patch shut in by the barriers and landforms at least this big gets a way out; smaller ones are filled.</summary>
         const int StrandedMinCells = 80;
+        /// <summary>Share of deep-wood cells with a tree (plain forest 0.55).</summary>
+        const float DeepTrees = 0.85f;
         /// <summary>A den holding a pass (P4-101) for this share of them, this far past the pass on the side away from the town.</summary>
         const float GuardChance = 0.6f, GuardMin = 8f, GuardMax = 13f;
 
@@ -505,7 +514,7 @@ namespace GuildMaster.World
                         var region = map.Regions[mid];
                         map.Passes.Add(new PassSite
                         {
-                            Cell = new Vector2Int(mid % w, mid / w), Kind = water ? PassKind.Ford : PassKind.MountainPass,
+                            Cell = new Vector2Int(mid % w, mid / w), Kind = water ? PassKind.Ford : PassKind.Trail,
                             A = region, B = region, Across = (new Vector2(found % w, found / w) - from).normalized, GuardNest = -1,
                         });
                     }
@@ -519,6 +528,48 @@ namespace GuildMaster.World
         /// P4-101 (user decision: dens hold the passes): a den for <see cref="GuardChance"/> of the passes between regions,
         /// a little past the pass on the side away from the town (either side on a border running outward).
         /// </summary>
+        /// <summary>
+        /// P4-103 (user decision: dens that ambush in the dangerous woods): one den per <see cref="DeepWoodRules.BeltCellsPerDen"/>
+        /// cells of deep woods (at most <see cref="DeepWoodRules.MaxDens"/>), well inside a belt, out past
+        /// <see cref="DeepWoodRules.DenMinDistance"/>, off the roads and apart. Their kind is drawn as anywhere (woodland kinds
+        /// suit the forest best); the woods make them strong (<see cref="DeepWoodRules.DepthShift"/>).
+        /// </summary>
+        static void PlaceWoodDens(MapData map, int[] dist, Vector2Int town, GameRandom rng)
+        {
+            int w = map.Width, h = map.SurfaceHeight, deepCells = 0;
+            float min2 = DeepWoodRules.DenMinDistance * DeepWoodRules.DenMinDistance;
+            var spots = new List<Vector2Int>();
+            for (int y = 10; y < h - 10; y++)
+            for (int x = 10; x < w - 10; x++)
+            {
+                int i = y * w + x;
+                if (!map.Deep[i]) continue;
+                deepCells++;
+                if (dist[i] < 0 || (x - town.x) * (x - town.x) + (y - town.y) * (y - town.y) < min2 || NearRoad(map, x, y, DenRoadClearance)) continue;
+                // Well inside: deep woods all round.
+                int round = 0;
+                for (int dy = -2; dy <= 2; dy++)
+                for (int dx = -2; dx <= 2; dx++)
+                    if (map.Deep[(y + dy) * w + x + dx]) round++;
+                if (round >= 22) spots.Add(new Vector2Int(x, y));
+            }
+            int want = Mathf.Min(DeepWoodRules.MaxDens, deepCells / DeepWoodRules.BeltCellsPerDen);
+            rng.Shuffle(spots);
+            var placed = new List<Vector2Int>();
+            foreach (var cell in spots)
+            {
+                if (placed.Count >= want) break;
+                bool close = false;
+                foreach (var p in placed) if ((p - cell).sqrMagnitude < WoodDenSpacing * WoodDenSpacing) { close = true; break; }
+                if (close || CrowdedByNests(map, cell)) continue;
+                placed.Add(cell);
+                AddNest(map, cell, dist);
+            }
+        }
+
+        /// <summary>Dens in the deep woods keep this far from one another.</summary>
+        const float WoodDenSpacing = 30f;
+
         static void PlaceGuards(MapData map, int[] dist, Vector2Int town, MapGenSettings s, GameRandom rng)
         {
             for (int p = 0; p < map.Passes.Count; p++)

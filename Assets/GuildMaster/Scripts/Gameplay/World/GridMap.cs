@@ -69,8 +69,15 @@ namespace GuildMaster.World
             int i = y * Width + x;
             var t = Data.Tiles[i];
             float cost = MapData.MoveCost(t) * Hazards.CostFactor(_hazard[i]);
-            return t is TileType.Road or TileType.TownFloor or TileType.Gate ? cost : cost * TerrainRegions.MoveMultiplier(Data.Regions[i]);
+            if (t is TileType.Road or TileType.TownFloor or TileType.Gate) return cost;
+            cost *= TerrainRegions.MoveMultiplier(Data.Regions[i]);
+            // The deep woods' undergrowth (P4-103), while they stand.
+            return Data.Deep[i] && !Hazards.ClearsForest(_hazard[i]) && t == TileType.Forest ? cost * DeepWoodRules.MoveFactor : cost;
         }
+
+        /// <summary>Deep woods standing here (P4-103: not burnt down).</summary>
+        public bool IsDeep(int x, int y) => Data.IsDeep(x, y) && IsForest(x, y);
+        public bool IsDeep(Vector2Int c) => IsDeep(c.x, c.y);
 
         /// <summary>Mountains, walls and buildings fully block projectiles / sight lines.</summary>
         public bool IsHardCover(int x, int y)

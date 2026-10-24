@@ -260,6 +260,13 @@ namespace GuildMaster.Session
             // Zones (P4-102): a stretch of land the guild now knows by name.
             EventBus.Subscribe<World.ZoneDiscoveredEvent>(e => Add(
                 $"[지역] 새 지역 발견: {e.Zone.Name} ({World.ZoneDiscovery.Describe(e.Zone)}, {Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(e.Zone.Heart))})", LogCategory.Info));
+            // The deep woods (P4-103): first seen, and a trap sprung where the guild could see it.
+            EventBus.Subscribe<World.DeepWoodsSightedEvent>(e => Add(
+                $"[숲] 깊은 숲을 발견했습니다({Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(e.Cell))}). 독 안개와 숨은 덫, 매복하는 둥지가 있는 위험한 숲입니다. 길이 난 숲길로 지나는 것이 안전합니다.", LogCategory.Danger));
+            EventBus.Subscribe<World.TrapSprungEvent>(e =>
+            {
+                if (e.Seen && e.Victim != null) Add($"[숲] {e.Victim.DisplayName}이(가) 깊은 숲에서 덫에 걸렸습니다!", LogCategory.Danger);
+            });
             // Other villages (P4-84): what the guild saw of them, and the rumour of a new one.
             EventBus.Subscribe<Villages.VillageDiscoveredEvent>(e => Add(
                 $"[마을] 새 마을 발견: {e.Village.DisplayName} ({Monsters.RegionLords.RegionName(e.Village.Region)}, {Quests.QuestBoard.DescribeArea(e.Village.WorldPosition)}). 길드 마스터가 직접 가면 영입 후보를 만날 수 있습니다.", LogCategory.Info));

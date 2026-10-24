@@ -153,12 +153,14 @@ namespace GuildMaster.World
 
         /// <summary>
         /// What a road pays to run over a cell: roads already laid are cheap (they join), open ground, sand, wood dearer;
-        /// water and rock it cannot cross (bridges and passes are cut before); a slow noise makes it wind, and a cell
-        /// beside water or rock costs more, so roads keep off the shores and the cliffs.
+        /// water, rock and the deep woods it cannot cross (bridges and trails are cut before — P4-103: a road through the deep
+        /// woods is a trail); a slow noise makes it wind, and a cell beside water or rock costs more, so roads keep off the
+        /// shores and the cliffs.
         /// </summary>
         static float Cost(MapData map, int x, int y, float nx, float ny)
         {
             var t = map[x, y];
+            if (map.IsDeep(x, y)) return float.PositiveInfinity;
             float c = t switch
             {
                 TileType.Road => RoadCost,

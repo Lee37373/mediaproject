@@ -56,7 +56,9 @@ namespace GuildMaster.Disasters
             if (_timer > 0f || _pending.Count == 0) return;
             _timer = RefreshInterval;
             s_seen.Clear();
-            foreach (var c in _pending) if (_fog == null || _fog.IsVisible(c)) s_seen.Add(c);
+            // A disaster is shown as seen; the deep woods' miasma (P4-103) is always there, so like the ground it shows once explored.
+            foreach (var c in _pending)
+                if (_fog == null || _fog.IsVisible(c) || _world.Grid.HazardAt(c) == HazardKind.Miasma && _fog.IsExplored(c)) s_seen.Add(c);
             foreach (var c in s_seen)
             {
                 _pending.Remove(c);
@@ -91,6 +93,10 @@ namespace GuildMaster.Disasters
                     break;
                 case HazardKind.Poison:
                     sr.sprite = _soft; sr.color = new Color(0.6f, 0.25f, 0.85f, 0.7f); scale = 2f;
+                    break;
+                case HazardKind.Miasma:
+                    // The deep woods' miasma (P4-103): a sickly green haze under the canopy.
+                    sr.sprite = _soft; sr.color = new Color(0.45f, 0.62f, 0.2f, 0.5f); scale = 2.3f;
                     break;
                 case HazardKind.Snow:
                     sr.sprite = _mound; sr.color = Color.white; scale = 1.05f;
