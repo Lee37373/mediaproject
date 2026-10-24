@@ -2,8 +2,8 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-10-21
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-101**).
+- 마지막 갱신: 2026-10-24
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-103**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -110,6 +110,7 @@
 | P4-99 | 신입 성장(사용자 결정 2026-10-21): 근처 몬스터보다 약한 길드원은 훈련소에서 훈련하거나 혼자 감당할 사냥감만 사냥, 의뢰도 자기보다 센 몬스터가 태어나는 곳의 것은 안 맡음, 훈련 EXP는 날짜가 갈수록 + 길드 최고 레벨보다 낮을수록 많이. 신입이 강한 사냥 무리·먼 의뢰에서 2~4일차에 죽던 문제. 신입 무리가 상설 파티 외출을 열던 회귀도 같이 고침 | 이재혁 | 완료 | Adventurers(NewcomerRules·TrainState 신규, HuntBandService·Party·PartyService·QuestRisk·Decisions 등), Town/UpgradeService, Ecosystem/EcosystemManager, Data/DefaultContent, UI/RosterView | 6063058 |
 | P4-100 | P4-99 후속(사용자 결정 2026-10-21): 신입의 먼 의뢰는 막지 않고 위험도·확률·성격으로 판단, 5마리 이상 토벌을 혼자 맡으면 위험 한 단계 위로(동료를 부를 수 있으면 파티로, 끝내 혼자면 내려놓음), 마을에서 쉬다 맞으면 반격하거나(침공 중에도) 너무 다쳤으면 피신 | 이재혁 | 완료 | Adventurers(QuestRisk·NewcomerRules·Decisions·PartyService·TownGuardState, 피신 상태 신규) | b966207 |
 | P4-101 | 맵 지형(사용자 요청 2026-10-21 "직진만 하면 돼서 재미없음"): 지대 경계마다 산맥·강과 통로 2~3곳(고개·다리·여울, 성문 길이 지나는 곳 포함), 지대마다 특색 지형(사막 협곡 벽·설원 얼음 틈·늪 물길·황무지 용암 줄기), 통로의 60%에 길목 둥지, 강 위 길은 나무 다리. 안 본 땅은 평지로 가정(지금 규칙). 저장 버전 4(예전 저장 못 불러옴) | 이재혁 | 완료 | World(RegionBarriers·RegionLandforms 신규, MapGenerator·MapData·Pathfinder·CartoonGroundPainter·Underground), Save/SaveFile, Session/GameBalance·DebugCommands, Tests | bfba081 |
+| P4-102 | 맵 다시 만들기(사용자 요청 2026-10-24 "맵이 너무 이상해", 게임성 재설계 G1): 지대를 각도 부채꼴로 나누고 경계에 벽을 긋던 방식을 버리고, 구역(이름·위험 단계·랜드마크) 그래프 → 지형(높낮이·산맥·강) → 지형을 따라 굽은 길망 순으로 만듦. 마을은 정중앙 그대로, 몬스터 위험은 구역별 + 거리. 둥지는 구역 안에 무리 지어. 저장 버전 5(예전 저장 못 불러옴) | 이재혁 | 진행 중 | World(MapGenerator·TerrainRegions·RegionBarriers·RegionLandforms 등), Ecosystem(둥지 배치·태어남 레벨), Save, Tests | |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로 | 미정 | 보류 | Audio(신규) | |
