@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-10-24
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-103**).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-104**).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -111,6 +111,7 @@
 | P4-100 | P4-99 후속(사용자 결정 2026-10-21): 신입의 먼 의뢰는 막지 않고 위험도·확률·성격으로 판단, 5마리 이상 토벌을 혼자 맡으면 위험 한 단계 위로(동료를 부를 수 있으면 파티로, 끝내 혼자면 내려놓음), 마을에서 쉬다 맞으면 반격하거나(침공 중에도) 너무 다쳤으면 피신 | 이재혁 | 완료 | Adventurers(QuestRisk·NewcomerRules·Decisions·PartyService·TownGuardState, 피신 상태 신규) | b966207 |
 | P4-101 | 맵 지형(사용자 요청 2026-10-21 "직진만 하면 돼서 재미없음"): 지대 경계마다 산맥·강과 통로 2~3곳(고개·다리·여울, 성문 길이 지나는 곳 포함), 지대마다 특색 지형(사막 협곡 벽·설원 얼음 틈·늪 물길·황무지 용암 줄기), 통로의 60%에 길목 둥지, 강 위 길은 나무 다리. 안 본 땅은 평지로 가정(지금 규칙). 저장 버전 4(예전 저장 못 불러옴) | 이재혁 | 완료 | World(RegionBarriers·RegionLandforms 신규, MapGenerator·MapData·Pathfinder·CartoonGroundPainter·Underground), Save/SaveFile, Session/GameBalance·DebugCommands, Tests | bfba081 |
 | P4-102 | 맵 다시 만들기(사용자 요청 2026-10-24 "맵이 너무 이상해", 게임성 재설계 G1): 지대를 각도 부채꼴로 나누고 경계에 벽을 긋던 방식을 버리고, 이름 있는 구역 약 25개를 지대 4개가 이웃 그래프로 나눠 갖고, 구역마다 성격(트임·호수·숲·바위)·랜드마크(화산·메사·얼음 호수·대수렁)·위험(위험 주머니·안식처), 지대 경계 산맥·강은 자연스럽게 휘고(통로 2~3곳은 그대로), 성문에서 42칸 뒤로는 지형 따라 굽은 길망, 둥지는 구역마다 무리(최대 5), 구역 이름은 중심을 보면 앎(로그·알림·의뢰 위치·미니맵). 마을은 정중앙 그대로. 떠돌이 무리 길 찾기 헛돎·야영 불러오기 결함도 고침. 저장 버전 5(예전 저장 못 불러옴) | 이재혁 | 완료 | World(ZoneMap·ZoneTerrain·ZoneLore·RoadNetwork·ZoneDiscovery 신규, MapGenerator·MapData·RegionBarriers·TerrainRegions·CartoonGroundPainter·Underground, RegionLandforms 삭제), Ecosystem(EcosystemManager·RoamingPackService), Villages/VillagePlacement, Quests/QuestBoard, Adventurers/CampState, Monsters/RoamState, UI/MinimapView, Save, Session, Tests | 43ee376 |
+| P4-103 | 지대 경계를 돌(산맥) 대신 위험한 숲으로(사용자 2026-10-24 "맵끼리 돌로 막는거는 별로, 엄청 위험한 숲을 넣는게 나아보여"): 산맥 → 깊은 숲 띠(걸을 수 있지만 느리고 어두움), 강은 그대로, 지대 안 바위 능선도 덤불로. 숲의 위험 = 매복 몬스터 둥지·시야/이동 불리·독 안개(사람만 다침)·숨은 덫, 길이 지나는 곳만 안전한 숲길. 저장 버전 6 | 이재혁 | 진행 중 | World(RegionBarriers·ZoneTerrain·RoadNetwork·MapGenerator·MapData·GridMap·ForestSight·RouteRisk·Hazards, 깊은 숲 서비스 신규), Disasters(HazardOverlay·DisasterService), Ecosystem, Visuals, Tests | |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로 | 미정 | 보류 | Audio(신규) | |
