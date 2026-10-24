@@ -1812,6 +1812,29 @@ namespace GuildMaster.Session
         static string PassLabel(World.PassKind k) => k switch { World.PassKind.Bridge => "다리", World.PassKind.Ford => "여울", _ => "고개" };
 
         /// <summary>The ways across the region barriers in this game: kind, borders, distance, road, the den holding it (real values).</summary>
+        /// <summary>
+        /// P4-102: this game's zones, real values — name, region, lie of the land, danger shift, distance, known to the guild,
+        /// road, landmark, dens and the kinds holding them, the birth level at the heart now.
+        /// </summary>
+        public static string Zones()
+        {
+            var world = Services.Get<World.WorldService>();
+            var map = world.Map;
+            var known = Services.TryGet<World.ZoneDiscovery>(out var zd) ? zd : null;
+            var eco = Services.TryGet<EcosystemManager>(out var e) ? e : null;
+            var sb = new StringBuilder();
+            foreach (var z in map.Zones.OrderBy(z => Vector2.Distance(z.Centre, map.TownCenter)))
+            {
+                var dens = eco == null ? new List<Nest>() : eco.Nests.Where(n => map.ZoneAt(n.Cell.x, n.Cell.y) == z).ToList();
+                string kinds = string.Join(",", dens.Where(n => n.Species != null).GroupBy(n => n.Species.displayName).Select(g => $"{g.Key}{g.Count()}"));
+                int level = eco != null ? eco.BirthLevelAt(World.GridMap.CellToWorld(z.Heart)) : 0;
+                sb.AppendLine($"{z.Index} {z.Name} [{World.TerrainRegions.Label(z.Region)}·{z.Character}·{z.Kind}] {Vector2.Distance(z.Centre, map.TownCenter):0}칸 위험 {z.DangerShift:+0.00;-0.00} 태어남 Lv{level}"
+                              + $"{(known != null && known.IsKnown(z) ? " · 앎" : "")}{(z.OnRoad ? " · 길" : "")}{(z.Landmark ? " · 랜드마크" : "")} · 둥지 {dens.Count} {kinds}");
+            }
+            sb.AppendLine($"마을 터 {map.SettlementSites.Count}곳");
+            return sb.ToString();
+        }
+
         public static string Passes()
         {
             var world = Services.Get<World.WorldService>();
@@ -1838,7 +1861,7 @@ namespace GuildMaster.Session
         /// <paramref name="file"/>: regions, ridges, rivers, landforms, dens (red, holding a pass: orange), ways across
         /// (magenta, cuts within a region: cyan). Reports the ground, the ways per border and how much the walk to a den bends.
         /// </summary>
-        public static string MapPreview(int seed, string file, bool landforms = true)
+        public static string MapPreview(int seed, string file, bool landforms = true, bool paths = true)
         {
             var balance = ScriptableObject.CreateInstance<GameBalance>();
             var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -1880,6 +1903,22 @@ namespace GuildMaster.Session
                     _ => Color.white,
                 });
             }
+            // Zone borders (P4-102) as a faint dark line; pockets of danger tinted red, havens blue.
+            for (int y = 0; y < map.SurfaceHeight - 1; y++)
+            for (int x = 0; x < map.Width - 1; x++)
+            {
+                int i = map.Index(x, y);
+                var zone = map.ZoneAt(x, y);
+                if (zone != null && zone.Kind != World.ZoneKind.Plain)
+                    tex.SetPixel(x, y, Color.Lerp(tex.GetPixel(x, y), zone.Kind == World.ZoneKind.Pocket ? Color.red : Color.cyan, 0.22f));
+                if (map.ZoneIds[i] == map.ZoneIds[i + 1] && map.ZoneIds[i] == map.ZoneIds[i + map.Width]) continue;
+                tex.SetPixel(x, y, Color.Lerp(tex.GetPixel(x, y), Color.black, 0.35f));
+            }
+            var shares = map.Zones.GroupBy(z => z.Region).OrderBy(g => g.Key)
+                .Select(g => $"{World.TerrainRegions.Label(g.Key)} {g.Count()}곳 {100f * g.Sum(z => z.Cells) / (map.Width * map.SurfaceHeight):0}%");
+            sb.Append($"\n구역 {map.Zones.Count}: {string.Join(" · ", shares)}");
+            foreach (var z in map.Zones.Where(z => !string.IsNullOrEmpty(z.Name)))
+                sb.Append($"\n  {z.Index} {z.Name} ({World.TerrainRegions.Label(z.Region)}, {Vector2.Distance(z.Centre, town):0}칸, 위험 {z.DangerShift:+0.00;-0.00}{(z.Kind != World.ZoneKind.Plain ? ", " + z.Kind : "")}{(z.Landmark ? ", 랜드마크" : "")}{(z.OnRoad ? ", 길" : "")})");
             void Mark(Vector2Int c, int r, Color col, bool ring)
             {
                 for (int dy = -r; dy <= r; dy++)
@@ -1898,13 +1937,14 @@ namespace GuildMaster.Session
                 expanded.Add(world.Pathfinder.LastExpanded);
                 for (int i = 1; i < path.Count; i++) walked += Vector2Int.Distance(path[i - 1], path[i]);
                 straight += Vector2Int.Distance(town, n.Cell);
-                foreach (var c in path) tex.SetPixel(c.x, c.y, Color.black);
+                if (paths) foreach (var c in path) tex.SetPixel(c.x, c.y, Color.black);
             }
             if (expanded.Count > 0)
                 sb.Append($"\n경로(A*): 실패 {failed} · 길이/직선 {walked / Mathf.Max(1f, straight):0.000} · 탐색 칸 평균 {expanded.Average():0} · 최대 {expanded.Max()}");
             var guarded = new HashSet<int>(map.Passes.Where(p => p.GuardNest >= 0).Select(p => p.GuardNest));
             for (int i = 0; i < map.Nests.Count; i++) Mark(map.Nests[i].Cell, 2, guarded.Contains(i) ? new Color(1f, 0.6f, 0f) : Color.red, false);
             foreach (var p in map.Passes) Mark(p.Cell, 4, p.A == p.B ? Color.cyan : Color.magenta, true);
+            foreach (var site in map.SettlementSites) Mark(site, 3, Color.white, true);
             tex.Apply();
             System.IO.File.WriteAllBytes(file, tex.EncodeToPNG());
             Object.DestroyImmediate(tex);

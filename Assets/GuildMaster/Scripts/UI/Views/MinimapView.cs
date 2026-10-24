@@ -81,7 +81,27 @@ namespace GuildMaster.UI
                 _frame[i].anchorMin = _frame[i].anchorMax = Vector2.zero;
                 _frame[i].pivot = Vector2.zero;
             }
+
+            // P4-102: the zone the camera looks at, by name once the guild knows it.
+            var bar = UIBuilder.Panel(_root, "Zone", UITheme.PanelBg, raycast: false);
+            bar.rectTransform.Anchor(new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 1), new Vector2(0, -2), new Vector2(0, 22));
+            _zoneLabel = UIBuilder.Label(bar.transform, "", 13, TextAnchor.MiddleCenter, UITheme.Text);
+            _zoneLabel.rectTransform.Stretch(4, 0, 4, 0);
+            _zoneLabel.raycastTarget = false;
             Refresh();
+        }
+
+        Text _zoneLabel;
+
+        void UpdateZoneLabel()
+        {
+            if (_zoneLabel == null || !Services.TryGet<CameraController>(out var camCtl) || camCtl.Camera == null) return;
+            var c = GridMap.WorldToCell(camCtl.Camera.transform.position);
+            var zone = _mapData.ZoneAt(c.x, c.y);
+            if (zone == null) { _zoneLabel.text = ""; return; }
+            bool known = Services.TryGet<ZoneDiscovery>(out var zones) && zones.IsKnown(zone);
+            _zoneLabel.text = known ? $"{zone.Name} · {ZoneDiscovery.Describe(zone)}" : "미지의 땅";
+            _zoneLabel.color = known && zone.Kind == ZoneKind.Pocket ? UITheme.Warn : known ? UITheme.Text : UITheme.TextMuted;
         }
 
         void BuildTexture()
@@ -148,6 +168,7 @@ namespace GuildMaster.UI
             DrawFog();
             DrawMarkers();
             UpdateFrame();
+            UpdateZoneLabel();
         }
 
         /// <summary>Fog block versions last painted (P4-81: only the blocks the fog redrew are painted again).</summary>

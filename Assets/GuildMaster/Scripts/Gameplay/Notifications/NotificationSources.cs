@@ -77,6 +77,7 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
             EventBus.Subscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
             EventBus.Subscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
+            EventBus.Subscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
             EventBus.Subscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
             EventBus.Subscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
@@ -113,6 +114,7 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
             EventBus.Unsubscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
             EventBus.Unsubscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
+            EventBus.Unsubscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
             EventBus.Unsubscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
             EventBus.Unsubscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
@@ -292,6 +294,13 @@ namespace GuildMaster.Notifications
             _center.Post(NotificationKind.Success, "레벨 업", NotificationTexts.LevelUp(e.Adventurer.Data.name, e.Level),
                 "levelup:" + e.Adventurer.Data.id, NotificationLink.Adventurer(e.Adventurer.Data.id));
         }
+
+        // ---------------- Zones (P4-102): land the guild now knows by name ----------------
+
+        void OnZoneFound(World.ZoneDiscoveredEvent e)
+            => _center.Post(e.Zone.Kind == World.ZoneKind.Pocket ? NotificationKind.Warning : NotificationKind.Info, "새 지역 발견",
+                $"{e.Zone.Name}({World.ZoneDiscovery.Describe(e.Zone)})", "zone:" + e.Zone.Index,
+                NotificationLink.Location(World.GridMap.CellToWorld(e.Zone.Heart)));
 
         // ---------------- Other villages (P4-84): only what the guild has seen ----------------
 

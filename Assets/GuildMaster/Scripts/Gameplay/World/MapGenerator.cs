@@ -19,8 +19,9 @@ namespace GuildMaster.World
         public int InnerHalfSize;
         public int InnerNestCount;
         /// <summary>
-        /// P4-101: ridges and rivers on the region borders with passes, each region's own landforms, and dens holding
-        /// some of the passes. Off = the map as before (small test maps).
+        /// The full world: P4-101 ridges and rivers on the region borders with passes and dens holding some; P4-102 the
+        /// zones' lie of the land, landmarks, the road network, danger by zone, village sites and dens in packs. Off (small
+        /// test maps): zones and regions alone, the gates' roads run to the edge, dens anywhere.
         /// </summary>
         public bool Landforms;
     }
@@ -44,16 +45,33 @@ namespace GuildMaster.World
         };
 
         /// <summary>
-        /// Cut-offs averaged over the regions around a cell, so terrain changes gradually across a
+        /// A region's cut-offs as the zone's lie of the land shifts them (P4-102): zones of one region differ — open dunes
+        /// next to a rocky upland next to an oasis — instead of the same speckle everywhere.
+        /// </summary>
+        static TerrainThresholds Thresholds(Region r, ZoneCharacter ch)
+        {
+            var t = Thresholds(r);
+            switch (ch)
+            {
+                case ZoneCharacter.Open: t.Water -= 0.06f; t.Sand -= 0.04f; t.Mountain += 0.08f; t.Forest += 0.10f; break;
+                case ZoneCharacter.Lakes: t.Water += 0.065f; t.Sand += 0.075f; t.Mountain += 0.06f; break;
+                case ZoneCharacter.Woods: t.Forest -= 0.11f; t.Mountain += 0.04f; t.Water -= 0.02f; t.Sand -= 0.02f; break;
+                case ZoneCharacter.Rocky: t.Mountain -= 0.075f; t.Water -= 0.04f; t.Sand -= 0.04f; break;
+            }
+            return t;
+        }
+
+        /// <summary>
+        /// Cut-offs averaged over the regions (and zones) around a cell, so terrain changes gradually across a
         /// border. Where lava meets water there is no pool at all: a lake half blue, half lava read
         /// as a rendering fault.
         /// </summary>
-        static TerrainThresholds BlendedThresholds(Region[] around)
+        static TerrainThresholds BlendedThresholds(Region[] around, ZoneCharacter[] lie)
         {
             TerrainThresholds sum = default;
-            foreach (var r in around)
+            for (int k = 0; k < around.Length; k++)
             {
-                var t = Thresholds(r);
+                var t = Thresholds(around[k], lie[k]);
                 sum.Water += t.Water; sum.Sand += t.Sand; sum.Mountain += t.Mountain; sum.Forest += t.Forest;
             }
             float n = around.Length;
@@ -117,24 +135,26 @@ namespace GuildMaster.World
             var rng = new GameRandom(s.Seed);
             float ox = rng.Range(0f, 10000f), oy = rng.Range(0f, 10000f);
             float mx = rng.Range(0f, 10000f), my = rng.Range(0f, 10000f);
-            // Regions (P4-55): grassland round the town, then by direction desert, snow, swamp and wasteland.
-            float rotation = rng.Range(0f, Mathf.PI * 2f);
-            if (s.Landforms) rotation = DiagonalBorders(rotation);
-            var layout = TerrainRegions.Layout(new Vector2(s.Width / 2f, s.Height / 2f), Mathf.Min(s.Width, s.Height),
-                rotation, rng.Range(0f, 5000f), rng.Range(0f, 5000f));
-            map.RegionLayout = layout;
+            var c = new Vector2Int(s.Width / 2, s.Height / 2);
+            // Zones and regions (P4-102): the town's fields, then about 25 zones spread over by the four outer regions.
+            ZoneMap.Lay(map, c, new GameRandom(s.Seed ^ 0x20E5));
+            // P4-101/102 draw from their own stream, so the draws below stay as they were on a map without them.
+            var land = new GameRandom(s.Seed ^ 0x51F1);
+            if (s.Landforms) ZoneTerrain.AssignCharacters(map, land);
 
             // 1. Terrain from height + moisture noise; each region has its own mix (few trees in the
-            //    desert, many pools in the swamp, rocks in the wasteland whose "water" is lava).
+            //    desert, many pools in the swamp, rocks in the wasteland whose "water" is lava), and since P4-102
+            //    each zone its lie of the land, in broader shapes.
             var around = new Region[9];
+            var lie = new ZoneCharacter[9];
+            float freq = s.Landforms ? 0.024f : 0.035f;
             for (int y = 0; y < s.Height; y++)
             for (int x = 0; x < s.Width; x++)
             {
-                TerrainRegions.SampleAround(layout, x + 0.5f, y + 0.5f, around);
-                var region = around[0];
-                map.Regions[map.Index(x, y)] = region;
-                var th = BlendedThresholds(around);
-                float h = Fbm(x * 0.035f + ox, y * 0.035f + oy);
+                TerrainRegions.SampleAround(map, x, y, around);
+                ZoneTerrain.SampleLie(map, x, y, lie);
+                var th = BlendedThresholds(around, lie);
+                float h = Fbm(x * freq + ox, y * freq + oy);
                 float m = Fbm(x * 0.05f + mx, y * 0.05f + my);
                 TileType t;
                 if (h < th.Water) t = TileType.Water;
@@ -149,29 +169,34 @@ namespace GuildMaster.World
             // Regions snap to the terrain before roads and the town clearing cut features in two.
             SnapRegionsToFeatures(map);
 
-            var c = new Vector2Int(s.Width / 2, s.Height / 2);
-            // P4-101 draws from its own stream, so the draws below stay as they were on a map without it.
-            var land = new GameRandom(s.Seed ^ 0x51F1);
             RegionBarriers.Layout borders = null;
             if (s.Landforms)
             {
                 borders = RegionBarriers.Lay(map, raw, c, s.TownHalfSize, land);
-                RegionLandforms.Lay(map, raw, borders, c, s.TownHalfSize, land);
+                ZoneTerrain.Dividers(map, borders, c, s.TownHalfSize, land);
+                ZoneTerrain.Landmarks(map, c, land);
             }
 
             // 2. Town: cleared surroundings, floor, walls and 4 gates.
             TownWalls.Lay(map, c, s.TownHalfSize);
+            // The gates' roads: to the map's edge, or (P4-102) only as far as the walls can move out — the road network goes on from there.
             for (int g = 0; g < TownWalls.GateDirections.Length; g++)
-                CarveRoad(map, map.Gates[g] + TownWalls.GateDirections[g], TownWalls.GateDirections[g], rng);
+                CarveRoad(map, map.Gates[g] + TownWalls.GateDirections[g], TownWalls.GateDirections[g], rng,
+                    s.Landforms ? RoadNetwork.StubReach - s.TownHalfSize : int.MaxValue);
             TownWalls.LayPlazaRoads(map);
-            if (s.Landforms) RegionBarriers.OpenPasses(map, raw, borders, c, s.TownHalfSize, land);
+            if (s.Landforms)
+            {
+                RegionBarriers.OpenPasses(map, raw, borders, c, s.TownHalfSize, land);
+                // Land the barriers and landforms shut in gets a way out (smaller pockets are filled at the end).
+                ConnectStranded(map, c, StrandedMinCells);
+                ZoneTerrain.Hearts(map, FloodDistances(map, c));
+                ZoneLore.Lay(map, c, land);
+                RoadNetwork.Lay(map, c, map.SettlementSites, land);
+            }
 
             // Trees on forest cells (partial cover). Deterministic from the seed.
             for (int i = 0; i < map.Tiles.Length; i++)
                 map.Trees[i] = map.Tiles[i] == TileType.Forest && rng.Chance(0.55f);
-
-            // Land the barriers and landforms shut in gets a way out (smaller pockets are filled at the end).
-            if (s.Landforms) ConnectStranded(map, c, StrandedMinCells);
 
             // 3. Reachability from town.
             var dist = FloodDistances(map, c);
@@ -188,6 +213,8 @@ namespace GuildMaster.World
                 if ((new Vector2Int(x, y) - c).sqrMagnitude < s.MinNestDistanceFromTown * s.MinNestDistanceFromTown) continue;
                 var t = map[x, y];
                 if (t == TileType.Road || !MapData.IsWalkable(t)) continue;
+                // P4-102: dens keep off the roads and the village sites.
+                if (s.Landforms && (NearRoad(map, x, y, DenRoadClearance) || NearSettlement(map, x, y))) continue;
                 candidates.Add(new Vector2Int(x, y));
             }
             rng.Shuffle(candidates);
@@ -201,9 +228,14 @@ namespace GuildMaster.World
             {
                 int outerGuards = 0;
                 foreach (var n in map.Nests) if (!Inner(n.Cell)) outerGuards++;
-                PlaceNests(map, candidates, Mathf.Min(s.InnerNestCount + outerGuards, s.NestCount), dist, Inner);
+                int inner = Mathf.Min(s.InnerNestCount + outerGuards, s.NestCount);
+                // P4-102: in packs round the zones' hearts first, then as before.
+                if (s.Landforms) PlaceClusters(map, candidates, inner, dist, Inner, rng);
+                PlaceNests(map, candidates, inner, dist, Inner);
+                if (s.Landforms) PlaceClusters(map, candidates, s.NestCount, dist, cell => !Inner(cell), rng);
                 PlaceNests(map, candidates, s.NestCount, dist, cell => !Inner(cell));
             }
+            else if (s.Landforms) PlaceClusters(map, candidates, s.NestCount, dist, null, rng);
             PlaceNests(map, candidates, s.NestCount, dist, null);
 
             // 5. Edge spawn cells for raid waves.
@@ -233,30 +265,147 @@ namespace GuildMaster.World
             {
                 if (map.Nests.Count >= upTo) break;
                 if (where != null && !where(cell)) continue;
-                bool tooClose = false;
-                foreach (var n in map.Nests)
-                    if ((n.Cell - cell).sqrMagnitude < 15 * 15) { tooClose = true; break; }
-                if (tooClose) continue;
-                map.Nests.Add(new NestSite
-                {
-                    Cell = cell,
-                    Biome = ClassifyBiome(map, cell),
-                    Region = map.RegionOf(cell.x, cell.y),
-                    DistanceFromTown = dist[map.Index(cell.x, cell.y)],
-                });
+                if (CrowdedByNests(map, cell)) continue;
+                AddNest(map, cell, dist);
             }
         }
 
-        /// <summary>
-        /// P4-101: the borders between the outer regions turned onto the diagonals (from a rotation drawn anywhere, so each
-        /// seed still puts the regions elsewhere): the gates' straight roads run between them instead of along a ridge.
-        /// </summary>
-        static float DiagonalBorders(float rotation)
+        /// <summary>Dens keep this far apart.</summary>
+        const int NestSpacing = 15;
+        /// <summary>Dens keep this far off the roads (P4-102), and a pack's dens lie within this of its middle, packs this far apart.</summary>
+        const int DenRoadClearance = 4;
+        const float PackRadius = 24f, PackSpacing = 34f;
+        /// <summary>Dens per pack, about, and at most per zone (two packs).</summary>
+        const float DensPerPack = 3f;
+        const int MaxDensPerZone = 5;
+
+        static bool CrowdedByNests(MapData map, Vector2Int cell)
         {
-            const float quarter = Mathf.PI / 2f;
-            int k = Mathf.FloorToInt(rotation / quarter);
-            float within = rotation / quarter - k;
-            return k * quarter + quarter / 2f + (within - 0.5f) * 0.3f;
+            foreach (var n in map.Nests)
+                if ((n.Cell - cell).sqrMagnitude < NestSpacing * NestSpacing) return true;
+            return false;
+        }
+
+        static void AddNest(MapData map, Vector2Int cell, int[] dist)
+        {
+            map.Nests.Add(new NestSite
+            {
+                Cell = cell,
+                Biome = ClassifyBiome(map, cell),
+                Region = map.RegionOf(cell.x, cell.y),
+                DistanceFromTown = dist[map.Index(cell.x, cell.y)],
+                Zone = map.ZoneIds[map.Index(cell.x, cell.y)],
+            });
+        }
+
+        static bool NearRoad(MapData map, int x, int y, int r)
+        {
+            for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++)
+                if (map.InBounds(x + dx, y + dy) && map[x + dx, y + dy] == TileType.Road) return true;
+            return false;
+        }
+
+        static bool NearSettlement(MapData map, int x, int y)
+        {
+            foreach (var s in map.SettlementSites)
+                if ((s.x - x) * (s.x - x) + (s.y - y) * (s.y - y) < NestSpacing * NestSpacing) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// P4-102: dens in packs. The dens still to place (up to <paramref name="upTo"/>, among the cells
+        /// <paramref name="where"/> allows) are shared out over the zones by how much ground each offers; a zone's share
+        /// goes in packs of about three round spots near its heart, the packs apart, then anywhere in it.
+        /// </summary>
+        static void PlaceClusters(MapData map, List<Vector2Int> candidates, int upTo, int[] dist, System.Func<Vector2Int, bool> where, GameRandom rng)
+        {
+            int need = upTo - map.Nests.Count;
+            if (need <= 0) return;
+            var byZone = new SortedDictionary<int, List<Vector2Int>>();
+            int total = 0;
+            foreach (var cell in candidates)
+            {
+                if (where != null && !where(cell)) continue;
+                int z = map.ZoneIds[map.Index(cell.x, cell.y)];
+                if (z < 0 || z >= map.Zones.Count) continue;
+                if (!byZone.TryGetValue(z, out var list)) byZone[z] = list = new List<Vector2Int>();
+                list.Add(cell);
+                total++;
+            }
+            if (total == 0) return;
+            // Shares by the largest remainder, no zone over its cap (a wide open zone by the town took nine dens and was a
+            // death trap in the measured run); what is left goes round the others.
+            var quota = new Dictionary<int, int>();
+            var rest = new List<(float r, int z)>();
+            int given = 0;
+            foreach (var kv in byZone)
+            {
+                float exact = need * kv.Value.Count / (float)total;
+                quota[kv.Key] = Mathf.Min(MaxDensPerZone, Mathf.FloorToInt(exact));
+                given += quota[kv.Key];
+                rest.Add((exact - quota[kv.Key], kv.Key));
+            }
+            rest.Sort((a, b) => b.r.CompareTo(a.r));
+            for (bool any = true; given < need && any;)
+            {
+                any = false;
+                foreach (var (_, z) in rest)
+                {
+                    if (given >= need) break;
+                    if (quota[z] >= MaxDensPerZone) continue;
+                    quota[z]++;
+                    given++;
+                    any = true;
+                }
+            }
+
+            foreach (var kv in byZone)
+            {
+                int q = quota[kv.Key];
+                if (q <= 0) continue;
+                var heart = map.Zones[kv.Key].Heart;
+                var cells = kv.Value;
+                var byHeart = new List<Vector2Int>(cells);
+                byHeart.Sort((a, b) => (a - heart).sqrMagnitude.CompareTo((b - heart).sqrMagnitude));
+                int packs = Mathf.CeilToInt(q / DensPerPack), placed = 0;
+                var centres = new List<Vector2Int>();
+                for (int p = 0; p < packs; p++)
+                {
+                    // Near the heart (the closer half of the zone's ground), apart from the other packs.
+                    var options = new List<Vector2Int>();
+                    for (int i = 0; i < byHeart.Count / 2 && options.Count < 24; i++)
+                    {
+                        bool apart = true;
+                        foreach (var o in centres) if (Vector2.Distance(o, byHeart[i]) < PackSpacing) { apart = false; break; }
+                        if (apart && !CrowdedByNests(map, byHeart[i])) options.Add(byHeart[i]);
+                    }
+                    if (options.Count == 0) break;
+                    centres.Add(options[rng.Range(0, options.Count)]);
+                }
+                int perPack = centres.Count == 0 ? 0 : Mathf.CeilToInt(q / (float)centres.Count);
+                foreach (var centre in centres)
+                {
+                    int inPack = 0;
+                    var near = cells.FindAll(cell => Vector2.Distance(cell, centre) <= PackRadius);
+                    near.Sort((a, b) => (a - centre).sqrMagnitude.CompareTo((b - centre).sqrMagnitude));
+                    foreach (var cell in near)
+                    {
+                        if (inPack >= perPack || placed >= q || map.Nests.Count >= upTo) break;
+                        if (CrowdedByNests(map, cell)) continue;
+                        AddNest(map, cell, dist);
+                        inPack++;
+                        placed++;
+                    }
+                }
+                foreach (var cell in cells)
+                {
+                    if (placed >= q || map.Nests.Count >= upTo) break;
+                    if (CrowdedByNests(map, cell)) continue;
+                    AddNest(map, cell, dist);
+                    placed++;
+                }
+            }
         }
 
         /// <summary>A patch shut in by the barriers and landforms at least this big gets a way out; smaller ones are filled.</summary>
@@ -375,7 +524,8 @@ namespace GuildMaster.World
             for (int p = 0; p < map.Passes.Count; p++)
             {
                 var pass = map.Passes[p];
-                if (pass.A == pass.B || !rng.Chance(GuardChance)) continue;
+                // P4-102: a road out of the town's fields is not held (the first hunts go that way).
+                if (pass.A == pass.B || pass.OnRoad && (pass.A == Region.Grassland || pass.B == Region.Grassland) || !rng.Chance(GuardChance)) continue;
                 var outward = (Vector2)(pass.Cell - town);
                 float facing = Vector2.Dot(pass.Across, outward.normalized);
                 float side = Mathf.Abs(facing) < 0.3f ? (rng.Chance(0.5f) ? 1f : -1f) : Mathf.Sign(facing);
@@ -395,10 +545,7 @@ namespace GuildMaster.World
                     if (crowded) continue;
                     pass.GuardNest = map.Nests.Count;
                     map.Passes[p] = pass;
-                    map.Nests.Add(new NestSite
-                    {
-                        Cell = cell, Biome = ClassifyBiome(map, cell), Region = map.RegionOf(cell.x, cell.y), DistanceFromTown = d,
-                    });
+                    AddNest(map, cell, dist);
                     break;
                 }
             }
@@ -466,12 +613,12 @@ namespace GuildMaster.World
             return sum / norm;
         }
 
-        static void CarveRoad(MapData map, Vector2Int start, Vector2Int dir, GameRandom rng)
+        static void CarveRoad(MapData map, Vector2Int start, Vector2Int dir, GameRandom rng, int length)
         {
             var p = start;
             var side = new Vector2Int(dir.y, dir.x);
             int wobbleCooldown = 6;
-            while (map.InBounds(p))
+            for (int laid = 0; map.InBounds(p) && laid < length; laid++)
             {
                 map[p] = TileType.Road;
                 if (--wobbleCooldown <= 0 && rng.Chance(0.25f))

@@ -80,7 +80,7 @@ namespace GuildMaster.World
             // Under a feature the ground only shows at its wobbly rim: that ground belongs to the
             // open land around it (else the feature's own region showed in cell-shaped notches).
             if (!IsOpen(cx, cy)) return OpenNeighbourRegion(cx, cy, own);
-            var frayed = TerrainRegions.AtFrayed(_map.RegionLayout, u, v);
+            var frayed = TerrainRegions.FrayedAt(_map, u, v);
             if (frayed == own) return own;
             for (int dy = -1; dy <= 1; dy++)
             for (int dx = -1; dx <= 1; dx++)

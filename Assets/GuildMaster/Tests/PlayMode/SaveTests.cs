@@ -328,9 +328,10 @@ namespace GuildMaster.Tests
             Assert.That(merchant, Is.True, "the merchant in town");
             Assert.That(camps, Is.GreaterThan(0), "a camp out in the wild");
             var fire = Services.Get<Adventurers.CampService>().Camps[0];
-            Assert.That(fire.Members.Count == 2 && !fire.Alarmed && !fire.Sitting(clock.TotalHours) && fire.Watcher != null, Is.True,
-                $"two at the fire, one on watch ({fire.Members.Count}, alarmed {fire.Alarmed}, watcher {fire.Watcher?.Data.name})");
-            string sleeperId = fire.Members.First(m => m != fire.Watcher).Data.id;
+            Assert.That(fire.Members.Count >= 2 && !fire.Alarmed && !fire.Sitting(clock.TotalHours) && fire.Watcher != null, Is.True,
+                $"two or more at the fire (another member nearby may join — it did on the P4-102 map), one on watch ({fire.Members.Count}, alarmed {fire.Alarmed}, watcher {fire.Watcher?.Data.name})");
+            var sleeperIds = fire.Members.Where(m => m != fire.Watcher && m.Visual.Lying).Select(m => m.Data.id).ToList();
+            Assert.That(sleeperIds, Is.Not.Empty, "someone asleep by the fire");
             Assert.That(rare.Rumoured && rare.Quest != null && !rare.Over, Is.True, "the rare monster's hunt is up");
             string rareQuest = rare.Quest.Id;
             Assert.That(horde.Rumoured && horde.Quest != null && !horde.Over, Is.True, "the horde's interception is up");
@@ -352,9 +353,13 @@ namespace GuildMaster.Tests
             var a = Saves.Capture();
             yield return BootFrom(a);
             AssertSameSections(a, _afterBoot);
-            var sleeper = Services.Get<Adventurers.GuildRoster>().Members.First(m => m.Data.id == sleeperId);
-            Assert.That((sleeper.Visual.Lying, sleeper.GetComponent<Fog.VisionSource>().SightRadius), Is.EqualTo((true, Adventurers.CampRules.SleeperSight)),
-                "asleep by the fire from the first frame");
+            // Every one of them (P4-102: a third who sat down short of its seat came back awake).
+            foreach (var id in sleeperIds)
+            {
+                var sleeper = Services.Get<Adventurers.GuildRoster>().Members.First(m => m.Data.id == id);
+                Assert.That((sleeper.Visual.Lying, sleeper.GetComponent<Fog.VisionSource>().SightRadius), Is.EqualTo((true, Adventurers.CampRules.SleeperSight)),
+                    $"{sleeper.Data.name} asleep by the fire from the first frame");
+            }
 
             board = Services.Get<Quests.QuestBoard>();
             Assert.That(board.Quests.Count, Is.EqualTo(quests), "quests");

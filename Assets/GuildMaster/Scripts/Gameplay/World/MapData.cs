@@ -76,6 +76,57 @@ namespace GuildMaster.World
         public Region Region;
         /// <summary>Walk distance from the town centre in cells; species are placed by it (P5-1).</summary>
         public int DistanceFromTown;
+        /// <summary>The zone it lies in (P4-102, index into <see cref="MapData.Zones"/>): dens of a zone keep to one kind.</summary>
+        public int Zone;
+    }
+
+    /// <summary>What sets a zone apart (P4-102).</summary>
+    public enum ZoneKind : byte
+    {
+        Plain,
+        /// <summary>A pocket of danger: its monsters are born stronger than the distance says.</summary>
+        Pocket,
+        /// <summary>A haven: born weaker, a village's site.</summary>
+        Haven,
+    }
+
+    /// <summary>The lie of a zone's land (P4-102): what its ground is mostly made of.</summary>
+    public enum ZoneCharacter : byte
+    {
+        Mixed,
+        /// <summary>Open ground: few lakes, rocks or woods.</summary>
+        Open,
+        /// <summary>Lakes and pools (oases, frozen lakes, bog pools, lava lakes).</summary>
+        Lakes,
+        /// <summary>Thick woods.</summary>
+        Woods,
+        /// <summary>Rocky highland.</summary>
+        Rocky,
+    }
+
+    /// <summary>
+    /// One zone of the map (P4-102, <see cref="ZoneMap"/>): a named stretch of land in one region, with its own danger.
+    /// Zone 0 is the town's own fields.
+    /// </summary>
+    public class ZoneSite
+    {
+        public int Index;
+        public string Name;
+        public Region Region;
+        public ZoneKind Kind;
+        public ZoneCharacter Character;
+        /// <summary>The middle of its cells.</summary>
+        public Vector2 Centre;
+        /// <summary>Open walkable ground near its middle: where its roads lead and its dens gather round.</summary>
+        public Vector2Int Heart;
+        public int Cells;
+        /// <summary>Added to the depth its monsters are born at (0..2, <see cref="Ecosystem.EcosystemManager.Depth"/>).</summary>
+        public float DangerShift;
+        /// <summary>The region's landmark (a volcano, mesas, a frozen lake, a great mire) lies in it.</summary>
+        public bool Landmark;
+        /// <summary>A road leads to its heart.</summary>
+        public bool OnRoad;
+        public readonly List<int> Neighbours = new();
     }
 
     /// <summary>Pure data result of map generation (no Unity objects).</summary>
@@ -110,9 +161,23 @@ namespace GuildMaster.World
 
         /// <summary>Terrain region of each cell (P4-55); all grassland unless the generator lays them out.</summary>
         public readonly Region[] Regions;
-        public RegionLayout RegionLayout;
 
         public Region RegionOf(int x, int y) => InBounds(x, y) ? Regions[y * Width + x] : Region.Grassland;
+
+        /// <summary>The zones (P4-102, <see cref="ZoneMap"/>); none on a hand-made map.</summary>
+        public readonly List<ZoneSite> Zones = new();
+        /// <summary>Zone of each cell (index into <see cref="Zones"/>), -1 where there is none (the underground, a hand-made map).</summary>
+        public readonly short[] ZoneIds;
+        /// <summary>Spots kept for villages (P4-102): open ground at road ends in the havens and the quieter zones.</summary>
+        public readonly List<Vector2Int> SettlementSites = new();
+
+        /// <summary>The zone at a cell, or null.</summary>
+        public ZoneSite ZoneAt(int x, int y)
+        {
+            if (!InBounds(x, y)) return null;
+            int z = ZoneIds[y * Width + x];
+            return z >= 0 && z < Zones.Count ? Zones[z] : null;
+        }
 
         public MapData(int width, int height) : this(width, height, height) { }
 
@@ -124,6 +189,8 @@ namespace GuildMaster.World
             Tiles = new TileType[width * height];
             Trees = new bool[width * height];
             Regions = new Region[width * height];
+            ZoneIds = new short[width * height];
+            System.Array.Fill(ZoneIds, (short)-1);
         }
 
         /// <summary>Above the surface: in the underground band (P4-85).</summary>

@@ -16,10 +16,24 @@ namespace GuildMaster.World
 
         /// <summary>No barrier this close (cells past the starting walls, either axis): the walls move out up to 12 (P4-86).</summary>
         public const int TownClearance = 18;
-        /// <summary>Half widths (cells either side of the border), the low and high ends of their wobble.</summary>
-        const float RidgeHalfMin = 2.6f, RidgeHalfMax = 4.8f, RiverHalfMin = 1.3f, RiverHalfMax = 2.3f;
+        /// <summary>
+        /// Half widths (cells either side of the barrier's line), the low and high ends of their swell. P4-102: wider-ranging
+        /// than P4-101's (2.6–4.8), so a ridge swells to a massif and thins to a saddle instead of running as one even band.
+        /// </summary>
+        const float RidgeHalfMin = 2.2f, RidgeHalfMax = 7f, RiverHalfMin = 1.3f, RiverHalfMax = 2.6f;
+        /// <summary>A ridge's edge is cut ragged by a fine noise up to this share of its half width either way (its core stays whole).</summary>
+        const float Ragged = 0.55f, Core = 0.45f;
+        /// <summary>
+        /// P4-102: how far the barrier's line strays from the border either way (a slow noise), so it bends and wanders
+        /// instead of tracing the regions' outline.
+        /// </summary>
+        const float Stray = 8f;
+        /// <summary>Spurs and knolls off a ridge, out to this far past its flank.</summary>
+        const float SpurReach = 14f;
         /// <summary>Sand bank either side of a river.</summary>
         const float Bank = 1.2f;
+        /// <summary>The farthest from its border a barrier's cell can be.</summary>
+        const float BarrierReach = Stray + RidgeHalfMax * (1f + Ragged);
         /// <summary>Ways across each border (user decision: 2–3).</summary>
         const int MinPasses = 2, MaxPasses = 3;
         /// <summary>Rivers on a map at least (where the borders allow): the user asked for ridges and rivers both.</summary>
@@ -39,12 +53,17 @@ namespace GuildMaster.World
 
         static readonly int[] Dx4 = { 1, -1, 0, 0 }, Dy4 = { 0, 0, 1, -1 };
 
-        /// <summary>The borders as laid: per cell the distance to the nearest border and which border it is; the barrier cells.</summary>
-        public sealed class Layout
+        /// <summary>Per cell the distance to the nearest border between two labels and which border it is (<see cref="Key(int, int)"/>).</summary>
+        public class BorderDistance
         {
             public float[] Distance;
-            /// <summary><see cref="Key"/> of the nearest border, -1 on a map with a single region.</summary>
+            /// <summary>Key of the nearest border, -1 where there is none (a single label).</summary>
             public int[] Pair;
+        }
+
+        /// <summary>The borders as laid: the distance field, the barrier cells, each border's kind.</summary>
+        public sealed class Layout : BorderDistance
+        {
             public bool[] Barrier;
             public readonly Dictionary<int, Kind> Kinds = new();
             /// <summary>The region whose colours a river takes (all of it, so it is never half one water, half another).</summary>
@@ -52,52 +71,135 @@ namespace GuildMaster.World
             public float NoiseX, NoiseY;
         }
 
-        /// <summary>One key per pair of regions, either order.</summary>
-        public static int Key(Region a, Region b) => a < b ? (int)a * 8 + (int)b : (int)b * 8 + (int)a;
-        public static Region First(int key) => (Region)(key / 8);
-        public static Region Second(int key) => (Region)(key % 8);
+        /// <summary>Keys pack two labels (regions, or zones — P4-102) below this.</summary>
+        public const int KeyBase = 256;
+        /// <summary>One key per pair of labels, either order.</summary>
+        public static int Key(int a, int b) => a < b ? a * KeyBase + b : b * KeyBase + a;
+        public static int Key(Region a, Region b) => Key((int)a, (int)b);
+        public static Region First(int key) => (Region)(key / KeyBase);
+        public static Region Second(int key) => (Region)(key % KeyBase);
 
         /// <summary>Ground kept for the town and its walls (P4-86: they move out up to 12 cells).</summary>
         public static bool NearTown(int x, int y, Vector2Int town, int townHalf)
             => Mathf.Max(Mathf.Abs(x - town.x), Mathf.Abs(y - town.y)) <= townHalf + TownClearance;
 
         /// <summary>
-        /// Lays the ridges and rivers along the borders of <paramref name="raw"/> (the regions as the layout draws them,
-        /// before they were snapped to lakes and woods). The ways across come later (<see cref="OpenPasses"/>, after the roads).
+        /// Lays the ridges and rivers along the borders of <paramref name="raw"/> (the regions as the zones laid them,
+        /// before they were snapped to lakes and woods). The ways across come later (<see cref="OpenPasses"/>).
+        /// P4-102: the line strays off the border, swells and thins, and a ridge throws out spurs and knolls.
         /// </summary>
         public static Layout Lay(MapData map, Region[] raw, Vector2Int town, int townHalf, GameRandom rng)
         {
             int w = map.Width, h = map.Height;
             var l = new Layout { NoiseX = rng.Range(0f, 5000f), NoiseY = rng.Range(0f, 5000f), Barrier = new bool[w * h] };
-            BorderField(raw, w, h, l);
+            var labels = new int[w * h];
+            for (int i = 0; i < labels.Length; i++) labels[i] = (int)raw[i];
+            var field = Field(labels, w, h);
+            l.Distance = field.Distance;
+            l.Pair = field.Pair;
             ChooseKinds(l, rng);
+            var junction = JunctionDistance(raw, w, h);
+            var flank = new float[w * h];
+            for (int i = 0; i < flank.Length; i++) flank[i] = float.MaxValue;
             for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
                 int i = y * w + x, key = l.Pair[i];
-                if (key < 0 || l.Distance[i] > RidgeHalfMax + Bank + 1f || NearTown(x, y, town, townHalf)) continue;
-                float d = l.Distance[i];
-                if (l.Kinds[key] == Kind.Ridge || NearWasteland(raw, w, h, x, y))
+                if (key < 0 || l.Distance[i] > BarrierReach + SpurReach || NearTown(x, y, town, townHalf)) continue;
+                // Off the barrier's line: the border's distance signed by side, less the line's stray here.
+                float side = (int)raw[i] == key / KeyBase ? 1f : -1f;
+                // Where three regions meet the lines come back to the borders, so the barriers join with no gap.
+                float fade = Mathf.Clamp01((junction[i] - JunctionCalm) / JunctionFade);
+                float off = (Mathf.PerlinNoise(x * 0.012f + l.NoiseY, y * 0.012f + l.NoiseX) - 0.5f) * 2f * Stray * fade;
+                float e = Mathf.Abs(side * l.Distance[i] - off);
+                bool ridge = l.Kinds[key] == Kind.Ridge || NearWasteland(raw, w, h, x, y);
+                if (ridge)
                 {
                     // Where a river meets the wasteland (three regions at a point) it rises in the rocks instead.
                     float half = l.Kinds[key] == Kind.Ridge ? Half(Kind.Ridge, x, y, l) : Half(Kind.River, x, y, l);
-                    if (d > half) continue;
-                    Set(map, i, TileType.Mountain);
-                    l.Barrier[i] = true;
+                    // A ragged edge: crags and notches by a fine noise, the core whole so the ridge never breaks.
+                    float jag = (Mathf.PerlinNoise(x * 0.11f + l.NoiseX + 13f, y * 0.11f + l.NoiseY + 7f) - 0.5f) * 2f;
+                    half = Mathf.Max(half * Core, half * (1f + Ragged * jag));
+                    if (e <= half)
+                    {
+                        Set(map, i, TileType.Mountain);
+                        l.Barrier[i] = true;
+                    }
+                    else if (l.Kinds[key] == Kind.Ridge) flank[i] = e - half;
                     continue;
                 }
+                if (l.Distance[i] > BarrierReach + Bank + 1f) continue;
                 float riverHalf = Half(Kind.River, x, y, l);
-                if (d > riverHalf + Bank) continue;
+                if (e > riverHalf + Bank) continue;
                 map.Regions[i] = l.RiverRegion[key];
-                if (d <= riverHalf)
+                if (e <= riverHalf)
                 {
                     Set(map, i, TileType.Water);
                     l.Barrier[i] = true;
                 }
                 else if (map.Tiles[i] != TileType.Water) Set(map, i, TileType.Sand);
             }
+            Spurs(map, l, flank);
             MatchLakes(map, l);
             return l;
+        }
+
+        /// <summary>A barrier's line keeps to its border this close to a meeting of three regions, and strays fully this much farther.</summary>
+        const float JunctionCalm = 4f, JunctionFade = 20f;
+
+        /// <summary>Steps (4 ways) from each cell to the nearest point where three regions meet, up to the fade's reach.</summary>
+        static float[] JunctionDistance(Region[] raw, int w, int h)
+        {
+            var d = new float[w * h];
+            System.Array.Fill(d, float.MaxValue);
+            var queue = new Queue<int>();
+            var seen = new HashSet<Region>();
+            for (int y = 1; y < h - 1; y++)
+            for (int x = 1; x < w - 1; x++)
+            {
+                seen.Clear();
+                for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                    seen.Add(raw[(y + dy) * w + x + dx]);
+                if (seen.Count < 3) continue;
+                d[y * w + x] = 0f;
+                queue.Enqueue(y * w + x);
+            }
+            float reach = JunctionCalm + JunctionFade;
+            while (queue.Count > 0)
+            {
+                int i = queue.Dequeue();
+                if (d[i] >= reach) continue;
+                int x = i % w, y = i / w;
+                for (int k = 0; k < 4; k++)
+                {
+                    int ax = x + Dx4[k], ay = y + Dy4[k];
+                    if (ax < 0 || ay < 0 || ax >= w || ay >= h) continue;
+                    int j = ay * w + ax;
+                    if (d[j] <= d[i] + 1f) continue;
+                    d[j] = d[i] + 1f;
+                    queue.Enqueue(j);
+                }
+            }
+            return d;
+        }
+
+        /// <summary>
+        /// Spurs (thin ridges where a ridged noise peaks, fewer the farther out) and knolls off a ridge's flanks: rock the
+        /// way across does not need is cut later, and land they shut in is joined up by the generator.
+        /// </summary>
+        static void Spurs(MapData map, Layout l, float[] flank)
+        {
+            int w = map.Width;
+            for (int i = 0; i < flank.Length; i++)
+            {
+                float f = flank[i];
+                if (f > SpurReach || map.Tiles[i] is TileType.Mountain or TileType.Water) continue;
+                int x = i % w, y = i / w;
+                float ridged = 1f - Mathf.Abs(2f * Mathf.PerlinNoise(x * 0.07f + l.NoiseX + 31f, y * 0.07f + l.NoiseY) - 1f);
+                float knoll = Mathf.PerlinNoise(x * 0.16f + l.NoiseY + 77f, y * 0.16f + l.NoiseX);
+                if (ridged > 0.92f + 0.007f * f || knoll > 0.8f + 0.012f * f) Set(map, i, TileType.Mountain);
+            }
         }
 
         static void Set(MapData map, int i, TileType t)
@@ -109,7 +211,9 @@ namespace GuildMaster.World
         /// <summary>The barrier's half width here: it swells and narrows along its length.</summary>
         static float Half(Kind kind, int x, int y, Layout l)
         {
-            float n = Mathf.PerlinNoise(x * 0.07f + l.NoiseX, y * 0.07f + l.NoiseY);
+            // Slow along a ridge (long massifs and long saddles), quicker along a river.
+            float f = kind == Kind.Ridge ? 0.022f : 0.05f;
+            float n = Mathf.PerlinNoise(x * f + l.NoiseX, y * f + l.NoiseY);
             return kind == Kind.Ridge ? Mathf.Lerp(RidgeHalfMin, RidgeHalfMax, n) : Mathf.Lerp(RiverHalfMin, RiverHalfMax, n);
         }
 
@@ -125,10 +229,11 @@ namespace GuildMaster.World
         }
 
         /// <summary>
-        /// Distance to the nearest border cell (a cell beside another region) and which border, by passing each cell's
+        /// Distance to the nearest border cell (a cell beside another label) and which border, by passing each cell's
         /// nearest border cell on in four sweeps (close to the true distance; exactness does not matter for a ridge).
+        /// Labels are regions or zones (P4-102), below <see cref="KeyBase"/>; negative ones are no land.
         /// </summary>
-        static void BorderField(Region[] raw, int w, int h, Layout l)
+        public static BorderDistance Field(int[] labels, int w, int h)
         {
             int n = w * h;
             var dist = new float[n];
@@ -139,13 +244,14 @@ namespace GuildMaster.World
             for (int x = 0; x < w; x++)
             {
                 int i = y * w + x;
+                if (labels[i] < 0) continue;
                 for (int k = 0; k < 4; k++)
                 {
                     int nx = x + Dx4[k], ny = y + Dy4[k];
-                    if (nx < 0 || ny < 0 || nx >= w || ny >= h || raw[ny * w + nx] == raw[i]) continue;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h || labels[ny * w + nx] < 0 || labels[ny * w + nx] == labels[i]) continue;
                     dist[i] = 0f;
                     src[i] = i;
-                    pair[i] = Key(raw[i], raw[ny * w + nx]);
+                    pair[i] = Key(labels[i], labels[ny * w + nx]);
                     break;
                 }
             }
@@ -174,8 +280,7 @@ namespace GuildMaster.World
                 for (int x = w - 1; x >= 0; x--) { Try(x, y, x + 1, y); Try(x, y, x + 1, y + 1); Try(x, y, x, y + 1); Try(x, y, x - 1, y + 1); }
                 for (int x = 0; x < w; x++) Try(x, y, x - 1, y);
             }
-            l.Distance = dist;
-            l.Pair = pair;
+            return new BorderDistance { Distance = dist, Pair = pair };
         }
 
         static void ChooseKinds(Layout l, GameRandom rng)
@@ -518,26 +623,45 @@ namespace GuildMaster.World
         static void Carve(MapData map, Layout l, Vector2Int at, Vector2 across, PassKind kind)
         {
             float half = kind switch { PassKind.MountainPass => PassHalf, PassKind.Bridge => BridgeHalf, _ => FordHalf };
-            float barrier = kind == PassKind.MountainPass ? RidgeHalfMax : RiverHalfMax + Bank;
+            // The barrier may lie anywhere its line strays to (P4-102), so the cut reaches that far either way.
+            float barrier = kind == PassKind.MountainPass ? BarrierReach : Stray + RiverHalfMax + Bank;
             float reach = barrier + Approach;
             var along = new Vector2(-across.y, across.x);
             int r = Mathf.CeilToInt(reach + half + 2f);
+            // A bridge's deck runs in one piece from the river's first water to its last along the way across (the river
+            // may lie anywhere its line strays to), a cell onto each bank.
+            float deckFrom = float.MaxValue, deckTo = float.MinValue;
+            if (kind == PassKind.Bridge)
+                for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    int x = at.x + dx, y = at.y + dy;
+                    if (!map.InBounds(x, y) || !l.Barrier[y * map.Width + x]) continue;
+                    var o = new Vector2(dx, dy);
+                    if (Mathf.Abs(Vector2.Dot(o, along)) > half + 0.5f) continue;
+                    float t = Vector2.Dot(o, across);
+                    if (Mathf.Abs(t) > barrier + 1f) continue;
+                    deckFrom = Mathf.Min(deckFrom, t - 1.5f);
+                    deckTo = Mathf.Max(deckTo, t + 1.5f);
+                }
             for (int dy = -r; dy <= r; dy++)
             for (int dx = -r; dx <= r; dx++)
             {
                 int x = at.x + dx, y = at.y + dy;
                 if (!map.InBounds(x, y)) continue;
                 var o = new Vector2(dx, dy);
-                float side = Mathf.Abs(Vector2.Dot(o, along)), depth = Mathf.Abs(Vector2.Dot(o, across));
+                float side = Mathf.Abs(Vector2.Dot(o, along)), signed = Vector2.Dot(o, across), depth = Mathf.Abs(signed);
                 if (depth > reach || side > half + 0.5f) continue;
                 int i = y * map.Width + x;
                 var t = map.Tiles[i];
                 if (t is TileType.Wall or TileType.Gate or TileType.TownFloor or TileType.Road) continue;
                 switch (kind)
                 {
-                    case PassKind.Bridge when depth <= barrier + 1f:
-                        // The deck runs bank to bank (a road; the painter lays planks where it has water both sides).
-                        if (t is TileType.Water or TileType.Sand || l.Barrier[i]) Set(map, i, TileType.Road);
+                    case PassKind.Bridge when signed >= deckFrom && signed <= deckTo:
+                        // The deck (a road; the painter lays planks where it has water both sides).
+                        Set(map, i, TileType.Road);
+                        break;
+                    case PassKind.Bridge when l.Barrier[i]:
                         break;
                     case PassKind.Ford when t == TileType.Water:
                         Set(map, i, TileType.Sand);

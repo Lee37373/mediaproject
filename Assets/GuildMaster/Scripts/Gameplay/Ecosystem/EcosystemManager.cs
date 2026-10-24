@@ -170,9 +170,19 @@ namespace GuildMaster.Ecosystem
 
         /// <summary>
         /// How deep into the wilds a spot lies: 0 at the innermost nest site's distance from the town,
-        /// 1 at <see cref="InnerEdge"/>, 2 at the outermost site (pure rule, <see cref="DepthAt"/>).
+        /// 1 at <see cref="InnerEdge"/>, 2 at the outermost site (pure rule, <see cref="DepthAt"/>), plus its zone's own
+        /// danger (P4-102, user decision 2026-10-24: by zone and by distance — <see cref="ZoneSite.DangerShift"/>).
         /// </summary>
-        public float Depth(Vector2 p) => DepthAt(Vector2.Distance(p, _town), _innermost, _outermost);
+        public float Depth(Vector2 p) => Mathf.Clamp(DepthAt(Vector2.Distance(p, _town), _innermost, _outermost) + ZoneShift(p), 0f, WildsPressure.FullDepth);
+
+        MapData _map;
+
+        float ZoneShift(Vector2 p)
+        {
+            if (_map == null) return 0f;
+            var c = GridMap.WorldToCell(p);
+            return _map.ZoneAt(c.x, c.y)?.DangerShift ?? 0f;
+        }
 
         public static float DepthAt(float distance, float innermost, float outermost)
         {
@@ -232,6 +242,7 @@ namespace GuildMaster.Ecosystem
         public void Init(GameDatabase db, MapData map, GameRandom rng)
         {
             _db = db;
+            _map = map;
             Services.Get<PoolService>().Register(Monster.PoolKey, Monster.CreatePooledInstance, prewarm: 32, maxSize: 400);
             foreach (var s in db.monsters) _population[s] = 0;
 
@@ -318,6 +329,21 @@ namespace GuildMaster.Ecosystem
             rng.Shuffle(order); // ties fall differently per seed
             var byDistance = order.OrderBy(i => sites[i].DistanceFromTown).ToList();
 
+            // P4-102: the kinds already holding dens in each zone.
+            var inZone = new Dictionary<int, HashSet<MonsterDefinition>>();
+            void Hold(int i, MonsterDefinition m)
+            {
+                result[i] = m;
+                if (!inZone.TryGetValue(sites[i].Zone, out var set)) inZone[sites[i].Zone] = set = new HashSet<MonsterDefinition>();
+                set.Add(m);
+            }
+            float Weight(MonsterDefinition m, int i)
+            {
+                float fit = Fit(m, sites[i].Region, sites[i].Biome);
+                // The town's own fields (zone 0, also every site of a hand-made map) keep their mix.
+                return fit > 0f && sites[i].Zone > 0 && inZone.TryGetValue(sites[i].Zone, out var set) && set.Contains(m) ? fit * SameZoneBias : fit;
+            }
+
             // 1. Coverage: nobody is missing from the world.
             foreach (var m in species)
                 for (int taken = 0; taken < Mathf.Max(1, m.minNests); taken++)
@@ -326,26 +352,30 @@ namespace GuildMaster.Ecosystem
                     foreach (int i in byDistance)
                         if (result[i] == null && m.LivesAt(sites[i].Region, sites[i].Biome)) { best = i; break; }
                     if (best < 0) break; // no free site of its habitat left
-                    result[best] = m;
+                    Hold(best, m);
                 }
 
-            // 2. The remaining sites go to a weighted draw among the species that live there.
+            // 2. The remaining sites go to a weighted draw among the species that live there, a zone's own kind first.
             foreach (int i in order)
             {
                 if (result[i] != null) continue;
                 float total = 0f;
-                foreach (var m in species) total += Fit(m, sites[i].Region, sites[i].Biome);
-                if (total <= 0f) { result[i] = species[rng.Range(0, species.Count)]; continue; } // nobody's habitat: anyone
+                foreach (var m in species) total += Weight(m, i);
+                if (total <= 0f) { Hold(i, species[rng.Range(0, species.Count)]); continue; } // nobody's habitat: anyone
                 float roll = rng.Range(0f, total);
+                MonsterDefinition pick = null;
                 foreach (var m in species)
                 {
-                    roll -= Fit(m, sites[i].Region, sites[i].Biome);
-                    if (roll <= 0f) { result[i] = m; break; }
+                    roll -= Weight(m, i);
+                    if (roll <= 0f) { pick = m; break; }
                 }
-                result[i] ??= species[^1];
+                Hold(i, pick ?? species[^1]);
             }
             return result.ToList();
         }
+
+        /// <summary>A kind already holding a den in the zone weighs this much more for the zone's other dens (P4-102: a zone has its own kind).</summary>
+        public const float SameZoneBias = 4f;
 
         /// <summary>
         /// Adds one member to the nest and updates the population count (also used by debug tools). <paramref name="kind"/>:

@@ -257,6 +257,9 @@ namespace GuildMaster.Session
                 if (e.Victim is not Monsters.Monster { IsBoss: true } boss || !Services.TryGet<Fog.FogOfWar>(out var fog) || !fog.IsVisibleRaw(boss.Position)) return;
                 Add(e.Killer != null ? $"[보스] {e.Killer.DisplayName}이(가) {boss.DisplayName}을(를) 쓰러뜨렸습니다!" : $"[보스] {boss.DisplayName}이(가) 쓰러졌습니다.", LogCategory.Ecosystem);
             });
+            // Zones (P4-102): a stretch of land the guild now knows by name.
+            EventBus.Subscribe<World.ZoneDiscoveredEvent>(e => Add(
+                $"[지역] 새 지역 발견: {e.Zone.Name} ({World.ZoneDiscovery.Describe(e.Zone)}, {Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(e.Zone.Heart))})", LogCategory.Info));
             // Other villages (P4-84): what the guild saw of them, and the rumour of a new one.
             EventBus.Subscribe<Villages.VillageDiscoveredEvent>(e => Add(
                 $"[마을] 새 마을 발견: {e.Village.DisplayName} ({Monsters.RegionLords.RegionName(e.Village.Region)}, {Quests.QuestBoard.DescribeArea(e.Village.WorldPosition)}). 길드 마스터가 직접 가면 영입 후보를 만날 수 있습니다.", LogCategory.Info));

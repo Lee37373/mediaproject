@@ -5,95 +5,48 @@ namespace GuildMaster.World
     /// <summary>Large terrain regions (P4-55, user decision 2026-09-22).</summary>
     public enum Region : byte { Grassland, Desert, Snow, Swamp, Wasteland }
 
-    /// <summary>Where the regions lie on one map (drawn from the seed by <see cref="MapGenerator"/>).</summary>
-    public struct RegionLayout
-    {
-        public Vector2 Center;
-        /// <summary>Grassland out to about here around the town (the early rings stay familiar).</summary>
-        public float GrassRadius;
-        /// <summary>Turns the four outer regions round the town, so each seed puts them elsewhere.</summary>
-        public float Rotation;
-        public float NoiseX, NoiseY;
-        /// <summary>False on hand-made maps (tests): everything is grassland.</summary>
-        public bool Enabled;
-    }
-
     /// <summary>
-    /// Terrain regions (P4-55, user decision 2026-09-22): grassland around the town, then by
-    /// direction a desert, a snowfield, a swamp and a volcanic wasteland, with wobbling borders.
+    /// Terrain regions (P4-55, user decision 2026-09-22): grassland around the town, then a desert, a snowfield, a swamp
+    /// and a volcanic wasteland. Since P4-102 they are laid out zone by zone (<see cref="ZoneMap"/>) and kept per cell in
+    /// <see cref="MapData.Regions"/>; before, each was a slice of the compass round the town.
     /// Each region has its own look (painter, trees, minimap, a tint on the monsters living there —
     /// real monster attributes come later) and its own rules: moving is slower and seeing shorter
     /// in the harsher ones (multiplied with the forest rule, see <see cref="ForestSight"/>).
     /// </summary>
     public static class TerrainRegions
     {
-        const float BorderWobble = 12f;
-        /// <summary>How far (cells) a point is pushed around before its region is read: winding borders.</summary>
-        const float DomainWarp = 14f;
-        const float AngleWobble = 0.45f; // radians: bends the borders without letting one region swallow a neighbour
-
-        static readonly Region[] Outer = { Region.Desert, Region.Snow, Region.Swamp, Region.Wasteland };
-
-        public static RegionLayout Layout(Vector2 center, float mapSize, float rotation, float noiseX, float noiseY) => new()
-        {
-            Center = center,
-            // 256 → ~54 cells: the slime and goblin rings. P4-81: a bigger map keeps the 256 map's
-            // grassland (the early game as tuned); the outer regions take the new land.
-            GrassRadius = Mathf.Min(mapSize, 256f) * 0.21f,
-            Rotation = rotation,
-            NoiseX = noiseX,
-            NoiseY = noiseY,
-            Enabled = true,
-        };
-
-        /// <summary>The region at a point (continuous, so borders can be painted smooth).</summary>
-        public static Region At(in RegionLayout l, float x, float y)
-        {
-            if (!l.Enabled) return Region.Grassland;
-            // Domain warp: the point is nudged by noise first, so borders wind instead of running
-            // as straight spokes from the town (measured in play: they looked ruled).
-            float wx = x + (Noise(x * 0.035f + l.NoiseX + 91f, y * 0.035f + l.NoiseY) - 0.5f) * 2f * DomainWarp;
-            float wy = y + (Noise(x * 0.035f + l.NoiseX, y * 0.035f + l.NoiseY + 57f) - 0.5f) * 2f * DomainWarp;
-            x = wx;
-            y = wy;
-            var d = new Vector2(x, y) - l.Center;
-            float wobble = (Noise(x * 0.025f + l.NoiseX, y * 0.025f + l.NoiseY) - 0.5f) * 2f * BorderWobble;
-            if (d.magnitude < l.GrassRadius + wobble) return Region.Grassland;
-            float angle = Mathf.Atan2(d.y, d.x) + l.Rotation
-                          + (Noise(x * 0.012f + l.NoiseY, y * 0.012f + l.NoiseX) - 0.5f) * 2f * AngleWobble;
-            float t = Mathf.Repeat(angle / (Mathf.PI * 2f), 1f);
-            return Outer[Mathf.Min(Outer.Length - 1, (int)(t * Outer.Length))];
-        }
-
         /// <summary>Cells over which two regions' terrain mixes (lakes and woods thin out instead of being cut off).</summary>
         public const float BlendRadius = 7f;
         /// <summary>How far (cells) the painted border frays either way: the regions bite into each other.</summary>
         public const float Fringe = 2.5f;
 
         /// <summary>
-        /// Regions sampled around a point (itself and 8 around it at <see cref="BlendRadius"/>), for
-        /// mixing terrain across borders (user report 2026-09-22: borders looked cut with a ruler).
+        /// Regions read around a cell (itself and 8 around it at <see cref="BlendRadius"/>), for mixing terrain across
+        /// borders (user report 2026-09-22: borders looked cut with a ruler).
         /// </summary>
-        public static void SampleAround(in RegionLayout l, float x, float y, Region[] into)
+        public static void SampleAround(MapData map, int x, int y, Region[] into)
         {
-            into[0] = At(l, x, y);
+            into[0] = map.RegionOf(x, y);
             for (int k = 0; k < 8; k++)
             {
                 float a = k * Mathf.PI / 4f;
-                into[k + 1] = At(l, x + Mathf.Cos(a) * BlendRadius, y + Mathf.Sin(a) * BlendRadius);
+                int sx = Mathf.Clamp(Mathf.RoundToInt(x + Mathf.Cos(a) * BlendRadius), 0, map.Width - 1);
+                int sy = Mathf.Clamp(Mathf.RoundToInt(y + Mathf.Sin(a) * BlendRadius), 0, map.SurfaceHeight - 1);
+                into[k + 1] = map.RegionOf(sx, sy);
             }
         }
 
-        /// <summary>The region as painted: the border frayed by fine noise (the cell rule stays <see cref="At"/>).</summary>
-        public static Region AtFrayed(in RegionLayout l, float x, float y)
+        /// <summary>The region as painted at a point: the cells' regions read a little off, by fine noise (the border frays).</summary>
+        public static Region FrayedAt(MapData map, float x, float y)
         {
-            float fx = (Noise(x * 0.45f + l.NoiseY + 13f, y * 0.45f + l.NoiseX) - 0.5f) * 2f * Fringe;
-            float fy = (Noise(x * 0.45f + l.NoiseY, y * 0.45f + l.NoiseX + 29f) - 0.5f) * 2f * Fringe;
-            return At(l, x + fx, y + fy);
+            float fx = (Noise(x * 0.45f + 13f, y * 0.45f) - 0.5f) * 2f * Fringe;
+            float fy = (Noise(x * 0.45f, y * 0.45f + 29f) - 0.5f) * 2f * Fringe;
+            int cx = Mathf.Clamp(Mathf.FloorToInt(x + fx), 0, map.Width - 1), cy = Mathf.Clamp(Mathf.FloorToInt(y + fy), 0, map.Height - 1);
+            return map.Regions[cy * map.Width + cx];
         }
 
-        /// <summary>Smooth value noise in 0..1, pure C# (the ground is painted on worker threads).</summary>
-        static float Noise(float x, float y)
+        /// <summary>Smooth value noise in 0..1, pure C# (the ground is painted on worker threads; the zones use it too).</summary>
+        internal static float Noise(float x, float y)
         {
             int x0 = Mathf.FloorToInt(x), y0 = Mathf.FloorToInt(y);
             float tx = x - x0, ty = y - y0;

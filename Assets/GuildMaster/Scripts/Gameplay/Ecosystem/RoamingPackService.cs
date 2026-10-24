@@ -361,12 +361,16 @@ namespace GuildMaster.Ecosystem
             }
             float away = awayFrom.HasValue ? Mathf.Atan2(pack.Center.y - awayFrom.Value.y, pack.Center.x - awayFrom.Value.x) : 0f;
             float fromTown = Vector2.Distance(pack.Center, town);
+            // P4-102: only ground it can walk to before long — the straight line may cross a ridge, a river or a mire it
+            // would have to go round for hours (a pack in the great mire searched for a way every frame and never set off).
+            Reach(pack.Center, Mathf.CeilToInt(MaxStep * ReachSlack));
             for (int attempt = 0; attempt < 48; attempt++)
             {
                 float angle = awayFrom.HasValue && attempt < 24 ? away + rng.Range(-1f, 1f) : rng.Range(0f, Mathf.PI * 2f);
                 var p = pack.Center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * rng.Range(MinStep, MaxStep);
                 var cell = GridMap.WorldToCell(p);
                 if (!grid.InBounds(cell) || !grid.IsWalkable(cell) || grid.IsInTown(cell)) continue;
+                if (_reach[cell.y * _world.Map.Width + cell.x] != _reachMark) continue;
                 if (Vector2.Distance(p, town) < TownMargin + _world.TownGrowth) continue;
                 if (!awayFrom.HasValue && attempt < 24 && Vector2.Distance(p, town) > fromTown) continue;
                 if (!Habitable(pack.Species, cell)) continue;
@@ -378,6 +382,40 @@ namespace GuildMaster.Ecosystem
             }
             return false;
         }
+
+        /// <summary>A stop may lie this many times <see cref="MaxStep"/> away on foot.</summary>
+        const float ReachSlack = 1.6f;
+
+        int[] _reach;
+        int _reachMark;
+
+        /// <summary>Stamps (<see cref="_reachMark"/>) the cells a walk from <paramref name="from"/> reaches within <paramref name="steps"/> (4 ways).</summary>
+        void Reach(Vector2 from, int steps)
+        {
+            var map = _world.Map;
+            var grid = _world.Grid;
+            int w = map.Width, h = map.Height;
+            if (_reach == null || _reach.Length != w * h) _reach = new int[w * h];
+            _reachMark++;
+            if (!grid.TryFindNearestWalkable(GridMap.WorldToCell(from), 3, out var start)) return;
+            var queue = new Queue<(Vector2Int c, int d)>();
+            _reach[start.y * w + start.x] = _reachMark;
+            queue.Enqueue((start, 0));
+            while (queue.Count > 0)
+            {
+                var (c, d) = queue.Dequeue();
+                if (d >= steps) continue;
+                foreach (var step in Steps)
+                {
+                    var n = c + step;
+                    if (n.x < 0 || n.y < 0 || n.x >= w || n.y >= h || _reach[n.y * w + n.x] == _reachMark || !grid.IsWalkable(n)) continue;
+                    _reach[n.y * w + n.x] = _reachMark;
+                    queue.Enqueue((n, d + 1));
+                }
+            }
+        }
+
+        static readonly Vector2Int[] Steps = { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
 
         /// <summary>Open ground the species lives on: its regions, or woods for a woodland kind.</summary>
         bool Habitable(MonsterDefinition species, Vector2Int cell)

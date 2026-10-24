@@ -109,6 +109,10 @@ namespace GuildMaster.Session
             EventBus.Subscribe<FogRevealedEvent>(e => { if (mapRenderer != null) mapRenderer.RequestGround(e.Cells); });
             fog.Init(map.Width, map.Height, Balance.exploredFogAlpha, Balance.fogTickInterval);
             mapRenderer.PaintRequestedNow();
+            // P4-102: the zones the guild knows by name (their hearts seen).
+            var zones = AddSystem<ZoneDiscovery>();
+            zones.Init(map, fog);
+            Services.Register(zones);
 
             // --- Content & economy ---
             var db = GameDatabase.Load();

@@ -40,8 +40,8 @@ namespace GuildMaster.Session
         /// </summary>
         public int minNestDistanceFromTown = 20;
         /// <summary>
-        /// P4-101 (user request 2026-10-21: "you just walk straight"): ridges and rivers on the region borders with 2–3
-        /// passes each, each region's own landforms, dens holding some passes. See <see cref="World.RegionBarriers"/>.
+        /// The full world (P4-101 ridges and rivers on the region borders with 2–3 passes, dens holding some; P4-102 the zones'
+        /// lie of the land, landmarks, the road network, danger by zone, village sites, dens in packs). See <see cref="World.ZoneMap"/>.
         /// </summary>
         public bool landforms = true;
 

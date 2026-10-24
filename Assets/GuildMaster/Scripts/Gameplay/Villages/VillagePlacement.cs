@@ -86,6 +86,19 @@ namespace GuildMaster.Villages
         static bool TryPick(MapData map, Region region, float minDist, float maxDist, IReadOnlyList<VillageSite> others,
                             GameRandom rng, out VillageSite site)
         {
+            // P4-102: the spots the map kept for villages come first (at road ends, in the havens), one drawn among those that fit.
+            var kept = new List<Vector2Int>();
+            foreach (var c in map.SettlementSites)
+            {
+                if (map.RegionOf(c.x, c.y) != region) continue;
+                float d = Vector2.Distance(c, map.TownCenter);
+                if (d >= minDist && d <= maxDist && Fits(map, c, others)) kept.Add(c);
+            }
+            if (kept.Count > 0)
+            {
+                site = new VillageSite { Cell = kept[rng.Range(0, kept.Count)], Region = region };
+                return true;
+            }
             int m = VillageRules.EdgeMargin;
             for (int i = 0; i < Attempts; i++)
             {

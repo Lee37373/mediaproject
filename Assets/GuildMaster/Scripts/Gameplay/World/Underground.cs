@@ -44,11 +44,13 @@ namespace GuildMaster.World
             System.Array.Copy(surface.Tiles, map.Tiles, w * h);
             System.Array.Copy(surface.Trees, map.Trees, w * h);
             System.Array.Copy(surface.Regions, map.Regions, w * h);
+            System.Array.Copy(surface.ZoneIds, map.ZoneIds, w * h);
+            map.Zones.AddRange(surface.Zones);
+            map.SettlementSites.AddRange(surface.SettlementSites);
             map.TownRect = surface.TownRect;
             map.TownCenter = surface.TownCenter;
             map.TownHalfSize = surface.TownHalfSize;
             map.BaseTownHalfSize = surface.BaseTownHalfSize;
-            map.RegionLayout = surface.RegionLayout;
             map.Gates.AddRange(surface.Gates);
             map.Nests.AddRange(surface.Nests);
             map.EdgeSpawnCells.AddRange(surface.EdgeSpawnCells);

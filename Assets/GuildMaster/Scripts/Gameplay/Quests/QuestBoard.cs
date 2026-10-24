@@ -211,7 +211,10 @@ namespace GuildMaster.Quests
             if (dist < 3) return "마을 근처";
             string[] dirs = { "동쪽", "북동쪽", "북쪽", "북서쪽", "서쪽", "남서쪽", "남쪽", "남동쪽" };
             int i = Mathf.RoundToInt(Mathf.Atan2(d.y, d.x) / (Mathf.PI / 4f));
-            return $"마을 {dirs[(i + 8) % 8]} {dist}칸";
+            // P4-102: a known zone goes by its name first (not the town's own fields).
+            var zone = Services.TryGet<World.ZoneDiscovery>(out var zones) ? zones.KnownAt(point) : null;
+            string name = zone != null && zone.Index != World.ZoneMap.Home ? zone.Name + " · " : "";
+            return $"{name}마을 {dirs[(i + 8) % 8]} {dist}칸";
         }
 
         /// <summary>The guild posts a quest of its own (an escort): the gold reward leaves the treasury now, held until it is paid or refunded.</summary>

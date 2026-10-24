@@ -2840,9 +2840,12 @@ namespace GuildMaster.Tests
         /// P4-101 (user request 2026-10-21: "you just walk straight"): the region borders are ridges and rivers with a few
         /// ways across. Sent to the far side of a ridge, the master walks round by the pass — the walk's shortcuts never cut
         /// through the rock — and the dens set to hold passes are there, peopled.
+        /// P4-102 (user request 2026-10-24 "the map looks wrong"): the zones — the town's fields are known from the start, a
+        /// zone is learnt (and told) when its heart is seen and then names the area, and a pocket of danger breeds stronger
+        /// than its distance says.
         /// </summary>
         [UnityTest]
-        public IEnumerator Landforms_SentPastARidge_TheMasterWalksRoundByThePass_AndDensHoldPasses()
+        public IEnumerator Landforms_SentPastARidge_TheMasterWalksRoundByThePass_AndZonesAreLearnt()
         {
             yield return Boot();
             var world = Services.Get<World.WorldService>();
@@ -2853,6 +2856,29 @@ namespace GuildMaster.Tests
             Assert.That(held.Count, Is.GreaterThan(0), "dens hold some passes");
             foreach (var p in held)
                 Assert.That(eco.Nests[p.GuardNest].Population, Is.GreaterThan(0), $"the den by the pass at {p.Cell} is peopled");
+
+            var zones = Services.Get<World.ZoneDiscovery>();
+            Assert.That(zones.IsKnown(map.Zones[World.ZoneMap.Home]), Is.True, "the town's fields");
+            var unknown = map.Zones.First(z => z.Index != World.ZoneMap.Home && !zones.IsKnown(z));
+            var heart = World.GridMap.CellToWorld(unknown.Heart);
+            Assert.That(QuestBoard.DescribeArea(heart), Does.Not.Contain(unknown.Name), "no name for land never seen");
+            int told = 0;
+            Action<World.ZoneDiscoveredEvent> onZone = e => { if (e.Zone == unknown) told++; };
+            EventBus.Subscribe(onZone);
+            try
+            {
+                Services.Get<Fog.FogOfWar>().Reveal(heart, 3f);
+                float until = Time.realtimeSinceStartup + 3f;
+                while (told == 0 && Time.realtimeSinceStartup < until) yield return null;
+            }
+            finally { EventBus.Unsubscribe(onZone); }
+            Assert.That(told, Is.EqualTo(1), $"{unknown.Name} found and told once");
+            Assert.That(zones.IsKnown(unknown), Is.True);
+            Assert.That(QuestBoard.DescribeArea(heart), Does.StartWith(unknown.Name), "a known zone names the area");
+            var pocket = map.Zones.First(z => z.Kind == World.ZoneKind.Pocket);
+            var inPocket = World.GridMap.CellToWorld(pocket.Heart);
+            float byDistance = EcosystemManager.DepthAt(Vector2.Distance(inPocket, world.TownCenterWorld), eco.InnermostDistance, eco.OutermostDistance);
+            Assert.That(eco.Depth(inPocket), Is.GreaterThan(byDistance + 0.2f), $"{pocket.Name} breeds deeper than its distance");
 
             // A pass through a ridge, off the roads, with rock between two points either side of the border beside it.
             World.PassSite pass = default;
@@ -4716,7 +4742,9 @@ namespace GuildMaster.Tests
             var incidents = Services.Get<Incidents.IncidentService>();
             var world = Services.Get<World.WorldService>();
             Assert.That(world.Map.Ruins.Count, Is.EqualTo(World.Underground.Count), "the map has its ruins");
-            var site = world.Map.Ruins.OrderBy(r => Vector2Int.Distance(r.Entrance, world.Map.TownCenter)).First();
+            // Not one in a pocket of danger (P4-102): its guardians are born stronger, and one explorer would gather a party first.
+            var site = world.Map.Ruins.Where(r => world.Map.ZoneAt(r.Entrance.x, r.Entrance.y)?.Kind != World.ZoneKind.Pocket)
+                .OrderBy(r => Vector2Int.Distance(r.Entrance, world.Map.TownCenter)).First();
             var ruin = incidents.StartRuin(site.Index);
             Assert.That(ruin, Is.Not.Null);
             Assert.That(ruin.Members.Count, Is.EqualTo(Incidents.IncidentRules.GuardsPerRoom * (World.Underground.Rooms - 2) + Incidents.IncidentRules.TreasureGuards));

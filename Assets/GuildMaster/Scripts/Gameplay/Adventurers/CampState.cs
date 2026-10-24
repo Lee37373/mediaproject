@@ -70,7 +70,9 @@ namespace GuildMaster.Adventurers
             Enter();
             var a = Owner;
             if (_camp == null || a.Fsm.Current != this || _camp.Alarmed) return; // no camp (it went on), or everyone is up
-            if (Vector2.Distance(a.Position, _camp.SeatOf(a)) > SeatReached) return; // still on its way to its seat
+            // Still walking in from afar. Nearer than that it sits (and sleeps) where it is: one that could not reach its exact seat
+            // sat down where it stood (SeatTrySeconds) — loaded, it came back awake (P4-102: a third at the fire did).
+            if (Vector2.Distance(a.Position, _camp.SeatOf(a)) > WalkInDistance) return;
             a.Mover.Stop();
             Seated = true;
             SetAsleep(!_camp.Sitting(AdvCtx.Clock.TotalHours) && _camp.Watcher != a);
