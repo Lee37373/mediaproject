@@ -90,6 +90,27 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Dragons.DragonSlainEvent>(OnDragonSlain);
             EventBus.Subscribe<Dragons.DragonHoardRaidedEvent>(OnDragonHoard);
             EventBus.Subscribe<Dragons.DragonEnragedEvent>(OnDragonEnraged);
+            EventBus.Subscribe<MentalBreakEvent>(OnBreak);
+            EventBus.Subscribe<InspirationEvent>(OnInspired);
+        }
+
+        /// <summary>A member broke (P4-104d). Quitting is told by the roster's side (GuildWelfare.Release).</summary>
+        void OnBreak(MentalBreakEvent e)
+        {
+            if (e.Stage != MentalBreakEvent.Phase.Began || e.Adventurer == null || e.Kind == BreakKind.Quit) return;
+            var a = e.Adventurer;
+            string with = e.Other != null ? $" ({e.Other.Data.name}와(과))" : "";
+            _center.Post(e.Severity >= BreakSeverity.Major ? NotificationKind.Danger : NotificationKind.Warning, "정신적 붕괴",
+                $"{a.Data.name}이(가) 무너졌습니다: {BreakRules.Label(e.Kind)}{with}. 기분이 너무 낮았습니다.",
+                "break:" + a.Data.id, NotificationLink.Management(a.Data.id));
+        }
+
+        void OnInspired(InspirationEvent e)
+        {
+            if (e.Ended || e.Adventurer == null) return;
+            var a = e.Adventurer;
+            _center.Post(NotificationKind.Success, "영감", $"{a.Data.name}에게 {BreakRules.Label(e.Kind)}이 떠올랐습니다: {BreakRules.Effect(e.Kind)}, {BreakRules.InspirationHours:0}시간.",
+                "inspired:" + a.Data.id, NotificationLink.Management(a.Data.id));
         }
 
         public void Dispose()

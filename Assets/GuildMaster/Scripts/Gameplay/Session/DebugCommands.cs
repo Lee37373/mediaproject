@@ -1979,5 +1979,30 @@ namespace GuildMaster.Session
             var t = ThoughtRecorder.Give(members[index], def, about, name);
             return t == null ? "not given" : $"{members[index].Data.name}: {t.label} {ThoughtRules.Weight(t):+0;-0} → 기분 {ThoughtRecorder.MoodOf(members[index]):0}";
         }
+
+        // ---------------- Breaks and inspirations (P4-104d) ----------------
+
+        /// <summary>Breaks the member at that roster index now: a kind by its enum name ("Berserk", "Brawl"…), or "" for what its mood and place pick.</summary>
+        public static string Break(int index, string kind = "", string severity = "Extreme")
+        {
+            var members = Services.Get<GuildRoster>().Members;
+            if (index < 0 || index >= members.Count) return "no member " + index;
+            var a = members[index];
+            if (!System.Enum.TryParse<BreakSeverity>(severity, out var sev)) return "severity: Minor | Major | Extreme";
+            var forced = BreakKind.None;
+            if (!string.IsNullOrEmpty(kind) && !System.Enum.TryParse(kind, out forced)) return "kind: " + string.Join(" | ", System.Enum.GetNames(typeof(BreakKind)));
+            bool ok = Services.Get<MentalBreaks>().TryBreak(a, sev, forced);
+            return ok ? $"{a.Data.name}: {a.StateLabel}" : $"{a.Data.name}: nothing fits here ({a.StateLabel})";
+        }
+
+        /// <summary>Inspires the member at that roster index now ("Combat" or "Training").</summary>
+        public static string Inspire(int index, string kind = "Combat")
+        {
+            var members = Services.Get<GuildRoster>().Members;
+            if (index < 0 || index >= members.Count) return "no member " + index;
+            if (!System.Enum.TryParse<InspirationKind>(kind, out var k) || k == InspirationKind.None) return "kind: Combat | Training";
+            Services.Get<MentalBreaks>().Inspire(members[index], k);
+            return $"{members[index].Data.name}: {BreakRules.Label(k)} (atk {members[index].Stats.Attack:0.0})";
+        }
     }
 }

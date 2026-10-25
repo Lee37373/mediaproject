@@ -35,6 +35,10 @@ namespace GuildMaster.Adventurers
         public List<MemoryEntry> memories = new();
         /// <summary>What is on its mind (P4-104c): the thoughts behind its mood, each fading in time (see ThoughtRules).</summary>
         public List<ThoughtEntry> thoughts = new();
+        /// <summary>Game hour from which it may break again (P4-104d), and its inspiration with when it ends and when the next may come.</summary>
+        public float breakReadyAt;
+        public InspirationKind inspiration;
+        public float inspirationUntil, inspirationReadyAt;
         /// <summary>Titles earned (P4-83: "모래 폭군 카르샤를 쓰러뜨린 자" for taking part in a region lord's fall).</summary>
         public List<string> titles = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>

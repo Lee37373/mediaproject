@@ -37,7 +37,8 @@ namespace GuildMaster.Adventurers
             if (timer > 0f) return false;
             timer = CheckInterval;
             if (!a.IsAlive || a.IsVisitor || !a.IsGuildMember) return false;
-            bool hitNow = a.LastAttacker is Monster attacker && a.WasRecentlyAttackedBy(attacker, 3f);
+            // By a monster, or by a comrade gone berserk (P4-104d).
+            bool hitNow = (a.LastAttacker is Monster || a.LastAttacker is Adventurer { Berserk: true }) && a.WasRecentlyAttackedBy(a.LastAttacker, 3f);
             // A raid the guild has seen is the defence's (DefendState) — but one hit fights back or runs even then (P4-100,
             // user decision 2026-10-21: members resting under half health were left out of the defence and killed lying down).
             if (!hitNow && Services.TryGet<WaveManager>(out var waves) && waves.RaidSighted) return false;
@@ -63,7 +64,9 @@ namespace GuildMaster.Adventurers
             Services.TryGet<FogOfWar>(out var fog);
             // One it cannot reach (the dragon on the wing, for a sword) it leaves to those who can (P4-93).
             return UnitRegistry.FindNearest(a.Position, 60f,
-                u => u is Monster m && m.IsAlive && IsIntruder(town, m) && Combat.CanReach(a, m) && (fog == null || fog.IsVisibleRaw(m.Position)));
+                u => u is Monster m && m.IsAlive && IsIntruder(town, m) && Combat.CanReach(a, m) && (fog == null || fog.IsVisibleRaw(m.Position))
+                     // A comrade gone berserk in town (P4-104d), close enough to see.
+                     || u is Adventurer && a.IsBerserkNear(u) && town.IsInTown(u.Position));
         }
 
         /// <summary>Just outside the wall counts too once it fights us there: it stops bashing the gate then.</summary>
@@ -96,7 +99,7 @@ namespace GuildMaster.Adventurers
         {
             _calm = CalmSeconds;
             _repath = 0f;
-            Owner.Say("마을에 몬스터가 들어왔다!");
+            Owner.Say(FindIntruder(Owner) is Adventurer ? "멈춰! 정신 차려!" : "마을에 몬스터가 들어왔다!");
         }
 
         public override void Tick(float dt)
@@ -106,7 +109,7 @@ namespace GuildMaster.Adventurers
             if (TakeCoverState.TryStart(a, Next)) return;
             if (a.CheckRetreat(wearinessCounts: false)) return;
             var town = AdvCtx.Town;
-            bool Allowed(Unit u) => (u is Monster m && IsIntruder(town, m)) || a.WasRecentlyAttackedBy(u);
+            bool Allowed(Unit u) => (u is Monster m && IsIntruder(town, m)) || a.WasRecentlyAttackedBy(u) || a.IsBerserkNear(u);
             // Monsters inside the walls are targets even if not aggressive (e.g. a fleeing wolf).
             if (a.HandleCombat(dt, u => u is Monster m && m.IsAlive && IsIntruder(town, m), Allowed))
             {

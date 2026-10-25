@@ -82,6 +82,14 @@ namespace GuildMaster.Adventurers
         internal TakeCoverState TakeCoverState;
         /// <summary>Sent out to bring a fallen comrade's relics home (F-6).</summary>
         internal Legacy.RelicRetrievalState RetrievalState;
+        /// <summary>Acting out a mental break (P4-104d): wandering, a spree, a fistfight, berserk.</summary>
+        internal BreakState BreakState;
+        /// <summary>Walked off its work but trailing its party home (P4-104d, user decision 2026-10-21).</summary>
+        internal TagAlongState TagAlongState;
+        /// <summary>Berserk (P4-104d): it goes for anyone near, comrades too, and everyone turns on it.</summary>
+        public bool Berserk { get; internal set; }
+        /// <summary>The one it is in a fistfight with (P4-104d): hostile to each other only, and no blow wounds.</summary>
+        public Adventurer BrawlFoe { get; internal set; }
         /// <summary>Picking loot off the ground (P4-21).</summary>
         internal AdventurerLooting Looting;
         /// <summary>Quest for which the heroic drive hunt was already tried (once per quest).</summary>
@@ -190,6 +198,8 @@ namespace GuildMaster.Adventurers
             TownGuardState = new TownGuardState();
             TakeCoverState = new TakeCoverState();
             RetrievalState = new Legacy.RelicRetrievalState();
+            BreakState = new BreakState();
+            TagAlongState = new TagAlongState();
             Looting = new AdventurerLooting(this);
             // Party back line (P4-27): ranged members fall back behind a front-liner while reloading.
             Engage.HoldSpot = target => Services.TryGet<PartyTactics>(out var party) ? party.BackLineSpot(this, target) : null;
@@ -332,6 +342,13 @@ namespace GuildMaster.Adventurers
             // P4-87: weakened, raised for members by the guild's stat buildings.
             Stats = AdventurerStats.Compute(Data, Traits?.Modifiers,
                 Services.TryGet<Town.FacilityService>(out var facilities) ? facilities.ScaleFor(this) : null);
+            // A combat inspiration (P4-104d) while it lasts.
+            if (Data.inspiration == InspirationKind.Combat)
+            {
+                var s = Stats;
+                s.Attack *= BreakRules.CombatAttack;
+                Stats = s;
+            }
             if (fullHeal) ResetVitals();
             else
             {
@@ -466,7 +483,13 @@ namespace GuildMaster.Adventurers
                && (WasRecentlyAttackedBy(m)
                    || ((m.IsHostileTo(this) || m.CombatEngagement?.Target is Adventurer { IsGuildMember: true })
                        && CanSee(m) && PartyTactics.InLeash(_combatLeash, m.Position))
-                   || HearsFightingAComrade(m) && PartyTactics.InLeash(_combatLeash, m.Position));
+                   || HearsFightingAComrade(m) && PartyTactics.InLeash(_combatLeash, m.Position))
+               || IsBerserkNear(u);
+
+        /// <summary>A comrade gone berserk (P4-104d) that hit us, or that we see close by: it is stopped by force.</summary>
+        internal bool IsBerserkNear(Unit u)
+            => u is Adventurer { Berserk: true } b && b != this && b.IsAlive
+               && (WasRecentlyAttackedBy(b) || CanSee(b) && (b.Position - Position).sqrMagnitude <= BreakRules.BerserkReach * BreakRules.BerserkReach);
 
         /// <summary>One of the calling state's extra targets (inside the zone, in sight, within the leash).</summary>
         bool IsExtraCandidate(Unit u)
@@ -699,7 +722,11 @@ namespace GuildMaster.Adventurers
 
         // ---------------- Unit overrides ----------------
 
-        public override bool IsHostileTo(Unit other) => other is Monster && other.IsAlive;
+        public override bool IsHostileTo(Unit other)
+            => other != null && other != this && other.IsAlive
+               && (other is Monster
+                   // A mental break (P4-104d): a berserker goes for any comrade and every comrade turns on it; a fistfight is the two's.
+                   || other is Adventurer { IsVisitor: false } m && (Berserk || m.Berserk || BrawlFoe == m));
 
         protected override void OnDamaged(float amount, Unit source)
         {
@@ -707,6 +734,12 @@ namespace GuildMaster.Adventurers
             if (Time.time < GraceUntil)
             {
                 Hp = Mathf.Min(Stats.MaxHp, Hp + amount);
+                return;
+            }
+            // A fistfight's blows bruise, they do not wound (P4-104d): never below its floor.
+            if (source != null && source == BrawlFoe)
+            {
+                Hp = Mathf.Max(Hp, Mathf.Min(Hp + amount, Stats.MaxHp * BreakRules.BrawlFloor));
                 return;
             }
             // 0.3 per point of the listed (unscaled) health: P4-42 tripled health and fights, and the
@@ -782,7 +815,7 @@ namespace GuildMaster.Adventurers
         {
             IdleState, DecidingState, TravelState, HuntState, FreeHuntState, EscortState, GatherState, DefendState,
             ReturnState, VisitState, RestState, CampState, DeadState, VisitorWanderState, VisitorLeaveState, LureState,
-            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState, TrainState, TakeCoverState,
+            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState, TrainState, TakeCoverState, BreakState, TagAlongState,
         };
 
         /// <summary>One of this member's states by class name (saved states refer to each other this way), or null.</summary>
@@ -851,7 +884,9 @@ namespace GuildMaster.Adventurers
         {
             // The fallen gain nothing (a posthumous kill would otherwise level up a corpse).
             if (amount <= 0 || !IsAlive) return;
-            Data.exp += Mathf.RoundToInt(amount * (Traits?.ExpMultiplier ?? 1f));
+            // A training inspiration (P4-104d) makes every lesson count more.
+            float inspired = Data.inspiration == InspirationKind.Training ? BreakRules.TrainingExp : 1f;
+            Data.exp += Mathf.RoundToInt(amount * (Traits?.ExpMultiplier ?? 1f) * inspired);
             bool leveled = false;
             while (Data.exp >= Data.ExpToNextLevel)
             {

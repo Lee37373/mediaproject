@@ -324,6 +324,8 @@ namespace GuildMaster.Session
             var welfare = new Welfare.GuildWelfare(clock, roster, treasury, board, notifications);
             Services.Register(welfare);
             save.Register(welfare);
+            // Mental breaks and inspirations (P4-104d): from mood, apart from F-2's stress.
+            Services.Register(new MentalBreaks(clock, roster));
             // Members' keep (P4-68): meals at midnight, lodging while resting in town, unpaid goes on the slate.
             var living = new LivingCosts(roster, treasury, world, Balance.dailyMealGold, Balance.lodgingGoldPerHour);
             Services.Register(living);

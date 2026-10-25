@@ -143,6 +143,27 @@ namespace GuildMaster.Session
                 if (e.Outcome == Recruitment.RecruitOutcome.Left) Add($"{e.Visitor.Data.name}이(가) 영입 제안을 거절했습니다.", LogCategory.Info);
             });
             EventBus.Subscribe<AdventurerDiedEvent>(e => Add($"{e.Adventurer.Data.name}이(가) {(e.Killer != null ? e.Killer.DisplayName + "에게 " : "")}목숨을 잃었습니다...", LogCategory.Danger));
+            // Mental breaks and inspirations (P4-104d).
+            EventBus.Subscribe<MentalBreakEvent>(e =>
+            {
+                if (e.Adventurer == null) return;
+                string name = e.Adventurer.Data.name;
+                if (e.Stage == MentalBreakEvent.Phase.Began)
+                    Add($"[붕괴] {name}이(가) 무너졌습니다: {BreakRules.Label(e.Severity)} 붕괴 — {BreakRules.Label(e.Kind)}"
+                        + (e.Other != null ? $" (상대 {e.Other.Data.name})" : ""), LogCategory.Danger);
+                else if (e.Stage == MentalBreakEvent.Phase.Acted && e.Kind == BreakKind.Spree)
+                    Add($"[붕괴] {name}이(가) {e.Gold}G를 탕진했습니다.", LogCategory.Economy);
+                else if (e.Stage == MentalBreakEvent.Phase.Over && e.Kind == BreakKind.Berserk)
+                    Add($"[붕괴] {name}이(가) 광폭에서 깨어났습니다.", LogCategory.Info);
+                else if (e.Stage == MentalBreakEvent.Phase.Over && e.Kind == BreakKind.Brawl && e.Other != null)
+                    Add($"[붕괴] {name}와(과) {e.Other.Data.name}의 주먹다짐이 끝났습니다.", LogCategory.Info);
+            });
+            EventBus.Subscribe<InspirationEvent>(e =>
+            {
+                if (e.Adventurer == null) return;
+                Add(e.Ended ? $"[영감] {e.Adventurer.Data.name}의 {BreakRules.Label(e.Kind)}이 지나갔습니다."
+                            : $"[영감] {e.Adventurer.Data.name}에게 {BreakRules.Label(e.Kind)}이 떠올랐습니다 ({BreakRules.Effect(e.Kind)}).", LogCategory.Info);
+            });
             // The thoughts that tell a story (P4-104c): a close friend lost, a last stand, a great kill, being let down.
             EventBus.Subscribe<ThoughtAddedEvent>(e =>
             {

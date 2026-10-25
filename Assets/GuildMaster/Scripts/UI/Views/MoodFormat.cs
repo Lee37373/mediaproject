@@ -26,6 +26,15 @@ namespace GuildMaster.UI
 
         static string Signed(float v) => v > 0f ? $"+{v:0}" : $"{v:0}";
 
+        /// <summary>" · 전투 영감 18시간" while one lasts (P4-104d), else empty.</summary>
+        public static string Inspiration(Adventurer a, float now)
+        {
+            var d = a.Data;
+            if (d.inspiration == InspirationKind.None) return "";
+            int left = Mathf.Max(1, Mathf.CeilToInt(d.inspirationUntil - now));
+            return " · " + UIBuilder.Colored($"{BreakRules.Label(d.inspiration)} {left}시간", UITheme.Accent);
+        }
+
         /// <summary>One thought: its weight, words, stacks and the hours it still lasts (none for a situational one).</summary>
         public static string Thought(ThoughtEntry t, float now)
         {

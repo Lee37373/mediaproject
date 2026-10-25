@@ -339,7 +339,8 @@ namespace GuildMaster.UI
             // What the latest decision weighed (P4-104a): why it went this way and not another.
             if (a.LastThinking?.Choice != null) lines.Add($"{Muted("고려한 것:")} {a.LastThinking.Describe()}");
             // Mood and the heaviest of its thoughts (P4-104c).
-            if (!a.IsVisitor) lines.Add($"{Muted("기분:")} {MoodFormat.Mood(a)} · {MoodFormat.Heaviest(a, 3)}");
+            if (!a.IsVisitor)
+                lines.Add($"{Muted("기분:")} {MoodFormat.Mood(a)}{MoodFormat.Inspiration(a, Services.Get<GameClock>().TotalHours)} · {MoodFormat.Heaviest(a, 3)}");
             lines.Add($"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}");
             lines.Add($"{Muted("관계:")} {RelationsText(a)}");
             lines.Add(Muted("전리품: " + loot));

@@ -204,7 +204,7 @@ namespace GuildMaster.UI
                     : a.LastThought;
 
             float now = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : 0f;
-            _mood.text = $"기분 {MoodFormat.Mood(a)} {UIBuilder.Colored($"· 스트레스 {d.stress:0}", UITheme.TextMuted)}\n{MoodFormat.Lines(a, now, 3)}";
+            _mood.text = $"기분 {MoodFormat.Mood(a)}{MoodFormat.Inspiration(a, now)} {UIBuilder.Colored($"· 스트레스 {d.stress:0}", UITheme.TextMuted)}\n{MoodFormat.Lines(a, now, 3)}";
 
             _memories.text = d.memories.Count == 0 ? UIBuilder.Colored("아직 기억이 없습니다.", UITheme.TextMuted)
                 : string.Join("\n", d.memories.Skip(Mathf.Max(0, d.memories.Count - MemoryPreview)).Select(m => m.Format()));

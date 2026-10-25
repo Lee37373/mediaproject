@@ -54,6 +54,8 @@ namespace GuildMaster.Adventurers
             EventBus.Subscribe<Dragons.DragonSightedEvent>(OnDragonSighted);
             EventBus.Subscribe<Town.RaidEndedEvent>(OnRaidEnded);
             EventBus.Subscribe<World.TrapSprungEvent>(OnTrap);
+            EventBus.Subscribe<MentalBreakEvent>(OnBreak);
+            EventBus.Subscribe<UnitDamagedEvent>(OnDamaged);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
         }
 
@@ -224,6 +226,21 @@ namespace GuildMaster.Adventurers
         }
 
         void OnTrap(World.TrapSprungEvent e) => Add(e.Victim as Adventurer, ThoughtRules.Trapped, null, null);
+
+        /// <summary>A fistfight over (P4-104d): both remember it, of each other.</summary>
+        void OnBreak(MentalBreakEvent e)
+        {
+            if (e.Kind != BreakKind.Brawl || e.Stage != MentalBreakEvent.Phase.Over || e.Adventurer == null || e.Other == null) return;
+            Add(e.Adventurer, ThoughtRules.Brawled, e.Other.Data.id, e.Other.Data.name);
+            Add(e.Other, ThoughtRules.Brawled, e.Adventurer.Data.id, e.Adventurer.Data.name);
+        }
+
+        /// <summary>Hit by a comrade gone berserk (P4-104d).</summary>
+        void OnDamaged(UnitDamagedEvent e)
+        {
+            if (e.Source is not Adventurer { Berserk: true } berserker || e.Target is not Adventurer victim || victim == berserker) return;
+            Add(victim, ThoughtRules.BerserkVictim, berserker.Data.id, berserker.Data.name);
+        }
 
         void OnHour(HourPassedEvent e)
         {

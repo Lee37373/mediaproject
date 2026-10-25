@@ -3710,6 +3710,119 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-104d (user decisions 2026-10-24·25: breaks down to the extreme, a berserker goes for comrades too): a combat inspiration
+        /// raises attack and a training one EXP; a spree throws gold away at the guild; a fistfight bruises but never below its floor
+        /// and leaves the two on worse terms; a berserker goes for a comrade, who turns on it, until it comes to; quitting leaves the
+        /// roster; walking off a quest out with a party gives the quest up and trails the others (user decision 2026-10-21).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator MentalBreaks_AreActedOut_AndAnInspirationLifts()
+        {
+            yield return Boot();
+            var breaks = Services.Get<MentalBreaks>();
+            var town = Services.Get<Town.TownService>();
+            var plaza = Services.Get<World.WorldService>().TownCenterWorld;
+            var m = Roster.Members.Where(a => a.IsAlive).ToList();
+            Assert.That(m.Count, Is.GreaterThanOrEqualTo(4));
+            void InTown(Adventurer a, Vector2 at)
+            {
+                a.Mover.Stop();
+                a.Mover.Warp(at);
+                a.Heal(a.Stats.MaxHp);
+                a.ChangeState(a.IdleState);
+            }
+            foreach (var a in m) InTown(a, plaza);
+
+            // Inspirations: a fighter's attack, a learner's EXP.
+            float attack = m[0].Stats.Attack;
+            breaks.Inspire(m[0], InspirationKind.Combat);
+            Assert.That(m[0].Stats.Attack, Is.EqualTo(attack * BreakRules.CombatAttack).Within(0.01f), "inspired to fight");
+            breaks.Inspire(m[1], InspirationKind.Training);
+            int exp = m[1].Data.exp;
+            m[1].GainExp(2);
+            Assert.That(m[1].Data.exp - exp, Is.EqualTo(Mathf.RoundToInt(2 * (m[1].Traits?.ExpMultiplier ?? 1f) * BreakRules.TrainingExp)), "inspired to learn");
+
+            // A spree: off to the guild, and the gold is gone.
+            var spender = m[2];
+            spender.Data.gold = 100;
+            Assert.That(breaks.TryBreak(spender, BreakSeverity.Minor, BreakKind.Spree), Is.True);
+            Clock.SetSpeed(2);
+            yield return WaitFor(() => spender.Data.gold < 100, 20f);
+            Assert.That(spender.Data.gold, Is.InRange(30, 60), "40–70% of it squandered");
+
+            // A fistfight with the one it dislikes: bruises, never below the floor, and worse terms after.
+            var (x, y) = (m[0], m[3]);
+            InTown(x, plaza);
+            InTown(y, plaza + Vector2.right * 2f);
+            Relationships.Add(x, y, -60, "test");
+            int xy = Relationships.Get(x, y), yx = Relationships.Get(y, x);
+            Assert.That(breaks.TryBreak(x, BreakSeverity.Major, BreakKind.Brawl), Is.True);
+            Assert.That((x.StateLabel, y.StateLabel, x.IsHostileTo(y), y.IsHostileTo(x)), Is.EqualTo(("주먹다짐", "주먹다짐", true, true)));
+            float lowest = 1f;
+            yield return WaitFor(() =>
+            {
+                lowest = Mathf.Min(lowest, x.HpRatio, y.HpRatio);
+                return x.Fsm.Current != x.BreakState && y.Fsm.Current != y.BreakState;
+            }, 20f);
+            Assert.That(x.Fsm.Current != x.BreakState && y.Fsm.Current != y.BreakState, Is.True, "the fight is over");
+            Assert.That((x.IsAlive, y.IsAlive, x.IsHostileTo(y)), Is.EqualTo((true, true, false)));
+            Assert.That(lowest, Is.GreaterThanOrEqualTo(BreakRules.BrawlFloor - 0.01f), "blows, not wounds");
+            Assert.That((Relationships.Get(x, y), Relationships.Get(y, x)),
+                Is.EqualTo((Mathf.Max(Relationships.Min, xy + BreakRules.BrawlRelation), Mathf.Max(Relationships.Min, yx + BreakRules.BrawlRelation))));
+            Assert.That(x.Data.thoughts.Any(t => t.id == ThoughtRules.Brawled.Id && t.about == y.Data.id), Is.True);
+
+            // Berserk: it goes for a comrade, who turns on it, until it comes to (no wounds here: the test is the who and the when).
+            var (berserker, victim) = (m[1], m[2]);
+            InTown(berserker, plaza + Vector2.up * 3f);
+            InTown(victim, plaza + Vector2.up * 5f);
+            Unit.GuildInvulnerable = true;
+            try
+            {
+                Assert.That(breaks.TryBreak(berserker, BreakSeverity.Extreme, BreakKind.Berserk), Is.True);
+                Assert.That((berserker.Berserk, victim.IsHostileTo(berserker), berserker.IsHostileTo(victim)), Is.EqualTo((true, true, true)));
+                yield return WaitFor(() => victim.Data.thoughts.Any(t => t.id == ThoughtRules.BerserkVictim.Id), 10f);
+                Assert.That(victim.Data.thoughts.Any(t => t.id == ThoughtRules.BerserkVictim.Id && t.about == berserker.Data.id), Is.True, "it went for a comrade");
+                yield return WaitFor(() => berserker.LastAttacker is Adventurer, 10f);
+                Assert.That(berserker.LastAttacker, Is.InstanceOf<Adventurer>(), "and was fought back");
+                Clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+                yield return WaitFor(() => !berserker.Berserk, 15f);
+                Assert.That(berserker.Berserk, Is.False, "it came to");
+                Assert.That(victim.IsHostileTo(berserker), Is.False, "and is a comrade again");
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = false;
+                Clock.SetSpeed(1);
+            }
+
+            // Quitting at the worst: gone from the roster.
+            var leaver = m[3];
+            InTown(leaver, plaza);
+            Assert.That(breaks.TryBreak(leaver, BreakSeverity.Extreme, BreakKind.Quit), Is.True);
+            Assert.That(Roster.Members.Contains(leaver), Is.False, "it left the guild");
+
+            // Walking off a quest out with a party: the quest given up, the party trailed.
+            MakeKnown(Services.Get<EcosystemManager>().Species.First(s => s.id == "slime"));
+            var quest = Services.Get<QuestBoard>().FindById(DebugCommands.PostHunt("slime", 6, 80, 20, party: 3));
+            Assert.That(quest, Is.Not.Null);
+            foreach (var a in m.Where(a => a.IsAlive && Roster.Members.Contains(a))) InTown(a, plaza);
+            DebugCommands.ForceAccept(quest.Id, 3);
+            var takers = Roster.Members.Where(a => quest.IsAssigned(a)).ToList();
+            Assert.That(takers.Count, Is.GreaterThanOrEqualTo(2), "a party to walk off from: "
+                + string.Join(", ", Roster.Members.Select(a => $"{a.Data.name} {a.StateLabel} hp={a.HpRatio:0.00} q={a.CurrentQuest?.Id} alive={a.IsAlive}")));
+            Clock.SetSpeed(2);
+            yield return WaitFor(() => takers.All(a => !town.IsInTown(a.Position)), 20f);
+            var quitter = takers[takers.Count - 1];
+            Assert.That(breaks.TryBreak(quitter, BreakSeverity.Minor, BreakKind.Sabotage), Is.True);
+            Assert.That((quitter.StateLabel, quest.IsAssigned(quitter), quitter.CurrentQuest == null), Is.EqualTo(("따라다니는 중", false, true)),
+                "no quest, no share — and not home alone");
+            yield return new WaitForSeconds(2f);
+            float near = takers.Where(t => t != quitter).Min(t => Vector2.Distance(t.Position, quitter.Position));
+            Assert.That(near, Is.LessThan(8f), "it trails the others");
+            Clock.SetSpeed(1);
+        }
+
+        /// <summary>
         /// P4-89 ('귀환 중' stalls since P4-81): a walker that took a shortcut through the east gate and was then pushed off
         /// it, below the gate outside the wall, walked into the wall for hours — it stepped back towards the middle of its
         /// cell and the next frame towards the waypoint again, and the re-plan waited for it to stand still in the middle.

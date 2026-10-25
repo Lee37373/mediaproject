@@ -92,6 +92,12 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef RaidHeld = D("raid_held", "마을을 지켜냈다", 5f, 24f, ThoughtTone.Plain, 2, "(마을은 우리가 지킨다!)");
         public static readonly ThoughtDef Trapped = D("trapped", "덫에 걸렸다", -3f, 6f, ThoughtTone.Fear, 2);
 
+        // Breaks and inspirations (P4-104d).
+        public static readonly ThoughtDef LetItOut = D("let_it_out", "한바탕 쏟아내고 나니 후련하다", 12f, 36f);
+        public static readonly ThoughtDef Inspired = D("inspired", "영감이 떠올랐다", 5f, 24f);
+        public static readonly ThoughtDef Brawled = D("brawled", "{0}와(과) 주먹다짐을 했다", -5f, 24f, ThoughtTone.People);
+        public static readonly ThoughtDef BerserkVictim = D("berserk_victim", "광폭해진 {0}에게 맞았다", -8f, 48f, ThoughtTone.Fear, 2, "({0}, 정신 차려!)");
+
         // The guild master's care (F-2).
         public static readonly ThoughtDef Talked = D("talked", "길드 마스터가 이야기를 들어 주었다", 5f, 24f, ThoughtTone.People);
         public static readonly ThoughtDef Bonus = D("bonus", "보너스를 받았다", 8f, 24f, ThoughtTone.Gain, 1, "(헤헤, 이 맛에 일하지.)");
@@ -111,7 +117,8 @@ namespace GuildMaster.Adventurers
         public static readonly IReadOnlyList<ThoughtDef> All = new[]
         {
             ComradeDiedClose, ComradeDiedFriend, ComradeDied, RivalDied, SawComradeFall, QuestDone, QuestFailed, LevelUp, NewGear,
-            NearDeath, LastStand, Slew, GreatKill, SawDragon, RaidHeld, Trapped, Talked, Bonus, Ignored, FriendLeft,
+            NearDeath, LastStand, Slew, GreatKill, SawDragon, RaidHeld, Trapped, LetItOut, Inspired, Brawled, BerserkVictim,
+            Talked, Bonus, Ignored, FriendLeft,
             HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival,
         };
 

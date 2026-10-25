@@ -371,19 +371,29 @@ namespace GuildMaster.Welfare
             if (step.HasFlag(CareStep.Quit)) QuitGuild(a, c.Cause);
         }
 
-        /// <summary>The member gives up the quest they are on and heads back to town.</summary>
+        /// <summary>
+        /// The member gives up the quest they are on: no share of its pay, and — out with a party — it does not go home alone but
+        /// trails behind the others until they go home (user decision 2026-10-21, P4-104d). On its own it heads back to town.
+        /// </summary>
         void WalkAwayFromQuest(Adventurer a, MemberCare c)
         {
             var q = a.CurrentQuest;
             if (q == null) return;
-            _board.Abandon(q, a);
-            a.CurrentQuest = null;
             a.Data.stress = Mathf.Max(0f, a.Data.stress - StressRules.SabotageRelief);
             c.ResetBreaking();
             a.Say(CareTexts.SabotageLine);
-            a.ChangeState(a.ReturnState);
+            MentalBreaks.WalkOff(a, followParty: true);
             _center?.Post(NotificationKind.Warning, "의뢰 포기", CareTexts.Sabotage(a.Data.name, q.Title),
                 "sabotage:" + a.Data.id, NotificationLink.Management(a.Data.id));
+        }
+
+        /// <summary>The member leaves the guild on its own for another reason (P4-104d: an extreme break): told, and taken hard by its friends.</summary>
+        public void Release(Adventurer a, string notice)
+        {
+            if (NotAMember(a) != null) return;
+            AfterDeparture(a);
+            _center?.Post(NotificationKind.Danger, "길드원 이탈", notice, "quit:" + a.Data.id, NotificationLink.Roster());
+            _roster.Dismiss(a);
         }
 
         void QuitGuild(Adventurer a, QuitCause cause)
