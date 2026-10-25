@@ -45,7 +45,7 @@ namespace GuildMaster.UI
         {
             var img = UIBuilder.Panel(canvas, "Inspector", UITheme.PanelBg);
             _panel = img.rectTransform;
-            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, 292));
+            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, MinHeight));
             _title = UIBuilder.Label(_panel, "", 18, TextAnchor.UpperLeft, UITheme.Accent, FontStyle.Bold);
             _title.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(12, -8), new Vector2(-124, 26));
             _followButton = UIBuilder.Button(_panel, "추적 (F)", ToggleFocus, 96, 26, fontSize: 14);
@@ -257,7 +257,12 @@ namespace GuildMaster.UI
                 case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
             }
+            // Tall enough for what it says, the buttons in the corner kept clear (P4-104c: a member's card grew by its mood).
+            float height = Mathf.Max(MinHeight, BodyTop + _body.preferredHeight + ButtonRow);
+            if (Mathf.Abs(_panel.sizeDelta.y - height) > 0.5f) _panel.sizeDelta = new Vector2(_panel.sizeDelta.x, height);
         }
+
+        const float MinHeight = 292f, BodyTop = 38f, ButtonRow = 46f;
 
         /// <summary>A last sighting under the fog (P4-23): only what was seen, never the present state.</summary>
         void ShowGhost(FogGhost g)
@@ -333,6 +338,8 @@ namespace GuildMaster.UI
             lines.Add($"{Muted("최근 생각:")} {a.LastThought ?? "-"}");
             // What the latest decision weighed (P4-104a): why it went this way and not another.
             if (a.LastThinking?.Choice != null) lines.Add($"{Muted("고려한 것:")} {a.LastThinking.Describe()}");
+            // Mood and the heaviest of its thoughts (P4-104c).
+            if (!a.IsVisitor) lines.Add($"{Muted("기분:")} {MoodFormat.Mood(a)} · {MoodFormat.Heaviest(a, 3)}");
             lines.Add($"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}");
             lines.Add($"{Muted("관계:")} {RelationsText(a)}");
             lines.Add(Muted("전리품: " + loot));

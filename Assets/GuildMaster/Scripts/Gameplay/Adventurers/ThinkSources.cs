@@ -16,7 +16,7 @@ namespace GuildMaster.Adventurers
         public static IEnumerable<IThinkSource> Standard() => new IThinkSource[]
         {
             new RestSource(), new PotionSource(), new GearSource(),
-            new HoldSource(),
+            new HoldSource(), new MoodSource(),
             new QuestSource(),
             new TrainingSource(),
             new HuntSource(),
@@ -91,6 +91,26 @@ namespace GuildMaster.Adventurers
                 {
                     Action = AdventurerAction.Idle, Score = 1f, Label = "쉬며 버팀", Reason = tired,
                     Say = Welfare.StressRules.LevelOf(a.Data.stress) == Welfare.StressLevel.Breaking ? "지금은... 아무것도 하고 싶지 않아." : null,
+                });
+            }
+        }
+
+        /// <summary>
+        /// Low spirits (P4-104c): a member feeling low now and then sits the day out rather than go to work — the dice roll at
+        /// each decision, more often the lower it is (<see cref="ThoughtRules.SitOutChance"/>). Its breaks are P4-104d.
+        /// </summary>
+        sealed class MoodSource : IThinkSource
+        {
+            public ThinkLayer Layer => ThinkLayer.Hold;
+
+            public void Offer(Adventurer a, IReadOnlyList<Quest> available, List<ThinkOption> into)
+            {
+                float chance = ThoughtRules.SitOutChance(ThoughtRecorder.MoodOf(a));
+                if (chance <= 0f || !GameRandom.Shared.Chance(chance)) return;
+                into.Add(new ThinkOption
+                {
+                    Action = AdventurerAction.Idle, Score = 1f, Label = "기분이 안 남",
+                    Reason = "기분이 영 아니라 오늘은 일할 마음이 없다", Say = "오늘은... 그냥 쉴래.",
                 });
             }
         }

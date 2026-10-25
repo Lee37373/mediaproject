@@ -143,6 +143,13 @@ namespace GuildMaster.Session
                 if (e.Outcome == Recruitment.RecruitOutcome.Left) Add($"{e.Visitor.Data.name}이(가) 영입 제안을 거절했습니다.", LogCategory.Info);
             });
             EventBus.Subscribe<AdventurerDiedEvent>(e => Add($"{e.Adventurer.Data.name}이(가) {(e.Killer != null ? e.Killer.DisplayName + "에게 " : "")}목숨을 잃었습니다...", LogCategory.Danger));
+            // The thoughts that tell a story (P4-104c): a close friend lost, a last stand, a great kill, being let down.
+            EventBus.Subscribe<ThoughtAddedEvent>(e =>
+            {
+                if (!e.IsNew || e.Def == null || !e.Def.Log || e.Adventurer == null) return;
+                float w = ThoughtRules.Weight(e.Thought);
+                Add($"[기분] {e.Adventurer.Data.name}: {e.Thought.label} ({(w > 0f ? "+" : "")}{w:0})", w < 0f ? LogCategory.Danger : LogCategory.Info);
+            });
             EventBus.Subscribe<Town.RaidSightedEvent>(e => Add($"[침공] {e.Direction}쪽에서 적 무리가 관측되었습니다! 길드원들이 방어에 나섭니다.", LogCategory.Danger));
             // Natural disasters (P4-72): only the ones the guild has seen.
             EventBus.Subscribe<Disasters.DisasterSightedEvent>(e => Add(

@@ -33,6 +33,8 @@ namespace GuildMaster.Adventurers
         /// <summary>Skills known right now (P4-34); starts as the class skills, at most SkillCatalog.MaxSkills.</summary>
         public List<string> skillIds = new();
         public List<MemoryEntry> memories = new();
+        /// <summary>What is on its mind (P4-104c): the thoughts behind its mood, each fading in time (see ThoughtRules).</summary>
+        public List<ThoughtEntry> thoughts = new();
         /// <summary>Titles earned (P4-83: "모래 폭군 카르샤를 쓰러뜨린 자" for taking part in a region lord's fall).</summary>
         public List<string> titles = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>

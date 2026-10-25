@@ -1950,5 +1950,34 @@ namespace GuildMaster.Session
             Object.DestroyImmediate(tex);
             return sb.ToString();
         }
+
+        // ---------------- Thoughts and mood (P4-104c) ----------------
+
+        /// <summary>Every member's mood, stress and what is on its mind (heaviest first, with the hours left).</summary>
+        public static string Moods()
+        {
+            float now = Services.Get<GameClock>().TotalHours;
+            var sb = new StringBuilder();
+            foreach (var a in Services.Get<GuildRoster>().Members)
+            {
+                if (a == null || !a.IsAlive) continue;
+                float mood = ThoughtRecorder.MoodOf(a);
+                sb.Append($"{a.Data.name} 기분 {mood:0}({ThoughtRules.Label(ThoughtRules.LevelOf(mood))}) 스트레스 {a.Data.stress:0}: ");
+                sb.AppendLine(string.Join(", ", ThoughtRecorder.OnItsMind(a).Select(t =>
+                    $"{t.label}{(t.stack > 1 ? $"×{t.stack}" : "")} {ThoughtRules.Weight(t):+0;-0}{(t.until > 0f ? $"({t.until - now:0}h)" : "")}")));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Gives the member at that roster index a thought by its id (<see cref="ThoughtRules.All"/>).</summary>
+        public static string GiveThought(int index, string id, string about = null, string name = null)
+        {
+            var members = Services.Get<GuildRoster>().Members;
+            if (index < 0 || index >= members.Count) return "no member " + index;
+            var def = ThoughtRules.Find(id);
+            if (def == null) return "unknown thought: " + id + " (" + string.Join(", ", ThoughtRules.All.Select(d => d.Id)) + ")";
+            var t = ThoughtRecorder.Give(members[index], def, about, name);
+            return t == null ? "not given" : $"{members[index].Data.name}: {t.label} {ThoughtRules.Weight(t):+0;-0} → 기분 {ThoughtRecorder.MoodOf(members[index]):0}";
+        }
     }
 }

@@ -263,6 +263,8 @@ namespace GuildMaster.Session
             Services.Register(new FacilityService(town, roster));
             // Per-adventurer memories; before recruiting so the starting members remember joining.
             Services.Register(new MemoryRecorder(clock, roster));
+            // Thoughts and mood (P4-104c): what happens to members and round them, fading in time.
+            Services.Register(new ThoughtRecorder(clock, roster));
             // Multi-person quests: the first taker invites idle members (each answers by the rules);
             // party work is gathered for over hours as members come home (P4-97), so it is saved.
             var partyInvites = new PartyService(board, roster, clock);

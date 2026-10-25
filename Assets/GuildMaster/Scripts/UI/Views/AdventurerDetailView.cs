@@ -19,14 +19,14 @@ namespace GuildMaster.UI
     /// </summary>
     public class AdventurerDetailView : UIPanel
     {
-        const int DialoguePreview = 6;
+        const int DialoguePreview = 4;
         const int MemoryPreview = 5;
 
         public override string Title => "모험가 상세";
         protected override float RefreshInterval => 0.25f;
 
         Adventurer _who;
-        Text _header, _stats, _gear, _record, _thought, _memories, _relations, _dialogue;
+        Text _header, _stats, _gear, _record, _thought, _mood, _memories, _relations, _dialogue;
         RectTransform _traitRow, _skillRow;
         readonly List<Text> _skillLabels = new();
 
@@ -59,12 +59,15 @@ namespace GuildMaster.UI
             Section(right, "최근 생각");
             // Two lines more for what the decision weighed (P4-104a).
             _thought = Block(right, 62);
+            // Its mood and what is on its mind (P4-104c): room taken from the memories and the talk (both have their full windows).
+            Section(right, "기분");
+            _mood = Block(right, 74);
             Section(right, "기억");
-            _memories = Block(right, 100);
+            _memories = Block(right, 84);
             Section(right, "관계");
             _relations = Block(right, 44);
             Section(right, "최근 대화");
-            _dialogue = Block(right, 128);
+            _dialogue = Block(right, 72);
         }
 
         static void Section(Transform parent, string title)
@@ -199,6 +202,9 @@ namespace GuildMaster.UI
                 : a.LastThinking?.Choice != null
                     ? $"{a.LastThought}\n{UIBuilder.Colored("고려한 것: " + a.LastThinking.Describe(), UITheme.TextMuted)}"
                     : a.LastThought;
+
+            float now = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : 0f;
+            _mood.text = $"기분 {MoodFormat.Mood(a)} {UIBuilder.Colored($"· 스트레스 {d.stress:0}", UITheme.TextMuted)}\n{MoodFormat.Lines(a, now, 3)}";
 
             _memories.text = d.memories.Count == 0 ? UIBuilder.Colored("아직 기억이 없습니다.", UITheme.TextMuted)
                 : string.Join("\n", d.memories.Skip(Mathf.Max(0, d.memories.Count - MemoryPreview)).Select(m => m.Format()));

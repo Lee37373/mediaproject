@@ -3666,14 +3666,42 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
-        public IEnumerator FallenMember_StaysDead_AfterAPosthumousLevelUp()
+        public IEnumerator FallenMember_StaysDead_AfterAPosthumousLevelUp_AndTheGuildMourns()
         {
             yield return Boot();
             var member = Roster.Members.First(a => a.IsAlive);
-            // No last stand (F-6: a lethal blow may leave a member at 1 HP — the roll fell that way on the P4-103 map).
-            Services.Get<Legacy.GuildLegacy>().ForcedRoll = 1f;
-            member.ReceiveDamage(member.Hp + 999f, null, false);
+            // P4-104c: a close friend standing beside it, the others about the town.
+            var friend = Roster.Members.First(a => a.IsAlive && a != member);
+            var others = Roster.Members.Where(a => a.IsAlive && a != member && a != friend).ToList();
+            Relationships.Add(friend, member, 100, "test");
+            friend.Mover.Stop();
+            friend.Mover.Warp(member.Position + Vector2.right * 2f);
+            float before = ThoughtRecorder.MoodOf(friend);
+            string inner = null;
+            Action<ThoughtAddedEvent> onThought = e => { if (e.Adventurer == friend && e.Inner != null) inner = e.Inner; };
+            EventBus.Subscribe(onThought);
+            try
+            {
+                // No last stand (F-6: a lethal blow may leave a member at 1 HP — the roll fell that way on the P4-103 map).
+                Services.Get<Legacy.GuildLegacy>().ForcedRoll = 1f;
+                member.ReceiveDamage(member.Hp + 999f, null, false);
+            }
+            finally { EventBus.Unsubscribe(onThought); }
             Assert.That(member.IsAlive, Is.False);
+
+            var mourned = friend.Data.thoughts.Where(t => t.about == member.Data.id).Select(t => t.id).ToList();
+            Assert.That(mourned, Is.EquivalentTo(new[] { ThoughtRules.ComradeDiedClose.Id, ThoughtRules.SawComradeFall.Id }), "a close friend lost, before its eyes");
+            // As much as its nature makes of it (a loner feels people half as much).
+            float grief = friend.Data.thoughts.Where(t => t.about == member.Data.id).Sum(ThoughtRules.Weight);
+            Assert.That(grief, Is.LessThan(-10f));
+            Assert.That(ThoughtRecorder.MoodOf(friend), Is.EqualTo(Mathf.Clamp(before + grief, 0f, 100f)).Within(0.01f), "and it weighs on it");
+            Assert.That(inner, Does.Contain(member.Data.name), "a thought over its head");
+            foreach (var o in others)
+                Assert.That(o.Data.thoughts.Any(t => t.about == member.Data.id && t.id.StartsWith("died")), Is.True, $"{o.Data.name} heard of it");
+            friend.GainExp(friend.Data.ExpToNextLevel);
+            Assert.That(friend.Data.thoughts.Any(t => t.id == ThoughtRules.LevelUp.Id), Is.True, "brighter news too");
+            ThoughtRules.Expire(friend.Data.thoughts, Clock.TotalHours + 200f);
+            Assert.That(friend.Data.thoughts, Is.Empty, "all of it fades in time");
             // A projectile fired before death can still land the killing blow and its EXP.
             member.GainExp(member.Data.ExpToNextLevel * 3);
             member.RecalculateStats();
@@ -4843,7 +4871,8 @@ namespace GuildMaster.Tests
             Assert.That(spilled, Does.Contain(DefaultContent.Potion), "its cart spilled");
             // Unseen, the ambushers scatter a few hours on.
             Clock.SetSpeed(GameClock.SpeedScales.Length - 1);
-            yield return WaitFor(() => ambushers.All(m => !m.IsAlive), 10f);
+            // Real seconds at the top speed: 10 fell short once in a full run (2026-10-25), alone it passed.
+            yield return WaitFor(() => ambushers.All(m => !m.IsAlive), 20f);
             Clock.SetSpeed(1);
             Assert.That(ambushers.All(m => !m.IsAlive), Is.True, "the ambushers went their ways");
         }

@@ -176,6 +176,7 @@ namespace GuildMaster.Welfare
             string reply = CareTexts.InterviewReply(d.values, GameRandom.Shared);
             a.Say(reply);
             Remember(a, 2, CareTexts.MemoryTalked, "care-talk");
+            ThoughtRecorder.Give(a, ThoughtRules.Talked);
             SettleDemand(a, c);
             return CareResult.Success(CareTexts.Relieved("면담", relief, before, Mathf.RoundToInt(d.stress)), reply);
         }
@@ -216,6 +217,7 @@ namespace GuildMaster.Welfare
             string reply = CareTexts.BonusReply(d.values);
             a.Say(reply);
             Remember(a, 2, CareTexts.MemoryBonus(cost), "care-bonus");
+            ThoughtRecorder.Give(a, ThoughtRules.Bonus);
             SettleDemand(a, c);
             return CareResult.Success(CareTexts.BonusResult(cost, relief, before, Mathf.RoundToInt(d.stress)), reply);
         }
@@ -265,6 +267,7 @@ namespace GuildMaster.Welfare
                 if (Relationships.Get(m, gone) < StressRules.FriendRelation) continue;
                 AddStress(m, StressRules.FriendLeftStress);
                 Remember(m, 2, CareTexts.MemoryFriendLeft(gone.Data.name), "friend-left:" + gone.Data.id);
+                ThoughtRecorder.Give(m, ThoughtRules.FriendLeft, gone.Data.id, gone.Data.name);
             }
         }
 
@@ -353,6 +356,7 @@ namespace GuildMaster.Welfare
                 _center?.Resolve(DemandKey(id));
                 AddStress(a, StressRules.IgnoredDemandStress);
                 Remember(a, 2, CareTexts.MemoryIgnored(asked), "care-ignored");
+                ThoughtRecorder.Give(a, ThoughtRules.Ignored);
                 _center?.Post(c.Grudges >= CareRules.QuitGrudges ? NotificationKind.Danger : NotificationKind.Warning, "요구 무시됨",
                     CareTexts.DemandIgnored(name, c.Grudges), "ignored:" + id, NotificationLink.Management(id));
             }

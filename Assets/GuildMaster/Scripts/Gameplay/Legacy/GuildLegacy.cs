@@ -449,6 +449,7 @@ namespace GuildMaster.Legacy
             d.stress = Mathf.Min(100f, d.stress + LegacyRules.LastStandStress);
             string by = killer != null ? killer.DisplayName : null;
             Remember(a, 3, LegacyTexts.MemoryLastStand(by), "last-stand");
+            ThoughtRecorder.Give(a, ThoughtRules.LastStand);
             a.Say(LegacyTexts.LastStandLine(GameRandom.Shared));
             _center?.Post(NotificationKind.Warning, LegacyTexts.LastStandTitle, LegacyTexts.LastStandNotice(d.name, by, LegacyRules.WoundedHours),
                 "laststand:" + d.id, NotificationLink.Management(d.id));
