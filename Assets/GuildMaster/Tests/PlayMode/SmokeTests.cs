@@ -2944,6 +2944,47 @@ namespace GuildMaster.Tests
             }
             finally { Unit.GuildUntargetable = false; }
 
+            // P4-104b: what its ground adds to a hunt, once the guild knows it — a den of its kind next door that would pile in,
+            // and the deep woods. Far out, where the guild has seen nothing at the start.
+            var town = world.TownCenterWorld;
+            var intel = Services.Get<GuildIntel>();
+            var fog = Services.Get<Fog.FogOfWar>();
+            var board = Services.Get<QuestBoard>();
+            Nest den = null, neighbour = null;
+            foreach (var n in eco.Nests.Where(n => n.Population > 0 && !n.IsLair && AreaRisk.GangsUp(n.Species)
+                                                   && Vector2.Distance(n.WorldPosition, town) > 90f && !map.IsDeep(n.Cell.x, n.Cell.y)))
+            {
+                neighbour = eco.Nests.FirstOrDefault(o => o != n && o.Species == n.Species && o.Population > 0
+                                                          && Vector2.Distance(o.WorldPosition, n.WorldPosition) is > 4f and <= AreaRisk.CrowdRadius);
+                if (neighbour != null) { den = n; break; }
+            }
+            Assert.That(den, Is.Not.Null, "a den with one of its kind next door");
+            MakeKnown(den.Species);
+            var hunt = board.FindById(DebugCommands.PostHunt(den.Species.id, 3, 200, 40, 1, den.WorldPosition.x, den.WorldPosition.y));
+            Assert.That(hunt, Is.Not.Null);
+            float alone = QuestRisk.Requirement(hunt);
+            Assert.That((AreaRisk.QuestFactor(hunt), AreaRisk.Warning(hunt)), Is.EqualTo((1f, (string)null)), "the den next door unseen: nothing to add");
+            typeof(Nest).GetProperty(nameof(Nest.Discovered)).SetValue(neighbour, true);
+            var seenNext = intel.Get(neighbour);
+            (seenNext.Observed, seenNext.Species, seenNext.LastCount) = (true, neighbour.Species, 6);
+            Assert.That(QuestRisk.Requirement(hunt), Is.EqualTo(alone * AreaRisk.CrowdFactor(AreaRisk.ExtraFoes(den.Species, 6), 3)).Within(1e-3f),
+                "six seen next door: some would pile in");
+            Assert.That(AreaRisk.Warning(hunt), Does.Contain("합세"), "and the board says so");
+            board.Cancel(hunt);
+
+            var deepCell = Enumerable.Range(0, map.Width * map.SurfaceHeight).Select(i => new Vector2Int(i % map.Width, i / map.Width))
+                .FirstOrDefault(c => grid.IsDeep(c) && grid.IsWalkable(c) && !fog.IsExploredRaw(c)
+                                     && Vector2.Distance(World.GridMap.CellToWorld(c), den.WorldPosition) > 2f * AreaRisk.CrowdRadius);
+            Assert.That(grid.IsDeep(deepCell), Is.True, "unseen deep woods");
+            var deepSpot = World.GridMap.CellToWorld(deepCell);
+            var woodsHunt = board.FindById(DebugCommands.PostHunt(den.Species.id, 3, 200, 40, 1, deepSpot.x, deepSpot.y));
+            Assert.That(woodsHunt, Is.Not.Null);
+            float unseenWoods = AreaRisk.QuestFactor(woodsHunt);
+            fog.Reveal(deepSpot, 2f);
+            Assert.That(AreaRisk.QuestFactor(woodsHunt), Is.EqualTo(unseenWoods * World.DeepWoodRules.QuestFactor).Within(1e-4f), "deep woods it has seen ask more");
+            Assert.That(AreaRisk.Warning(woodsHunt), Does.Contain("깊은 숲"));
+            board.Cancel(woodsHunt);
+
             // A river's crossing (P4-101), off the roads, with water between two points either side of the border beside it.
             World.PassSite pass = default;
             Vector2Int from = default, to = default;

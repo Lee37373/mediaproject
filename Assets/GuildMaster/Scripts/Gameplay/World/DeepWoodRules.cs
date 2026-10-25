@@ -35,5 +35,18 @@ namespace GuildMaster.World
         /// <summary>Dens in the deep woods: one per this many cells of belt, at most this many on a map, this far from the town at least.</summary>
         public const int BeltCellsPerDen = 900, MaxDens = 8;
         public const float DenMinDistance = 80f;
+
+        // ---- How the guild weighs them, where it has seen them (P4-104b: "only when strong or in a hurry, on the trails") ----
+
+        /// <summary>
+        /// Risk a known deep-wood cell adds to a walk, weighted by the walker's caution (<see cref="RouteRisk.Multiplier"/>): an
+        /// ordinary party pays about twice a forest's detour cost for it and keeps to the trails, a brave one less, a hurried
+        /// one nothing.
+        /// </summary>
+        public const float RouteRisk = 2f;
+        /// <summary>A hunt in known deep woods asks this much more strength (the danger steps rate only its young's level).</summary>
+        public const float QuestFactor = 1.4f;
+        /// <summary>A free hunt picks a den in known deep woods only for a fight expected to cost this share of what it would take on elsewhere.</summary>
+        public const float HuntLossShare = 0.5f;
     }
 }

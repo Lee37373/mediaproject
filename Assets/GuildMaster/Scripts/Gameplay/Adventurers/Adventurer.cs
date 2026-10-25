@@ -381,6 +381,8 @@ namespace GuildMaster.Adventurers
 
         internal bool HearsFightingAComrade(Monster m)
             => HearComrades && m.IsAlive && m.CombatEngagement?.Target is Adventurer { IsGuildMember: true } comrade && comrade != this
+               // A monster whose fight is not ticking (homing, fleeing) may still hold a comrade who died and was destroyed.
+               && comrade != null && comrade.IsAlive
                && (comrade.Position - Position).sqrMagnitude <= ComradeCryRadius * ComradeCryRadius;
 
         /// <summary>

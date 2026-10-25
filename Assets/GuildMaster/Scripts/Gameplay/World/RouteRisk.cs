@@ -82,7 +82,17 @@ namespace GuildMaster.World
         {
             if (Mathf.Approximately(caution, 0f)) return 1f;
             if (caution < 0f && (!_map.InBounds(x, y) || _map.Tiles[_map.Index(x, y)] != TileType.Forest || Cleared(_map.Index(x, y)))) return 1f;
-            return Mathf.Max(0.05f, 1f + caution * At(x, y));
+            // The deep woods (P4-104b): a careful walker keeps to the trails. Only known cells get here (unknown ones cost flat).
+            float risk = At(x, y);
+            if (caution > 0f && DeepStanding(x, y)) risk += DeepWoodRules.RouteRisk;
+            return Mathf.Max(0.05f, 1f + caution * risk);
+        }
+
+        bool DeepStanding(int x, int y)
+        {
+            if (!_map.InBounds(x, y)) return false;
+            int i = _map.Index(x, y);
+            return _map.Deep[i] && _map.Tiles[i] == TileType.Forest && !Cleared(i);
         }
 
         /// <summary>Smallest multiplier this caution can produce: keeps the A* heuristic admissible.</summary>

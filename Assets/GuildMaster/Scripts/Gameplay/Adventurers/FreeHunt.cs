@@ -116,9 +116,12 @@ namespace GuildMaster.Adventurers
             return taken / ourHp;
         }
 
-        /// <summary>Whether a fight is worth picking: its expected cost is within <see cref="AcceptableLoss"/>.</summary>
-        public static bool CanTake(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, CombatStats foe, int foes)
-            => ExpectedLoss(band, hp, foe, foes) <= AcceptableLoss;
+        /// <summary>
+        /// Whether a fight is worth picking: its expected cost is within <see cref="AcceptableLoss"/> — times
+        /// <paramref name="lossShare"/> where the ground is worse than the fight (P4-104b: known deep woods).
+        /// </summary>
+        public static bool CanTake(IReadOnlyList<CombatStats> band, IReadOnlyList<float> hp, CombatStats foe, int foes, float lossShare = 1f)
+            => ExpectedLoss(band, hp, foe, foes) <= AcceptableLoss * lossShare;
 
         /// <summary>A den's last count above this adds nothing to its appeal: a trip only takes so many.</summary>
         public const int DenCountCap = 6;

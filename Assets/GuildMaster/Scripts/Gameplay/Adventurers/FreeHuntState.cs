@@ -37,6 +37,10 @@ namespace GuildMaster.Adventurers
         float _campCheck;
         int _enemies;
         int _nestNearby;
+        /// <summary>The known den whose territory we stand in (the one <see cref="_nestNearby"/> counts), null for none.</summary>
+        Nest _nestHere;
+        /// <summary>Per kind, those from the known dens round here that would pile in (P4-104b), worked out once a survey.</summary>
+        readonly System.Collections.Generic.Dictionary<MonsterDefinition, int> _crowd = new();
         HuntBand _band;
         /// <summary>Us and the members close enough to fight beside us, as the fight estimate sees them.</summary>
         readonly System.Collections.Generic.List<CombatStats> _bandStats = new();
@@ -70,6 +74,8 @@ namespace GuildMaster.Adventurers
             _nextBackOffLine = 0f;
             _enemies = 1;
             _nestNearby = 0;
+            _nestHere = null;
+            _crowd.Clear();
             _surprises = 0;
             LegsWalked = 0;
             _correctionsAtAim = Owner.Mover.RouteCorrections;
@@ -114,6 +120,8 @@ namespace GuildMaster.Adventurers
             _nextBackOffLine = 0f;
             _enemies = 1;
             _nestNearby = 0;
+            _nestHere = null;
+            _crowd.Clear();
             _correctionsAtAim = Owner.Mover.RouteCorrections;
             Owner.Mover.UnknownToMe = ExplorationRoute.KnowledgeOf(Services.TryGet<Fog.FogOfWar>(out var fog) ? fog : null);
             CountBand(Owner);
@@ -141,7 +149,14 @@ namespace GuildMaster.Adventurers
         /// <summary>Worth attacking: one we can handle (P4-43: nothing is spared any more).</summary>
         bool Huntable(Unit u)
             => u is Monster m && m.IsAlive && m.Def != null
-               && FreeHunt.CanTake(_bandStats, _bandHp, m.Stats, FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby));
+               && FreeHunt.CanTake(_bandStats, _bandHp, m.Stats, FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby) + CrowdOf(m.Def));
+
+        /// <summary>The known dens of that kind round here, the one we stand at left out, that would pile in (P4-104b, as the den choice).</summary>
+        int CrowdOf(MonsterDefinition s)
+        {
+            if (!_crowd.TryGetValue(s, out int n)) _crowd[s] = n = AreaRisk.ExtraFoesAround(s, Owner.Position, _nestHere);
+            return n;
+        }
 
         /// <summary>What the guild expects at a den now: its last count, grown back since (P4-42).</summary>
         static int ExpectedAt(GuildIntel intel, Nest n)
@@ -305,10 +320,17 @@ namespace GuildMaster.Adventurers
             CountBand(a);
             _enemies = UnitRegistry.CountInRadius(a.Position, a.Stats.SightRadius, u => u is Monster m && m.IsAlive && a.CanSee(m)); // only what it sees (P4-48)
             _nestNearby = 0;
+            _nestHere = null;
+            _crowd.Clear();
             if (!Services.TryGet<GuildIntel>(out var intel)) return;
             foreach (var n in intel.KnownNests)
-                if (Vector2.Distance(n.WorldPosition, a.Position) <= NestNearRadius)
-                    _nestNearby = Mathf.Max(_nestNearby, intel.Get(n).LastCount);
+            {
+                if (Vector2.Distance(n.WorldPosition, a.Position) > NestNearRadius) continue;
+                int seen = intel.Get(n).LastCount;
+                if (_nestHere != null && seen <= _nestNearby) continue;
+                _nestNearby = Mathf.Max(_nestNearby, seen);
+                _nestHere = n;
+            }
         }
 
         /// <summary>Ourselves first, then every living member within <see cref="FreeHunt.AllyRadius"/> — a newcomer only itself (P4-99).</summary>
@@ -396,7 +418,11 @@ namespace GuildMaster.Adventurers
                     if (Vector2.Distance(n.WorldPosition, town) > _reach) continue;
                     if (Vector2.Distance(n.WorldPosition, a.Position) < SpotReached * 2f) continue;
                     if (avoid != null && Vector2.Distance(n.WorldPosition, avoid.Value) <= _reach * 0.3f) continue;
-                    if (!FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(s, n.BirthLevel), FreeHunt.ExpectedEnemies(1, s, count))) continue;
+                    // With the known dens next door that would pile in, and in known deep woods only a fight well within
+                    // the band's means (P4-104b: bands took a den at a time and died to the zone, or blind in the woods).
+                    int foes = FreeHunt.ExpectedEnemies(1, s, count) + AreaRisk.ExtraFoesAround(s, n.WorldPosition, n);
+                    float share = AreaRisk.KnownDeep(n.WorldPosition) ? DeepWoodRules.HuntLossShare : 1f;
+                    if (!FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(s, n.BirthLevel), foes, share)) continue;
                     float score = FreeHunt.DenScore(s, count, Vector2.Distance(n.WorldPosition, a.Position), n.BirthLevel);
                     if (score <= bestScore) continue;
                     bestScore = score;
