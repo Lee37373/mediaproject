@@ -331,6 +331,8 @@ namespace GuildMaster.UI
                 if (d.titles.Count > 0) lines.Add($"{Muted("칭호:")} {UIBuilder.Colored(string.Join(" · ", d.titles), UITheme.Accent)}");
             }
             lines.Add($"{Muted("최근 생각:")} {a.LastThought ?? "-"}");
+            // What the latest decision weighed (P4-104a): why it went this way and not another.
+            if (a.LastThinking?.Choice != null) lines.Add($"{Muted("고려한 것:")} {a.LastThinking.Describe()}");
             lines.Add($"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}");
             lines.Add($"{Muted("관계:")} {RelationsText(a)}");
             lines.Add(Muted("전리품: " + loot));

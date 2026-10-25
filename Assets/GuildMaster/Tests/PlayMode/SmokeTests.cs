@@ -1400,6 +1400,14 @@ namespace GuildMaster.Tests
             Assert.That(free.Count, Is.EqualTo(2), "two idle members to try with");
 
             Assert.That(board.AvailableFor(free[1]).Contains(solo), Is.True, "unclaimed: anyone may take it");
+            // P4-104a: a decision keeps what it weighed — here the one quest on the board, chosen.
+            var looker = free[1];
+            looker.Data.fatigue = 0f;
+            looker.Data.potions = 2;
+            looker.Data.gold = 0;
+            var decision = RuleBasedDecisionMaker.Decide(looker, board.AvailableFor(looker).ToList());
+            Assert.That((decision.Action, decision.QuestId), Is.EqualTo((AdventurerAction.AcceptQuest, solo.Id)), looker.LastThinking?.Describe());
+            Assert.That(looker.LastThinking.Describe(), Does.StartWith($"의뢰 '{solo.Title}'(고름)"));
             Assert.That(board.TryAccept(solo, free[0]), Is.True, "the first taker claims it");
             free[0].CurrentQuest = solo;
             Assert.That(board.AvailableFor(free[1]).Contains(solo), Is.False, "claimed quests leave the board");

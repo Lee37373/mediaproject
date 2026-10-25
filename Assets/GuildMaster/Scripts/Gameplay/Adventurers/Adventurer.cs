@@ -38,6 +38,8 @@ namespace GuildMaster.Adventurers
         public Quest CurrentQuest { get; set; }
         /// <summary>Reason of the latest high-level decision (shown in the inspector).</summary>
         public string LastThought { get; set; }
+        /// <summary>What the latest decision weighed (P4-104a, shown in the inspector; not saved).</summary>
+        public ThinkRecord LastThinking { get; set; }
         public bool IsGuildMember { get; set; } = true;
 
         // ---- Visitor (recruitment candidate) ----

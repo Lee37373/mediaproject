@@ -20,7 +20,7 @@ namespace GuildMaster.UI
     public class AdventurerDetailView : UIPanel
     {
         const int DialoguePreview = 6;
-        const int MemoryPreview = 6;
+        const int MemoryPreview = 5;
 
         public override string Title => "모험가 상세";
         protected override float RefreshInterval => 0.25f;
@@ -57,9 +57,10 @@ namespace GuildMaster.UI
             Section(right, "스킬  " + UIBuilder.Colored("(마우스를 올리면 설명)", UITheme.TextMuted));
             _skillRow = UIBuilder.Row(right, 30, 6);
             Section(right, "최근 생각");
-            _thought = Block(right, 44);
+            // Two lines more for what the decision weighed (P4-104a).
+            _thought = Block(right, 62);
             Section(right, "기억");
-            _memories = Block(right, 118);
+            _memories = Block(right, 100);
             Section(right, "관계");
             _relations = Block(right, 44);
             Section(right, "최근 대화");
@@ -195,7 +196,9 @@ namespace GuildMaster.UI
             }
 
             _thought.text = string.IsNullOrEmpty(a.LastThought) ? UIBuilder.Colored("아직 판단한 적이 없습니다.", UITheme.TextMuted)
-                : a.LastThought;
+                : a.LastThinking?.Choice != null
+                    ? $"{a.LastThought}\n{UIBuilder.Colored("고려한 것: " + a.LastThinking.Describe(), UITheme.TextMuted)}"
+                    : a.LastThought;
 
             _memories.text = d.memories.Count == 0 ? UIBuilder.Colored("아직 기억이 없습니다.", UITheme.TextMuted)
                 : string.Join("\n", d.memories.Skip(Mathf.Max(0, d.memories.Count - MemoryPreview)).Select(m => m.Format()));
