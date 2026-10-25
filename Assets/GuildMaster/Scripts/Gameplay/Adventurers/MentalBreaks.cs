@@ -191,7 +191,12 @@ namespace GuildMaster.Adventurers
             d.inspirationUntil = _clock.TotalHours + BreakRules.InspirationHours;
             d.inspirationReadyAt = d.inspirationUntil + BreakRules.InspirationCooldownHours;
             if (kind == InspirationKind.Combat) a.RecalculateStats();
-            a.Say(kind == InspirationKind.Combat ? "오늘은 누구한테도 안 질 것 같아!" : "뭔가 감이 왔어. 지금이라면 뭐든 배울 수 있겠어!");
+            a.Say(kind switch
+            {
+                InspirationKind.Combat => "오늘은 누구한테도 안 질 것 같아!",
+                InspirationKind.Social => "오늘은 누구랑 얘기해도 즐거울 것 같아!",
+                _ => "뭔가 감이 왔어. 지금이라면 뭐든 배울 수 있겠어!",
+            });
             ThoughtRecorder.Give(a, ThoughtRules.Inspired);
             EventBus.Publish(new InspirationEvent { Adventurer = a, Kind = kind });
         }

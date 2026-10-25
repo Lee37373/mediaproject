@@ -65,6 +65,9 @@ namespace GuildMaster.Recruitment
             var data = visitor.Data;
             Resumed = data.recruitAffinity >= 0;
             Affinity = Resumed ? data.recruitAffinity : InitialAffinity(visitor.Traits, LevelsAboveGuild(visitor));
+            // What its chats with members warmed it up (P4-104e, user decision 2026-10-21): counted once, here.
+            Affinity = Mathf.Clamp(Affinity + data.banterWarmth, 0, 100);
+            data.banterWarmth = 0;
             PlayerTurns = Resumed ? data.recruitTurns : 0;
             foreach (var line in DialogueLog.Recruit(data))
                 _turns.Add(new RecruitTurn { FromPlayer = line.fromPlayer, Text = line.text });

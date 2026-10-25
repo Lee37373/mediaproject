@@ -51,7 +51,11 @@ namespace GuildMaster.Adventurers
         public Transform ConversationPartner { get; set; }
 
         /// <summary>Hp ratio below which the adventurer retreats (traits can modify).</summary>
-        public float RetreatThreshold => Traits?.RetreatThreshold ?? 0.35f;
+        public float RetreatThreshold
+            => (Traits?.RetreatThreshold ?? 0.35f)
+               // Fighting a kind it fears (a quirk, P4-104e): it pulls out sooner.
+               + (Data != null && Data.quirks.Count > 0 && Engage?.Target is Monster m && m.Def != null && QuirkRules.Fears(Data.quirks, m.Def.id)
+                   ? QuirkRules.FearRetreatShift : 0f);
 
         internal TownIdleState IdleState;
         internal DecidingState DecidingState;

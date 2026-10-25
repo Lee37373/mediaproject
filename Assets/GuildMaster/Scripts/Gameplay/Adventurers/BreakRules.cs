@@ -14,7 +14,7 @@ namespace GuildMaster.Adventurers
     public enum BreakKind { None, Sabotage, Wander, Spree, Brawl, Desert, Quit, Berserk }
 
     /// <summary>A spell of high spirits (P4-104d, RimWorld's inspirations).</summary>
-    public enum InspirationKind { None, Combat, Training }
+    public enum InspirationKind { None, Combat, Training, Social }
 
     /// <summary>Where a member stands when it breaks: what it can do there.</summary>
     public struct BreakContext
@@ -140,11 +140,19 @@ namespace GuildMaster.Adventurers
         /// <summary>A combat inspiration's attack, a training one's EXP.</summary>
         public const float CombatAttack = 1.25f, TrainingExp = 1.5f;
 
-        /// <summary>Which inspiration comes (pure): the fighting kind for those out fighting, the learning kind for the rest — the quick learners more.</summary>
+        /// <summary>A social inspiration (P4-104e): its friendly talks count this many times over, and it does not quarrel.</summary>
+        public const int SocialTalkFactor = 2;
+
+        /// <summary>
+        /// Which inspiration comes (pure): out fighting, mostly the fighting kind (the quick learners learn); at home, a sociable
+        /// one, the learning kind, or the fighting kind — the sociable more often sociable, the quick learners learning.
+        /// </summary>
         public static InspirationKind ChooseInspiration(bool outFighting, IReadOnlyList<string> traitIds, float roll)
         {
-            float training = Has(traitIds, "quick_learner") ? 0.7f : outFighting ? 0.3f : 0.5f;
-            return roll < training ? InspirationKind.Training : InspirationKind.Combat;
+            bool quick = Has(traitIds, "quick_learner");
+            if (outFighting) return roll < (quick ? 0.7f : 0.3f) ? InspirationKind.Training : InspirationKind.Combat;
+            if (roll < (Has(traitIds, "sociable") ? 0.6f : 0.35f)) return InspirationKind.Social;
+            return roll < (quick ? 0.85f : 0.7f) ? InspirationKind.Training : InspirationKind.Combat;
         }
 
         // ---- Words ----
@@ -186,6 +194,7 @@ namespace GuildMaster.Adventurers
         {
             InspirationKind.Combat => "전투 영감",
             InspirationKind.Training => "수련 영감",
+            InspirationKind.Social => "사교 영감",
             _ => "-",
         };
 
@@ -193,6 +202,7 @@ namespace GuildMaster.Adventurers
         {
             InspirationKind.Combat => $"공격력 ×{CombatAttack:0.##}",
             InspirationKind.Training => $"얻는 EXP ×{TrainingExp:0.#}",
+            InspirationKind.Social => $"잡담 호감 ×{SocialTalkFactor}, 말다툼 없음",
             _ => "",
         };
     }

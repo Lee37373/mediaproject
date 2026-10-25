@@ -23,7 +23,7 @@ namespace GuildMaster.Adventurers
     }
 
     /// <summary>What kind of thing a thought is about, for the traits that colour it.</summary>
-    public enum ThoughtTone { Plain, Fear, People, Gain, Loyalty }
+    public enum ThoughtTone { Plain, Fear, People, Gain, Loyalty, Glory }
 
     /// <summary>A kind of thought: its words, its weight, how long it lasts and how many of it stack.</summary>
     public sealed class ThoughtDef
@@ -86,10 +86,10 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef NewGear = D("new_gear", "새 장비를 맞췄다", 4f, 24f, ThoughtTone.Gain);
         public static readonly ThoughtDef NearDeath = D("near_death", "{0}에게 죽을 뻔했다", -8f, 24f, ThoughtTone.Fear, 2, "(죽는 줄 알았어...)");
         public static readonly ThoughtDef LastStand = Logged(D("last_stand", "구사일생으로 살아났다", -10f, 48f, ThoughtTone.Fear, 1, "(살았다... 진짜 살았어.)"));
-        public static readonly ThoughtDef Slew = D("slew", "{0}을(를) 쓰러뜨렸다", 3f, 12f, ThoughtTone.Plain, 3);
-        public static readonly ThoughtDef GreatKill = Logged(D("great_kill", "{0}을(를) 쓰러뜨리는 데 함께했다", 15f, 72f, ThoughtTone.Plain, 1, "(우리가 해냈어!)"));
+        public static readonly ThoughtDef Slew = D("slew", "{0}을(를) 쓰러뜨렸다", 3f, 12f, ThoughtTone.Glory, 3);
+        public static readonly ThoughtDef GreatKill = Logged(D("great_kill", "{0}을(를) 쓰러뜨리는 데 함께했다", 15f, 72f, ThoughtTone.Glory, 1, "(우리가 해냈어!)"));
         public static readonly ThoughtDef SawDragon = D("saw_dragon", "드래곤을 봤다", -6f, 24f, ThoughtTone.Fear, 1, "(저, 저게 드래곤...?)");
-        public static readonly ThoughtDef RaidHeld = D("raid_held", "마을을 지켜냈다", 5f, 24f, ThoughtTone.Plain, 2, "(마을은 우리가 지킨다!)");
+        public static readonly ThoughtDef RaidHeld = D("raid_held", "마을을 지켜냈다", 5f, 24f, ThoughtTone.Glory, 2, "(마을은 우리가 지킨다!)");
         public static readonly ThoughtDef Trapped = D("trapped", "덫에 걸렸다", -3f, 6f, ThoughtTone.Fear, 2);
 
         // Breaks and inspirations (P4-104d).
@@ -97,6 +97,14 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef Inspired = D("inspired", "영감이 떠올랐다", 5f, 24f);
         public static readonly ThoughtDef Brawled = D("brawled", "{0}와(과) 주먹다짐을 했다", -5f, 24f, ThoughtTone.People);
         public static readonly ThoughtDef BerserkVictim = D("berserk_victim", "광폭해진 {0}에게 맞았다", -8f, 48f, ThoughtTone.Fear, 2, "({0}, 정신 차려!)");
+
+        // Its nature and its quirks (P4-104e: what goes against its nature weighs on it, CK3).
+        public static readonly ThoughtDef DreadfulWork = D("dreadful_work", "무서운 일을 맡았다", -6f, 24f, ThoughtTone.Plain, 1, "(괜히 맡았나...)");
+        public static readonly ThoughtDef DullWork = D("dull_work", "시시한 일을 맡았다", -2f, 12f);
+        public static readonly ThoughtDef NewLand = D("new_land", "새로운 땅을 보았다", 4f, 24f, ThoughtTone.Plain, 3, "(저런 곳이 있었구나!)");
+        public static readonly ThoughtDef QuirkGained = D("quirk", "{0}이(가) 생겼다", -3f, 24f, ThoughtTone.Plain);
+        public static readonly ThoughtDef Chat = D("chat", "즐거운 잡담을 나눴다", 2f, 8f, ThoughtTone.People, 2);
+        public static readonly ThoughtDef Quarrel = D("quarrel", "{0}와(과) 말다툼을 했다", -3f, 12f, ThoughtTone.People, 1, "(쳇, 말이 안 통해.)");
 
         // The guild master's care (F-2).
         public static readonly ThoughtDef Talked = D("talked", "길드 마스터가 이야기를 들어 주었다", 5f, 24f, ThoughtTone.People);
@@ -113,13 +121,20 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef OnLeave = D("on_leave", "휴가 중이다", 6f, 0f);
         public static readonly ThoughtDef WithFriend = D("with_friend", "{0}와(과) 같은 파티다", 3f, 0f, ThoughtTone.People);
         public static readonly ThoughtDef WithRival = D("with_rival", "싫은 {0}와(과) 같은 파티다", -4f, 0f, ThoughtTone.People);
+        // Against its nature, and its fears (P4-104e).
+        public static readonly ThoughtDef Crowded = D("crowded", "사람이 너무 많아 불편하다", -4f, 0f);
+        public static readonly ThoughtDef Lonely = D("lonely", "혼자라 쓸쓸하다", -3f, 0f);
+        public static readonly ThoughtDef WantsRest = D("wants_rest", "그만 쉬고 싶다", -4f, 0f);
+        public static readonly ThoughtDef Idle = D("idle", "할 일 없이 놀고 있다", -2f, 0f);
+        public static readonly ThoughtDef Afraid = D("afraid", "{0}이(가) 무섭다", -6f, 0f);
 
         public static readonly IReadOnlyList<ThoughtDef> All = new[]
         {
             ComradeDiedClose, ComradeDiedFriend, ComradeDied, RivalDied, SawComradeFall, QuestDone, QuestFailed, LevelUp, NewGear,
             NearDeath, LastStand, Slew, GreatKill, SawDragon, RaidHeld, Trapped, LetItOut, Inspired, Brawled, BerserkVictim,
+            DreadfulWork, DullWork, NewLand, QuirkGained, Chat, Quarrel,
             Talked, Bonus, Ignored, FriendLeft,
-            HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival,
+            HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival, Crowded, Lonely, WantsRest, Idle, Afraid,
         };
 
         public static ThoughtDef Find(string id)
@@ -132,23 +147,35 @@ namespace GuildMaster.Adventurers
 
         /// <summary>
         /// How much a thought of this tone weighs for this member: the brave shrug fear off (×0.5), cowards feel it more (×1.5);
-        /// the sociable feel people more, loners less; the greedy feel gain more; the loyal feel being let down more.
+        /// the sociable feel people more, loners less; the greedy feel gain more; the loyal feel being let down more. What it values
+        /// too (P4-104e): money gain ×1.25, comrades people ×1.25, safety fear ×1.25, honour glory ×1.5. Nerves of steel (a quirk)
+        /// halve fear.
         /// </summary>
-        public static float TraitScale(ThoughtTone tone, IReadOnlyList<string> traitIds)
+        public static float TraitScale(ThoughtTone tone, IReadOnlyList<string> traitIds, string values = null, IReadOnlyList<string> quirks = null)
         {
-            if (traitIds == null || tone == ThoughtTone.Plain) return 1f;
+            if (tone == ThoughtTone.Plain) return 1f;
             float k = 1f;
-            foreach (var t in traitIds)
-                k *= (tone, t) switch
-                {
-                    (ThoughtTone.Fear, "brave") => 0.5f,
-                    (ThoughtTone.Fear, "coward") => 1.5f,
-                    (ThoughtTone.People, "sociable") => 1.5f,
-                    (ThoughtTone.People, "loner") => 0.5f,
-                    (ThoughtTone.Gain, "greedy") => 1.5f,
-                    (ThoughtTone.Loyalty, "loyal") => 1.5f,
-                    _ => 1f,
-                };
+            if (traitIds != null)
+                foreach (var t in traitIds)
+                    k *= (tone, t) switch
+                    {
+                        (ThoughtTone.Fear, "brave") => 0.5f,
+                        (ThoughtTone.Fear, "coward") => 1.5f,
+                        (ThoughtTone.People, "sociable") => 1.5f,
+                        (ThoughtTone.People, "loner") => 0.5f,
+                        (ThoughtTone.Gain, "greedy") => 1.5f,
+                        (ThoughtTone.Loyalty, "loyal") => 1.5f,
+                        _ => 1f,
+                    };
+            k *= (tone, values) switch
+            {
+                (ThoughtTone.Gain, "돈") => 1.25f,
+                (ThoughtTone.People, "동료") => 1.25f,
+                (ThoughtTone.Fear, "안전") => 1.25f,
+                (ThoughtTone.Glory, "명예") => 1.5f,
+                _ => 1f,
+            };
+            if (tone == ThoughtTone.Fear && QuirkRules.Has(quirks, QuirkRules.SteelNerves)) k *= 0.5f;
             return k;
         }
 
@@ -161,7 +188,8 @@ namespace GuildMaster.Adventurers
         /// Gives a thought (pure). The same kind about the same subject is held once: it lasts from now again and stacks up to
         /// its limit. Returns the entry.
         /// </summary>
-        public static ThoughtEntry Add(List<ThoughtEntry> thoughts, ThoughtDef def, float now, string about, string name, IReadOnlyList<string> traitIds)
+        public static ThoughtEntry Add(List<ThoughtEntry> thoughts, ThoughtDef def, float now, string about, string name, IReadOnlyList<string> traitIds,
+            string values = null, IReadOnlyList<string> quirks = null)
         {
             about ??= "";
             foreach (var t in thoughts)
@@ -173,7 +201,7 @@ namespace GuildMaster.Adventurers
             }
             var entry = new ThoughtEntry
             {
-                id = def.Id, about = about, label = Fill(def.Label, name), value = def.Mood * TraitScale(def.Tone, traitIds),
+                id = def.Id, about = about, label = Fill(def.Label, name), value = def.Mood * TraitScale(def.Tone, traitIds, values, quirks),
                 since = now, until = now + def.Hours,
             };
             thoughts.Add(entry);

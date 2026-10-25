@@ -331,7 +331,9 @@ namespace GuildMaster.UI
             else
             {
                 lines.Add($"성격 {d.mbti} · 가치관 {d.values} · 전투 {CombatTiers.Label(a.Tier)}");
-                lines.Add($"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}");
+                lines.Add($"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}"
+                          // Quirks picked up along the way (P4-104e).
+                          + (d.quirks.Count > 0 ? $" {Muted("· 버릇:")} " + UIBuilder.Colored(string.Join(", ", d.quirks.Select(q => QuirkRules.Label(q, ThoughtRecorder.SpeciesName))), UITheme.Accent) : ""));
                 // Titles (P4-83): a region lord's fall, for those who were there.
                 if (d.titles.Count > 0) lines.Add($"{Muted("칭호:")} {UIBuilder.Colored(string.Join(" · ", d.titles), UITheme.Accent)}");
             }

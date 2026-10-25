@@ -105,6 +105,14 @@ namespace GuildMaster.UI
                 Chip(_traitRow, trait.displayName, trait.isPositive ? new Color(0.2f, 0.36f, 0.22f) : new Color(0.42f, 0.18f, 0.17f),
                     () => TraitTooltip(trait));
             }
+            // Quirks picked up along the way (P4-104e), after the traits it was born with.
+            foreach (var q in _who.Data.quirks)
+            {
+                var quirk = q;
+                Chip(_traitRow, QuirkRules.Label(quirk, ThoughtRecorder.SpeciesName), new Color(0.34f, 0.22f, 0.44f),
+                    () => UIBuilder.Colored(QuirkRules.Label(quirk, ThoughtRecorder.SpeciesName), UITheme.Accent) + UIBuilder.Colored("  버릇", UITheme.TextMuted)
+                          + "\n" + QuirkRules.Describe(quirk, ThoughtRecorder.SpeciesName));
+            }
 
             if (_who.Skills.Count == 0) Chip(_skillRow, UIBuilder.Colored("없음", UITheme.TextMuted), UITheme.RowBg, null);
             foreach (var s in _who.Skills)

@@ -19,6 +19,15 @@ namespace GuildMaster.Adventurers
         public string Inner;
     }
 
+    /// <summary>A member picked up a quirk (P4-104e): a fear, nerves of steel, the dragon's survivor.</summary>
+    public struct QuirkGainedEvent
+    {
+        public Adventurer Adventurer;
+        public string Quirk;
+        /// <summary>Its name as shown ("해골 공포").</summary>
+        public string Label;
+    }
+
     /// <summary>
     /// Gives members their thoughts from what happens to them and round them (P4-104c, G2), fades them, and reads a member's
     /// mood with the situational thoughts of the moment (stress, fatigue, wounds, debt, leave, the company in its party). The
@@ -56,6 +65,8 @@ namespace GuildMaster.Adventurers
             EventBus.Subscribe<World.TrapSprungEvent>(OnTrap);
             EventBus.Subscribe<MentalBreakEvent>(OnBreak);
             EventBus.Subscribe<UnitDamagedEvent>(OnDamaged);
+            EventBus.Subscribe<QuestAcceptedEvent>(OnAccepted);
+            EventBus.Subscribe<World.ZoneDiscoveredEvent>(OnZone);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
         }
 
@@ -70,7 +81,7 @@ namespace GuildMaster.Adventurers
             if (a == null || a.Data == null || !a.IsAlive || !a.IsGuildMember || a.IsVisitor || def == null) return null;
             string key = about ?? "";
             bool isNew = !a.Data.thoughts.Exists(t => t.id == def.Id && t.about == key);
-            var entry = ThoughtRules.Add(a.Data.thoughts, def, _clock.TotalHours, key, name, a.Data.traitIds);
+            var entry = ThoughtRules.Add(a.Data.thoughts, def, _clock.TotalHours, key, name, a.Data.traitIds, a.Data.values, a.Data.quirks);
             EventBus.Publish(new ThoughtAddedEvent { Adventurer = a, Thought = entry, Def = def, IsNew = isNew, Inner = isNew ? Inner(a, def, entry, name) : null });
             return entry;
         }
@@ -101,7 +112,7 @@ namespace GuildMaster.Adventurers
                 if (value == 0f) return;
                 list.Add(new ThoughtEntry { id = def.Id, label = ThoughtRules.Fill(def.Label, name), value = value });
             }
-            float Scaled(ThoughtDef def) => def.Mood * ThoughtRules.TraitScale(def.Tone, d.traitIds);
+            float Scaled(ThoughtDef def) => def.Mood * ThoughtRules.TraitScale(def.Tone, d.traitIds, d.values, d.quirks);
 
             Put(ThoughtRules.HeavyHeart, ThoughtRules.HeavyHeartMood(Welfare.StressRules.LevelOf(d.stress)));
             if (d.fatigue >= Welfare.StressRules.OverworkFatigue - 10f) Put(ThoughtRules.Worn, Scaled(ThoughtRules.Worn));
@@ -126,8 +137,43 @@ namespace GuildMaster.Adventurers
                 if (friend != null) Put(ThoughtRules.WithFriend, Scaled(ThoughtRules.WithFriend), friend.Data.name);
                 if (rival != null) Put(ThoughtRules.WithRival, Scaled(ThoughtRules.WithRival), rival.Data.name);
             }
+
+            // Against its nature (P4-104e, CK3): a loner in a crowd, the sociable alone out there, the lazy worn at work, the
+            // diligent idling at home.
+            if (a.IsAlive && a.IsGuildMember && !a.IsVisitor)
+            {
+                bool home = Services.TryGet<World.WorldService>(out var world) && world.Grid.IsInTown(a.Position);
+                int company = home ? 0 : CompanyOut(a);
+                if (Has(d.traitIds, "loner") && company >= 2) Put(ThoughtRules.Crowded, ThoughtRules.Crowded.Mood);
+                if (Has(d.traitIds, "sociable") && !home && company == 0 && IsWorking(a)) Put(ThoughtRules.Lonely, ThoughtRules.Lonely.Mood);
+                if (Has(d.traitIds, "lazy") && !home && d.fatigue >= 40f) Put(ThoughtRules.WantsRest, ThoughtRules.WantsRest.Mood);
+                if (Has(d.traitIds, "diligent") && home && a.IsIdleInTown && d.fatigue < 30f) Put(ThoughtRules.Idle, ThoughtRules.Idle.Mood);
+                // A kind it fears (a quirk) close by.
+                if (d.quirks.Count > 0 && FearedNear(a) is { } feared) Put(ThoughtRules.Afraid, ThoughtRules.Afraid.Mood, feared.Def.displayName);
+            }
             return list;
         }
+
+        static bool Has(IReadOnlyList<string> ids, string id)
+        {
+            if (ids == null) return false;
+            foreach (var t in ids) if (t == id) return true;
+            return false;
+        }
+
+        static readonly List<Adventurer> CompanyBuffer = new();
+
+        /// <summary>How many are out with it (its quest party or hunting band), itself not counted.</summary>
+        static int CompanyOut(Adventurer a)
+            => Services.TryGet<PartyTactics>(out var tactics) ? Mathf.Max(0, tactics.Party(a, CompanyBuffer).Count - 1) : 0;
+
+        static bool IsWorking(Adventurer a)
+            => a.Fsm.Current == a.FreeHuntState || a.Fsm.Current == a.HuntState || a.Fsm.Current == a.TravelState;
+
+        /// <summary>A living monster of a kind it fears, close by (in sight of it).</summary>
+        static Monster FearedNear(Adventurer a)
+            => UnitRegistry.FindNearest(a.Position, QuirkRules.FearSightRadius, a,
+                (u, me) => u is Monster m && m.IsAlive && m.Def != null && QuirkRules.Fears(me.Data.quirks, m.Def.id) && me.CanSee(m)) as Monster;
 
         /// <summary>A member's mood now, 0..100: its thoughts and its situation.</summary>
         public static float MoodOf(Adventurer a)
@@ -191,6 +237,52 @@ namespace GuildMaster.Adventurers
         {
             string by = e.Threat != null ? e.Threat.DisplayName : "적";
             Add(e.Adventurer, ThoughtRules.NearDeath, by, by);
+            // A close call may leave a fear of the kind behind it — or, enough of them, nerves of steel (P4-104e).
+            var a = e.Adventurer;
+            if (a == null || a.Data == null || !a.IsGuildMember || a.IsVisitor) return;
+            a.Data.closeCalls++;
+            string species = (e.Threat as Monster)?.Def?.id;
+            var quirk = QuirkRules.AfterCloseCall(a.Data.quirks, species, a.Data.closeCalls, GameRandom.Shared.Value);
+            if (quirk != null) Gained(a, quirk);
+        }
+
+        /// <summary>A quirk taken: told, and a moment's weight on its mind.</summary>
+        void Gained(Adventurer a, string quirk)
+        {
+            string label = QuirkRules.Label(quirk, SpeciesName);
+            if (quirk.StartsWith(QuirkRules.FearPrefix)) Add(a, ThoughtRules.QuirkGained, quirk, label);
+            EventBus.Publish(new QuirkGainedEvent { Adventurer = a, Quirk = quirk, Label = label });
+        }
+
+        /// <summary>A species' name by its id (for a fear's name).</summary>
+        public static string SpeciesName(string id)
+            => Services.TryGet<Ecosystem.EcosystemManager>(out var eco) ? System.Linq.Enumerable.FirstOrDefault(eco.Species, s => s.id == id)?.displayName ?? id : id;
+
+        /// <summary>
+        /// Taking work against its nature (P4-104e, CK3): the timid, or those who value safety, taking what is 위험 or 무모 for
+        /// them dread it (and it weighs on them as stress too); the brave find a 여유 one dull.
+        /// </summary>
+        void OnAccepted(QuestAcceptedEvent e)
+        {
+            if (e.Taker is not Adventurer a || a.Data == null || e.Quest == null) return;
+            string risk = QuestRisk.RiskLabel(a, e.Quest);
+            bool timid = Has(a.Data.traitIds, "coward") || a.Data.values == "안전";
+            if (timid && (risk == QuestRisk.Risky || risk == QuestRisk.Reckless))
+            {
+                Add(a, ThoughtRules.DreadfulWork, e.Quest.Id, null);
+                a.Data.stress = Mathf.Min(100f, a.Data.stress + DreadStress);
+            }
+            else if (Has(a.Data.traitIds, "brave") && risk == QuestRisk.Easy) Add(a, ThoughtRules.DullWork, e.Quest.Id, null);
+        }
+
+        /// <summary>Stress of taking dreadful work (the long weight beside the day's thought).</summary>
+        public const float DreadStress = 3f;
+
+        /// <summary>A new land seen (P4-102): the adventurous are glad of it, wherever they are.</summary>
+        void OnZone(World.ZoneDiscoveredEvent e)
+        {
+            foreach (var a in new List<Adventurer>(Members()))
+                if (a.Data.values == "모험") Add(a, ThoughtRules.NewLand, null, null);
         }
 
         void OnUnitDied(UnitDiedEvent e)
@@ -212,7 +304,8 @@ namespace GuildMaster.Adventurers
         void OnDragonSighted(Dragons.DragonSightedEvent e)
         {
             foreach (var a in new List<Adventurer>(Members()))
-                if ((a.Position - e.Position).sqrMagnitude <= DragonSightRadius * DragonSightRadius)
+                if ((a.Position - e.Position).sqrMagnitude <= DragonSightRadius * DragonSightRadius
+                    && !QuirkRules.Has(a.Data.quirks, QuirkRules.DragonSurvivor)) // it has lived through worse (P4-104e)
                     Add(a, ThoughtRules.SawDragon, null, null);
         }
 
@@ -238,6 +331,15 @@ namespace GuildMaster.Adventurers
         /// <summary>Hit by a comrade gone berserk (P4-104d).</summary>
         void OnDamaged(UnitDamagedEvent e)
         {
+            // A hard hit from the dragon lived through may leave its calm (P4-104e).
+            if (e.Source is Monster { IsDragon: true } && e.Target is Adventurer burnt && burnt.IsAlive && burnt.IsGuildMember && !burnt.IsVisitor
+                && burnt.HpRatio < QuirkRules.DragonHardHitBelow && !QuirkRules.Has(burnt.Data.quirks, QuirkRules.DragonSurvivor)
+                && GameRandom.Shared.Value < QuirkRules.DragonSurvivorChance)
+            {
+                burnt.Data.quirks.Add(QuirkRules.DragonSurvivor);
+                Gained(burnt, QuirkRules.DragonSurvivor);
+                return;
+            }
             if (e.Source is not Adventurer { Berserk: true } berserker || e.Target is not Adventurer victim || victim == berserker) return;
             Add(victim, ThoughtRules.BerserkVictim, berserker.Data.id, berserker.Data.name);
         }

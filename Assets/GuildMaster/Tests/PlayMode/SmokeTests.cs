@@ -3823,6 +3823,70 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-104e: work against its nature weighs on a member (a timid one taking dreadful work), close calls leave a fear and then
+        /// nerves of steel, a feared kind makes it pull out sooner, and small talk moves two members' feelings (user decision
+        /// 2026-10-21) — twice as much in a social inspiration.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Nature_Quirks_AndSmallTalk_ShapeAMember()
+        {
+            yield return Boot();
+            var m = Roster.Members.Where(a => a.IsAlive).ToList();
+            var eco = Services.Get<EcosystemManager>();
+            var board = Services.Get<QuestBoard>();
+
+            // A timid one taking dreadful work: a thought, and stress beside it.
+            var timid = m[0];
+            if (!timid.Data.traitIds.Contains("coward")) timid.Data.traitIds.Add("coward");
+            var far = eco.Nests.Where(n => n.Population > 0 && !n.IsLair).OrderByDescending(n => n.BirthLevel).First();
+            MakeKnown(far.Species);
+            var dreadful = board.FindById(DebugCommands.PostHunt(far.Species.id, 8, 300, 80, 1, far.WorldPosition.x, far.WorldPosition.y));
+            Assume.That(QuestRisk.RiskLabel(timid, dreadful), Is.EqualTo(QuestRisk.Risky).Or.EqualTo(QuestRisk.Reckless), "dreadful for a Lv1");
+            float stress = timid.Data.stress;
+            Assert.That(board.TryAccept(dreadful, timid, invited: true), Is.True);
+            Assert.That(timid.Data.thoughts.Any(t => t.id == ThoughtRules.DreadfulWork.Id), Is.True, "it dreads it");
+            Assert.That(timid.Data.stress, Is.EqualTo(stress + ThoughtRecorder.DreadStress).Within(0.01f));
+            board.Abandon(dreadful, timid);
+
+            // Close calls: a fear may come, and the fourth turns the nerves to steel.
+            var scarred = m[1];
+            var skull = UnitRegistry.FindNearest(scarred.Position, 999f, u => u is Monster x && x.IsAlive && x.Def != null && !x.Def.isRegionLord && !x.IsDragon) as Monster;
+            Assert.That(skull, Is.Not.Null);
+            var gained = new System.Collections.Generic.List<string>();
+            Action<QuirkGainedEvent> onQuirk = e => { if (e.Adventurer == scarred) gained.Add(e.Quirk); };
+            EventBus.Subscribe(onQuirk);
+            try
+            {
+                for (int i = 0; i < QuirkRules.SteelNervesAfter; i++)
+                    EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = scarred, Threat = skull });
+            }
+            finally { EventBus.Unsubscribe(onQuirk); }
+            Assert.That(scarred.Data.closeCalls, Is.EqualTo(QuirkRules.SteelNervesAfter));
+            Assert.That(scarred.Data.quirks, Is.EquivalentTo(new[] { QuirkRules.SteelNerves }), "nerves of steel, the fears gone");
+            Assert.That(gained, Does.Contain(QuirkRules.SteelNerves), "told");
+
+            // A feared kind: it pulls out sooner when fighting it.
+            var fearful = m[2];
+            float line = fearful.RetreatThreshold;
+            fearful.Data.quirks.Add(QuirkRules.Fear(skull.Def.id));
+            fearful.Engage.SetTarget(skull);
+            Assert.That(fearful.RetreatThreshold, Is.EqualTo(line + QuirkRules.FearRetreatShift).Within(1e-4f));
+            fearful.Engage.Clear();
+
+            // Small talk between the only two idle in town: in a social inspiration, friendly and twice the warmth.
+            var plaza = Services.Get<World.WorldService>().TownCenterWorld;
+            var (x, y) = (m[2], m[3]);
+            foreach (var a in m) { a.Mover.Stop(); a.ChangeState(a.RestState); }
+            foreach (var a in new[] { x, y }) { a.Mover.Warp(plaza + (a == x ? Vector2.zero : Vector2.right)); a.ChangeState(a.IdleState); }
+            Services.Get<MentalBreaks>().Inspire(x, InspirationKind.Social);
+            int xy = Relationships.Get(x, y), yx = Relationships.Get(y, x);
+            Assert.That(Services.Get<BanterService>().TryStart(), Is.True, "a talk");
+            int change = BanterRules.FriendlyChange(x.Data.values == y.Data.values, false) * BreakRules.SocialTalkFactor;
+            Assert.That((Relationships.Get(x, y) - xy, Relationships.Get(y, x) - yx), Is.EqualTo((change, change)));
+            Assert.That(y.Data.thoughts.Any(t => t.id == ThoughtRules.Chat.Id), Is.True, "a pleasant chat");
+        }
+
+        /// <summary>
         /// P4-89 ('귀환 중' stalls since P4-81): a walker that took a shortcut through the east gate and was then pushed off
         /// it, below the gate outside the wall, walked into the wall for hours — it stepped back towards the middle of its
         /// cell and the next frame towards the waypoint again, and the re-plan waited for it to stand still in the middle.

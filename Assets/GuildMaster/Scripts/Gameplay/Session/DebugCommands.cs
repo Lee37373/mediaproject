@@ -1995,12 +1995,12 @@ namespace GuildMaster.Session
             return ok ? $"{a.Data.name}: {a.StateLabel}" : $"{a.Data.name}: nothing fits here ({a.StateLabel})";
         }
 
-        /// <summary>Inspires the member at that roster index now ("Combat" or "Training").</summary>
+        /// <summary>Inspires the member at that roster index now ("Combat", "Training" or "Social").</summary>
         public static string Inspire(int index, string kind = "Combat")
         {
             var members = Services.Get<GuildRoster>().Members;
             if (index < 0 || index >= members.Count) return "no member " + index;
-            if (!System.Enum.TryParse<InspirationKind>(kind, out var k) || k == InspirationKind.None) return "kind: Combat | Training";
+            if (!System.Enum.TryParse<InspirationKind>(kind, out var k) || k == InspirationKind.None) return "kind: Combat | Training | Social";
             Services.Get<MentalBreaks>().Inspire(members[index], k);
             return $"{members[index].Data.name}: {BreakRules.Label(k)} (atk {members[index].Stats.Attack:0.0})";
         }

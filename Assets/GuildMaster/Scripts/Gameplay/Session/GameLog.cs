@@ -164,6 +164,11 @@ namespace GuildMaster.Session
                 Add(e.Ended ? $"[영감] {e.Adventurer.Data.name}의 {BreakRules.Label(e.Kind)}이 지나갔습니다."
                             : $"[영감] {e.Adventurer.Data.name}에게 {BreakRules.Label(e.Kind)}이 떠올랐습니다 ({BreakRules.Effect(e.Kind)}).", LogCategory.Info);
             });
+            // Quirks picked up (P4-104e).
+            EventBus.Subscribe<QuirkGainedEvent>(e =>
+            {
+                if (e.Adventurer != null) Add($"[버릇] {e.Adventurer.Data.name}에게 '{e.Label}' 버릇이 생겼습니다.", LogCategory.Info);
+            });
             // The thoughts that tell a story (P4-104c): a close friend lost, a last stand, a great kill, being let down.
             EventBus.Subscribe<ThoughtAddedEvent>(e =>
             {

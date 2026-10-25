@@ -92,6 +92,17 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Dragons.DragonEnragedEvent>(OnDragonEnraged);
             EventBus.Subscribe<MentalBreakEvent>(OnBreak);
             EventBus.Subscribe<InspirationEvent>(OnInspired);
+            EventBus.Subscribe<QuirkGainedEvent>(OnQuirk);
+        }
+
+        /// <summary>A quirk picked up (P4-104e): a fear is a warning, the others are good news.</summary>
+        void OnQuirk(QuirkGainedEvent e)
+        {
+            if (e.Adventurer == null) return;
+            bool fear = e.Quirk.StartsWith(QuirkRules.FearPrefix);
+            _center.Post(fear ? NotificationKind.Warning : NotificationKind.Success, "버릇",
+                $"{e.Adventurer.Data.name}에게 '{e.Label}' 버릇이 생겼습니다. {QuirkRules.Describe(e.Quirk, ThoughtRecorder.SpeciesName)}",
+                "quirk:" + e.Adventurer.Data.id + ":" + e.Quirk, NotificationLink.Management(e.Adventurer.Data.id));
         }
 
         /// <summary>A member broke (P4-104d). Quitting is told by the roster's side (GuildWelfare.Release).</summary>

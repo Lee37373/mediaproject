@@ -78,7 +78,52 @@ namespace GuildMaster.Adventurers
             if (pair == null) return false;
             var (a, b) = pair.Value;
             Attempts++;
-            return Play(a, b, Pick(BanterLines.Town));
+            // Between two who do not get on, or with an abrasive one, a talk may turn into a quarrel (P4-104e).
+            bool quarrel = GameRandom.Shared.Value < QuarrelChance(a, b);
+            if (!Play(a, b, Pick(quarrel ? BanterLines.Quarrel : BanterLines.Town))) return false;
+            Settle(a, b, quarrel, byTheFire: false);
+            return true;
+        }
+
+        static bool Abrasive(Adventurer x) => x.Data.traitIds.Contains("arrogant") || x.Data.traitIds.Contains("loner");
+
+        /// <summary>In a social inspiration (P4-104e).</summary>
+        static bool Sociable(Adventurer x) => x.Data.inspiration == InspirationKind.Social;
+
+        static float QuarrelChance(Adventurer a, Adventurer b)
+        {
+            // A visitor is on its best behaviour, and nobody has feelings about it yet; one in a sociable mood (P4-104e) does not quarrel.
+            if (a.IsVisitor || b.IsVisitor || Sociable(a) || Sociable(b)) return 0f;
+            int feel = Mathf.Min(Relationships.Get(a, b), Relationships.Get(b, a));
+            return BanterRules.QuarrelChance(feel, a.Data.values == b.Data.values, Abrasive(a) || Abrasive(b));
+        }
+
+        /// <summary>
+        /// What the talk did (P4-104e, user decision 2026-10-21): feelings each way +1~2 for a friendly one, −2~3 for a quarrel, and a
+        /// thought each; with a visitor, its warmth to the guild (counted into the next recruitment talk).
+        /// </summary>
+        static void Settle(Adventurer a, Adventurer b, bool quarrel, bool byTheFire)
+        {
+            if (a.IsVisitor || b.IsVisitor)
+            {
+                var visitor = a.IsVisitor ? a : b;
+                visitor.Data.banterWarmth += quarrel ? BanterRules.VisitorChill : BanterRules.VisitorWarmth;
+                return;
+            }
+            int change = quarrel ? BanterRules.QuarrelChange(Abrasive(a) || Abrasive(b)) : BanterRules.FriendlyChange(a.Data.values == b.Data.values, byTheFire);
+            if (!quarrel && (Sociable(a) || Sociable(b))) change *= BreakRules.SocialTalkFactor;
+            Relationships.Add(a, b, change, quarrel ? "말다툼" : "잡담");
+            Relationships.Add(b, a, change, quarrel ? "말다툼" : "잡담");
+            if (quarrel)
+            {
+                ThoughtRecorder.Give(a, ThoughtRules.Quarrel, b.Data.id, b.Data.name);
+                ThoughtRecorder.Give(b, ThoughtRules.Quarrel, a.Data.id, a.Data.name);
+            }
+            else
+            {
+                ThoughtRecorder.Give(a, ThoughtRules.Chat);
+                ThoughtRecorder.Give(b, ThoughtRules.Chat);
+            }
         }
 
         /// <summary>
@@ -89,7 +134,9 @@ namespace GuildMaster.Adventurers
         {
             if (a == null || b == null || a == b) return false;
             Attempts++;
-            return Play(a, b, Pick(BanterLines.Camp), stillThere);
+            if (!Play(a, b, Pick(BanterLines.Camp), stillThere)) return false;
+            Settle(a, b, quarrel: false, byTheFire: true);
+            return true;
         }
 
         /// <summary>Shows the two lines; false when either is no longer there.</summary>

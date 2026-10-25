@@ -31,6 +31,19 @@ namespace GuildMaster.Adventurers
             ("요즘 마을 밖이 좀 시끄러운 것 같지 않아?", "그러게. 무기 손질이나 해 두자."),
         };
 
+        /// <summary>A talk in town that turns sour (P4-104e): the first line needles, the answer bites back.</summary>
+        public static readonly (string a, string b)[] Quarrel =
+        {
+            ("어제 네 화살, 또 내 등 뒤로 날아오더라.", "그러니까 앞을 막지 말라고 몇 번을 말해!"),
+            ("전리품 나눌 때 네 몫이 좀 많지 않았어?", "뭐? 제일 많이 싸운 게 누군데!"),
+            ("너 코 고는 소리 때문에 한숨도 못 잤어.", "네 이 가는 소리는 어떻고?"),
+            ("의뢰 고르는 눈이 영 없네.", "그럼 네가 골라 보든가."),
+            ("또 물약 빌려 달라고? 저번 것도 안 갚았잖아.", "쩨쩨하게 굴기는."),
+            ("그렇게 겁먹고 도망칠 거면 왜 따라 나왔어?", "살아 돌아온 게 누구 덕인지나 알아."),
+            ("내 장비에 손대지 말랬지.", "누가 손댔다고 그래? 증거 있어?"),
+            ("길드 마스터 앞에서만 착한 척이네.", "질투하는 거야? 말 조심해."),
+        };
+
         /// <summary>By a campfire out in the wild (P4-66).</summary>
         public static readonly (string a, string b)[] Camp =
         {
