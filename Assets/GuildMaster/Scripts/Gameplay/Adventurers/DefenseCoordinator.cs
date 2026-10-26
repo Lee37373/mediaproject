@@ -107,6 +107,8 @@ namespace GuildMaster.Adventurers
             if (a == null || !a.IsAlive || a.IsVisitor) return false;
             var s = a.Fsm.Current;
             if (s == a.DefendState || s == a.DeadState) return false;
+            // Acting out a break (P4-104d): a berserker or two at blows answer nobody's call (it ended the berserk unseen).
+            if (s == a.BreakState) return false;
             // Resting out of weariness in town is no reason to sit out a raid on the town (user
             // report 2026-09-22: only one member fought while the others slept it off).
             if (s == a.RestState && !_world.Grid.IsInTown(a.Position)) return false;

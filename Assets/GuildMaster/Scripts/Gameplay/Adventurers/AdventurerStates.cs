@@ -882,6 +882,8 @@ namespace GuildMaster.Adventurers
             }
             else if (earned > 0) a.Say($"전리품을 팔아 {earned}G를 벌었다.");
             else if (loot > 0) a.Say("길드에 돈이 없다니... 전리품은 내가 들고 있지.");
+            // A good haul brought home (P4-104e: an everyday good thought).
+            if (earned > 0) ThoughtRecorder.Give(a, ThoughtRules.GoodHaul);
 
             var q = a.CurrentQuest;
             if (q != null)
@@ -988,6 +990,7 @@ namespace GuildMaster.Adventurers
 
             if (a.HpRatio >= 0.95f && a.Data.fatigue <= 10f)
             {
+                ThoughtRecorder.Give(a, ThoughtRules.WellRested); // P4-104e
                 if (a.CurrentQuest != null && a.CurrentQuest.IsActive) a.ChangeState(a.TravelState);
                 else a.ChangeState(a.IdleState);
             }

@@ -136,7 +136,7 @@ namespace GuildMaster.Adventurers
         // ---- Inspiration ----
 
         /// <summary>Mood from which a member may be inspired, the chance a game hour, how long it lasts and how long until the next.</summary>
-        public const float InspiredAbove = 80f, InspirationChance = 0.04f, InspirationHours = 24f, InspirationCooldownHours = 48f;
+        public const float InspiredAbove = 75f, InspirationChance = 0.04f, InspirationHours = 24f, InspirationCooldownHours = 48f;
         /// <summary>A combat inspiration's attack, a training one's EXP.</summary>
         public const float CombatAttack = 1.25f, TrainingExp = 1.5f;
 

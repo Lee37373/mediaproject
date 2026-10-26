@@ -76,7 +76,11 @@ namespace GuildMaster.Adventurers
         // A comrade's death, by how the member felt about them (Relationships).
         public static readonly ThoughtDef ComradeDiedClose = Logged(D("died_close", "아끼던 {0}이(가) 죽었다", -20f, 96f, ThoughtTone.People, 1, "({0}... 거짓말이지.)", "({0}, 왜 하필 너야...)"));
         public static readonly ThoughtDef ComradeDiedFriend = D("died_friend", "동료 {0}이(가) 죽었다", -12f, 72f, ThoughtTone.People, 1, "({0}... 편히 쉬어.)");
-        public static readonly ThoughtDef ComradeDied = D("died", "길드원 {0}이(가) 죽었다", -4f, 48f, ThoughtTone.People);
+        /// <summary>
+        /// One it was not close to: a small weight that stacks (held once, not per name) — three deaths in as many days left a
+        /// twenty-strong guild low and sitting work out (P4-104e measure), friends' deaths are their own thoughts.
+        /// </summary>
+        public static readonly ThoughtDef ComradeDied = D("died", "길드원을 잃었다", -2f, 48f, ThoughtTone.People, 3);
         public static readonly ThoughtDef RivalDied = D("died_rival", "싫어하던 {0}이(가) 죽었다", 3f, 48f, ThoughtTone.People);
         public static readonly ThoughtDef SawComradeFall = D("saw_fall", "눈앞에서 {0}이(가) 쓰러졌다", -6f, 24f, ThoughtTone.Fear, 2, "(눈앞에서... {0}이(가)...)");
 
@@ -84,6 +88,9 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef QuestFailed = D("quest_failed", "의뢰에 실패했다", -8f, 24f, ThoughtTone.Plain, 2, "(이게 뭐야, 망했어...)");
         public static readonly ThoughtDef LevelUp = D("level_up", "더 강해졌다", 5f, 12f, ThoughtTone.Plain, 2, "(몸이 가벼워졌어!)");
         public static readonly ThoughtDef NewGear = D("new_gear", "새 장비를 맞췄다", 4f, 24f, ThoughtTone.Gain);
+        // Everyday good things (P4-104e measure: with nothing but quests and level-ups to lift it, mood only ever sank).
+        public static readonly ThoughtDef GoodHaul = D("good_haul", "한몫 챙겨 돌아왔다", 3f, 12f, ThoughtTone.Gain, 2);
+        public static readonly ThoughtDef WellRested = D("well_rested", "푹 쉬었다", 3f, 12f);
         public static readonly ThoughtDef NearDeath = D("near_death", "{0}에게 죽을 뻔했다", -8f, 24f, ThoughtTone.Fear, 2, "(죽는 줄 알았어...)");
         public static readonly ThoughtDef LastStand = Logged(D("last_stand", "구사일생으로 살아났다", -10f, 48f, ThoughtTone.Fear, 1, "(살았다... 진짜 살았어.)"));
         public static readonly ThoughtDef Slew = D("slew", "{0}을(를) 쓰러뜨렸다", 3f, 12f, ThoughtTone.Glory, 3);
@@ -130,7 +137,7 @@ namespace GuildMaster.Adventurers
 
         public static readonly IReadOnlyList<ThoughtDef> All = new[]
         {
-            ComradeDiedClose, ComradeDiedFriend, ComradeDied, RivalDied, SawComradeFall, QuestDone, QuestFailed, LevelUp, NewGear,
+            ComradeDiedClose, ComradeDiedFriend, ComradeDied, RivalDied, SawComradeFall, QuestDone, QuestFailed, LevelUp, NewGear, GoodHaul, WellRested,
             NearDeath, LastStand, Slew, GreatKill, SawDragon, RaidHeld, Trapped, LetItOut, Inspired, Brawled, BerserkVictim,
             DreadfulWork, DullWork, NewLand, QuirkGained, Chat, Quarrel,
             Talked, Bonus, Ignored, FriendLeft,
@@ -256,13 +263,13 @@ namespace GuildMaster.Adventurers
         };
 
         /// <summary>
-        /// Odds that a member this low sits a decision out instead of going to work (pure): none from "보통" up, a quarter when
-        /// low, half on the edge of breaking.
+        /// Odds that a member this low sits a decision out instead of going to work (pure): none from "보통" up, one in ten when
+        /// low, a third on the edge of breaking (P4-104e measure: a quarter when merely low left a grieving guild idle).
         /// </summary>
         public static float SitOutChance(float mood) => LevelOf(mood) switch
         {
-            MoodLevel.Breaking => 0.5f,
-            MoodLevel.Low => 0.25f,
+            MoodLevel.Breaking => 0.35f,
+            MoodLevel.Low => 0.1f,
             _ => 0f,
         };
     }

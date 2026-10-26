@@ -44,6 +44,8 @@ namespace GuildMaster.Adventurers
         public const float DragonSightRadius = 14f;
         /// <summary>A raid held off counts for the members this close to the town's centre.</summary>
         public const float RaidHeldRadius = 30f;
+        /// <summary>Debt from which it weighs on a member.</summary>
+        public const int InDebtFrom = 20;
 
         readonly GameClock _clock;
         readonly GuildRoster _roster;
@@ -119,7 +121,8 @@ namespace GuildMaster.Adventurers
             bool wounded = Legacy.GuildLegacy.WoundedRefusal(a) != null;
             if (wounded) Put(ThoughtRules.Wounded, Scaled(ThoughtRules.Wounded));
             else if (a.IsAlive && a.HpRatio < 0.5f) Put(ThoughtRules.Hurt, Scaled(ThoughtRules.Hurt));
-            if (d.debt > 0) Put(ThoughtRules.InDebt, Scaled(ThoughtRules.InDebt));
+            // Real debt, not the odd meal on the slate (P4-104e: new members arrive owing a few gold).
+            if (d.debt >= InDebtFrom) Put(ThoughtRules.InDebt, Scaled(ThoughtRules.InDebt));
             if (Services.TryGet<Welfare.GuildWelfare>(out var welfare) && welfare.IsOnLeave(a)) Put(ThoughtRules.OnLeave, Scaled(ThoughtRules.OnLeave));
 
             // The company it keeps (its standing party): its best friend there, and the one it likes least.
@@ -214,7 +217,9 @@ namespace GuildMaster.Adventurers
                 int feel = Relationships.Get(m, dead);
                 var def = feel >= 40 ? ThoughtRules.ComradeDiedClose : feel >= Welfare.StressRules.FriendRelation ? ThoughtRules.ComradeDiedFriend
                         : feel <= -40 ? ThoughtRules.RivalDied : ThoughtRules.ComradeDied;
-                Add(m, def, dead.Data.id, dead.Data.name);
+                // One it was not close to is one weight that stacks, not one per name (P4-104e).
+                if (def == ThoughtRules.ComradeDied) Add(m, def, null, null);
+                else Add(m, def, dead.Data.id, dead.Data.name);
                 if ((m.Position - dead.Position).sqrMagnitude <= WitnessRadius * WitnessRadius)
                     Add(m, ThoughtRules.SawComradeFall, dead.Data.id, dead.Data.name);
             }

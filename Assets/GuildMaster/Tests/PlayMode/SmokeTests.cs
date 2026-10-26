@@ -3697,7 +3697,8 @@ namespace GuildMaster.Tests
             Assert.That(ThoughtRecorder.MoodOf(friend), Is.EqualTo(Mathf.Clamp(before + grief, 0f, 100f)).Within(0.01f), "and it weighs on it");
             Assert.That(inner, Does.Contain(member.Data.name), "a thought over its head");
             foreach (var o in others)
-                Assert.That(o.Data.thoughts.Any(t => t.about == member.Data.id && t.id.StartsWith("died")), Is.True, $"{o.Data.name} heard of it");
+                // Close or not, everyone heard of it (one it was not close to is one stacking weight, P4-104e — about nobody).
+                Assert.That(o.Data.thoughts.Any(t => t.id.StartsWith("died") && (t.about == member.Data.id || t.id == ThoughtRules.ComradeDied.Id)), Is.True, $"{o.Data.name} heard of it");
             friend.GainExp(friend.Data.ExpToNextLevel);
             Assert.That(friend.Data.thoughts.Any(t => t.id == ThoughtRules.LevelUp.Id), Is.True, "brighter news too");
             ThoughtRules.Expire(friend.Data.thoughts, Clock.TotalHours + 200f);

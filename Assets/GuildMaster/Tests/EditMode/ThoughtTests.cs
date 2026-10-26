@@ -80,8 +80,8 @@ namespace GuildMaster.Tests
         {
             Assert.That(ThoughtRules.SitOutChance(ThoughtRules.BaseMood), Is.Zero);
             Assert.That(ThoughtRules.SitOutChance(90f), Is.Zero);
-            Assert.That(ThoughtRules.SitOutChance(35f), Is.EqualTo(0.25f));
-            Assert.That(ThoughtRules.SitOutChance(10f), Is.EqualTo(0.5f));
+            Assert.That(ThoughtRules.SitOutChance(35f), Is.EqualTo(0.1f));
+            Assert.That(ThoughtRules.SitOutChance(10f), Is.EqualTo(0.35f));
         }
 
         [Test]
