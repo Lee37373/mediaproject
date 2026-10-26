@@ -203,6 +203,8 @@ namespace GuildMaster.UI
             var nest = eco.Nests.Where(n => n.Discovered && Vector2.Distance(n.WorldPosition, p) < 1.2f)
                 .OrderBy(n => Vector2.Distance(n.WorldPosition, p)).FirstOrDefault();
             if (nest != null) return nest;
+            // A place worth going to the guild knows of (P4-105).
+            if (Services.TryGet<Places.PlaceService>(out var places) && places.PickAt(p, 1.2f) is { } place) return place;
             if (Services.TryGet<GateService>(out var gates) && gates.GateAt(p) is TownGate gate) return gate;
             var cell = World.GridMap.WorldToCell(p);
             // Another village the guild has seen (P4-84): its icon and a little round it.
@@ -234,6 +236,7 @@ namespace GuildMaster.UI
                 case TownGate gate: pos = gate.Center; scale = 2.4f; break;
                 case Villages.Village v: pos = v.WorldPosition + new Vector2(0f, -1.2f); scale = 3f; break;
                 case World.RuinSite r: pos = RuinSpotInView(r); scale = 2f; break;
+                case World.PlaceSite pl: pos = pl.WorldPosition + new Vector2(0f, -0.4f); scale = 1.8f; break;
                 default: _ring.gameObject.SetActive(false); return;
             }
             _ring.gameObject.SetActive(true);
@@ -254,6 +257,7 @@ namespace GuildMaster.UI
                 case Merchant m: ShowMerchant(m); break;
                 case Incidents.Traveller t: ShowTraveller(t); break;
                 case World.RuinSite r: ShowRuin(r); break;
+                case World.PlaceSite pl: ShowPlace(pl); break;
                 case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
             }
@@ -497,6 +501,24 @@ namespace GuildMaster.UI
                 : "아직 알려진 이야기가 없습니다.";
             _body.text = $"{Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(r.Entrance))}\n{state}\n" +
                          Muted("땅 아래로 이어지는 입구입니다. 안은 길드원이 들어가야 보입니다.");
+            RefreshRepairButton();
+        }
+
+        /// <summary>A place worth going to (P4-105): what it is, what it does, and how it stands now.</summary>
+        void ShowPlace(World.PlaceSite p)
+        {
+            _title.text = $"{p.Name()}  {Muted("(장소)")}";
+            var places = Services.Get<Places.PlaceService>();
+            string state = p.Kind switch
+            {
+                World.PlaceKind.OreVein or World.PlaceKind.HerbPatch when !places.IsReady(p)
+                    => $"다시 {(p.Kind == World.PlaceKind.OreVein ? "캘" : "딸")} 수 있기까지 약 {Mathf.CeilToInt(places.HoursUntilReady(p))}시간",
+                World.PlaceKind.OreVein => "캘 수 있습니다.",
+                World.PlaceKind.HerbPatch => "약초가 자라 있습니다.",
+                World.PlaceKind.WatchRuin => places.IsClimbed(p) ? "이미 올라가 둘레를 살폈습니다." : "아직 아무도 올라가 보지 않았습니다.",
+                _ => "",
+            };
+            _body.text = $"{Quests.QuestBoard.DescribeArea(p.WorldPosition)}" + (state.Length > 0 ? $"\n{state}" : "") + $"\n{Muted(Places.PlaceRules.Describe(p.Kind))}";
             RefreshRepairButton();
         }
 

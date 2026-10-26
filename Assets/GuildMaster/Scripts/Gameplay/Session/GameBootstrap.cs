@@ -89,6 +89,8 @@ namespace GuildMaster.Session
             });
             // The ruins' dungeons (P4-85): an underground band above the surface, from its own stream of the seed.
             map = Underground.Extend(map, Seed);
+            // Places worth going to (P4-105), clear of the ruins' ways down: their own stream of the seed, the ground untouched.
+            if (Balance.landforms) PlacePlacement.Lay(map, Seed);
             var world = new WorldService(map);
             Services.Register(world);
 
@@ -113,6 +115,11 @@ namespace GuildMaster.Session
             var zones = AddSystem<ZoneDiscovery>();
             zones.Init(map, fog);
             Services.Register(zones);
+            // P4-105: places worth going to (hot springs, shrines, ore and herbs, old camps, watchtowers) — shown, learnt, kept.
+            var places = AddSystem<Places.PlaceService>();
+            places.Init(map, fog, clock);
+            Services.Register(places);
+            save.Register(places);
 
             // --- Content & economy ---
             var db = GameDatabase.Load();

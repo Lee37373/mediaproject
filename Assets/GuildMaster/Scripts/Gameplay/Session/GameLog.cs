@@ -293,6 +293,9 @@ namespace GuildMaster.Session
             // Zones (P4-102): a stretch of land the guild now knows by name.
             EventBus.Subscribe<World.ZoneDiscoveredEvent>(e => Add(
                 $"[지역] 새 지역 발견: {e.Zone.Name} ({World.ZoneDiscovery.Describe(e.Zone)}, {Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(e.Zone.Heart))})", LogCategory.Info));
+            // Places worth going to (P4-105): found.
+            EventBus.Subscribe<Places.PlaceDiscoveredEvent>(e => Add(
+                $"[장소] 새 장소 발견: {e.Place.Name()} ({Quests.QuestBoard.DescribeArea(e.Place.WorldPosition)})", LogCategory.Info));
             // The deep woods (P4-103): first seen, and a trap sprung where the guild could see it.
             EventBus.Subscribe<World.DeepWoodsSightedEvent>(e => Add(
                 $"[숲] 깊은 숲을 발견했습니다({Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(e.Cell))}). 독 안개와 숨은 덫, 매복하는 둥지가 있는 위험한 숲입니다. 길이 난 숲길로 지나는 것이 안전합니다.", LogCategory.Danger));

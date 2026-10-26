@@ -179,6 +179,9 @@ namespace GuildMaster.World
         /// <summary>Spots kept for villages (P4-102): open ground at road ends in the havens and the quieter zones.</summary>
         public readonly List<Vector2Int> SettlementSites = new();
 
+        /// <summary>Places worth going to (P4-105): hot springs, shrines, ore veins, herb patches, abandoned camps, ruined watchtowers.</summary>
+        public readonly List<PlaceSite> Places = new();
+
         /// <summary>The zone at a cell, or null.</summary>
         public ZoneSite ZoneAt(int x, int y)
         {

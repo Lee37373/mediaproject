@@ -37,6 +37,17 @@ namespace GuildMaster.UI
         static readonly Color EmptyNestColor = new(0.55f, 0.5f, 0.45f);
         static readonly Color LairColor = new(0.85f, 0.2f, 0.6f);
         static readonly Color VillageColor = new(0.95f, 0.9f, 0.6f);
+
+        /// <summary>A place's colour on the minimap (P4-105).</summary>
+        static Color PlaceColor(World.PlaceKind k) => k switch
+        {
+            World.PlaceKind.HotSpring => new Color(0.45f, 0.85f, 0.9f),
+            World.PlaceKind.Shrine => new Color(1f, 0.9f, 0.5f),
+            World.PlaceKind.OreVein => new Color(0.85f, 0.55f, 0.3f),
+            World.PlaceKind.HerbPatch => new Color(0.75f, 0.6f, 0.95f),
+            World.PlaceKind.OldCamp => new Color(0.75f, 0.65f, 0.5f),
+            _ => new Color(0.85f, 0.85f, 0.85f),
+        };
         static readonly Color VillageRuinColor = new(0.4f, 0.38f, 0.36f);
         static readonly Color RumourColor = new(0.85f, 0.45f, 1f, 0.35f);
         /// <summary>Last-seen monsters under the fog (P4-23), grey so they read as memory.</summary>
@@ -243,6 +254,11 @@ namespace GuildMaster.UI
                     if (intel.KnownLordAt(n) != null) { Dot(n.WorldPosition, LairColor, 11f, square: true); continue; }
                     Dot(n.WorldPosition, info.Observed && info.LastCount == 0 ? EmptyNestColor : NestColor, 7f, square: true);
                 }
+
+            // Places worth going to the guild knows of (P4-105), small and faint beside the dens.
+            if (Services.TryGet<Places.PlaceService>(out var places))
+                foreach (var p in places.Known())
+                    Dot(p.WorldPosition, PlaceColor(p.Kind), 6f);
 
             // Other villages the guild has seen (P4-84), as last seen: ruins greyed out.
             if (Services.TryGet<Villages.VillageService>(out var villages))

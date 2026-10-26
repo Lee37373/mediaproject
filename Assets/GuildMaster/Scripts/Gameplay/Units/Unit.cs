@@ -447,7 +447,8 @@ namespace GuildMaster.Units
         public void RestoreUnit(UnitSave s)
         {
             transform.position = new Vector3(s.x, s.y, transform.position.z);
-            Hp = Mathf.Clamp(s.hp, 1f, Stats.MaxHp);
+            // Saved to the hundredth: a unit on its last sliver (under 1) comes back as it was, not topped up to 1.
+            Hp = Mathf.Clamp(s.hp, 0.01f, Stats.MaxHp);
             LastAttackedTime = SaveTime.Abs(s.last_attacked);
             NextAttackTime = SaveTime.Abs(s.next_attack);
             StunnedUntil = SaveTime.Abs(s.stunned_until);

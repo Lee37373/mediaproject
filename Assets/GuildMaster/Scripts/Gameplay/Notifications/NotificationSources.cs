@@ -78,6 +78,7 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
             EventBus.Subscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
             EventBus.Subscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
+            EventBus.Subscribe<Places.PlaceDiscoveredEvent>(OnPlaceFound);
             EventBus.Subscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
             EventBus.Subscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
@@ -148,6 +149,7 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
             EventBus.Unsubscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
             EventBus.Unsubscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
+            EventBus.Unsubscribe<Places.PlaceDiscoveredEvent>(OnPlaceFound);
             EventBus.Unsubscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
             EventBus.Unsubscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
@@ -335,6 +337,11 @@ namespace GuildMaster.Notifications
             => _center.Post(e.Zone.Kind == World.ZoneKind.Pocket ? NotificationKind.Warning : NotificationKind.Info, "새 지역 발견",
                 $"{e.Zone.Name}({World.ZoneDiscovery.Describe(e.Zone)})", "zone:" + e.Zone.Index,
                 NotificationLink.Location(World.GridMap.CellToWorld(e.Zone.Heart)));
+
+        // A place worth going to (P4-105).
+        void OnPlaceFound(Places.PlaceDiscoveredEvent e)
+            => _center.Post(NotificationKind.Info, "새 장소 발견", $"{e.Place.Name()}: {Places.PlaceRules.Describe(e.Place.Kind)}", "place:" + e.Place.Index,
+                NotificationLink.Location(e.Place.WorldPosition));
 
         // The deep woods (P4-103): once, the first time the guild sees them.
         void OnDeepWoods(World.DeepWoodsSightedEvent e)

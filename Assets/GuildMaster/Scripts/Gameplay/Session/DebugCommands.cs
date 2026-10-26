@@ -1980,6 +1980,19 @@ namespace GuildMaster.Session
             return t == null ? "not given" : $"{members[index].Data.name}: {t.label} {ThoughtRules.Weight(t):+0;-0} → 기분 {ThoughtRecorder.MoodOf(members[index]):0}";
         }
 
+        // ---------------- Places worth going to (P4-105) ----------------
+
+        /// <summary>Every place (real values): kind, cell, distance from town, known, gathered/climbed.</summary>
+        public static string Places()
+        {
+            var svc = Services.Get<Places.PlaceService>();
+            var town = Services.Get<World.WorldService>().TownCenterWorld;
+            var sb = new StringBuilder($"places {svc.All.Count}, known {svc.Known().Count()}\n");
+            foreach (var p in svc.All)
+                sb.AppendLine($"#{p.Index} {p.Name()} {p.Cell} {Vector2.Distance(p.WorldPosition, town):0}칸 known={svc.IsKnown(p)} ready={svc.IsReady(p)} climbed={svc.IsClimbed(p)} · {QuestBoard.DescribeArea(p.WorldPosition)}");
+            return sb.ToString();
+        }
+
         // ---------------- Breaks and inspirations (P4-104d) ----------------
 
         /// <summary>Breaks the member at that roster index now: a kind by its enum name ("Berserk", "Brawl"…), or "" for what its mood and place pick.</summary>

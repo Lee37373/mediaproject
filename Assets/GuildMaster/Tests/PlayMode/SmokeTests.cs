@@ -2985,6 +2985,31 @@ namespace GuildMaster.Tests
             Assert.That(AreaRisk.Warning(woodsHunt), Does.Contain("깊은 숲"));
             board.Cancel(woodsHunt);
 
+            // P4-105: a place is learnt (and told, once) when the fog over it lifts, picked out by a click, and a gathering spot
+            // picked clean is kept in the save.
+            var places = Services.Get<Places.PlaceService>();
+            Assert.That(places.All.Count, Is.GreaterThanOrEqualTo(30), "places laid on the map");
+            var ore = places.All.First(p => p.Kind == World.PlaceKind.OreVein && !places.IsKnown(p));
+            int placeTold = 0;
+            Action<Places.PlaceDiscoveredEvent> onPlace = e => { if (e.Place == ore) placeTold++; };
+            EventBus.Subscribe(onPlace);
+            try
+            {
+                fog.Reveal(ore.WorldPosition, 3f);
+                yield return WaitFor(() => placeTold > 0, 3f);
+                yield return new WaitForSecondsRealtime(0.6f);
+            }
+            finally { EventBus.Unsubscribe(onPlace); }
+            Assert.That((placeTold, places.IsKnown(ore)), Is.EqualTo((1, true)), "found and told once");
+            Assert.That(places.PickAt(ore.WorldPosition + new Vector2(0f, 0.5f), 1.2f), Is.SameAs(ore), "a click on it");
+            places.Spend(ore, Places.PlaceRules.RegrowHours);
+            Assert.That(places.IsReady(ore), Is.False);
+            string saved = places.Capture();
+            places.Restore("{}", null);
+            Assert.That(places.IsReady(ore), Is.True);
+            places.Restore(saved, null);
+            Assert.That(places.IsReady(ore), Is.False, "kept in the save");
+
             // A river's crossing (P4-101), off the roads, with water between two points either side of the border beside it.
             World.PassSite pass = default;
             Vector2Int from = default, to = default;

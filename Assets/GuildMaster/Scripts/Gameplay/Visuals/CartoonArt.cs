@@ -9,7 +9,7 @@ namespace GuildMaster.Visuals
     /// outlines, rounded shapes, drawn from signed-distance shapes at 32 px per cell (anti-aliased).
     /// Replaces the 16 px pixel art for trees, rocks, nests and buildings.
     /// </summary>
-    public static class CartoonArt
+    public static partial class CartoonArt
     {
         public const int PixelsPerUnit = 32;
 
