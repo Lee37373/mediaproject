@@ -228,6 +228,11 @@ namespace GuildMaster.Adventurers
                     a.Say(d.Say);
                     a.ChangeState(a.TrainState);
                     return;
+                case AdventurerAction.Visit when d.Place != null:
+                    a.Say(d.Say);
+                    a.PlaceVisitState.Go(a, d.Place);
+                    a.ChangeState(a.PlaceVisitState);
+                    return;
             }
             if (!string.IsNullOrEmpty(d.Say)) a.Say(d.Say);
             a.ChangeState(a.IdleState);

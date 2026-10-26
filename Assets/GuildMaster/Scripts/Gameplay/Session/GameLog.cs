@@ -296,6 +296,12 @@ namespace GuildMaster.Session
             // Places worth going to (P4-105): found.
             EventBus.Subscribe<Places.PlaceDiscoveredEvent>(e => Add(
                 $"[장소] 새 장소 발견: {e.Place.Name()} ({Quests.QuestBoard.DescribeArea(e.Place.WorldPosition)})", LogCategory.Info));
+            EventBus.Subscribe<Places.PlaceVisitedEvent>(e => Add(e.Place.Kind switch
+            {
+                World.PlaceKind.HotSpring => $"[장소] {e.Member.Data.name}: 온천에서 몸을 녹였다 (스트레스·피로 풀림)",
+                World.PlaceKind.Shrine => $"[장소] {e.Member.Data.name}: 신전에서 가호를 받았다 ({Places.PlaceRules.BlessingHours:0}시간 최대 체력 +{(Places.PlaceRules.BlessingHp - 1f) * 100f:0}%)",
+                _ => $"[장소] {e.Member.Data.name}: {e.Place.Name()}에서 {Places.PlaceRules.GatherItemName(e.Place.Kind)} {e.Gathered}개를 챙겼다",
+            }, LogCategory.Info));
             // The deep woods (P4-103): first seen, and a trap sprung where the guild could see it.
             EventBus.Subscribe<World.DeepWoodsSightedEvent>(e => Add(
                 $"[숲] 깊은 숲을 발견했습니다({Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(e.Cell))}). 독 안개와 숨은 덫, 매복하는 둥지가 있는 위험한 숲입니다. 길이 난 숲길로 지나는 것이 안전합니다.", LogCategory.Danger));

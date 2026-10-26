@@ -35,6 +35,8 @@ namespace GuildMaster.Adventurers
         public ThinkLayer Layer;
         public AdventurerAction Action;
         public Quest Quest;
+        /// <summary>Where a visit goes (P4-105b).</summary>
+        public World.PlaceSite Place;
         public float Score;
         /// <summary>What it is, for the "considered" line ("의뢰 '슬라임 토벌'").</summary>
         public string Label;
@@ -42,7 +44,7 @@ namespace GuildMaster.Adventurers
         public string Say;
 
         public AdventurerDecision ToDecision()
-            => new() { Action = Action, QuestId = Quest?.Id, Reason = Reason, Say = Say };
+            => new() { Action = Action, QuestId = Quest?.Id, Place = Place, Reason = Reason, Say = Say };
     }
 
     /// <summary>

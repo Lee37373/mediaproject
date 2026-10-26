@@ -2865,7 +2865,7 @@ namespace GuildMaster.Tests
         /// than its distance says.
         /// </summary>
         [UnityTest]
-        public IEnumerator Landforms_DeepWoodsHurtAndTrap_ARiverIsCrossedAtItsCrossing_AndZonesAreLearnt()
+        public IEnumerator Landforms_DeepWoodsHurtAndTrap_ARiverIsCrossedAtItsCrossing_ZonesAreLearnt_AndPlacesAreGoneTo()
         {
             yield return Boot();
             var world = Services.Get<World.WorldService>();
@@ -3009,6 +3009,74 @@ namespace GuildMaster.Tests
             Assert.That(places.IsReady(ore), Is.True);
             places.Restore(saved, null);
             Assert.That(places.IsReady(ore), Is.False, "kept in the save");
+
+            // P4-105b: going there. Stressed past the urgent line with a safe spring known, a member goes to soak before any work;
+            // a soak eases stress and fatigue, a prayer blesses (more health for a while, then not), a gathering fills the pack
+            // and picks the spot clean.
+            World.PlaceSite Nearest(World.PlaceKind kind)
+            {
+                var p = places.All.Where(s => s.Kind == kind && places.IsReady(s)).OrderBy(s => Vector2.Distance(s.WorldPosition, town)).First();
+                fog.Reveal(p.WorldPosition, 3f);
+                return p;
+            }
+            var spring = Nearest(World.PlaceKind.HotSpring);
+            var shrine = Nearest(World.PlaceKind.Shrine);
+            var herbs = Nearest(World.PlaceKind.HerbPatch);
+            yield return WaitFor(() => places.IsKnown(spring) && places.IsKnown(shrine) && places.IsKnown(herbs), 3f);
+            var team = Roster.Members.Where(m => m.IsAlive).Take(3).ToList();
+            Assert.That(team.Count, Is.EqualTo(3));
+            foreach (var m in team)
+            {
+                m.Data.level = 30; // strong enough for anywhere round those places
+                m.RecalculateStats(fullHeal: true);
+            }
+            var soaker = team[0];
+            (soaker.Data.stress, soaker.Data.fatigue) = (70f, 20f);
+            var decision = RuleBasedDecisionMaker.Decide(soaker, new System.Collections.Generic.List<Quest>());
+            Assert.That(decision.Action, Is.EqualTo(AdventurerAction.Visit), soaker.LastThinking?.Describe());
+            Assert.That((decision.Place.Kind, places.IsKnown(decision.Place)), Is.EqualTo((World.PlaceKind.HotSpring, true)), "stressed: off to a known spring before any work");
+
+            var plan = new[] { (who: soaker, at: spring), (who: team[1], at: shrine), (who: team[2], at: herbs) };
+            soaker.Data.fatigue = 75f; // under F-2's overwork line (80), which would add stress on the way
+            float plainHp = team[1].Stats.MaxHp;
+            int visited = 0;
+            Action<Places.PlaceVisitedEvent> onVisit = e => { if (plan.Any(p => p.who == e.Member && p.at == e.Place)) visited++; };
+            EventBus.Subscribe(onVisit);
+            DebugCommands.Invulnerable(true);
+            var clock = Services.Get<GameClock>();
+            try
+            {
+                foreach (var (who, at) in plan)
+                {
+                    who.Mover.Stop();
+                    who.Mover.Warp(at.WorldPosition + new Vector2(0f, -1.5f));
+                    DebugCommands.PlaceVisit(Roster.Members.ToList().IndexOf(who), place: at.Index);
+                    Assert.That(who.StateLabel, Does.Contain("가는 중"), who.Data.name);
+                }
+                clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+                yield return WaitFor(() => visited >= plan.Length, 40f);
+            }
+            finally
+            {
+                clock.SetSpeed(1);
+                DebugCommands.Invulnerable(false);
+                EventBus.Unsubscribe(onVisit);
+            }
+            Assert.That(visited, Is.EqualTo(plan.Length), DebugCommands.Places());
+            // A little may have come on the walk there (a fight in sight).
+            Assert.That(soaker.Data.stress, Is.LessThan(70f - Places.PlaceRules.SpringStressRelief + 5f), "a soak eases stress");
+            Assert.That(soaker.Data.fatigue, Is.LessThan(75f - Places.PlaceRules.SpringFatigueRelief + 10f), "and fatigue");
+            Assert.That(soaker.Data.thoughts.Any(t => t.id == ThoughtRules.HotSpring.Id), Is.True, "and warms the heart");
+            var blessed = team[1];
+            Assert.That((blessed.IsBlessed, blessed.Stats.MaxHp), Is.EqualTo((true, Mathf.Round(plainHp * Places.PlaceRules.BlessingHp))), "a prayer blesses: more health");
+            Assert.That(blessed.Data.shrineReadyAt, Is.GreaterThan(clock.TotalHours + Places.PlaceRules.BlessingHours), "and not again for a while");
+            int picked = team[2].Data.loot.Where(s => s.itemId == Places.PlaceRules.HerbId).Sum(s => s.count);
+            Assert.That(picked, Is.InRange(Places.PlaceRules.HerbMin, Places.PlaceRules.HerbMax), "herbs in the pack");
+            Assert.That(places.IsReady(herbs), Is.False, "and the patch picked clean");
+            blessed.Data.blessedUntil = clock.TotalHours - 0.01f;
+            typeof(Places.PlaceVisits).GetMethod("OnHour", BindingFlags.NonPublic | BindingFlags.Instance)
+                .Invoke(Services.Get<Places.PlaceVisits>(), new object[] { default(HourPassedEvent) });
+            Assert.That((blessed.IsBlessed, blessed.Stats.MaxHp), Is.EqualTo((false, plainHp)), "the blessing runs out");
 
             // A river's crossing (P4-101), off the roads, with water between two points either side of the border beside it.
             World.PassSite pass = default;

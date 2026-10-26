@@ -90,6 +90,8 @@ namespace GuildMaster.Adventurers
         internal BreakState BreakState;
         /// <summary>Walked off its work but trailing its party home (P4-104d, user decision 2026-10-21).</summary>
         internal TagAlongState TagAlongState;
+        /// <summary>Gone to a place worth going to (P4-105b): a hot spring, a shrine, an ore vein or a herb patch.</summary>
+        internal PlaceVisitState PlaceVisitState;
         /// <summary>Berserk (P4-104d): it goes for anyone near, comrades too, and everyone turns on it.</summary>
         public bool Berserk { get; internal set; }
         /// <summary>The one it is in a fistfight with (P4-104d): hostile to each other only, and no blow wounds.</summary>
@@ -204,6 +206,7 @@ namespace GuildMaster.Adventurers
             RetrievalState = new Legacy.RelicRetrievalState();
             BreakState = new BreakState();
             TagAlongState = new TagAlongState();
+            PlaceVisitState = new PlaceVisitState();
             Looting = new AdventurerLooting(this);
             // Party back line (P4-27): ranged members fall back behind a front-liner while reloading.
             Engage.HoldSpot = target => Services.TryGet<PartyTactics>(out var party) ? party.BackLineSpot(this, target) : null;
@@ -340,6 +343,10 @@ namespace GuildMaster.Adventurers
             return PixelArt.Humanoid(d.id, d.hairColor, d.skinColor, body, accent, legs);
         }
 
+        /// <summary>Under a shrine's blessing (P4-105b): more health until it ends.</summary>
+        public bool IsBlessed => Data != null && Data.blessedUntil > 0f
+                                 && Data.blessedUntil > (_clock != null ? _clock.TotalHours : Services.TryGet<GameClock>(out var c) ? c.TotalHours : 0f);
+
         public void RecalculateStats(bool fullHeal = false)
         {
             float ratio = Stats.MaxHp > 0 ? HpRatio : 1f;
@@ -351,6 +358,13 @@ namespace GuildMaster.Adventurers
             {
                 var s = Stats;
                 s.Attack *= BreakRules.CombatAttack;
+                Stats = s;
+            }
+            // A shrine's blessing (P4-105b) while it lasts.
+            if (IsBlessed)
+            {
+                var s = Stats;
+                s.MaxHp = Mathf.Round(s.MaxHp * Places.PlaceRules.BlessingHp);
                 Stats = s;
             }
             if (fullHeal) ResetVitals();
@@ -819,7 +833,7 @@ namespace GuildMaster.Adventurers
         {
             IdleState, DecidingState, TravelState, HuntState, FreeHuntState, EscortState, GatherState, DefendState,
             ReturnState, VisitState, RestState, CampState, DeadState, VisitorWanderState, VisitorLeaveState, LureState,
-            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState, TrainState, TakeCoverState, BreakState, TagAlongState,
+            TownGuardState, RetrievalState, VillageCandidateState, RefugeeState, TrainState, TakeCoverState, BreakState, TagAlongState, PlaceVisitState,
         };
 
         /// <summary>One of this member's states by class name (saved states refer to each other this way), or null.</summary>

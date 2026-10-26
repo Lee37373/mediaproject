@@ -15,11 +15,11 @@ namespace GuildMaster.Adventurers
     {
         public static IEnumerable<IThinkSource> Standard() => new IThinkSource[]
         {
-            new RestSource(), new PotionSource(), new GearSource(),
+            new RestSource(), new PotionSource(), new GearSource(), new PlacesSource(urgent: true),
             new HoldSource(), new MoodSource(),
             new QuestSource(),
             new TrainingSource(),
-            new HuntSource(),
+            new HuntSource(), new PlacesSource(urgent: false),
             new IdleSource(),
         };
 
@@ -169,6 +169,72 @@ namespace GuildMaster.Adventurers
                 {
                     Action = AdventurerAction.Hunt, Score = 1f, Label = "자율 사냥",
                     Reason = "의뢰가 없으니 직접 사냥하자", Say = "의뢰가 없으면 직접 나가야지.",
+                });
+            }
+        }
+
+        /// <summary>
+        /// The places worth going to (P4-105b, G3's smart objects: each advertises what it does). With no quest to take: a soak
+        /// when stressed, tired or low (<see cref="Places.PlaceRules.WantsSpring"/>) and a prayer when low or valuing safety or
+        /// honour come before a hunt; gathering comes first for a newcomer, one valuing safety or a diligent one, and is what the
+        /// rest do on a day they stay off the hunt. Stressed past <see cref="Places.PlaceRules.UrgentSpringStress"/> it goes
+        /// to soak before any work (the urgent source, in the body layer). Only places the guild knows, safe and close enough
+        /// for it (<see cref="Places.PlaceVisits.Best"/>); not a standing party's leader with others waiting on it, unless urgent.
+        /// </summary>
+        sealed class PlacesSource : IThinkSource
+        {
+            readonly bool _urgent;
+
+            public PlacesSource(bool urgent) => _urgent = urgent;
+
+            public ThinkLayer Layer => _urgent ? ThinkLayer.Body : ThinkLayer.Roam;
+
+            public void Offer(Adventurer a, IReadOnlyList<Quest> available, List<ThinkOption> into)
+            {
+                if (a == null || a.Data == null || !a.IsGuildMember || a.IsVisitor
+                    || !Services.TryGet<Places.PlaceVisits>(out var visits) || !Services.TryGet<GameClock>(out var clock)) return;
+                var d = a.Data;
+                if (_urgent)
+                {
+                    // The body layer comes before the reasons to stay in: on leave or badly wounded it stays.
+                    if (!Places.PlaceRules.NeedsSpring(d.stress) || Places.PlaceVisits.SoakedLately(a)
+                        || Services.TryGet<Welfare.GuildWelfare>(out var welfare) && welfare.IsOnLeave(a)
+                        || Legacy.GuildLegacy.WoundedRefusal(a) != null) return;
+                    Add(into, visits.Best(a, World.PlaceKind.HotSpring), Places.PlaceRules.UrgentSpringScore,
+                        "마음이 너무 무겁다. 온천에서 좀 풀어야겠다", "온천에 좀 다녀올게...");
+                    return;
+                }
+                if (LeadsOthers(a)) return;
+                float mood = ThoughtRecorder.MoodOf(a);
+                if (Places.PlaceRules.WantsSpring(d.stress, d.fatigue, mood) && !Places.PlaceVisits.SoakedLately(a))
+                    Add(into, visits.Best(a, World.PlaceKind.HotSpring), Places.PlaceRules.SpringScore,
+                        "지쳤으니 온천에 몸을 담그자", "온천에 다녀와야겠다.");
+                if (Places.PlaceRules.WantsShrine(mood, d.values, clock.TotalHours, d.shrineReadyAt))
+                    Add(into, visits.Best(a, World.PlaceKind.Shrine), Places.PlaceRules.ShrineScore,
+                        "신전에 가서 가호를 빌자", "신전에 기도하러 가야지.");
+                // The nearer of an ore vein and a herb patch.
+                var ore = visits.Best(a, World.PlaceKind.OreVein);
+                var herb = visits.Best(a, World.PlaceKind.HerbPatch);
+                var gather = ore == null ? herb
+                           : herb == null ? ore
+                           : (ore.WorldPosition - a.Position).sqrMagnitude <= (herb.WorldPosition - a.Position).sqrMagnitude ? ore : herb;
+                float score = Places.PlaceRules.GathersFirst(a.IsNewcomer, d.values, d.traitIds)
+                    ? Places.PlaceRules.GatherFirstScore : Places.PlaceRules.GatherScore;
+                if (gather != null)
+                    Add(into, gather, score, gather.Kind == World.PlaceKind.OreVein ? "광맥에서 철광석을 캐 오자" : "약초를 따 오자",
+                        gather.Kind == World.PlaceKind.OreVein ? "광맥에 다녀올게." : "약초 좀 따 올게.");
+            }
+
+            /// <summary>A standing party's leader with others in it: they wait on it, so it does not wander off.</summary>
+            static bool LeadsOthers(Adventurer a)
+                => Services.TryGet<GuildParties>(out var parties) && parties.PartyOf(a) is { } p && p.Leader == a && p.Members.Count > 1;
+
+            static void Add(List<ThinkOption> into, World.PlaceSite place, float score, string reason, string say)
+            {
+                if (place == null) return;
+                into.Add(new ThinkOption
+                {
+                    Action = AdventurerAction.Visit, Place = place, Score = score, Label = place.Name(), Reason = reason, Say = say,
                 });
             }
         }

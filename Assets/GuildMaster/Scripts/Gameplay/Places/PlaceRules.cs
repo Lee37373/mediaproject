@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using GuildMaster.World;
+using UnityEngine;
 
 namespace GuildMaster.Places
 {
@@ -36,6 +38,61 @@ namespace GuildMaster.Places
         public const float MaxDistanceFromTown = 200f;
         /// <summary>Not where the young are born more than this many levels above its power.</summary>
         public const int LevelMargin = 2;
+        /// <summary>A walk there that has taken this many hours is given up.</summary>
+        public const float GiveUpHours = 16f;
+
+        // ---- Choosing (P4-105b): against the think tree's other options ----
+        /// <summary>
+        /// In the roam layer, against a hunt's 1: a soak or a prayer it wants comes first, gathering comes first for those who
+        /// would rather (<see cref="GathersFirst"/>) and is otherwise what a day not spent hunting is spent on.
+        /// </summary>
+        public const float SpringScore = 1.5f, ShrineScore = 1.3f, GatherFirstScore = 1.2f, GatherScore = 0.6f;
+        /// <summary>Stressed this much, it goes to soak before any work (the body layer, after rest 1, a potion 0.9, gear 0.8).</summary>
+        public const float UrgentSpringStress = 60f, UrgentSpringScore = 0.7f;
+
+        public static bool WantsSpring(float stress, float fatigue, float mood)
+            => stress >= SpringStressFrom || fatigue >= SpringFatigueFrom || mood < SpringMoodBelow;
+
+        public static bool NeedsSpring(float stress) => stress >= UrgentSpringStress;
+
+        /// <summary>Low, or one who values safety or honour — and its last prayer far enough back.</summary>
+        public static bool WantsShrine(float mood, string values, float now, float readyAt)
+            => now >= readyAt && (mood < ShrineMoodBelow || values is "안전" or "명예");
+
+        /// <summary>A newcomer, one who values safety, a diligent one: gathering before hunting.</summary>
+        public static bool GathersFirst(bool newcomer, string values, IEnumerable<string> traitIds)
+        {
+            if (newcomer || values == "안전") return true;
+            if (traitIds != null) foreach (var t in traitIds) if (t == "diligent") return true;
+            return false;
+        }
+
+        /// <summary>Close enough to town, and nothing born there much stronger than it.</summary>
+        public static bool SafeFor(int birthLevel, float power, float distanceFromTown, float reach = MaxDistanceFromTown)
+            => distanceFromTown <= Mathf.Min(reach, MaxDistanceFromTown) && birthLevel <= power + LevelMargin;
+
+        public static bool IsGathering(PlaceKind k) => k is PlaceKind.OreVein or PlaceKind.HerbPatch;
+
+        public static string GatherItem(PlaceKind k) => k == PlaceKind.OreVein ? OreId : HerbId;
+
+        public const string OreId = "iron_ore";
+
+        public static string GatherItemName(PlaceKind k) => k == PlaceKind.OreVein ? "철광석" : "약초";
+
+        /// <summary>How much one gathering brings home (<paramref name="roll01"/> in [0, 1)).</summary>
+        public static int GatherCount(PlaceKind k, float roll01)
+        {
+            var (min, max) = k == PlaceKind.OreVein ? (OreMin, OreMax) : (HerbMin, HerbMax);
+            return Mathf.Clamp(min + Mathf.FloorToInt(roll01 * (max - min + 1)), min, max);
+        }
+
+        /// <summary>Game hours spent there once arrived.</summary>
+        public static float Hours(PlaceKind k) => k switch
+        {
+            PlaceKind.HotSpring => SpringHours,
+            PlaceKind.Shrine => ShrineHours,
+            _ => GatherHours,
+        };
 
         /// <summary>What the place is and does, for the inspector.</summary>
         public static string Describe(PlaceKind k) => k switch

@@ -44,6 +44,8 @@ namespace GuildMaster.Adventurers
         public int closeCalls;
         /// <summary>A visitor's warmth from small talk with members, added to its recruitment affinity when the guild master next talks to it (P4-104e).</summary>
         public int banterWarmth;
+        /// <summary>A shrine's blessing (P4-105b): game hour it ends (0 = none), and the hour from which it may pray again.</summary>
+        public float blessedUntil, shrineReadyAt;
         /// <summary>Titles earned (P4-83: "모래 폭군 카르샤를 쓰러뜨린 자" for taking part in a region lord's fall).</summary>
         public List<string> titles = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>

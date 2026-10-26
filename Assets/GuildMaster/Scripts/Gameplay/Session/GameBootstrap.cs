@@ -333,6 +333,10 @@ namespace GuildMaster.Session
             save.Register(welfare);
             // Mental breaks and inspirations (P4-104d): from mood, apart from F-2's stress.
             Services.Register(new MentalBreaks(clock, roster));
+            // Members at the places worth going to (P4-105b): a soak, a prayer, a gathering; the end of a blessing.
+            var placeVisits = AddSystem<Places.PlaceVisits>();
+            placeVisits.Init(places, clock, roster, world);
+            Services.Register(placeVisits);
             // Members' keep (P4-68): meals at midnight, lodging while resting in town, unpaid goes on the slate.
             var living = new LivingCosts(roster, treasury, world, Balance.dailyMealGold, Balance.lodgingGoldPerHour);
             Services.Register(living);

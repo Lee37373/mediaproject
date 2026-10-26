@@ -30,9 +30,16 @@ namespace GuildMaster.UI
         public static string Inspiration(Adventurer a, float now)
         {
             var d = a.Data;
-            if (d.inspiration == InspirationKind.None) return "";
-            int left = Mathf.Max(1, Mathf.CeilToInt(d.inspirationUntil - now));
-            return " · " + UIBuilder.Colored($"{BreakRules.Label(d.inspiration)} {left}시간", UITheme.Accent);
+            string s = "";
+            if (d.inspiration != InspirationKind.None)
+            {
+                int left = Mathf.Max(1, Mathf.CeilToInt(d.inspirationUntil - now));
+                s += " · " + UIBuilder.Colored($"{BreakRules.Label(d.inspiration)} {left}시간", UITheme.Accent);
+            }
+            // A shrine's blessing (P4-105b).
+            if (d.blessedUntil > now)
+                s += " · " + UIBuilder.Colored($"가호 {Mathf.Max(1, Mathf.CeilToInt(d.blessedUntil - now))}시간", UITheme.Good);
+            return s;
         }
 
         /// <summary>One thought: its weight, words, stacks and the hours it still lasts (none for a situational one).</summary>

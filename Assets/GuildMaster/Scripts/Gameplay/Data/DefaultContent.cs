@@ -50,6 +50,8 @@ namespace GuildMaster.Data
             Item(Monsters.RareMonster.TrophyId, "빛나는 정수", ItemCategory.Material, 150, new Color(1f, 0.9f, 0.45f));
             // A ruin's treasure (P4-85, Incidents.IncidentRules.AddTreasure).
             Item(Incidents.IncidentRules.RelicId, "고대 유물", ItemCategory.Material, 250, new Color(0.8f, 0.7f, 0.95f));
+            // Picked at a herb patch (P4-105b, Places.PlaceRules): the apothecary makes potions of it too.
+            Item(Places.PlaceRules.HerbId, "약초", ItemCategory.Material, 5, new Color(0.45f, 0.75f, 0.35f));
 
             // Monster use (P4-21): what monsters wear when they find these, and the one unique item.
             rustyDagger.equipSlot = EquipSlot.Weapon; rustyDagger.monsterAttackBonus = 2f;
@@ -479,6 +481,8 @@ namespace GuildMaster.Data
             }
 
             R("potion", Potion, Town.BuildingType.Apothecary, 1, 2f, 5, I("slime_jelly", 2));
+            // P4-105b: the same potion from the herb patches' herbs.
+            R("herb_potion", Potion, Town.BuildingType.Apothecary, 1, 2f, 5, I(Places.PlaceRules.HerbId, 3));
             // P4-94 (user decision: made at the apothecary): from the near ring's drops, as cheap as a potion to make.
             R("flare", Flares.FlareRules.ItemId, Town.BuildingType.Apothecary, 1, 2f, 5, I("slime_jelly", 1), I("stone_shard", 1));
             // P5-1: tier 1 used to need a rusty dagger, which only 20% of goblins carry — a new guild

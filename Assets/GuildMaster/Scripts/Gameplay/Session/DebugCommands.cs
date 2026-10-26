@@ -1990,7 +1990,47 @@ namespace GuildMaster.Session
             var sb = new StringBuilder($"places {svc.All.Count}, known {svc.Known().Count()}\n");
             foreach (var p in svc.All)
                 sb.AppendLine($"#{p.Index} {p.Name()} {p.Cell} {Vector2.Distance(p.WorldPosition, town):0}칸 known={svc.IsKnown(p)} ready={svc.IsReady(p)} climbed={svc.IsClimbed(p)} · {QuestBoard.DescribeArea(p.WorldPosition)}");
+            // Who is at one now, and who is blessed (P4-105b).
+            float now = Services.Get<GameClock>().TotalHours;
+            foreach (var a in Services.Get<GuildRoster>().Members)
+            {
+                if (a == null || !a.IsAlive) continue;
+                bool visiting = a.Fsm.Current == a.PlaceVisitState;
+                if (!visiting && a.Data.blessedUntil <= now) continue;
+                sb.AppendLine($"{a.Data.name}: {a.StateLabel}{(visiting && a.PlaceVisitState.Place != null ? $" (#{a.PlaceVisitState.Place.Index})" : "")}"
+                              + (a.Data.blessedUntil > now ? $" · 가호 {a.Data.blessedUntil - now:0.#}시간 HP {a.Stats.MaxHp:0}" : ""));
+            }
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Sends the member at that roster index to a place now (P4-105b): by its index in <see cref="Places"/>, or -1 for the
+        /// nearest known of <paramref name="kind"/> ("HotSpring", "Shrine", "OreVein", "HerbPatch") it would go to. <paramref name="learn"/>
+        /// makes the guild know the place first.
+        /// </summary>
+        public static string PlaceVisit(int index, string kind = "HotSpring", int place = -1, bool learn = true)
+        {
+            var members = Services.Get<GuildRoster>().Members;
+            if (index < 0 || index >= members.Count) return "no member " + index;
+            var a = members[index];
+            var svc = Services.Get<Places.PlaceService>();
+            World.PlaceSite p;
+            if (place >= 0)
+            {
+                if (place >= svc.All.Count) return "no place " + place;
+                p = svc.All[place];
+            }
+            else
+            {
+                if (!System.Enum.TryParse<World.PlaceKind>(kind, out var k)) return "kind: " + string.Join(" | ", System.Enum.GetNames(typeof(World.PlaceKind)));
+                p = Services.Get<Places.PlaceVisits>().Best(a, k);
+                if (p == null) return $"{a.Data.name}: no known {kind} it would go to";
+            }
+            if (learn && !svc.IsKnown(p)) Services.Get<Fog.FogOfWar>().Reveal(p.WorldPosition, 3f);
+            a.CurrentQuest = null;
+            a.PlaceVisitState.Go(a, p);
+            a.ChangeState(a.PlaceVisitState);
+            return $"{a.Data.name} → #{p.Index} {p.Name()} {Vector2.Distance(a.Position, p.WorldPosition):0}칸: {a.StateLabel}";
         }
 
         // ---------------- Breaks and inspirations (P4-104d) ----------------

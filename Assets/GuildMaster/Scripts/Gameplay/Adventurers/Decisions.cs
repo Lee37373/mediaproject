@@ -9,12 +9,15 @@ using UnityEngine;
 
 namespace GuildMaster.Adventurers
 {
-    public enum AdventurerAction { AcceptQuest, Rest, Shop, Idle, Hunt, Train }
+    /// <summary>Visit (P4-105b): to a place worth going to (a hot spring, a shrine, a gathering spot).</summary>
+    public enum AdventurerAction { AcceptQuest, Rest, Shop, Idle, Hunt, Train, Visit }
 
     public struct AdventurerDecision
     {
         public AdventurerAction Action;
         public string QuestId;
+        /// <summary>Where a <see cref="AdventurerAction.Visit"/> goes.</summary>
+        public World.PlaceSite Place;
         public string Reason;
         public string Say;
 
