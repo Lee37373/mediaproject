@@ -138,6 +138,72 @@ namespace GuildMaster.Places
             return got;
         }
 
+        // ---------------- On the way (P4-105c) ----------------
+
+        /// <summary>The nearest known abandoned camp within <see cref="PlaceRules.OldCampReach"/> of a band about to make camp, or null.</summary>
+        public PlaceSite OldCampNear(Vector2 at)
+        {
+            if (_places == null) return null;
+            PlaceSite best = null;
+            float bestD = PlaceRules.OldCampReach;
+            foreach (var p in _places.Known(PlaceKind.OldCamp))
+            {
+                float d = Vector2.Distance(p.WorldPosition, at);
+                if (d > bestD) continue;
+                bestD = d;
+                best = p;
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// The known ruined watchtower nobody has climbed yet that a scouting band goes for first, or null: within its reach of
+        /// the town, the nearest to it, away from <paramref name="avoid"/>.
+        /// </summary>
+        public PlaceSite TowerToClimb(Vector2 from, float reach, Vector2? avoid = null, float avoidRadius = 0f)
+        {
+            if (_places == null) return null;
+            var town = _world.TownCenterWorld;
+            PlaceSite best = null;
+            float bestD = float.MaxValue;
+            foreach (var p in _places.Known(PlaceKind.WatchRuin))
+            {
+                if (_places.IsClimbed(p) || Vector2.Distance(p.WorldPosition, town) > Mathf.Min(reach, PlaceRules.MaxDistanceFromTown)) continue;
+                if (avoid != null && Vector2.Distance(p.WorldPosition, avoid.Value) < avoidRadius) continue;
+                float d = Vector2.Distance(p.WorldPosition, from);
+                if (d >= bestD) continue;
+                bestD = d;
+                best = p;
+            }
+            return best;
+        }
+
+        /// <summary>An unclimbed watchtower this close to where a scout stands, or null.</summary>
+        public PlaceSite TowerAt(Vector2 at, float within = 3f)
+        {
+            if (_places == null) return null;
+            foreach (var p in _places.Known(PlaceKind.WatchRuin))
+                if (!_places.IsClimbed(p) && Vector2.Distance(p.WorldPosition, at) <= within) return p;
+            return null;
+        }
+
+        /// <summary>
+        /// Up the tower: the land <see cref="PlaceRules.TowerSightRadius"/> round is seen at once (only the first time), and
+        /// <paramref name="who"/> and those with it are glad of the view.
+        /// </summary>
+        public void Climb(Adventurer who, PlaceSite tower, IEnumerable<Adventurer> with = null)
+        {
+            if (who == null || tower == null || _places.IsClimbed(tower)) return;
+            _places.MarkClimbed(tower);
+            if (Services.TryGet<Fog.FogOfWar>(out var fog)) fog.Reveal(tower.WorldPosition, PlaceRules.TowerSightRadius);
+            ThoughtRecorder.Give(who, ThoughtRules.Lookout);
+            if (with != null)
+                foreach (var m in with)
+                    if (m != null && m != who && m.IsAlive && m.IsGuildMember) ThoughtRecorder.Give(m, ThoughtRules.Lookout);
+            who.Say("저 멀리까지 다 보인다!");
+            EventBus.Publish(new PlaceVisitedEvent { Member = who, Place = tower });
+        }
+
         /// <summary>A blessing run out: its health goes back to what it was.</summary>
         void OnHour(HourPassedEvent e)
         {

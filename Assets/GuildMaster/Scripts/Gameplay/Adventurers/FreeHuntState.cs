@@ -236,7 +236,12 @@ namespace GuildMaster.Adventurers
             // whenever the terrain it discovers forces the walk to redraw its route, it re-aims at
             // once instead of trudging on along a plan made of guesses.
             var spot = Spot(a);
-            if (Reached(a, spot)) { spot = PickSpot(); _surprises = 0; }
+            if (Reached(a, spot))
+            {
+                ClimbTowerAt(a, spot);
+                spot = PickSpot();
+                _surprises = 0;
+            }
             bool surprised = a.Mover.RouteCorrections != _correctionsAtAim;
             if (a.Mover.IsMoving && !surprised) return;
             _roamTimer -= dt;
@@ -261,6 +266,13 @@ namespace GuildMaster.Adventurers
             float d = Vector2.Distance(a.Position, spot);
             if (d < SpotReached) return true;
             return !a.Mover.IsMoving && d < 7f && !Services.Get<WorldService>().Grid.IsWalkable(GridMap.WorldToCell(spot));
+        }
+
+        /// <summary>At a watchtower it made for (P4-105c): up it goes, and the band with it sees the view.</summary>
+        void ClimbTowerAt(Adventurer a, Vector2 spot)
+        {
+            if (!_scouting || !Services.TryGet<Places.PlaceVisits>(out var visits) || visits.TowerAt(spot) is not { } tower) return;
+            visits.Climb(a, tower, _band?.Members);
         }
 
         /// <summary>
@@ -431,7 +443,12 @@ namespace GuildMaster.Adventurers
                 }
             }
 
-            if (!found)
+            // A ruined watchtower the guild knows and nobody has climbed yet (P4-105c): the scouts make for it first — from its
+            // top the land round is seen at once.
+            if (!found && Services.TryGet<Places.PlaceVisits>(out var visits)
+                       && visits.TowerToClimb(a.Position, _reach, avoid, _reach * 0.3f) is { } tower)
+                chosen = tower.WorldPosition;
+            else if (!found)
             {
                 // Scouting: uniform in distance from town, so the near rings get walked too, and
                 // among the tries the one with the least explored ground around it (P4-64) — the

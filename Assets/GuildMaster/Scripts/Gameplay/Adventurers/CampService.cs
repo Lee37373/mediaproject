@@ -41,6 +41,8 @@ namespace GuildMaster.Adventurers
         public Campfire Fire;
         /// <summary>Comrades that found no way to the fire (P4-78): they are not called to it again.</summary>
         public readonly HashSet<Adventurer> CannotReach = new();
+        /// <summary>The abandoned camp it was made at (P4-105c): its firelight draws fewer raiders. Null for a fire in the open.</summary>
+        public World.PlaceSite OldCamp;
 
         public Adventurer Leader => Members.Count > 0 ? Members[0] : null;
         public bool Sitting(float hour) => hour < SitUntilHour;
@@ -113,6 +115,8 @@ namespace GuildMaster.Adventurers
             public float quiet_since;
             public bool talked;
             public int raids;
+            /// <summary>The abandoned camp's index plus one (P4-105c); 0 = in the open, as in older saves.</summary>
+            public int old_camp;
         }
 
         [System.Serializable]
@@ -139,7 +143,7 @@ namespace GuildMaster.Adventurers
                 {
                     id = c.Id, position = c.Position, reason = c.Reason, pitched = c.PitchedAtHour, sit_until = c.SitUntilHour,
                     watcher = c.Watcher != null ? c.Watcher.Data.id : null, alarmed = c.Alarmed, quiet_since = SaveTime.Rel(c.QuietSince),
-                    talked = c.Talked, raids = c.Raids,
+                    talked = c.Talked, raids = c.Raids, old_camp = c.OldCamp != null ? c.OldCamp.Index + 1 : 0,
                 };
                 foreach (var m in c.Members)
                 {
@@ -177,6 +181,8 @@ namespace GuildMaster.Adventurers
                     Id = sc.id, Position = sc.position, Reason = sc.reason, PitchedAtHour = sc.pitched, SitUntilHour = sc.sit_until,
                     Watcher = ctx.Find<Adventurer>(sc.watcher), Alarmed = sc.alarmed, QuietSince = SaveTime.Abs(sc.quiet_since),
                     Talked = sc.talked, Raids = sc.raids,
+                    OldCamp = sc.old_camp > 0 && Services.TryGet<Places.PlaceService>(out var places) && sc.old_camp <= places.All.Count
+                        ? places.All[sc.old_camp - 1] : null,
                 };
                 for (int i = 0; i < sc.members.Count; i++)
                 {
@@ -386,7 +392,11 @@ namespace GuildMaster.Adventurers
         {
             if (group == null || group.Count == 0) return false;
             var leader = group[0];
-            if (!PickSpot(leader.Position, out var spot)) return false;
+            // For the night, an abandoned camp the guild knows close by (P4-105c): the fire is lit again in its old ring.
+            var oldCamp = reason == CampReason.Night && Services.TryGet<Places.PlaceVisits>(out var visits) ? visits.OldCampNear(leader.Position) : null;
+            Vector2 spot;
+            if (oldCamp != null) spot = oldCamp.WorldPosition;
+            else if (!PickSpot(leader.Position, out spot)) return false;
             float hour = _clock.TotalHours;
             var camp = new Camp
             {
@@ -395,6 +405,7 @@ namespace GuildMaster.Adventurers
                 Reason = reason,
                 PitchedAtHour = hour,
                 SitUntilHour = hour + CampRules.SitHours,
+                OldCamp = oldCamp,
             };
             camp.Fire = _pool.Spawn<Campfire>(Campfire.PoolKey, spot);
             camp.Fire.Light();
@@ -409,7 +420,13 @@ namespace GuildMaster.Adventurers
                 m.Engage.Clear();
                 m.ChangeState(m.CampState);
             }
-            leader.Say(PitchLine(reason, group.Count == 1));
+            if (oldCamp != null)
+            {
+                foreach (var m in group) ThoughtRecorder.Give(m, ThoughtRules.CosyCamp);
+                leader.Say("버려진 야영지가 있네. 오늘은 저기서 묵자.");
+                EventBus.Publish(new Places.PlaceVisitedEvent { Member = leader, Place = oldCamp });
+            }
+            else leader.Say(PitchLine(reason, group.Count == 1));
             EventBus.Publish(new CampPitchedEvent { Camp = camp });
             return true;
         }
@@ -428,6 +445,8 @@ namespace GuildMaster.Adventurers
         {
             var s = m.Fsm.Current;
             if (s == m.ReturnState && m.ReturnState.ResumeAfter != null) return m.ReturnState.ResumeAfter;
+            // On the way to a place (P4-105b): on there in the morning.
+            if (s == m.PlaceVisitState && m.PlaceVisitState.Place != null) return m.PlaceVisitState;
             bool onQuest = (s == m.TravelState || s == m.HuntState) && m.CurrentQuest != null && m.CurrentQuest.IsActive;
             return onQuest ? m.TravelState : m.ReturnState;
         }
@@ -581,6 +600,12 @@ namespace GuildMaster.Adventurers
                 var camper = NearestCamper(camp, m);
                 if (camper == null || !m.IsHostileTo(camper)) continue;
                 if (!_world.CanSee(m.Position, camp.Position, radius)) continue;
+                // An abandoned camp's ring hides the fire some (P4-105c): of those that would come, only so many do.
+                if (camp.OldCamp != null && !GameRandom.Shared.Chance(Places.PlaceRules.OldCampRaidFactor))
+                {
+                    _drawnUntil[m] = now + DrawnCooldown;
+                    continue;
+                }
                 if (!m.DrawnToFirelight(camper)) continue;
                 _drawnUntil[m] = now + DrawnCooldown;
                 MonstersDrawn++;

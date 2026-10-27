@@ -783,7 +783,8 @@ namespace GuildMaster.Session
             foreach (var c in service.Camps)
             {
                 sb.AppendLine($"  #{c.Id} {c.Reason} {Quests.QuestBoard.DescribeArea(c.Position)} {clock.TotalHours - c.PitchedAtHour:0.0}h " +
-                              $"sitting={c.Sitting(clock.TotalHours)} watch={c.Watcher?.Data.name ?? "-"} alarmed={c.Alarmed} raids={c.Raids} talked={c.Talked}");
+                              $"sitting={c.Sitting(clock.TotalHours)} watch={c.Watcher?.Data.name ?? "-"} alarmed={c.Alarmed} raids={c.Raids} talked={c.Talked}" +
+                              (c.OldCamp != null ? $" oldCamp=#{c.OldCamp.Index}" : ""));
                 foreach (var m in c.Members)
                     sb.AppendLine($"    {m.Data.name} {m.StateLabel} hp={m.HpRatio:P0} fat={m.Data.fatigue:0} → {c.ResumeTo[m]?.Label}");
             }

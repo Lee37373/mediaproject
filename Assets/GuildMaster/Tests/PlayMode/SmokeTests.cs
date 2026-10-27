@@ -3078,6 +3078,39 @@ namespace GuildMaster.Tests
                 .Invoke(Services.Get<Places.PlaceVisits>(), new object[] { default(HourPassedEvent) });
             Assert.That((blessed.IsBlessed, blessed.Stats.MaxHp), Is.EqualTo((false, plainHp)), "the blessing runs out");
 
+            // P4-105c: a known watchtower nobody has climbed is a scout's first goal; from its top the land round is seen. A night's
+            // camp near a known abandoned camp is made in its old ring (kept in the save), and one on the way to a place goes on
+            // there in the morning.
+            var placeVisits = Services.Get<Places.PlaceVisits>();
+            var tower = Nearest(World.PlaceKind.WatchRuin);
+            yield return WaitFor(() => places.IsKnown(tower), 3f);
+            Assert.That(placeVisits.TowerToClimb(town, 1000f), Is.SameAs(tower), "the nearest known tower not yet climbed");
+            var far = tower.WorldPosition + new Vector2(Places.PlaceRules.TowerSightRadius - 3f, 0f);
+            bool farSeen = fog.IsExploredRaw(World.GridMap.WorldToCell(far));
+            var climber = team[2];
+            placeVisits.Climb(climber, tower);
+            Assert.That(places.IsClimbed(tower), Is.True);
+            Assert.That(fog.IsExploredRaw(World.GridMap.WorldToCell(far)), Is.True, $"the land round is seen (it was {(farSeen ? "" : "not ")}before)");
+            Assert.That(climber.Data.thoughts.Any(t => t.id == ThoughtRules.Lookout.Id), Is.True, "and the view lifts the climber");
+            Assert.That(placeVisits.TowerToClimb(town, 1000f), Is.Not.SameAs(tower), "climbed once is enough");
+
+            var oldCamp = Nearest(World.PlaceKind.OldCamp);
+            yield return WaitFor(() => places.IsKnown(oldCamp), 3f);
+            var camper = team[0];
+            int camperIndex = Roster.Members.ToList().IndexOf(camper);
+            camper.Mover.Stop();
+            camper.Mover.Warp(oldCamp.WorldPosition + new Vector2(8f, 0f));
+            DebugCommands.PlaceVisit(camperIndex, place: spring.Index);
+            DebugCommands.CampNow(camperIndex, night: true);
+            var camps = Services.Get<CampService>();
+            var campHere = camps.CampOf(camper);
+            Assert.That(campHere, Is.Not.Null, DebugCommands.Camps());
+            Assert.That((campHere.OldCamp, campHere.Position), Is.EqualTo((oldCamp, oldCamp.WorldPosition)), "made in the old camp's ring");
+            Assert.That(campHere.ResumeTo[camper], Is.SameAs(camper.PlaceVisitState), "on to the spring in the morning");
+            Assert.That(camper.Data.thoughts.Any(t => t.id == ThoughtRules.CosyCamp.Id), Is.True);
+            Assert.That(camps.Capture(), Does.Contain($"\"old_camp\":{oldCamp.Index + 1}"), "kept in the save");
+            camper.ChangeState(camper.ReturnState);
+
             // A river's crossing (P4-101), off the roads, with water between two points either side of the border beside it.
             World.PassSite pass = default;
             Vector2Int from = default, to = default;

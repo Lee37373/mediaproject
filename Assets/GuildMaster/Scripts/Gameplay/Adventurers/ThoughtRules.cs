@@ -116,6 +116,8 @@ namespace GuildMaster.Adventurers
         // Places worth going to (P4-105b).
         public static readonly ThoughtDef HotSpring = D("hot_spring", "온천에서 몸을 녹였다", 8f, 36f, ThoughtTone.Plain, 1, "(아... 살 것 같다.)");
         public static readonly ThoughtDef Blessed = D("blessed", "신의 가호를 받았다", 6f, 48f, ThoughtTone.Plain, 1, "(마음이 한결 편해졌어.)");
+        public static readonly ThoughtDef CosyCamp = D("cosy_camp", "버려진 야영지에서 아늑하게 밤을 보냈다", 3f, 12f);
+        public static readonly ThoughtDef Lookout = D("lookout", "감시탑에서 멀리 내다봤다", 2f, 12f, ThoughtTone.Plain, 1, "(저 멀리까지 다 보여!)");
 
         // The guild master's care (F-2).
         public static readonly ThoughtDef Talked = D("talked", "길드 마스터가 이야기를 들어 주었다", 5f, 24f, ThoughtTone.People);
@@ -143,7 +145,7 @@ namespace GuildMaster.Adventurers
         {
             ComradeDiedClose, ComradeDiedFriend, ComradeDied, RivalDied, SawComradeFall, QuestDone, QuestFailed, LevelUp, NewGear, GoodHaul, WellRested,
             NearDeath, LastStand, Slew, GreatKill, SawDragon, RaidHeld, Trapped, LetItOut, Inspired, Brawled, BerserkVictim,
-            DreadfulWork, DullWork, NewLand, QuirkGained, Chat, Quarrel, HotSpring, Blessed,
+            DreadfulWork, DullWork, NewLand, QuirkGained, Chat, Quarrel, HotSpring, Blessed, CosyCamp, Lookout,
             Talked, Bonus, Ignored, FriendLeft,
             HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival, Crowded, Lonely, WantsRest, Idle, Afraid,
         };

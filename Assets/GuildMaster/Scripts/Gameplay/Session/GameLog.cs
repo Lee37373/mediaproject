@@ -300,6 +300,8 @@ namespace GuildMaster.Session
             {
                 World.PlaceKind.HotSpring => $"[장소] {e.Member.Data.name}: 온천에서 몸을 녹였다 (스트레스·피로 풀림)",
                 World.PlaceKind.Shrine => $"[장소] {e.Member.Data.name}: 신전에서 가호를 받았다 ({Places.PlaceRules.BlessingHours:0}시간 최대 체력 +{(Places.PlaceRules.BlessingHp - 1f) * 100f:0}%)",
+                World.PlaceKind.WatchRuin => $"[장소] {e.Member.Data.name}: 폐허 감시탑에 올라 둘레 {Places.PlaceRules.TowerSightRadius:0}칸을 살폈다",
+                World.PlaceKind.OldCamp => $"[장소] {e.Member.Data.name}의 일행: 버려진 야영지에 불을 피웠다",
                 _ => $"[장소] {e.Member.Data.name}: {e.Place.Name()}에서 {Places.PlaceRules.GatherItemName(e.Place.Kind)} {e.Gathered}개를 챙겼다",
             }, LogCategory.Info));
             // The deep woods (P4-103): first seen, and a trap sprung where the guild could see it.
