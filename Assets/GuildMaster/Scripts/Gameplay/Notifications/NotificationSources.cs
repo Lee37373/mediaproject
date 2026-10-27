@@ -79,6 +79,7 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
             EventBus.Subscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
             EventBus.Subscribe<Places.PlaceDiscoveredEvent>(OnPlaceFound);
+            EventBus.Subscribe<Guild.GuildRankChangedEvent>(OnRankUp);
             EventBus.Subscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
             EventBus.Subscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
@@ -150,6 +151,7 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
             EventBus.Unsubscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
             EventBus.Unsubscribe<Places.PlaceDiscoveredEvent>(OnPlaceFound);
+            EventBus.Unsubscribe<Guild.GuildRankChangedEvent>(OnRankUp);
             EventBus.Unsubscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
             EventBus.Unsubscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
@@ -342,6 +344,11 @@ namespace GuildMaster.Notifications
         void OnPlaceFound(Places.PlaceDiscoveredEvent e)
             => _center.Post(NotificationKind.Info, "새 장소 발견", $"{e.Place.Name()}: {Places.PlaceRules.Describe(e.Place.Kind)}", "place:" + e.Place.Index,
                 NotificationLink.Location(e.Place.WorldPosition));
+
+        // The guild's rank (P4-106): each step up, with what it opened.
+        void OnRankUp(Guild.GuildRankChangedEvent e)
+            => _center.Post(NotificationKind.Success, $"길드 {Guild.GuildRankRules.Name(e.Rank)} 달성", Guild.GuildRankRules.Rewards(e.Rank),
+                "rank:" + e.Rank, NotificationLink.GuildRank());
 
         // The deep woods (P4-103): once, the first time the guild sees them.
         void OnDeepWoods(World.DeepWoodsSightedEvent e)

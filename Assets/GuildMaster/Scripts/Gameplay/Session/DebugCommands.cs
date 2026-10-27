@@ -2034,6 +2034,29 @@ namespace GuildMaster.Session
             return $"{a.Data.name} → #{p.Index} {p.Name()} {Vector2.Distance(a.Position, p.WorldPosition):0}칸: {a.StateLabel}";
         }
 
+        // ---------------- Guild rank (P4-106) ----------------
+
+        /// <summary>The guild's rank and fame, the next rank's conditions with where they stand, and the latest fame.</summary>
+        public static string Rank()
+        {
+            var rank = Services.Get<Guild.GuildRankService>();
+            var s = rank.Standing;
+            var sb = new StringBuilder($"rank {rank.Rank} fame {rank.Fame} victory={rank.Victory} visitor+{rank.VisitorBonus} interval×{rank.VisitInterval:0.##}\n");
+            sb.AppendLine($"quests {s.QuestsDone} recruits {s.Recruits} upgrades {s.Upgrades} nests {s.NestsCleared} zones {s.ZonesKnown} species {s.SpeciesKnown} raids {s.RaidsHeld} facilities {s.Facilities} lords {s.LordsSlain}");
+            foreach (var g in rank.NextGoals)
+                sb.AppendLine($"  {rank.Next}: {g.Label} {Guild.GuildRankRules.Progress(g, s)}/{g.Count}");
+            foreach (var h in rank.History.Skip(System.Math.Max(0, rank.History.Count - 8)))
+                sb.AppendLine($"  {h.hour:0.0}h {h.amount:+0;-0} {h.reason}");
+            return sb.ToString();
+        }
+
+        /// <summary>Fame up or down by hand (the ranks are checked as usual).</summary>
+        public static string Fame(int amount, string reason = "디버그")
+        {
+            Services.Get<Guild.GuildRankService>().AddFame(amount, reason);
+            return Rank();
+        }
+
         // ---------------- Breaks and inspirations (P4-104d) ----------------
 
         /// <summary>Breaks the member at that roster index now: a kind by its enum name ("Berserk", "Brawl"…), or "" for what its mood and place pick.</summary>

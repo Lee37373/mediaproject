@@ -78,10 +78,14 @@ namespace GuildMaster.UI
             inspector.Build(HudLayer);
             Services.Register(inspector);
 
+            // The next rank's conditions (P4-106), under the side menu and beneath the windows.
+            const float MenuHeight = 456f;
+            HudLayer.gameObject.AddComponent<GoalPanelView>().Build(HudLayer, new Vector2(8, -60 - MenuHeight - 10));
+
             WindowLayer = UIBuilder.Rect(HudLayer, "Windows").Stretch();
 
             var menu = UIBuilder.Rect(HudLayer, "SideMenu");
-            menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, 410));
+            menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, MenuHeight));
             UIBuilder.VLayout(menu, 6, 0);
 
             AddWindow<QuestBoardView>(menu, "의뢰 게시판 (Q)", Key.Q, new Vector2(1180, 680));
@@ -95,6 +99,8 @@ namespace GuildMaster.UI
             AddWindow<DailyReportView>(menu, "정산 (L)", Key.L, new Vector2(960, 760));
             // The wall of the fallen: relics to fetch, memorials (F-6).
             AddWindow<MemorialView>(menu, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
+            // The guild's rank and fame (P4-106).
+            AddWindow<GuildRankView>(menu, "길드 등급 (G)", Key.G, new Vector2(900, 720));
             // Notification list (F-1); the side-menu button shows the unread count (kept up to date by ToastLayer).
             var notificationView = AddWindow<NotificationView>(null, null, Key.N, new Vector2(820, 560));
             var notificationButton = UIBuilder.Button(menu, "알림 (N)", () => Focus(notificationView), -1, 40);
@@ -119,7 +125,7 @@ namespace GuildMaster.UI
             toasts.MenuButton = notificationButton;
             toasts.Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
-            // All four region lords down (P4-83): the victory; play goes on.
+            // The guild reaching rank S — the four region lords among its conditions (P4-83, P4-106): the victory; play goes on.
             HudLayer.gameObject.AddComponent<VictoryView>().Build(HudLayer);
             // Menus (P4-10): pause (ESC) and title over the world, settings above both.
             _pause = HudLayer.gameObject.AddComponent<PauseMenuView>();

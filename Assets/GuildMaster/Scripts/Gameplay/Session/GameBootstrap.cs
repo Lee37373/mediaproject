@@ -371,6 +371,11 @@ namespace GuildMaster.Session
             merchant.Init(clock, world, market);
             Services.Register(merchant);
             save.Register(merchant);
+            // The guild's fame and rank (P4-106, H1): after everything whose events it counts; S is the victory.
+            var rank = AddSystem<Guild.GuildRankService>();
+            rank.Init(clock, roster, treasury, loading: load != null);
+            Services.Register(rank);
+            save.Register(rank);
 
             // --- Camera ---
             var cam = SetupCamera(world);

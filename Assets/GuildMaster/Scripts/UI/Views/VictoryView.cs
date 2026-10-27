@@ -12,8 +12,9 @@ using UnityEngine.UI;
 namespace GuildMaster.UI
 {
     /// <summary>
-    /// The victory (P4-83, user decision 2026-10-16): all four region lords down. The game holds while it is shown;
-    /// "계속하기" carries on in the same world (endless play), "타이틀로" leaves.
+    /// The victory (P4-83, user decision 2026-10-16): all four region lords down — since P4-106 (user decision 2026-10-27) as
+    /// the guild's rank S, whose conditions include them. The game holds while it is shown; "계속하기" carries on in the same
+    /// world (endless play), "타이틀로" leaves.
     /// </summary>
     public class VictoryView : MonoBehaviour
     {
@@ -30,28 +31,35 @@ namespace GuildMaster.UI
             box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(620, 470));
             UIBuilder.VLayout(box, 12, 24).childAlignment = TextAnchor.UpperCenter;
             UIBuilder.Label(box.transform, "승리!", 36, TextAnchor.MiddleCenter, UITheme.Accent, FontStyle.Bold).Size(-1, 52);
-            UIBuilder.Label(box.transform, "네 지대의 군주를 모두 쓰러뜨렸습니다.", 19, TextAnchor.MiddleCenter).Size(-1, 30);
+            UIBuilder.Label(box.transform, "S등급 길드 — 네 지대의 군주를 모두 쓰러뜨렸습니다.", 19, TextAnchor.MiddleCenter).Size(-1, 30);
             _stats = UIBuilder.Label(box.transform, "", 15, TextAnchor.UpperCenter, UITheme.TextMuted).Size(-1, 210);
             _stats.horizontalOverflow = HorizontalWrapMode.Wrap;
             UIBuilder.Button(box.transform, "계속하기", Continue, -1, 44, new Color(0.25f, 0.45f, 0.3f), 18)
                 .Tooltip(() => "같은 세계에서 계속 플레이합니다. 정화된 땅은 그대로 비어 갑니다.");
             UIBuilder.Button(box.transform, "타이틀로", () => GameSettings.ReloadScene(showTitle: true), -1, 40, null, 17);
             _root.gameObject.SetActive(false);
-            EventBus.Subscribe<AllLordsSlainEvent>(Show);
+            EventBus.Subscribe<Guild.GuildRankChangedEvent>(OnRank);
         }
 
         void OnDestroy()
         {
-            EventBus.Unsubscribe<AllLordsSlainEvent>(Show);
+            EventBus.Unsubscribe<Guild.GuildRankChangedEvent>(OnRank);
             if (_holding && Services.TryGet<GameClock>(out var clock)) clock.Release();
         }
 
-        void Show(AllLordsSlainEvent e)
+        void OnRank(Guild.GuildRankChangedEvent e)
+        {
+            if (e.Rank == Guild.GuildRank.S) Show();
+        }
+
+        void Show()
         {
             var sb = new StringBuilder();
             int done = Services.TryGet<QuestBoard>(out var board) ? board.History.Count(q => q.Status == QuestStatus.TurnedIn) : 0;
             int members = Services.TryGet<GuildRoster>(out var roster) ? roster.Members.Count : 0;
-            sb.AppendLine($"{e.Day}일차 · 길드원 {members}명 · 완료한 의뢰 {done}건");
+            int today = Services.TryGet<GameClock>(out var now) ? now.Day : 0;
+            int fame = Services.TryGet<Guild.GuildRankService>(out var rank) ? rank.Fame : 0;
+            sb.AppendLine($"{today}일차 · 명성 {fame} · 길드원 {members}명 · 완료한 의뢰 {done}건");
             sb.AppendLine();
             if (Services.TryGet<RegionLordService>(out var lords))
                 foreach (var l in lords.Lords)

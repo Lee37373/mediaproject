@@ -168,7 +168,8 @@ namespace GuildMaster.Recruitment
                 SpawnVisitor();
             }
             if (_clock.TotalHours < _nextVisitHour) return;
-            _nextVisitHour = _clock.TotalHours + GameRandom.Shared.Range(MinIntervalHours, MaxIntervalHours);
+            // A known guild draws them more often (P4-106).
+            _nextVisitHour = _clock.TotalHours + GameRandom.Shared.Range(MinIntervalHours, MaxIntervalHours) * Guild.GuildRankService.RankVisitInterval;
             _visitors.RemoveAll(v => v == null);
             if (RegularVisitors >= MaxConcurrent) return;
             SpawnVisitor();
@@ -193,8 +194,8 @@ namespace GuildMaster.Recruitment
         public Adventurer SpawnVisitor()
         {
             var rng = GameRandom.Shared;
-            // A higher guild hall attracts more experienced visitors (P4-1).
-            int bonus = Services.TryGet<Town.UpgradeService>(out var upgrades) ? upgrades.VisitorLevelBonus : 0;
+            // A higher guild hall attracts more experienced visitors (P4-1), and so does the guild's rank (P4-106: both).
+            int bonus = (Services.TryGet<Town.UpgradeService>(out var upgrades) ? upgrades.VisitorLevelBonus : 0) + Guild.GuildRankService.RankVisitorBonus;
             int level = Mathf.Max(1, 1 + (_clock.Day - 1) / 4 + rng.Range(-1, 2) + bonus);
             var data = AdventurerGenerator.Generate(rng, level);
             var gates = _world.Map.Gates;

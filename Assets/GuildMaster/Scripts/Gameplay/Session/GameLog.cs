@@ -296,6 +296,9 @@ namespace GuildMaster.Session
             // Places worth going to (P4-105): found.
             EventBus.Subscribe<Places.PlaceDiscoveredEvent>(e => Add(
                 $"[장소] 새 장소 발견: {e.Place.Name()} ({Quests.QuestBoard.DescribeArea(e.Place.WorldPosition)})", LogCategory.Info));
+            // The guild's rank (P4-106).
+            EventBus.Subscribe<Guild.GuildRankChangedEvent>(e => Add(
+                $"[등급] 길드가 {Guild.GuildRankRules.Name(e.Rank)}이 되었습니다! {Guild.GuildRankRules.Rewards(e.Rank)}", LogCategory.Quest));
             EventBus.Subscribe<Places.PlaceVisitedEvent>(e => Add(e.Place.Kind switch
             {
                 World.PlaceKind.HotSpring => $"[장소] {e.Member.Data.name}: 온천에서 몸을 녹였다 (스트레스·피로 풀림)",

@@ -874,7 +874,7 @@ namespace GuildMaster.Tests
         /// is the victory: the game holds on the victory screen until "계속하기".
         /// </summary>
         [UnityTest]
-        public IEnumerator RegionLords_HoldTheirLairs_TheirFallSealsTheLand_AndAllFourAreTheVictory()
+        public IEnumerator RegionLords_HoldTheirLairs_TheirFallSealsTheLand_AndAllFourMakeTheGuildsRankSTheVictory()
         {
             yield return Boot();
             var lords = Services.Get<RegionLordService>();
@@ -944,9 +944,17 @@ namespace GuildMaster.Tests
                 var trophy = first.Def.loot.First(e => e.item.uniqueEffect == "lord_trophy").item;
                 Assert.That(Services.Get<Items.GroundItemService>().Items.Any(g => g.Item == trophy), Is.True, "its trophy lies where it fell");
 
-                // The other three: the victory, and the game holds until the player carries on.
+                // The other three — each fall is fame — and with them the last condition of the guild's rank S, which is the
+                // victory (P4-106, user decision 2026-10-27): not before the guild has climbed to it; then the game holds
+                // until the player carries on.
                 for (int i = 1; i < lords.Lords.Count; i++) DebugCommands.KillLord(i, 0);
-                Assert.That(lords.Victory, Is.True);
+                Assert.That(lords.Victory, Is.True, "all four fell");
+                var rank = Services.Get<Guild.GuildRankService>();
+                Assert.That(rank.Fame, Is.GreaterThanOrEqualTo(lords.Lords.Count * Guild.GuildRankRules.LordSlain), "each fall is fame");
+                Assert.That((rank.Victory, Clock.IsHeld), Is.EqualTo((false, false)), "a guild short of S has not won yet");
+                typeof(Guild.GuildRankService).GetProperty(nameof(Guild.GuildRankService.Rank)).SetValue(rank, Guild.GuildRank.A); // as if it had climbed
+                rank.AddFame(Guild.GuildRankRules.GoalsFor(Guild.GuildRank.S)[0].Count, "시험");
+                Assert.That(rank.Rank, Is.EqualTo(Guild.GuildRank.S), "fame and the four lords: S");
                 var view = UnityEngine.Object.FindFirstObjectByType<VictoryView>(FindObjectsInactive.Include);
                 Assert.That(view, Is.Not.Null);
                 Assert.That(Clock.IsHeld, Is.True, "the victory screen holds the game");
@@ -954,6 +962,72 @@ namespace GuildMaster.Tests
                 Assert.That(Clock.IsHeld, Is.False, "and play goes on");
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+        }
+
+        /// <summary>
+        /// The guild's rank (P4-106, user decisions 2026-10-27): a new guild is F; the tutorial — a first quest done, a first
+        /// recruit, a first upgrade — is the first rank, which pays the town's grant and is told; fame comes from what the guild
+        /// does and goes with a member's death, but a rank once reached is kept; a known guild draws stronger visitors.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator GuildRank_TheTutorialIsTheFirstRank_FameComesAndGoes_AndARankIsKept()
+        {
+            yield return Boot();
+            var rank = Services.Get<Guild.GuildRankService>();
+            Assert.That((rank.Rank, rank.Fame), Is.EqualTo((Guild.GuildRank.F, 0)), "a new guild");
+            var ups = new System.Collections.Generic.List<Guild.GuildRank>();
+            Action<Guild.GuildRankChangedEvent> onRank = e => ups.Add(e.Rank);
+            EventBus.Subscribe(onRank);
+            try
+            {
+                // A first quest done.
+                var board = Services.Get<QuestBoard>();
+                var nest = Services.Get<EcosystemManager>().Nests.First(n => n.Population >= 2 && !n.IsLair);
+                MakeKnown(nest.Species);
+                var quest = board.FindById(DebugCommands.PostHunt(nest.Species.id, 99, 40, 10, 1, nest.WorldPosition.x, nest.WorldPosition.y));
+                var taker = Roster.Members.First(a => a.IsAlive && a.CurrentQuest == null);
+                Assert.That(board.TryAccept(quest, taker), Is.True);
+                taker.CurrentQuest = quest;
+                foreach (var m in nest.Members.ToList()) if (m.IsAlive) m.Perish();
+                yield return WaitFor(() => rank.QuestsDone > 0, 5f);
+                Assert.That((rank.QuestsDone, rank.Fame), Is.EqualTo((1, Guild.GuildRankRules.QuestFame(quest.Danger))), "a quest done is fame");
+                Assert.That(rank.NextGoals.Count, Is.EqualTo(3));
+
+                // A first recruit.
+                Roster.Recruit(AdventurerGenerator.Generate(GameRandom.Shared, 1), Services.Get<World.WorldService>().TownCenterWorld);
+                Assert.That((rank.Recruits, rank.Rank), Is.EqualTo((1, Guild.GuildRank.F)), "the tutorial two-thirds done");
+
+                // A first upgrade: the first rank, the town's grant paid, and told.
+                var upgrades = Services.Get<Town.UpgradeService>();
+                var hall = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall);
+                var cost = upgrades.NextLevel(hall);
+                var treasury = Services.Get<Economy.GuildTreasury>();
+                treasury.AddGold(cost.goldCost);
+                foreach (var c in cost.itemCosts) treasury.AddStock(c.itemId, c.count);
+                int gold = treasury.Gold;
+                Assert.That(upgrades.TryUpgrade(hall, out var error), Is.True, error);
+                Assert.That(rank.Rank, Is.EqualTo(Guild.GuildRank.E), DebugCommands.Rank());
+                Assert.That(ups, Is.EqualTo(new[] { Guild.GuildRank.E }));
+                Assert.That(treasury.Gold, Is.EqualTo(gold - cost.goldCost + Guild.GuildRankRules.Grant(Guild.GuildRank.E)), "the town's grant");
+                Assert.That(Services.Get<Notifications.NotificationCenter>().Entries.Any(n => n.Title.Contains("E등급")), Is.True, "told");
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[등급]")), Is.True, "and logged");
+
+                // A member's death costs fame (never below zero), never the rank.
+                int fame = rank.Fame;
+                var lost = Roster.Members.First(a => a.IsAlive && a != taker);
+                Services.Get<Legacy.GuildLegacy>().ForcedRoll = 1f; // no last stand
+                lost.ReceiveDamage(lost.Hp + 999f, null, false);
+                Assert.That(rank.Fame, Is.EqualTo(Mathf.Max(0, fame + Guild.GuildRankRules.MemberDied)));
+                Assert.That(rank.Rank, Is.EqualTo(Guild.GuildRank.E), "a rank once reached is kept");
+                Assert.That(rank.History.Last().reason, Does.Contain(lost.Data.name));
+
+                // A known guild draws stronger visitors, and more often.
+                int plain = Guild.GuildRankService.RankVisitorBonus;
+                typeof(Guild.GuildRankService).GetProperty(nameof(Guild.GuildRankService.Rank)).SetValue(rank, Guild.GuildRank.C);
+                Assert.That(Guild.GuildRankService.RankVisitorBonus, Is.EqualTo(plain + Guild.GuildRankRules.VisitorBonus(Guild.GuildRank.C)));
+                Assert.That(Guild.GuildRankService.RankVisitInterval, Is.LessThan(1f));
+            }
+            finally { EventBus.Unsubscribe(onRank); }
         }
 
         /// <summary>

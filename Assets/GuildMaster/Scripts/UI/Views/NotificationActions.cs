@@ -67,6 +67,9 @@ namespace GuildMaster.UI
                 case NotificationTarget.Proposals:
                     Show<QuestProposalView>();
                     break;
+                case NotificationTarget.GuildRank:
+                    Show<GuildRankView>();
+                    break;
                 case NotificationTarget.Memorial:
                 {
                     if (!Services.TryGet<MemorialView>(out var wall)) break;

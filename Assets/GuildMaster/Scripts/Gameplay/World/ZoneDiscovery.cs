@@ -31,6 +31,17 @@ namespace GuildMaster.World
 
         public bool IsKnown(ZoneSite zone) => zone != null && _known != null && zone.Index < _known.Length && _known[zone.Index];
 
+        /// <summary>Zones the guild knows, the town's own fields included (P4-106: a rank condition).</summary>
+        public int KnownCount
+        {
+            get
+            {
+                int n = 0;
+                if (_known != null) foreach (bool k in _known) if (k) n++;
+                return n;
+            }
+        }
+
         /// <summary>The zone at a world point, if the guild knows it.</summary>
         public ZoneSite KnownAt(Vector2 world)
         {

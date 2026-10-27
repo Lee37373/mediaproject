@@ -246,7 +246,8 @@ namespace GuildMaster.Villages
         {
             var rng = GameRandom.Shared;
             // As our own town's visitors (VisitorService) but born to the land round the village.
-            int bonus = Services.TryGet<Town.UpgradeService>(out var upgrades) ? upgrades.VisitorLevelBonus : 0;
+            // The guild hall's and the guild's rank's (P4-106, user decision: both).
+            int bonus = (Services.TryGet<Town.UpgradeService>(out var upgrades) ? upgrades.VisitorLevelBonus : 0) + Guild.GuildRankService.RankVisitorBonus;
             int townLevel = Mathf.Max(1, 1 + (_clock.Day - 1) / 4 + bonus);
             int level = VillageRules.CandidateLevel(_eco.BirthLevelAt(v.WorldPosition), townLevel, rng.Range(-2, 2));
             v.Candidates.Add(new VillageCandidate { data = AdventurerGenerator.Generate(rng, level), arrived = arrived });
