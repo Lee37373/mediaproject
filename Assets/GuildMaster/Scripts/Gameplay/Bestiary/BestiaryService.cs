@@ -74,6 +74,23 @@ namespace GuildMaster.Bestiary
         /// <summary>The kind's research level for anyone asking (0 with no bestiary).</summary>
         public static int LevelOf(MonsterDefinition species) => species != null && Services.TryGet<BestiaryService>(out var b) ? b.Level(species) : 0;
 
+        /// <summary>
+        /// What a member's judgment counts on against this kind (user decision 2026-10-27: what the guild knows goes into its
+        /// choices): its class's weakness or strength factor once the kind is researched to level 2, with mastery's edge at 3;
+        /// 1 while the guild does not know. <paramref name="withMastery"/> false where mastery already counts another way (a
+        /// quest's risk, <see cref="RiskFactor"/>).
+        /// </summary>
+        public static float KnownAttackFactor(MonsterDefinition species, AdventurerClass cls, bool withMastery = true)
+        {
+            int level = LevelOf(species);
+            if (level < 2) return 1f;
+            float f = BestiaryRules.ClassFactor(species.id, cls);
+            return withMastery && level >= BestiaryRules.MaxLevel ? f * BestiaryRules.MasteryDamage : f;
+        }
+
+        /// <summary>What the kind's blows are counted at in a member's judgment: lighter once mastered.</summary>
+        public static float KnownTakenFactor(MonsterDefinition species) => LevelOf(species) >= BestiaryRules.MaxLevel ? BestiaryRules.MasteryTaken : 1f;
+
         // ---------------- A hit ----------------
 
         /// <summary>

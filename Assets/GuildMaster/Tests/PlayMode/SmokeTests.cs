@@ -1073,6 +1073,7 @@ namespace GuildMaster.Tests
             Assert.That((bestiary.Level(kind), bestiary.Points(kind)), Is.EqualTo((0, 0)), "never seen: nothing learnt");
             MakeKnown(kind);
             Assert.That(bestiary.Level(kind), Is.EqualTo(1), "seen");
+            Assert.That(Bestiary.BestiaryService.KnownAttackFactor(kind, member.Data.cls), Is.EqualTo(1f), "its weakness not known yet");
             var hunt = Services.Get<QuestBoard>().FindById(DebugCommands.PostHunt(kind.id, 3, 100, 20, 1, nest.WorldPosition.x, nest.WorldPosition.y));
             float plain = QuestRisk.Requirement(hunt);
             int told = 0;
@@ -1090,6 +1091,10 @@ namespace GuildMaster.Tests
 
                 // Weak and strong by class: the hook every hit goes through.
                 Assert.That(Bestiary.BestiaryRules.TryMatchup(kind.id, out var weak, out var strong), Is.True);
+                // And what the members' judgment counts on (user decision: what the guild knows goes into its choices).
+                Assert.That((Bestiary.BestiaryService.KnownAttackFactor(kind, weak), Bestiary.BestiaryService.KnownAttackFactor(kind, strong)),
+                    Is.EqualTo((Bestiary.BestiaryRules.Weak, Bestiary.BestiaryRules.Strong)), "known from level 2");
+                Assert.That(Bestiary.BestiaryService.KnownTakenFactor(kind), Is.EqualTo(1f));
                 var foe = nest.Members.First(x => x.IsAlive);
                 var cls = member.Data.cls;
                 member.Data.cls = weak;
@@ -1107,6 +1112,9 @@ namespace GuildMaster.Tests
                 member.Data.cls = weak;
                 Assert.That(Unit.DamageFactor(member, foe), Is.EqualTo(Bestiary.BestiaryRules.Weak * Bestiary.BestiaryRules.MasteryDamage).Within(1e-4f));
                 Assert.That(Unit.DamageFactor(foe, member), Is.EqualTo(Bestiary.BestiaryRules.MasteryTaken).Within(1e-4f), "and takes less from it");
+                Assert.That(Bestiary.BestiaryService.KnownAttackFactor(kind, weak), Is.EqualTo(Bestiary.BestiaryRules.Weak * Bestiary.BestiaryRules.MasteryDamage).Within(1e-4f));
+                Assert.That(Bestiary.BestiaryService.KnownAttackFactor(kind, weak, withMastery: false), Is.EqualTo(Bestiary.BestiaryRules.Weak), "a quest's judgment counts mastery in its risk instead");
+                Assert.That(Bestiary.BestiaryService.KnownTakenFactor(kind), Is.EqualTo(Bestiary.BestiaryRules.MasteryTaken));
                 Assert.That(QuestRisk.Requirement(hunt), Is.EqualTo(plain * Bestiary.BestiaryRules.RiskFactor(3)).Within(1e-4f));
                 member.Data.cls = cls;
             }

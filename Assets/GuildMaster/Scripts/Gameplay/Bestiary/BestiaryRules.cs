@@ -42,7 +42,7 @@ namespace GuildMaster.Bestiary
 
         // ---- Weak and strong (decision ③) ----
         /// <summary>A hit from the class it is weak to does this much; from the class it is strong against, this much.</summary>
-        public const float Weak = 1.2f, Strong = 0.85f;
+        public const float Weak = 1.1f, Strong = 0.9f;
 
         /// <summary>Each kind's weakness and strength by class: blades chip stone, magic burns jelly, the holy undo the dead...</summary>
         static readonly Dictionary<string, (AdventurerClass weak, AdventurerClass strong)> Matchups = new()

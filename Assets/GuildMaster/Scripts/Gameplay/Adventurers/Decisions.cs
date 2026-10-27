@@ -87,8 +87,10 @@ namespace GuildMaster.Adventurers
             // Party work (a rare monster P4-85, a region lord P4-90) counts the party that could go along —
             // everyone the guild could gather for it, not only those idle in town this moment (P4-97).
             int partySize = QuestRisk.ExpectedParty(q, a);
-            // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused.
-            float margin = QuestRisk.Margin(AdventurerStats.Power(d), partySize, q);
+            // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused. A kind the guild has
+            // researched (P4-107): its weakness or strength against this member's class counts in the member's own judgment.
+            float power = AdventurerStats.Power(d) * Bestiary.BestiaryService.KnownAttackFactor(q.Species, d.cls, withMastery: false);
+            float margin = QuestRisk.Margin(power, partySize, q);
             string risk = QuestRisk.Label(margin);
             if (risk == QuestRisk.Reckless) return 0f;
             // Far under the quest's level, a 위험 one is not for it (P4-88): the rules never dare (the model may, rarely).

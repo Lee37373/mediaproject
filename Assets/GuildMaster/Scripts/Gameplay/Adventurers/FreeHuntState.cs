@@ -45,6 +45,10 @@ namespace GuildMaster.Adventurers
         /// <summary>Us and the members close enough to fight beside us, as the fight estimate sees them.</summary>
         readonly System.Collections.Generic.List<CombatStats> _bandStats = new();
         readonly System.Collections.Generic.List<float> _bandHp = new();
+        /// <summary>Each one's class, alongside <see cref="_bandStats"/> (P4-107: a researched kind's weakness or strength).</summary>
+        readonly System.Collections.Generic.List<AdventurerClass> _bandClasses = new();
+        /// <summary>The band as it stands against a researched kind, worked out once a count.</summary>
+        readonly System.Collections.Generic.Dictionary<MonsterDefinition, System.Collections.Generic.List<CombatStats>> _bandFor = new();
         static readonly System.Collections.Generic.List<Unit> AllyBuffer = new();
         /// <summary>How far out this band roams (P4-38): grows with what it could take on.</summary>
         float _reach = FreeHunt.Radius;
@@ -149,7 +153,34 @@ namespace GuildMaster.Adventurers
         /// <summary>Worth attacking: one we can handle (P4-43: nothing is spared any more).</summary>
         bool Huntable(Unit u)
             => u is Monster m && m.IsAlive && m.Def != null
-               && FreeHunt.CanTake(_bandStats, _bandHp, m.Stats, FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby) + CrowdOf(m.Def));
+               && FreeHunt.CanTake(BandAgainst(m.Def), _bandHp, FoeAgainst(m.Def, m.Stats),
+                   FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby) + CrowdOf(m.Def));
+
+        /// <summary>
+        /// The band against a kind the guild has researched (P4-107, user decision 2026-10-27): each one's blows counted with
+        /// the kind's weakness or strength against its class, and mastery's edge; as it is for a kind not yet studied.
+        /// </summary>
+        System.Collections.Generic.List<CombatStats> BandAgainst(MonsterDefinition s)
+        {
+            if (s == null || Bestiary.BestiaryService.LevelOf(s) < 2) return _bandStats;
+            if (_bandFor.TryGetValue(s, out var band)) return band;
+            band = new System.Collections.Generic.List<CombatStats>(_bandStats.Count);
+            for (int i = 0; i < _bandStats.Count; i++)
+            {
+                var st = _bandStats[i];
+                if (i < _bandClasses.Count) st.Attack *= Bestiary.BestiaryService.KnownAttackFactor(s, _bandClasses[i]);
+                band.Add(st);
+            }
+            _bandFor[s] = band;
+            return band;
+        }
+
+        /// <summary>A mastered kind's blows, counted lighter.</summary>
+        static CombatStats FoeAgainst(MonsterDefinition s, CombatStats stats)
+        {
+            stats.Attack *= Bestiary.BestiaryService.KnownTakenFactor(s);
+            return stats;
+        }
 
         /// <summary>The known dens of that kind round here, the one we stand at left out, that would pile in (P4-104b, as the den choice).</summary>
         int CrowdOf(MonsterDefinition s)
@@ -350,8 +381,11 @@ namespace GuildMaster.Adventurers
         {
             _bandStats.Clear();
             _bandHp.Clear();
+            _bandClasses.Clear();
+            _bandFor.Clear();
             _bandStats.Add(a.Stats);
             _bandHp.Add(a.Hp);
+            _bandClasses.Add(a.Data.cls);
             // A newcomer (P4-99, user decision 2026-10-21) hunts what it can take on its own, close in: no further than where
             // the young are born no stronger than it — not out to the near ring every other hunt reaches.
             if (a.IsNewcomer)
@@ -364,6 +398,7 @@ namespace GuildMaster.Adventurers
             {
                 _bandStats.Add(u.Stats);
                 _bandHp.Add(u.Hp);
+                _bandClasses.Add(((Adventurer)u).Data.cls);
             }
             // Judged at full health: how far out the band goes is its strength, not today's scratches
             // (being hurt already sends it home, see FreeHunt.ShouldGoHome).
@@ -434,7 +469,7 @@ namespace GuildMaster.Adventurers
                     // the band's means (P4-104b: bands took a den at a time and died to the zone, or blind in the woods).
                     int foes = FreeHunt.ExpectedEnemies(1, s, count) + AreaRisk.ExtraFoesAround(s, n.WorldPosition, n);
                     float share = AreaRisk.KnownDeep(n.WorldPosition) ? DeepWoodRules.HuntLossShare : 1f;
-                    if (!FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(s, n.BirthLevel), foes, share)) continue;
+                    if (!FreeHunt.CanTake(BandAgainst(s), _bandHp, FoeAgainst(s, FreeHunt.StatsOf(s, n.BirthLevel)), foes, share)) continue;
                     float score = FreeHunt.DenScore(s, count, Vector2.Distance(n.WorldPosition, a.Position), n.BirthLevel);
                     if (score <= bestScore) continue;
                     bestScore = score;
