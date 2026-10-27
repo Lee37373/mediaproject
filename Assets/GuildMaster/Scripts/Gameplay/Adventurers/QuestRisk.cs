@@ -31,10 +31,12 @@ namespace GuildMaster.Adventurers
         {
             // An incident asks for its own (a rare variant: a full party of its level, P4-85).
             if (q.Incident != null && Incidents.IncidentRules.Requirement(q.Incident) is { } own) return own;
-            return IsDragonWork(q) ? Monsters.Dragon.RiskRequirement
+            // A kind the guild has studied looks less dangerous (P4-107, user decision ②).
+            float known = Bestiary.BestiaryService.RiskFactor(q.Species);
+            return known * (IsDragonWork(q) ? Monsters.Dragon.RiskRequirement
                  : IsLordWork(q) ? Monsters.RegionLords.RiskRequirement
                  // Where it is (P4-104b): the dens next door that would pile in, and known deep woods.
-                 : RuleBasedDecisionMaker.DangerRequirement(q.Danger) * AreaRisk.QuestFactor(q);
+                 : RuleBasedDecisionMaker.DangerRequirement(q.Danger) * AreaRisk.QuestFactor(q));
         }
 
         /// <summary>A hunt for the dragon (P4-93): beyond a lord, and work for a whole party.</summary>
@@ -67,6 +69,7 @@ namespace GuildMaster.Adventurers
         public static float Requirement(Quests.Quest q, int partySize)
             => SoloRaises(q, partySize)
                 ? RuleBasedDecisionMaker.DangerRequirement(Quests.QuestBoard.Raise(q.Danger, 1)) * AreaRisk.QuestFactor(q)
+                  * Bestiary.BestiaryService.RiskFactor(q.Species)
                 : Requirement(q);
 
         /// <summary>

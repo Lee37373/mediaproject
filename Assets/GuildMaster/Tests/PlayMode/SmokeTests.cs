@@ -1048,6 +1048,72 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// The bestiary (P4-107, user decisions 2026-10-27): a kind never seen gains nothing; members' kills research a seen
+        /// one to level 2 (told, and its quests look less dangerous) and on to mastery; a hit from the class a kind is weak to
+        /// lands harder, from the class it is strong against lighter, and mastery adds its edge both ways.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Bestiary_KillsResearchAKind_WeaknessAndMasteryBite_AndItsQuestsLookLighter()
+        {
+            yield return Boot();
+            var bestiary = Services.Get<Bestiary.BestiaryService>();
+            var intel = Services.Get<GuildIntel>();
+            var eco = Services.Get<EcosystemManager>();
+            // Four at least: three to kill, one left to trade blows with.
+            var nest = eco.Nests.First(n => n.Population >= 4 && !n.IsLair && !intel.IsKnown(n.Species));
+            var kind = nest.Species;
+            var member = Roster.Members.First(a => a.IsAlive);
+            void KillOne()
+            {
+                var m = nest.Members.First(x => x.IsAlive);
+                m.ReceiveDamage(m.Hp + 1e6f, member, false);
+            }
+
+            KillOne();
+            Assert.That((bestiary.Level(kind), bestiary.Points(kind)), Is.EqualTo((0, 0)), "never seen: nothing learnt");
+            MakeKnown(kind);
+            Assert.That(bestiary.Level(kind), Is.EqualTo(1), "seen");
+            var hunt = Services.Get<QuestBoard>().FindById(DebugCommands.PostHunt(kind.id, 3, 100, 20, 1, nest.WorldPosition.x, nest.WorldPosition.y));
+            float plain = QuestRisk.Requirement(hunt);
+            int told = 0;
+            Action<Bestiary.ResearchLevelEvent> onLevel = e => { if (e.Species == kind) told++; };
+            EventBus.Subscribe(onLevel);
+            try
+            {
+                KillOne();
+                KillOne();
+                Assert.That(bestiary.Points(kind), Is.EqualTo(2 * Bestiary.BestiaryRules.Kill), "a member's kills");
+                DebugCommands.Research(kind.id, Bestiary.BestiaryRules.Level2At - bestiary.Points(kind));
+                Assert.That((bestiary.Level(kind), told), Is.EqualTo((2, 1)), "level 2, told once");
+                Assert.That(QuestRisk.Requirement(hunt), Is.EqualTo(plain * Bestiary.BestiaryRules.RiskFactor(2)).Within(1e-4f), "its quests look less dangerous");
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[도감]")), Is.True);
+
+                // Weak and strong by class: the hook every hit goes through.
+                Assert.That(Bestiary.BestiaryRules.TryMatchup(kind.id, out var weak, out var strong), Is.True);
+                var foe = nest.Members.First(x => x.IsAlive);
+                var cls = member.Data.cls;
+                member.Data.cls = weak;
+                Assert.That(Unit.DamageFactor(member, foe), Is.EqualTo(Bestiary.BestiaryRules.Weak).Within(1e-4f), "its weakness");
+                member.Data.cls = strong;
+                Assert.That(Unit.DamageFactor(member, foe), Is.EqualTo(Bestiary.BestiaryRules.Strong).Within(1e-4f), "its strength");
+                float hp = foe.Hp;
+                foe.ReceiveDamage(10f, member, false);
+                Assert.That(hp - foe.Hp, Is.EqualTo(Mathf.Round(10f * Bestiary.BestiaryRules.Strong)), "a hit lands lighter");
+                Assert.That(Unit.DamageFactor(foe, member), Is.EqualTo(1f), "not mastered yet: its blows as ever");
+
+                // Mastery.
+                DebugCommands.Research(kind.id, Bestiary.BestiaryRules.Level3At);
+                Assert.That((bestiary.Level(kind), told), Is.EqualTo((3, 2)));
+                member.Data.cls = weak;
+                Assert.That(Unit.DamageFactor(member, foe), Is.EqualTo(Bestiary.BestiaryRules.Weak * Bestiary.BestiaryRules.MasteryDamage).Within(1e-4f));
+                Assert.That(Unit.DamageFactor(foe, member), Is.EqualTo(Bestiary.BestiaryRules.MasteryTaken).Within(1e-4f), "and takes less from it");
+                Assert.That(QuestRisk.Requirement(hunt), Is.EqualTo(plain * Bestiary.BestiaryRules.RiskFactor(3)).Within(1e-4f));
+                member.Data.cls = cls;
+            }
+            finally { EventBus.Unsubscribe(onLevel); }
+        }
+
+        /// <summary>
         /// The dragon (P4-93, user decisions 2026-10-20), on one boot: asleep on its hoard far out it threatens nobody; on the
         /// wing it banks and weaves rather than flying straight, only shots reach it, and it burns our town and plunders the
         /// treasury for its hoard; shots enough bring it down where swords reach it; a member robbing its hoard while it is

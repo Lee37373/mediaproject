@@ -70,6 +70,9 @@ namespace GuildMaster.UI
                 case NotificationTarget.GuildRank:
                     Show<GuildRankView>();
                     break;
+                case NotificationTarget.Bestiary:
+                    Show<BestiaryView>();
+                    break;
                 case NotificationTarget.Memorial:
                 {
                     if (!Services.TryGet<MemorialView>(out var wall)) break;

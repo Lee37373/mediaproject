@@ -80,6 +80,7 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
             EventBus.Subscribe<Places.PlaceDiscoveredEvent>(OnPlaceFound);
             EventBus.Subscribe<Guild.GuildRankChangedEvent>(OnRankUp);
+            EventBus.Subscribe<Bestiary.ResearchLevelEvent>(OnResearch);
             EventBus.Subscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
             EventBus.Subscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
@@ -152,6 +153,7 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
             EventBus.Unsubscribe<Places.PlaceDiscoveredEvent>(OnPlaceFound);
             EventBus.Unsubscribe<Guild.GuildRankChangedEvent>(OnRankUp);
+            EventBus.Unsubscribe<Bestiary.ResearchLevelEvent>(OnResearch);
             EventBus.Unsubscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
             EventBus.Unsubscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
             EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
@@ -349,6 +351,11 @@ namespace GuildMaster.Notifications
         void OnRankUp(Guild.GuildRankChangedEvent e)
             => _center.Post(NotificationKind.Success, $"길드 {Guild.GuildRankRules.Name(e.Rank)} 달성", Guild.GuildRankRules.Rewards(e.Rank),
                 "rank:" + e.Rank, NotificationLink.GuildRank());
+
+        // The bestiary (P4-107): a kind's weakness found out, a kind mastered.
+        void OnResearch(Bestiary.ResearchLevelEvent e)
+            => _center.Post(NotificationKind.Success, $"{e.Species.displayName} 연구 {e.Level}단계",
+                Bestiary.BestiaryText.LevelNews(e.Species, e.Level), "research:" + e.Species.id + ":" + e.Level, NotificationLink.Bestiary());
 
         // The deep woods (P4-103): once, the first time the guild sees them.
         void OnDeepWoods(World.DeepWoodsSightedEvent e)

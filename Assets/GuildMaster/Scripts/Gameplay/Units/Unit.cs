@@ -371,9 +371,17 @@ namespace GuildMaster.Units
             return skill != null && skill.TryUseDeliberately(this, target);
         }
 
+        /// <summary>
+        /// How much of a direct hit from <c>source</c> lands on <c>target</c> (P4-107: a kind's weakness and strength by class,
+        /// and the guild's mastery of a kind); null = all of it. Set by the bestiary; marks over time are not touched.
+        /// </summary>
+        public static System.Func<Unit, Unit, float> DamageFactor;
+
         internal void ReceiveDamage(float amount, Unit source, bool critical, bool overTime = false)
         {
             if (!IsAlive) return;
+            if (!overTime && source != null && amount > 0f && DamageFactor != null)
+                amount = Mathf.Max(1f, Mathf.Round(amount * DamageFactor(source, this)));
             if (GuildInvulnerable && Faction == Faction.Guild) amount = 0f;
             Hp -= amount;
             if (source != null)

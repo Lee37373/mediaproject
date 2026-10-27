@@ -209,6 +209,11 @@ namespace GuildMaster.Session
             intel.Init(eco, fog, clock, world);
             Services.Register(intel);
             save.Register(intel);
+            // The bestiary (P4-107): research of the kinds the guild has seen, their weakness and strength, mastery.
+            var bestiary = AddSystem<Bestiary.BestiaryService>();
+            bestiary.Init(intel, eco, fog, clock);
+            Services.Register(bestiary);
+            save.Register(bestiary);
             // The four region lords (P4-83): who fell, the cleansed land, titles, the victory.
             var lords = new RegionLordService(eco, world, clock);
             Services.Register(lords);

@@ -80,7 +80,7 @@ namespace GuildMaster.UI
             Services.Register(inspector);
 
             // The next rank's conditions (P4-106), under the side menu and beneath the windows.
-            const float MenuHeight = 456f;
+            const float MenuHeight = 502f;
             HudLayer.gameObject.AddComponent<GoalPanelView>().Build(HudLayer, new Vector2(8, -60 - MenuHeight - 10));
 
             WindowLayer = UIBuilder.Rect(HudLayer, "Windows").Stretch();
@@ -102,6 +102,8 @@ namespace GuildMaster.UI
             AddWindow<MemorialView>(menu, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
             // The guild's rank and fame (P4-106).
             AddWindow<GuildRankView>(menu, "길드 등급 (G)", Key.G, new Vector2(900, 720));
+            // The bestiary (P4-107).
+            AddWindow<BestiaryView>(menu, "몬스터 도감 (K)", Key.K, new Vector2(1000, 640));
             // Notification list (F-1); the side-menu button shows the unread count (kept up to date by ToastLayer).
             var notificationView = AddWindow<NotificationView>(null, null, Key.N, new Vector2(820, 560));
             var notificationButton = UIBuilder.Button(menu, "알림 (N)", () => Focus(notificationView), -1, 40);

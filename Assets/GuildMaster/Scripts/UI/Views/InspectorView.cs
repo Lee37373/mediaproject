@@ -374,8 +374,19 @@ namespace GuildMaster.UI
                 $"HP {m.Hp:0}/{m.Stats.MaxHp:0} · 공격 {m.Stats.Attack:0.#} · 방어 {m.Stats.Defense:0.#}\n" +
                 $"성향: {(d.aggressiveToHumans ? UIBuilder.Colored("사람을 공격함", UITheme.Bad) : "먼저 공격하지 않음")} · 전투 {CombatTiers.Label(m.Tier)}\n" +
                 $"먹이: {prey} · 적대: {rivals}\n" +
+                ResearchText(d) +
                 GearText(m) +
                 $"{Muted("전리품: " + string.Join(", ", d.loot.Where(l => l.item).Select(l => $"{l.item.displayName}({l.chance * 100:0}%)")))}";
+        }
+
+        /// <summary>The bestiary's line (P4-107): the research level, from 2 its weakness and strength, at 3 the mastery.</summary>
+        static string ResearchText(Data.MonsterDefinition d)
+        {
+            int level = Bestiary.BestiaryService.LevelOf(d);
+            if (level <= 0) return "";
+            string more = level >= 2 ? " · " + Bestiary.BestiaryText.Matchup(d) : Muted(" · 2단계부터 약점·강함");
+            if (level >= Bestiary.BestiaryRules.MaxLevel) more += UIBuilder.Colored(" · 숙련", UITheme.Good);
+            return $"도감: 연구 {level}단계{more}\n";
         }
 
         /// <summary>

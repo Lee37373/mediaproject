@@ -2034,6 +2034,28 @@ namespace GuildMaster.Session
             return $"{a.Data.name} → #{p.Index} {p.Name()} {Vector2.Distance(a.Position, p.WorldPosition):0}칸: {a.StateLabel}";
         }
 
+        // ---------------- Bestiary (P4-107) ----------------
+
+        /// <summary>Every kind the guild has seen: research level and points, weakness and strength.</summary>
+        public static string Studies()
+        {
+            var b = Services.Get<GuildMaster.Bestiary.BestiaryService>();
+            var sb = new StringBuilder();
+            foreach (var s in b.Seen)
+                sb.AppendLine($"{s.id} {s.displayName}: Lv{b.Level(s)} {b.Points(s)}pt risk×{GuildMaster.Bestiary.BestiaryRules.RiskFactor(b.Level(s)):0.##} · {GuildMaster.Bestiary.BestiaryText.Matchup(s)}");
+            return sb.Length > 0 ? sb.ToString() : "nothing seen yet";
+        }
+
+        /// <summary>Research points for a kind by hand (the guild must have seen it; <paramref name="see"/> marks it seen first).</summary>
+        public static string Research(string speciesId, int points, bool see = true)
+        {
+            var s = Services.Get<GameDatabase>().Monster(speciesId);
+            if (s == null) return "unknown species: " + speciesId;
+            if (see) Services.Get<GuildIntel>().MarkKnown(s);
+            Services.Get<GuildMaster.Bestiary.BestiaryService>().Add(s, points);
+            return Studies();
+        }
+
         // ---------------- Guild rank (P4-106) ----------------
 
         /// <summary>The guild's rank and fame, the next rank's conditions with where they stand, and the latest fame.</summary>

@@ -296,6 +296,9 @@ namespace GuildMaster.Session
             // Places worth going to (P4-105): found.
             EventBus.Subscribe<Places.PlaceDiscoveredEvent>(e => Add(
                 $"[장소] 새 장소 발견: {e.Place.Name()} ({Quests.QuestBoard.DescribeArea(e.Place.WorldPosition)})", LogCategory.Info));
+            // The bestiary (P4-107).
+            EventBus.Subscribe<Bestiary.ResearchLevelEvent>(e => Add(
+                $"[도감] {e.Species.displayName} 연구 {e.Level}단계: {Bestiary.BestiaryText.LevelNews(e.Species, e.Level)}", LogCategory.Info));
             // The guild's rank (P4-106).
             EventBus.Subscribe<Guild.GuildRankChangedEvent>(e => Add(
                 $"[등급] 길드가 {Guild.GuildRankRules.Name(e.Rank)}이 되었습니다! {Guild.GuildRankRules.Rewards(e.Rank)}", LogCategory.Quest));
