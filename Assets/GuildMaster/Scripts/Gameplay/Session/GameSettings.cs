@@ -13,6 +13,14 @@ namespace GuildMaster.Session
         const string FullscreenKey = "gm.fullscreen";
         const string ResWidthKey = "gm.resWidth";
         const string ResHeightKey = "gm.resHeight";
+        const string RewardFxKey = "gm.rewardFx";
+
+        /// <summary>Reward effects (P4-106 H8): coins flying to the gold, building sparkles, the rank banner, level-up pillars.</summary>
+        public static bool RewardEffects
+        {
+            get => PlayerPrefs.GetInt(RewardFxKey, 1) == 1;
+            set { PlayerPrefs.SetInt(RewardFxKey, value ? 1 : 0); PlayerPrefs.Save(); }
+        }
 
         public static bool LlmEnabled
         {

@@ -163,7 +163,7 @@ namespace GuildMaster.Guild
                 var previous = Rank;
                 Rank = Next;
                 int grant = GuildRankRules.Grant(Rank);
-                if (grant > 0 && _treasury != null) _treasury.AddGold(grant, $"{GuildRankRules.Name(Rank)} 하사금");
+                if (grant > 0 && _treasury != null) _treasury.AddGold(grant, GoldReason.Grant);
                 EventBus.Publish(new GuildRankChangedEvent { Rank = Rank, Previous = previous, Grant = grant });
             }
         }

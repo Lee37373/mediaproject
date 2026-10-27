@@ -966,8 +966,9 @@ namespace GuildMaster.Tests
 
         /// <summary>
         /// The guild's rank (P4-106, user decisions 2026-10-27): a new guild is F; the tutorial — a first quest done, a first
-        /// recruit, a first upgrade — is the first rank, which pays the town's grant and is told; fame comes from what the guild
-        /// does and goes with a member's death, but a rank once reached is kept; a known guild draws stronger visitors.
+        /// recruit, a first upgrade — is the first rank, which pays the town's grant (its coins flying to the gold on the bar, the
+        /// rank's banner up — H8) and is told; fame comes from what the guild does and goes with a member's death, but a rank
+        /// once reached is kept; a known guild draws stronger visitors.
         /// </summary>
         [UnityTest]
         public IEnumerator GuildRank_TheTutorialIsTheFirstRank_FameComesAndGoes_AndARankIsKept()
@@ -978,6 +979,8 @@ namespace GuildMaster.Tests
             var ups = new System.Collections.Generic.List<Guild.GuildRank>();
             Action<Guild.GuildRankChangedEvent> onRank = e => ups.Add(e.Rank);
             EventBus.Subscribe(onRank);
+            bool effects = GameSettings.RewardEffects;
+            GameSettings.RewardEffects = true;
             try
             {
                 // A first quest done.
@@ -1005,8 +1008,18 @@ namespace GuildMaster.Tests
                 treasury.AddGold(cost.goldCost);
                 foreach (var c in cost.itemCosts) treasury.AddStock(c.itemId, c.count);
                 int gold = treasury.Gold;
+                // The counter in view, so the grant's coins fly (H8).
+                Services.Get<CameraControl.CameraController>().JumpTo(hall.DoorPosition);
+                yield return null;
+                var hud = Services.Get<HudView>();
                 Assert.That(upgrades.TryUpgrade(hall, out var error), Is.True, error);
                 Assert.That(rank.Rank, Is.EqualTo(Guild.GuildRank.E), DebugCommands.Rank());
+                // (with whatever else is still flying in: a fee, a member's purchase)
+                Assert.That(hud.Withheld, Is.GreaterThanOrEqualTo(Guild.GuildRankRules.Grant(Guild.GuildRank.E)), "the grant's coins are on their way to the bar");
+                yield return null;
+                Assert.That(GameObject.Find("RankBanner"), Is.Not.Null, "the rank's banner is up");
+                yield return WaitFor(() => hud.Withheld == 0, 3f);
+                Assert.That(hud.Withheld, Is.Zero, "and every coin landed");
                 Assert.That(ups, Is.EqualTo(new[] { Guild.GuildRank.E }));
                 Assert.That(treasury.Gold, Is.EqualTo(gold - cost.goldCost + Guild.GuildRankRules.Grant(Guild.GuildRank.E)), "the town's grant");
                 Assert.That(Services.Get<Notifications.NotificationCenter>().Entries.Any(n => n.Title.Contains("E등급")), Is.True, "told");
@@ -1027,7 +1040,11 @@ namespace GuildMaster.Tests
                 Assert.That(Guild.GuildRankService.RankVisitorBonus, Is.EqualTo(plain + Guild.GuildRankRules.VisitorBonus(Guild.GuildRank.C)));
                 Assert.That(Guild.GuildRankService.RankVisitInterval, Is.LessThan(1f));
             }
-            finally { EventBus.Unsubscribe(onRank); }
+            finally
+            {
+                EventBus.Unsubscribe(onRank);
+                GameSettings.RewardEffects = effects;
+            }
         }
 
         /// <summary>
@@ -3981,8 +3998,10 @@ namespace GuildMaster.Tests
             {
                 Assert.That(breaks.TryBreak(berserker, BreakSeverity.Extreme, BreakKind.Berserk), Is.True);
                 Assert.That((berserker.Berserk, victim.IsHostileTo(berserker), berserker.IsHostileTo(victim)), Is.EqualTo((true, true, true)));
-                yield return WaitFor(() => victim.Data.thoughts.Any(t => t.id == ThoughtRules.BerserkVictim.Id), 10f);
-                Assert.That(victim.Data.thoughts.Any(t => t.id == ThoughtRules.BerserkVictim.Id && t.about == berserker.Data.id), Is.True, "it went for a comrade");
+                // Whoever is nearest when it looks: the one placed beside it may have walked off to decide on its day.
+                bool Hit(Adventurer a) => a != berserker && a.Data.thoughts.Any(t => t.id == ThoughtRules.BerserkVictim.Id && t.about == berserker.Data.id);
+                yield return WaitFor(() => Roster.Members.Any(Hit), 10f);
+                Assert.That(Roster.Members.Any(Hit), Is.True, "it went for a comrade");
                 yield return WaitFor(() => berserker.LastAttacker is Adventurer, 10f);
                 Assert.That(berserker.LastAttacker, Is.InstanceOf<Adventurer>(), "and was fought back");
                 Clock.SetSpeed(GameClock.SpeedScales.Length - 1);

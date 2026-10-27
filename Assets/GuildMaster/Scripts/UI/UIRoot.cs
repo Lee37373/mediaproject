@@ -69,6 +69,7 @@ namespace GuildMaster.UI
             if (Services.TryGet<LLM.LlmGateway>(out var llm)) HudView.ExtraStatus = () => llm ? llm.StatusText : "";
             var hud = HudLayer.gameObject.AddComponent<HudView>();
             hud.Build(HudLayer);
+            Services.Register(hud); // the coins fly to its gold (P4-106 H8)
             var minimap = HudLayer.gameObject.AddComponent<MinimapView>();
             minimap.Build(HudLayer);
             Services.Register(minimap);
@@ -120,6 +121,8 @@ namespace GuildMaster.UI
 
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);
+            // Coins to the gold and the rank banner (P4-106 H8), above the windows.
+            HudLayer.gameObject.AddComponent<RewardFxLayer>().Build(HudLayer);
             // Toasts for new notifications on the right edge, above the windows (F-1).
             var toasts = HudLayer.gameObject.AddComponent<ToastLayer>();
             toasts.MenuButton = notificationButton;

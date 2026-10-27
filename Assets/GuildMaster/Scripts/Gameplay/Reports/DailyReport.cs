@@ -15,12 +15,14 @@ namespace GuildMaster.Reports
         QuestEscrow, Negotiation, LootBought, Crafting, Upgrade, Building, Bonus, OtherExpense,
         /// <summary>The guild's fee on a client's quest (P4-82).</summary>
         Commission,
+        /// <summary>The town's grant for a new guild rank (P4-106).</summary>
+        Grant,
     }
 
     public static class GoldCategories
     {
         public static readonly GoldCategory[] Income =
-            { GoldCategory.Commission, GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.LivingCosts, GoldCategory.QuestRefund, GoldCategory.OtherIncome };
+            { GoldCategory.Commission, GoldCategory.Grant, GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.LivingCosts, GoldCategory.QuestRefund, GoldCategory.OtherIncome };
 
         public static readonly GoldCategory[] Expense =
             { GoldCategory.QuestEscrow, GoldCategory.Negotiation, GoldCategory.LootBought, GoldCategory.Crafting, GoldCategory.Upgrade, GoldCategory.Building, GoldCategory.Bonus, GoldCategory.OtherExpense };
@@ -47,6 +49,7 @@ namespace GuildMaster.Reports
                 GoldReason.Build or GoldReason.Repair => GoldCategory.Building,
                 GoldReason.Bonus => GoldCategory.Bonus,
                 GoldReason.Commission => GoldCategory.Commission,
+                GoldReason.Grant => GoldCategory.Grant,
                 null => amount > 0 ? GoldCategory.QuestRefund : GoldCategory.QuestEscrow,
                 _ => amount > 0 ? GoldCategory.OtherIncome : GoldCategory.OtherExpense,
             };
@@ -57,6 +60,7 @@ namespace GuildMaster.Reports
         public static string Label(GoldCategory c) => c switch
         {
             GoldCategory.Commission => "의뢰 수수료",
+            GoldCategory.Grant => "등급 하사금",
             GoldCategory.Tax => "일일 세금",
             GoldCategory.GoodsSold => "상품 판매(길드원 구매)",
             GoldCategory.MerchantSales => "행상인 판매",

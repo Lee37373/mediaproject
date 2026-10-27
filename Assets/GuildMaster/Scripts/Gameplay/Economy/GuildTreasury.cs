@@ -38,6 +38,8 @@ namespace GuildMaster.Economy
         public const string Recruit = "recruit";
         /// <summary>The guild's fee on a client's quest (P4-82).</summary>
         public const string Commission = "commission";
+        /// <summary>The town's grant for a new guild rank (P4-106).</summary>
+        public const string Grant = "grant";
     }
 
     /// <summary>

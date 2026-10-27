@@ -169,6 +169,8 @@ namespace GuildMaster.Session
             particles.Init(pool);
             Services.Register(particles);
             AddSystem<CombatFeedback>().Init(particles, fx);
+            // Reward effects in the world (P4-106 H8): buildings finished or upgraded, level-ups.
+            AddSystem<RewardFx>().Init(fx, clock);
             // Flares (P4-94): members light up a foe that slipped out of sight.
             var flares = AddSystem<Flares.FlareService>();
             flares.Init(pool);
