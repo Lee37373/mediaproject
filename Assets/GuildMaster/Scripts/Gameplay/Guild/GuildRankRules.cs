@@ -47,7 +47,8 @@ namespace GuildMaster.Guild
             GoalKind.MembersAtLevel => $"Lv{Level} 이상 길드원 {Count}명",
             GoalKind.ZonesKnown => $"구역 {Count}곳 발견",
             GoalKind.SpeciesKnown => $"몬스터 {Count}종 발견",
-            GoalKind.RaidsHeld => Count == 1 ? "침공 막아내기" : $"침공 {Count}번 막아내기",
+            // A great horde stopped counts too (P4-108).
+            GoalKind.RaidsHeld => Count == 1 ? "침공이나 대규모 무리 막아내기" : $"침공·대규모 무리 {Count}번 막아내기",
             GoalKind.Facilities => $"내실 건물 {Count}채",
             GoalKind.LordsSlain => Count >= GuildRankRules.RegionLordCount ? "지대 군주 넷 모두 처치" : $"지대 군주 {Count} 처치",
             _ => Kind.ToString(),

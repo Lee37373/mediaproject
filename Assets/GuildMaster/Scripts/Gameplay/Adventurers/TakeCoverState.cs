@@ -15,7 +15,8 @@ namespace GuildMaster.Adventurers
     /// it for a while. Mended enough (a priest, a potion) and hit again, it fights back like anyone in town
     /// (<see cref="TownGuardState"/>). In a measured run raiders broke in and killed thirteen members where they lay resting
     /// under half health — the defence leaves those to rest, and they neither fought nor ran — and three retreating ones on
-    /// their way to the guild door the raiders stood at.
+    /// their way to the guild door the raiders stood at. Hit from outside the walls by one the town cannot take on, it does the
+    /// same whatever its health (P4-108, user decision 2026-10-27 "못 이기면 성 안으로", <see cref="TownGuardState.BeyondUs"/>).
     /// </summary>
     public class TakeCoverState : State<Adventurer>
     {
@@ -43,7 +44,9 @@ namespace GuildMaster.Adventurers
         public static bool TryStart(Adventurer a, State<Adventurer> next)
         {
             if (!a.IsAlive || a.IsVisitor || !a.IsGuildMember) return false;
-            if (a.HpRatio >= a.RetreatThreshold || a.Data.potions > 0 || !HitNow(a) || !AdvCtx.Town.IsInTown(a.Position)) return false;
+            if (!HitNow(a) || !AdvCtx.Town.IsInTown(a.Position)) return false;
+            // Hit from outside the walls by one the town cannot take on (P4-108): back into the town whatever its health.
+            if ((a.HpRatio >= a.RetreatThreshold || a.Data.potions > 0) && !TownGuardState.Outmatched(a)) return false;
             a.TakeCoverState.Next = next;
             a.ChangeState(a.TakeCoverState);
             return true;
@@ -58,7 +61,7 @@ namespace GuildMaster.Adventurers
             _threat = null;
             a.Engage.Clear();
             a.Mover.SpeedMultiplier = RunSpeed;
-            a.Say("피해야 해!");
+            a.Say(TownGuardState.Outmatched(a) && a.HpRatio >= a.RetreatThreshold ? "저건 못 이겨, 성 안으로!" : "피해야 해!");
         }
 
         public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
@@ -68,8 +71,8 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             bool hit = HitNow(a);
             // Mended enough to rejoin a fight (as one fallen back does, P4-96 — not back and forth at the line), or with a
-            // potion to drink now, and hit: it turns on its attacker.
-            if (hit && (a.HpRatio >= FallBackRules.RejoinAt(a.RetreatThreshold) || a.Data.potions > 0))
+            // potion to drink now, and hit: it turns on its attacker — not on one beyond the town from outside the walls (P4-108).
+            if (hit && (a.HpRatio >= FallBackRules.RejoinAt(a.RetreatThreshold) || a.Data.potions > 0) && !TownGuardState.Outmatched(a))
             {
                 a.TownGuardState.Next = Next;
                 a.ChangeState(a.TownGuardState);

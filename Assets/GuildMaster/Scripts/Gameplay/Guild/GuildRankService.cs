@@ -74,6 +74,7 @@ namespace GuildMaster.Guild
             EventBus.Subscribe<ZoneDiscoveredEvent>(OnZone);
             EventBus.Subscribe<Places.PlaceDiscoveredEvent>(OnPlace);
             EventBus.Subscribe<RaidEndedEvent>(OnRaidEnded);
+            EventBus.Subscribe<Incidents.IncidentEndedEvent>(OnIncidentEnded);
             EventBus.Subscribe<RegionCleansedEvent>(OnLord);
             EventBus.Subscribe<Dragons.DragonSlainEvent>(OnDragon);
             EventBus.Subscribe<Dragons.DragonPlunderedEvent>(OnPlundered);
@@ -94,6 +95,7 @@ namespace GuildMaster.Guild
             EventBus.Unsubscribe<ZoneDiscoveredEvent>(OnZone);
             EventBus.Unsubscribe<Places.PlaceDiscoveredEvent>(OnPlace);
             EventBus.Unsubscribe<RaidEndedEvent>(OnRaidEnded);
+            EventBus.Unsubscribe<Incidents.IncidentEndedEvent>(OnIncidentEnded);
             EventBus.Unsubscribe<RegionCleansedEvent>(OnLord);
             EventBus.Unsubscribe<Dragons.DragonSlainEvent>(OnDragon);
             EventBus.Unsubscribe<Dragons.DragonPlunderedEvent>(OnPlundered);
@@ -212,6 +214,18 @@ namespace GuildMaster.Guild
             if (_loading || !e.Sighted || e.Killed <= 0) return;
             RaidsHeld++;
             AddFame(GuildRankRules.RaidHeld, "침공을 막아냄");
+        }
+
+        /// <summary>
+        /// A great horde stopped on its way to the town (P4-108, user decision 2026-10-27): it counts as a raid held for the ranks
+        /// — with the dens near the town cleared no raid may come for days (two measured 8-day runs saw none). Its fame came
+        /// with its quest.
+        /// </summary>
+        void OnIncidentEnded(Incidents.IncidentEndedEvent e)
+        {
+            if (_loading || !e.Known || e.Incident is not { Kind: Incidents.IncidentKind.Horde, Outcome: Incidents.IncidentOutcome.Resolved }) return;
+            RaidsHeld++;
+            CheckRank();
         }
 
         void OnLord(RegionCleansedEvent e) => AddFame(GuildRankRules.LordSlain, $"지대 군주 처치: {e.Lord?.displayName}");

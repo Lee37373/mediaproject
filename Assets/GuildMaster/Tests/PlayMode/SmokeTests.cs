@@ -1034,6 +1034,16 @@ namespace GuildMaster.Tests
                 Assert.That(rank.Rank, Is.EqualTo(Guild.GuildRank.E), "a rank once reached is kept");
                 Assert.That(rank.History.Last().reason, Does.Contain(lost.Data.name));
 
+                // P4-108 (user decision 2026-10-27): a great horde stopped counts as a raid held for C — with the dens near the town
+                // cleared, no raid came in two 8-day runs. One that got away, or that the guild never heard of, does not.
+                int held = rank.RaidsHeld;
+                EventBus.Publish(new Incidents.IncidentEndedEvent { Incident = new Incidents.Incident { Kind = Incidents.IncidentKind.Horde, Outcome = Incidents.IncidentOutcome.Resolved, SpeciesName = "고블린" }, Known = true });
+                Assert.That(rank.RaidsHeld, Is.EqualTo(held + 1), "a horde stopped");
+                EventBus.Publish(new Incidents.IncidentEndedEvent { Incident = new Incidents.Incident { Kind = Incidents.IncidentKind.Horde, Outcome = Incidents.IncidentOutcome.Resolved, SpeciesName = "고블린" }, Known = false });
+                EventBus.Publish(new Incidents.IncidentEndedEvent { Incident = new Incidents.Incident { Kind = Incidents.IncidentKind.Rescue, Outcome = Incidents.IncidentOutcome.Resolved, TargetName = "순례자" }, Known = true });
+                Assert.That(rank.RaidsHeld, Is.EqualTo(held + 1), "not one unheard of, nor another kind of incident");
+                Assert.That(new Guild.Goal(Guild.GoalKind.RaidsHeld, 1).Label, Is.EqualTo("침공이나 대규모 무리 막아내기"));
+
                 // A known guild draws stronger visitors, and more often.
                 int plain = Guild.GuildRankService.RankVisitorBonus;
                 typeof(Guild.GuildRankService).GetProperty(nameof(Guild.GuildRankService.Rank)).SetValue(rank, Guild.GuildRank.C);
@@ -2618,6 +2628,53 @@ namespace GuildMaster.Tests
                 yield return WaitFor(() => lying.Fsm.Current == lying.TownGuardState, 3f);
                 Assert.That(lying.StateLabel, Is.EqualTo("마을 경비"), "able to fight: it fights back");
                 third.Perish();
+
+                // P4-108 (user decision 2026-10-27 "못 이기면 성 안으로": Lv2–5 members traded blows for hours with Lv13 goblins at
+                // the wall): one just outside the walls the town cannot take on is left there — nobody goes out to it, and one it
+                // hits pulls back into the town at full health; a weak one there is still gone out to.
+                var town = Services.Get<Town.TownService>();
+                var world = Services.Get<World.WorldService>();
+                // Off the middle of a wall, where its gate is (a chaser at the gate bashes it, and a gate breaker is fought).
+                Vector2 outside = default, inside = default;
+                foreach (var dir in new[] { Vector2.right, Vector2.left, Vector2.up, Vector2.down })
+                foreach (float off in new[] { 7f, -7f })
+                {
+                    if (outside != default) break;
+                    var p = world.TownCenterWorld + new Vector2(-dir.y, dir.x) * off;
+                    while (town.IsInTown(p)) p += dir;
+                    var o = p + dir * 2f;
+                    var i = p - dir * 3f;
+                    if (!world.Grid.IsWalkable(World.GridMap.WorldToCell(o)) || !world.Grid.IsWalkable(World.GridMap.WorldToCell(i))
+                        || !town.WithinReachOfTown(o, 3.5f)) continue;
+                    outside = o;
+                    inside = i;
+                }
+                Assert.That(outside, Is.Not.EqualTo(default(Vector2)), "open ground just outside the wall");
+                var guard = lying;
+                guard.Mover.Stop();
+                guard.Mover.Warp(inside);
+                guard.ChangeState(guard.IdleState);
+                setHp.Invoke(guard, new object[] { guard.Stats.MaxHp });
+                guard.Data.potions = 1;
+                var strong = SpawnMonster("goblin", outside, meleeOnly: true, level: 30);
+                strong.ForceTarget(guard);
+                Assert.That((TownGuardState.BeyondUs(strong), TownGuardState.FindIntruder(guard) == strong), Is.EqualTo((true, false)),
+                    "beyond the town: not an intruder to go out to");
+                // Judged the moment it is hit, while the goblin still stands outside (given a few seconds it finds a way in —
+                // and one inside the walls is fought, as decided).
+                guard.ReceiveDamage(0f, strong, false); // damage-free (invulnerable), but a hit
+                Assert.That(TownGuardState.Outmatched(guard), Is.True, "hit from outside by one beyond the town");
+                float tick = 1f;
+                Assert.That(TownGuardState.TryStart(guard, guard.IdleState, ref tick, 1f), Is.True);
+                Assert.That((guard.StateLabel, guard.HpRatio), Is.EqualTo(("피신 중", 1f)), "hit by it at full health: back into the town");
+                yield return null;
+                Assert.That(guard.Fsm.Current, Is.SameAs(guard.TakeCoverState), "and it does not turn on it from there");
+                strong.Perish();
+                var weak = SpawnMonster("slime", outside, level: 1);
+                weak.ForceTarget(guard);
+                Assert.That((TownGuardState.BeyondUs(weak), TownGuardState.FindIntruder(guard) == weak), Is.EqualTo((false, true)),
+                    "one the town can take on at the wall is still gone out to");
+                weak.Perish();
             }
             finally { Unit.GuildInvulnerable = false; }
         }
@@ -4124,10 +4181,16 @@ namespace GuildMaster.Tests
             // P4-108: it does not fight, but badly hurt it looks after itself — the retreat check's first step, a potion (it
             // walked on behind its party while a monster beat it down).
             quitter.Data.potions = 1;
+            // Still trailing (its party may be home already in a slow run: then it walks home itself — put it back to trailing).
+            if (quitter.Fsm.Current != quitter.TagAlongState)
+            {
+                quitter.TagAlongState.Follow(takers);
+                quitter.ChangeState(quitter.TagAlongState);
+            }
             quitter.ReceiveDamage(quitter.Hp - quitter.Stats.MaxHp * quitter.RetreatThreshold * 0.5f, null, false);
             float hurtAt = quitter.HpRatio;
-            for (int k = 0; k < 3; k++) yield return null;
-            Assert.That((quitter.Data.potions, quitter.HpRatio > hurtAt), Is.EqualTo((0, true)), $"drank it (hp {hurtAt:0.00} → {quitter.HpRatio:0.00})");
+            yield return null;
+            Assert.That((quitter.Data.potions, quitter.HpRatio > hurtAt), Is.EqualTo((0, true)), $"drank it (hp {hurtAt:0.00} → {quitter.HpRatio:0.00}, {quitter.StateLabel})");
             Clock.SetSpeed(1);
         }
 
