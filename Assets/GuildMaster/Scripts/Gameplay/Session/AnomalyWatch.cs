@@ -46,6 +46,11 @@ namespace GuildMaster.Session
             if (s == a.TakeCoverState) return 4f;
             if (s == a.TrainState) return NewcomerRules.TrainHours + 1f;
             if (s == a.LureState) return 1f;
+            // P4-108: the later states — a walk to a place (its give-up walk and a stay; a night camp is a state of its own),
+            // a mood break (a spree's walk home and hangover the longest), trailing a party out (its outing).
+            if (s == a.PlaceVisitState) return Places.PlaceRules.GiveUpHours + 6f;
+            if (s == a.BreakState) return 6f;
+            if (s == a.TagAlongState) return 16f;
             // Idling decides every hour and a half; a follower waits for its leader, but not for half a
             // day (P4-76: an outing that never settled held a whole party in town for days).
             if (s == a.IdleState) return 12f;

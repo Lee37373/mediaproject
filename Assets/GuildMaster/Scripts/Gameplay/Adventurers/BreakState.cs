@@ -211,6 +211,8 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             a.Berserk = Kind == BreakKind.Berserk;
             a.BrawlFoe = Kind == BreakKind.Brawl ? _foe : null;
+            // As Enter: a berserker storms about faster (P4-108: lost on load).
+            if (Kind == BreakKind.Berserk) a.Mover.SpeedMultiplier = 1.15f;
         }
     }
 }

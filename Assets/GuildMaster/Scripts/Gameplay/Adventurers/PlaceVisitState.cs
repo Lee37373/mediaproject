@@ -27,7 +27,11 @@ namespace GuildMaster.Adventurers
         PlaceSite _place;
         Vector2 _spot;
         bool _arrived;
-        float _hoursThere, _setOut, _campCheck, _fxTimer;
+        /// <summary>
+        /// Game hours spent walking there in this state — a night camp on the way does not count (P4-108: counted from setting
+        /// out, a far place was given up the morning after the camp).
+        /// </summary>
+        float _hoursThere, _hoursWalked, _campCheck, _fxTimer;
 
         public PlaceSite Place => _place;
 
@@ -37,7 +41,7 @@ namespace GuildMaster.Adventurers
             _place = place;
             _arrived = false;
             _hoursThere = 0f;
-            _setOut = AdvCtx.Clock.TotalHours;
+            _hoursWalked = 0f;
             _spot = place != null ? SpotBeside(place, a) : default;
         }
 
@@ -124,7 +128,8 @@ namespace GuildMaster.Adventurers
             if (!_arrived)
             {
                 if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;
-                if (AdvCtx.Clock.TotalHours - _setOut > PlaceRules.GiveUpHours) { a.Say("너무 멀다. 돌아가자."); GiveUp(a); return; }
+                _hoursWalked += dt / AdvCtx.Clock.RealSecondsPerGameHour;
+                if (_hoursWalked > PlaceRules.GiveUpHours) { a.Say("너무 멀다. 돌아가자."); GiveUp(a); return; }
                 if (Vector2.Distance(a.Position, _spot) <= Reach)
                 {
                     _arrived = true;
@@ -200,12 +205,12 @@ namespace GuildMaster.Adventurers
         {
             public int place = -1;
             public bool arrived;
-            public float hours_there, set_out;
+            public float hours_there, hours_walked;
         }
 
         public override string SaveState() => JsonUtility.ToJson(new Saved
         {
-            place = _place?.Index ?? -1, arrived = _arrived, hours_there = _hoursThere, set_out = _setOut,
+            place = _place?.Index ?? -1, arrived = _arrived, hours_there = _hoursThere, hours_walked = _hoursWalked,
         });
 
         public override void ResumeState(string json, SaveContext ctx)
@@ -215,7 +220,7 @@ namespace GuildMaster.Adventurers
             _place = places != null && s.place >= 0 && s.place < places.All.Count ? places.All[s.place] : null;
             _arrived = s.arrived;
             _hoursThere = s.hours_there;
-            _setOut = s.set_out;
+            _hoursWalked = s.hours_walked;
             _spot = _place != null ? SpotBeside(_place, Owner) : default;
             Enter();
         }

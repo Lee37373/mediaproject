@@ -3274,6 +3274,14 @@ namespace GuildMaster.Tests
             Assert.That(campHere.ResumeTo[camper], Is.SameAs(camper.PlaceVisitState), "on to the spring in the morning");
             Assert.That(camper.Data.thoughts.Any(t => t.id == ThoughtRules.CosyCamp.Id), Is.True);
             Assert.That(camps.Capture(), Does.Contain($"\"old_camp\":{oldCamp.Index + 1}"), "kept in the save");
+            // P4-108: the night in camp does not count against the walk — counted from setting out, the morning after it gave up
+            // as "too far" (the next morning, longer after setting out than a walk may take).
+            float morning = Mathf.Floor(Clock.TotalHours / 24f) * 24f + 24f + 8f;
+            if (morning - Clock.TotalHours <= Places.PlaceRules.GiveUpHours) morning += 24f;
+            JumpClockTo(morning);
+            camper.ChangeState(camper.PlaceVisitState); // as the camp sends it on in the morning (ResumeTo above)
+            for (int k = 0; k < 3; k++) yield return null;
+            Assert.That(camper.Fsm.Current, Is.SameAs(camper.PlaceVisitState), "on to the spring after the night, not \"too far\"");
             camper.ChangeState(camper.ReturnState);
 
             // A river's crossing (P4-101), off the roads, with water between two points either side of the border beside it.
@@ -4113,6 +4121,13 @@ namespace GuildMaster.Tests
             yield return new WaitForSeconds(2f);
             float near = takers.Where(t => t != quitter).Min(t => Vector2.Distance(t.Position, quitter.Position));
             Assert.That(near, Is.LessThan(8f), "it trails the others");
+            // P4-108: it does not fight, but badly hurt it looks after itself — the retreat check's first step, a potion (it
+            // walked on behind its party while a monster beat it down).
+            quitter.Data.potions = 1;
+            quitter.ReceiveDamage(quitter.Hp - quitter.Stats.MaxHp * quitter.RetreatThreshold * 0.5f, null, false);
+            float hurtAt = quitter.HpRatio;
+            for (int k = 0; k < 3; k++) yield return null;
+            Assert.That((quitter.Data.potions, quitter.HpRatio > hurtAt), Is.EqualTo((0, true)), $"drank it (hp {hurtAt:0.00} → {quitter.HpRatio:0.00})");
             Clock.SetSpeed(1);
         }
 

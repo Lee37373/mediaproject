@@ -8,7 +8,8 @@ namespace GuildMaster.Adventurers
     /// <summary>
     /// Walked off its work but not off its party (user decision 2026-10-21, "태업 뒤 귀환": it follows the party): it gave the quest up
     /// and takes no share of the pay, does not go home alone and does not fight — it trails behind the comrades it was out with and
-    /// comes home when they do. Used by a mood break's walking off (P4-104d) and by F-2's at the breaking point.
+    /// comes home when they do; badly hurt, it retreats as anyone does. Used by a mood break's walking off (P4-104d) and by F-2's at
+    /// the breaking point.
     /// </summary>
     public class TagAlongState : State<Adventurer>
     {
@@ -43,6 +44,9 @@ namespace GuildMaster.Adventurers
         public override void Tick(float dt)
         {
             var a = Owner;
+            // It does not fight, but badly hurt it drinks or pulls back like anyone (P4-108: it walked on behind its party
+            // while a monster beat it down).
+            if (a.CheckRetreat(wearinessCounts: false)) return;
             var lead = Lead();
             // Its comrades are home, gone or dead: it walks the rest of the way itself.
             if (lead == null) { a.ChangeState(a.ReturnState); return; }

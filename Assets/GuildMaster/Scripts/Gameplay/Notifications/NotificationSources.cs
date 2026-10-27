@@ -161,6 +161,9 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<RefugeeArrivedEvent>(OnRefugee);
             EventBus.Unsubscribe<Incidents.IncidentRumouredEvent>(OnIncidentRumoured);
             EventBus.Unsubscribe<Incidents.IncidentEndedEvent>(OnIncidentEnded);
+            EventBus.Unsubscribe<MentalBreakEvent>(OnBreak);
+            EventBus.Unsubscribe<InspirationEvent>(OnInspired);
+            EventBus.Unsubscribe<QuirkGainedEvent>(OnQuirk);
         }
 
         // ---------------- Sudden incidents (P4-85): heard by rumour ----------------
