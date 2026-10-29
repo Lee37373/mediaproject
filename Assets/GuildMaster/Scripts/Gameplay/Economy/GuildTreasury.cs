@@ -30,6 +30,14 @@ namespace GuildMaster.Economy
         public const string Medical = "medical";
         /// <summary>Members' meals and lodging, and debts for them repaid (P4-68).</summary>
         public const string Living = "living";
+        /// <summary>A client paying for a finished quest, the guild's cut included (2026-10-29).</summary>
+        public const string Commission = "commission";
+        /// <summary>Money taken from a member by the guild master (2026-10-29).</summary>
+        public const string Tribute = "tribute";
+        /// <summary>The guild master's odd jobs for the townsfolk (2026-10-29).</summary>
+        public const string SideJob = "sidejob";
+        /// <summary>Food bought for the guild (2026-10-29).</summary>
+        public const string Food = "food";
     }
 
     /// <summary>

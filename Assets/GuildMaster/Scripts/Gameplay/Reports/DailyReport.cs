@@ -8,17 +8,19 @@ namespace GuildMaster.Reports
     /// <summary>Where the guild's gold came from or went (F-3). Income kinds first, then expense kinds.</summary>
     public enum GoldCategory
     {
-        Tax, GoodsSold, MerchantSales, LivingCosts, QuestRefund, OtherIncome,
-        QuestEscrow, Negotiation, LootBought, Crafting, Upgrade, Bonus, OtherExpense,
+        Tax, GoodsSold, MerchantSales, LivingCosts, QuestRefund, Commission, Tribute, SideJob, OtherIncome,
+        QuestEscrow, Negotiation, LootBought, Crafting, Upgrade, Bonus, Food, OtherExpense,
     }
 
     public static class GoldCategories
     {
         public static readonly GoldCategory[] Income =
-            { GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.LivingCosts, GoldCategory.QuestRefund, GoldCategory.OtherIncome };
+            { GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.LivingCosts, GoldCategory.QuestRefund,
+              GoldCategory.Commission, GoldCategory.Tribute, GoldCategory.SideJob, GoldCategory.OtherIncome };
 
         public static readonly GoldCategory[] Expense =
-            { GoldCategory.QuestEscrow, GoldCategory.Negotiation, GoldCategory.LootBought, GoldCategory.Crafting, GoldCategory.Upgrade, GoldCategory.Bonus, GoldCategory.OtherExpense };
+            { GoldCategory.QuestEscrow, GoldCategory.Negotiation, GoldCategory.LootBought, GoldCategory.Crafting, GoldCategory.Upgrade, GoldCategory.Bonus,
+              GoldCategory.Food, GoldCategory.OtherExpense };
 
         public static bool IsIncome(GoldCategory c) => c <= GoldCategory.OtherIncome;
 
@@ -40,6 +42,10 @@ namespace GuildMaster.Reports
                 GoldReason.Craft => GoldCategory.Crafting,
                 GoldReason.Upgrade => GoldCategory.Upgrade,
                 GoldReason.Bonus => GoldCategory.Bonus,
+                GoldReason.Commission => GoldCategory.Commission,
+                GoldReason.Tribute => GoldCategory.Tribute,
+                GoldReason.SideJob => GoldCategory.SideJob,
+                GoldReason.Food => GoldCategory.Food,
                 null => amount > 0 ? GoldCategory.QuestRefund : GoldCategory.QuestEscrow,
                 _ => amount > 0 ? GoldCategory.OtherIncome : GoldCategory.OtherExpense,
             };
@@ -54,6 +60,10 @@ namespace GuildMaster.Reports
             GoldCategory.MerchantSales => "행상인 판매",
             GoldCategory.LivingCosts => "길드원 생활비",
             GoldCategory.QuestRefund => "의뢰 보상 환급",
+            GoldCategory.Commission => "의뢰 대금(수수료 포함)",
+            GoldCategory.Tribute => "상납금",
+            GoldCategory.SideJob => "일손 돕기",
+            GoldCategory.Food => "식량 구매",
             GoldCategory.OtherIncome => "기타 수입",
             GoldCategory.QuestEscrow => "의뢰 보상 예치",
             GoldCategory.Negotiation => "협상 인상분",

@@ -52,8 +52,12 @@ namespace GuildMaster.UI
             floating.Build(UIBuilder.Rect(WorldLayer, "Floating").Stretch());
             var nameTags = WorldLayer.gameObject.AddComponent<NameTagLayer>();
             nameTags.Build(UIBuilder.Rect(WorldLayer, "NameTags").Stretch());
+            // Feelings beside heads (F-10), under the speech bubbles.
+            WorldLayer.gameObject.AddComponent<EmotionIconLayer>().Build(UIBuilder.Rect(WorldLayer, "Emotions").Stretch());
             var bubbles = WorldLayer.gameObject.AddComponent<SpeechBubbleLayer>();
             bubbles.Build(UIBuilder.Rect(WorldLayer, "Bubbles").Stretch());
+            // Town talks (user request 2026-10-01): bubbles for people who are not adventurers (the merchant).
+            WorldLayer.gameObject.AddComponent<TownSpeechRelay>();
             // Skill icons with their cooldowns, above the health bar (P4-34).
             var skillBars = WorldLayer.gameObject.AddComponent<SkillBarLayer>();
             skillBars.Build(UIBuilder.Rect(WorldLayer, "SkillBars").Stretch());
@@ -77,16 +81,22 @@ namespace GuildMaster.UI
             var inspector = HudLayer.gameObject.AddComponent<InspectorView>();
             inspector.Build(HudLayer);
             Services.Register(inspector);
+            // "다음 할 일" checklist and hints (F-19), under the windows.
+            HudLayer.gameObject.AddComponent<GuideView>().Build(HudLayer);
 
             WindowLayer = UIBuilder.Rect(HudLayer, "Windows").Stretch();
 
             var menu = UIBuilder.Rect(HudLayer, "SideMenu");
-            menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, 410));
+            menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, 510)); // 410 → 510: one more window (살림, 2026-10-29)
             UIBuilder.VLayout(menu, 6, 0);
 
             AddWindow<QuestBoardView>(menu, "의뢰 게시판 (Q)", Key.Q, new Vector2(1180, 680));
             AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1000, 560));
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
+            // Food and quest payments (economy round 2, 2026-10-29).
+            AddWindow<HouseholdView>(menu, "살림 (K)", Key.K, new Vector2(820, 740));
+            // Residents' odd jobs as minigames (일손 돕기, 2026-10-29), opened from the household window.
+            AddWindow<ChoreView>(null, null, Key.None, new Vector2(820, 560));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             AddWindow<MerchantView>(menu, "행상인 (T)", Key.T, new Vector2(760, 600));
             AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(700, 300));
@@ -95,6 +105,8 @@ namespace GuildMaster.UI
             AddWindow<DailyReportView>(menu, "정산 (L)", Key.L, new Vector2(960, 760));
             // The wall of the fallen: relics to fetch, memorials (F-6).
             AddWindow<MemorialView>(menu, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
+            // Who gets along with whom, and how everyone feels (F-10).
+            AddWindow<RelationshipView>(menu, "관계도 (G)", Key.G, new Vector2(1040, 720));
             // Notification list (F-1); the side-menu button shows the unread count (kept up to date by ToastLayer).
             var notificationView = AddWindow<NotificationView>(null, null, Key.N, new Vector2(820, 560));
             var notificationButton = UIBuilder.Button(menu, "알림 (N)", () => Focus(notificationView), -1, 40);
@@ -108,9 +120,15 @@ namespace GuildMaster.UI
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
             // Opened from the inspector and roster [상세] buttons (P4-6).
             AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 700));
-            AddWindow<MemberCareView>(null, null, Key.None, new Vector2(640, 700));
+            AddWindow<MemberCareView>(null, null, Key.None, new Vector2(640, 760)); // 700 → 760: 상납 요구 row (2026-10-29)
+            // Counselling by conversation (user request 2026-10-01), opened from the care window's 면담 button.
+            AddWindow<CounselDialogView>(null, null, Key.None, new Vector2(980, 620));
+            // Tribute talk (상납금, 2026-10-29), opened from the care window's 상납 요구 button.
+            AddWindow<TributeDialogView>(null, null, Key.None, new Vector2(980, 640));
             // Ready-made quests to choose from (F-8); opened from the quest board and the proposal notification.
             AddWindow<QuestProposalView>(null, null, Key.None, new Vector2(920, 640));
+            // Event cards (F-13): opens by itself when a card is drawn, or from the "다음 할 일" panel.
+            AddWindow<EventCardView>(null, null, Key.None, new Vector2(820, 600));
 
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);

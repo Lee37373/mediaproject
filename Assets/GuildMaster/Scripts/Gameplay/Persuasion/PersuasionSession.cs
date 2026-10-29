@@ -227,7 +227,9 @@ namespace GuildMaster.Persuasion
             string values = Target.Data.values;
             int maxParty = Quest.MaxParty;
             int willingness = Willingness;
-            if (Services.TryGet<LlmGateway>(out var gw) && gw.Enabled && gw.IsReady)
+            // Off by default (LlmUse, team decision 2026-10-28): the rule-based persuader answers.
+            var gw = LlmUse.Ready(LlmFeature.Persuasion);
+            if (gw != null)
             {
                 var result = await gw.RequestAsync(PersuadePrompt.BuildRequest(Target, Quest, willingness, Threshold, _turns, proposal, OfferedGold));
                 if (result.Ok && LlmJson.TryParse<PersuadePrompt.ResponseDto>(result.Text, out var dto) && !string.IsNullOrWhiteSpace(dto.reply))

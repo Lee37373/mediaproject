@@ -184,7 +184,9 @@ namespace GuildMaster.Proposals
         /// <summary>The LLM's pick and wording when it works, else the rules' own varied pick with rule-based wording.</summary>
         async Task<List<ProposalPlan>> ChooseAsync(List<ProposalPlan> pool, int members, int strongestLevel)
         {
-            if (Services.TryGet<LlmGateway>(out var gateway) && gateway.Enabled && gateway.IsReady)
+            // Off by default (LlmUse, team decision 2026-10-28): the rules pick and word the cards.
+            var gateway = LlmUse.Ready(LlmFeature.Proposal);
+            if (gateway != null)
             {
                 var ctx = ProposalPrompt.BuildContext(_clock.Day, _treasury.Gold, members, strongestLevel, Situation(), pool);
                 var result = await gateway.RequestAsync(ProposalPrompt.BuildRequest(ctx));

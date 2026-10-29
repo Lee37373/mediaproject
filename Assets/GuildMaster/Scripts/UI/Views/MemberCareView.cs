@@ -24,7 +24,7 @@ namespace GuildMaster.UI
 
         Adventurer _who;
         Text _header, _state, _result;
-        ActionRow _interview, _leave, _bonus, _treat, _fire;
+        ActionRow _interview, _leave, _bonus, _treat, _tribute, _fire;
         string _resultText = "";
         float _fireArmedUntil;
 
@@ -45,6 +45,7 @@ namespace GuildMaster.UI
             _leave = AddAction(body, "휴가", Leave, UITheme.Button);
             _bonus = AddAction(body, "보너스", Bonus, UITheme.Button);
             _treat = AddAction(body, "치료", Treat, UITheme.Button);
+            _tribute = AddAction(body, "상납 요구", Tribute, UITheme.Button); // 2026-10-29: 상납금 talk
             _fire = AddAction(body, "해고", Fire, UITheme.ButtonDanger);
             _result = Block(body, 64);
         }
@@ -95,7 +96,7 @@ namespace GuildMaster.UI
             {
                 _header.text = UIBuilder.Colored("관리할 길드원이 없습니다.", UITheme.TextMuted);
                 _state.text = "";
-                foreach (var row in new[] { _interview, _leave, _bonus, _treat, _fire })
+                foreach (var row in new[] { _interview, _leave, _bonus, _treat, _tribute, _fire })
                 {
                     row.Button.interactable = false;
                     row.Desc.text = "";
@@ -137,11 +138,12 @@ namespace GuildMaster.UI
 
             // ---- Tools ----
             var talk = welfare.CanInterview(a);
-            float talkRelief = CareRules.InterviewRelief(d.values, d.mbti) * (care.Demand == CareDemand.Talk ? CareRules.DemandMetFactor : 1f);
             _interview.Button.interactable = talk.Ok;
             _interview.Button.SetLabel("면담" + Requested(care, CareDemand.Talk));
+            // A real conversation now (user request 2026-10-01, CounselDialogView): how much it helps depends on what is said.
             _interview.Desc.text = talk.Ok
-                ? $"무료 · 스트레스 약 -{talkRelief:0} · 속마음을 들어 줍니다. 성격에 따라 효과가 다릅니다."
+                ? "무료 · 대화로 고민을 들어 줍니다. 공감·질문·구체적인 도움이 통하고, 다그치면 오히려 스트레스가 오릅니다."
+                    + (care.Demand == CareDemand.Talk ? $" (요구한 면담: 효과 {CareRules.DemandMetFactor:0.#}배)" : "")
                 : UIBuilder.Colored(talk.Reason, UITheme.Warn);
 
             var leave = welfare.CanGrantLeave(a);
@@ -169,6 +171,13 @@ namespace GuildMaster.UI
                 ? $"중상을 바로 치료하고 체력을 {Legacy.LegacyRules.TreatHpRatio * 100f:0}%까지 회복합니다. 치료하지 않으면 시간이 지나야 낫습니다."
                 : UIBuilder.Colored(treat.Reason, UITheme.Warn);
 
+            // Tribute (상납금, user decision 2026-10-29): talk the member out of some of their gold.
+            var tribute = Services.TryGet<TributeService>(out var tributes) ? tributes.CanAsk(a, now) : CareCheck.No("상납금을 받을 수 없습니다.");
+            _tribute.Button.interactable = tribute.Ok;
+            _tribute.Desc.text = tribute.Ok
+                ? $"대화로 길드원의 돈을 받아냅니다 (소지금 {d.gold}G). 사정·명분·보답 약속이 통하고, 협박하면 빨리 뜯어내지만 스트레스와 원망이 쌓입니다."
+                : UIBuilder.Colored(tribute.Reason, UITheme.Warn);
+
             bool armed = Time.unscaledTime < _fireArmedUntil;
             _fire.Button.interactable = true;
             _fire.Button.SetLabel(armed ? "정말 해고" : "해고");
@@ -188,8 +197,27 @@ namespace GuildMaster.UI
 
         // ---------------- Actions ----------------
 
-        void Interview() => Do(w => w.Interview(_who));
+        /// <summary>Opens the counselling talk (user request 2026-10-01); the one-click interview only without that window.</summary>
+        void Interview()
+        {
+            if (_who == null || !Services.TryGet<GuildWelfare>(out var welfare)) return;
+            _fireArmedUntil = 0f;
+            var check = welfare.CanInterview(_who);
+            if (!check.Ok) { Report(CareResult.Fail(check.Reason)); Refresh(); return; }
+            if (Services.TryGet<CounselDialogView>(out var talk)) talk.Show(_who);
+            else Do(w => w.Interview(_who));
+        }
         void Leave() => Do(w => w.GrantLeave(_who));
+
+        /// <summary>Opens the tribute talk (상납금, 2026-10-29).</summary>
+        void Tribute()
+        {
+            if (_who == null || !Services.TryGet<TributeService>(out var tributes) || !Services.TryGet<GameClock>(out var clock)) return;
+            _fireArmedUntil = 0f;
+            var check = tributes.CanAsk(_who, clock.TotalHours);
+            if (!check.Ok) { Report(CareResult.Fail(check.Reason)); Refresh(); return; }
+            if (Services.TryGet<TributeDialogView>(out var talk)) talk.Show(_who);
+        }
         void Bonus() => Do(w => w.GiveBonus(_who));
 
         /// <summary>Pays a healer for a badly wounded member (F-6).</summary>

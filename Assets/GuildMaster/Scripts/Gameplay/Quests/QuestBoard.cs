@@ -164,6 +164,7 @@ namespace GuildMaster.Quests
                 Close(q, QuestStatus.Cancelled, refund: true);
                 return true;
             }
+            q.CalledOff = true; // 2026-10-29: the client does not pay for a job called off (CommissionService)
             if (q.Type == QuestType.Escort)
             {
                 _escortShares.TryGetValue(q, out var shares);

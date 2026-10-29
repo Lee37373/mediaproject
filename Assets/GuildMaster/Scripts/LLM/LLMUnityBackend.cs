@@ -16,6 +16,8 @@ namespace GuildMaster.LLM
     public class LLMUnityBackend : MonoBehaviour, ILlmBackend
     {
         [SerializeField] float startupTimeoutSeconds = 180f;
+        /// <summary>Warmup only processes the system prompt; far longer than this means the service is stuck.</summary>
+        const float WarmupTimeoutSeconds = 60f;
 
         LLMUnity.LLM _llm;
         LLMAgent _agent;
@@ -100,9 +102,24 @@ namespace GuildMaster.LLM
             yield return null;
             yield return null;
 
-            // Warm up (caches the system prompt).
+            // Warm up (caches the system prompt). Bounded (user report 2026-09-30): when the native
+            // service is wedged the warmup never finishes, and the recovery that called Connect used to
+            // hang on it forever ("AI: LLM 복구 중…" for the rest of the session). Failing lets the
+            // gateway back off, retry and finally say it gave up.
             var warm = _agent.Warmup();
-            while (!warm.IsCompleted) yield return null;
+            float waited = 0f;
+            while (!warm.IsCompleted && waited < WarmupTimeoutSeconds)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (!warm.IsCompleted)
+            {
+                State = LlmBackendState.Failed;
+                Description = "LLM이 응답하지 않습니다 (게임을 다시 시작하면 복구됩니다)";
+                Debug.LogWarning($"[LLM] warmup did not finish in {WarmupTimeoutSeconds:0}s");
+                yield break;
+            }
             if (warm.IsFaulted)
             {
                 State = LlmBackendState.Failed;
@@ -149,7 +166,8 @@ namespace GuildMaster.LLM
         /// </summary>
         public async Task<bool> TryRecoverAsync()
         {
-            CancelCurrent();
+            // No CancelCurrent() here: cancelling a native generation is what wedges the service
+            // (see LlmGateway.RunAsync, user report 2026-09-30).
             if (_agent != null)
             {
                 Destroy(_agent);

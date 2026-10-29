@@ -235,6 +235,7 @@ namespace GuildMaster.UI
                 case Building b: ShowBuilding(b); break;
                 case TownGate g: ShowGate(g); break;
                 case Merchant m: ShowMerchant(m); break;
+                case Social.Resident r: ShowResident(r); break;
                 case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
             }
@@ -257,6 +258,20 @@ namespace GuildMaster.UI
             _body.text =
                 $"상태: {UIBuilder.Colored(m.StateLabel, UITheme.Accent)}\n" +
                 Muted("창고의 재료·물약·장비를 사 갑니다. [행상인 (T)] 창에서 팔 수 있습니다.");
+        }
+
+        /// <summary>A townsperson (user request 2026-10-07): who they are and what they think of the guild.</summary>
+        void ShowResident(Social.Resident r)
+        {
+            var p = r.Profile;
+            var opinionColor = p.GuildOpinion >= Social.ResidentProfile.GoodOpinion ? UITheme.Good
+                : p.GuildOpinion <= -Social.ResidentProfile.GoodOpinion ? UITheme.Bad : UITheme.TextMuted;
+            _title.text = $"{p.Name}  {Muted($"{p.JobLabel} (주민)")}";
+            _body.text =
+                $"상태: {UIBuilder.Colored(r.StateLabel, UITheme.Accent)}\n" +
+                $"성격 {p.Mbti} · 가치관 {p.Values}\n" +
+                $"길드에 대한 생각: {UIBuilder.Colored(p.OpinionText, opinionColor)}\n" +
+                Muted("방문자에게 길드 이야기를 전합니다. 길드를 좋게 보면 영입을 권하기도 합니다.");
         }
 
         static string Muted(string s) => UIBuilder.Colored(s, UITheme.TextMuted);
@@ -289,8 +304,12 @@ namespace GuildMaster.UI
             // 2026-09-23): this inspector card was still showing them for any visitor just from a map click,
             // which defeated the point of hiding them in the recruit dialogue (user report 2026-09-23).
             // Once recruited (not IsVisitor) they're shown normally; there's no more mystery to protect.
+            // User request 2026-09-29: whatever the talk has brought out is shown again (see VisitorReveal).
             if (a.IsVisitor)
-                lines.Add(Muted("성격·가치관·특성: 대화로 알아가 보세요.") + $" · 전투 {CombatTiers.Label(a.Tier)}");
+            {
+                lines.Add($"{RecruitDialogView.KnownTemperament(a)} · 전투 {CombatTiers.Label(a.Tier)}");
+                lines.Add($"{Muted("특성:")} {RecruitDialogView.KnownTraits(a)}");
+            }
             else
             {
                 lines.Add($"성격 {d.mbti} · 가치관 {d.values} · 전투 {CombatTiers.Label(a.Tier)}");

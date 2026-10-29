@@ -14,6 +14,7 @@ namespace GuildMaster.UI
     {
         Text _time;
         Text _gold;
+        Text _food;
         Text _exp;
         Text _materials;
         Text _members;
@@ -43,6 +44,7 @@ namespace GuildMaster.UI
             }
             UIBuilder.Rect(bar.transform, "Spacer").Size(-1, -1, 1);
             _gold = UIBuilder.Label(bar.transform, "", 17).Size(150);
+            _food = UIBuilder.Label(bar.transform, "", 17).Size(110); // 2026-10-29: the guild's food
             _exp = UIBuilder.Label(bar.transform, "", 17).Size(190);
             _materials = UIBuilder.Label(bar.transform, "", 17).Size(120);
             _members = UIBuilder.Label(bar.transform, "", 17).Size(130);
@@ -63,6 +65,8 @@ namespace GuildMaster.UI
 
             var t = Services.Get<GuildTreasury>();
             _gold.text = $"{UIBuilder.Colored("골드", UITheme.Accent)} {t.Gold:N0}";
+            if (Services.TryGet<FoodStore>(out var food))
+                _food.text = food.DaysLeft < FoodRules.WarnDays ? UIBuilder.Colored($"식량 {food.Food}", UITheme.Bad) : $"식량 {food.Food}";
             _exp.text = $"{UIBuilder.Colored("EXP", UITheme.Exp)} {t.Exp:N0} {UIBuilder.Colored($"(+{t.ExpPerHour:0.#}/h)", UITheme.TextMuted)}";
             var db = Services.Get<GameDatabase>();
             int mats = t.Stock.Where(kv => db.Item(kv.Key)?.category == ItemCategory.Material).Sum(kv => kv.Value);

@@ -34,11 +34,10 @@ namespace GuildMaster.LLM
         /// <summary>The request currently being generated (null when idle).</summary>
         Pending _current;
 
-        const float CancelGraceSeconds = 3f;
         /// <summary>How long a new request waits for a cancelled-but-still-running generation to end.
         /// Must cover one full generation (4B model: ~10 s), or requests after any cancel fail as "busy".</summary>
         const float StaleWaitSeconds = 25f;
-        /// <summary>Generation that timed out and ignored cancellation (still running natively).</summary>
+        /// <summary>A generation the gateway stopped waiting for (timed out or preempted) that is still running natively.</summary>
         Task _stale;
         /// <summary>When that generation was set aside (realtime), so it cannot block the queue forever.</summary>
         float _staleSince;
@@ -325,6 +324,7 @@ namespace GuildMaster.LLM
                 if (!_stale.IsCompleted)
                 {
                     NoteFailure();
+                    Debug.LogWarning($"[LLM] a set-aside generation is still running after {StaleWaitSeconds:0}s; '{p.Request.Tag}' fails as busy.");
                     return LlmResult.Fail("busy");
                 }
             }
@@ -339,20 +339,24 @@ namespace GuildMaster.LLM
                 var done = await Task.WhenAny(gen, timeout);
                 if (done != gen)
                 {
-                    _backend.CancelCurrent();
+                    // The native generation is NOT cancelled any more (user report 2026-09-30: "오래 돌리면
+                    // LLM 연결이 끊어진다"). Reproduced live with kanana 8B: a preempted small talk was
+                    // cancelled mid-generation, the native call never returned ("did not stop after
+                    // cancel"), every later request failed as "busy", and the recovery that followed hung
+                    // for good in "복구 중" because the new agent waits on the same wedged service.
+                    // Cancel only sometimes wedges it (an earlier preemption in the same run was fine),
+                    // so the longer the game runs the surer it is to happen. A generation always ends by
+                    // itself within its token budget (a few seconds), so we simply stop waiting for this
+                    // one: it is set aside as stale and the next request starts once it is done.
                     timeoutCts.Cancel();
                     // A caller cancelling (e.g. a party invite replacing a decision) or a preempted
                     // small talk is not a failure.
                     bool preempted = p.Preempt.IsCancellationRequested;
                     if (!p.Token.IsCancellationRequested && !preempted) NoteFailure();
-                    // Give the backend a short grace period to unwind; if it does not, remember it
-                    // as stale (see above) instead of blocking the queue forever.
-                    await Task.WhenAny(gen, Task.Delay(TimeSpan.FromSeconds(CancelGraceSeconds)));
                     if (!gen.IsCompleted)
                     {
                         _stale = gen;
                         _staleSince = Time.realtimeSinceStartup;
-                        Debug.LogWarning($"[LLM] '{p.Request.Tag}' did not stop after cancel; later requests fail fast until it ends.");
                     }
                     return LlmResult.Fail(p.Token.IsCancellationRequested ? "cancelled" : preempted ? "preempted" : "timeout");
                 }

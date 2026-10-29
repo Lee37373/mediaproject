@@ -171,15 +171,18 @@ namespace GuildMaster.Session
             llm.SetBackend(LlmBackends.CreateDefault(_systems));
             llm.Enabled = GameSettings.LlmEnabled; // settings menu (P4-10)
             Services.Register(llm);
-            // LLM decisions with the rule-based maker as the built-in fallback.
-            Services.Register<IAdventurerDecisionMaker>(new LlmDecisionMaker(llm));
+            // LLM decisions with the rule-based maker as the built-in fallback. Where the model is used at all is
+            // decided in LlmUse (team decision 2026-10-28: only recruiting and counselling talks); a system whose
+            // feature is off gets no gateway and takes its rule-based path.
+            Services.Register<IAdventurerDecisionMaker>(LlmUse.Allows(LlmFeature.Decision)
+                ? new LlmDecisionMaker(llm) : (IAdventurerDecisionMaker)new RuleBasedDecisionMaker());
             var roster = AddSystem<GuildRoster>();
             roster.Capacity = Balance.rosterCapacity;
             Services.Register(roster);
             // Per-adventurer memories; before recruiting so the starting members remember joining.
             Services.Register(new MemoryRecorder(clock, roster));
             // Multi-person quests: the first taker invites idle members (LLM, rule fallback).
-            Services.Register(new PartyService(llm, board, roster));
+            Services.Register(new PartyService(LlmUse.Gateway(LlmFeature.Party, llm), board, roster));
             // Quests nobody takes for 6 game hours can be talked into by the guild master (P4-24).
             Services.Register(new Persuasion.PersuasionService(board, roster, clock));
             // Notifications (F-1): the list behind the toasts and the HUD badge, fed by gameplay events.
@@ -192,7 +195,7 @@ namespace GuildMaster.Session
             Services.Register(bands);
             // Standing parties (P4-50): formed in town, pooled pay split by the leader back home.
             var parties = AddSystem<GuildParties>();
-            parties.Init(clock, new PartySettlement(llm));
+            parties.Init(clock, new PartySettlement(LlmUse.Gateway(LlmFeature.Split, llm)));
             Services.Register(parties);
             // Party roles, formation and focus fire on the leader's call (P4-27).
             var partyTactics = AddSystem<PartyTactics>();
@@ -200,7 +203,7 @@ namespace GuildMaster.Session
             Services.Register(partyTactics);
             // Learning on level-up (P4-34): the model picks from what the class can still learn.
             var skillChoice = AddSystem<SkillChoiceService>();
-            skillChoice.Init(llm);
+            skillChoice.Init(LlmUse.Gateway(LlmFeature.Skill, llm));
             Services.Register(skillChoice);
             // Idle small talk in town (LLM only when the gateway is idle).
             var banter = AddSystem<BanterService>();
@@ -226,6 +229,13 @@ namespace GuildMaster.Session
             Services.Register(new Welfare.GuildWelfare(clock, roster, treasury, board, notifications));
             // Members' keep (P4-68): meals at midnight, lodging while resting in town, unpaid goes on the slate.
             Services.Register(new LivingCosts(roster, treasury, world, Balance.dailyMealGold, Balance.lodgingGoldPerHour));
+            // Economy round 2 (user decision 2026-10-29): clients pay for finished quests, and the guild buys food.
+            Services.Register(new CommissionService(treasury));
+            Services.Register(new FoodStore(roster, treasury));
+            // Tribute talks (상납금, 2026-10-29): who was asked when, and grudges.
+            Services.Register(new TributeService());
+            // Residents' odd jobs for small income (일손 돕기, 2026-10-29).
+            Services.Register(new ChoreService(treasury));
             // What death leaves behind (F-6): the wall of the fallen, relics to fetch, last stands and the wounds after them.
             Services.Register(new Legacy.GuildLegacy(clock, roster, treasury, notifications));
             // Quest proposals (F-8): the LLM (or the rules) offers a few quests to choose from instead of the posting form.
@@ -249,6 +259,22 @@ namespace GuildMaster.Session
             var merchant = AddSystem<MerchantService>();
             merchant.Init(clock, world, market);
             Services.Register(merchant);
+            // Town life between everyone in town — members, visitors, the merchant (user request 2026-10-01):
+            // comfort, quarrels and making up, rumors. Next to BanterService, which it leaves as it is.
+            var townTalk = AddSystem<Social.TownTalkService>();
+            townTalk.Init(llm, roster, world, visitors, merchant, clock);
+            Services.Register(townTalk);
+            // Townsfolk (user request 2026-10-07): six residents who go about their day and talk with everyone in town.
+            var residents = AddSystem<Social.ResidentService>();
+            residents.Init(town, world);
+            Services.Register(residents);
+            townTalk.SetResidents(residents);
+            // Feelings over heads and the relationship graph (F-10, user request 2026-10-11).
+            Services.Register(new Social.EmotionService(clock, roster, residents));
+            // Event cards, 0-2 a day (F-13).
+            Services.Register(new Incidents.EventCardService(clock, roster, treasury, notifications, LlmUse.Gateway(LlmFeature.EventCard, llm)));
+            // "다음 할 일" checklist and hints (F-19).
+            Services.Register(new Guide.GuideTracker());
 
             // --- Camera ---
             var cam = SetupCamera(world);

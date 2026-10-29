@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using GuildMaster.Adventurers;
 using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Core;
 using GuildMaster.Data;
@@ -15,14 +16,68 @@ namespace GuildMaster.Tests
         [Test]
         public void Judge_FollowsPlanRules()
         {
-            // No more fixed turn limit (user request 2026-09-23): talk is unlimited, so Judge only concludes
-            // things on an explicit join/refuse or affinity reaching 85.
-            Assert.That(RecruitmentSession.Judge(50, RecruitDecision.Join), Is.EqualTo(RecruitOutcome.Joined));
-            Assert.That(RecruitmentSession.Judge(49, RecruitDecision.Join), Is.EqualTo(RecruitOutcome.Ongoing), "join needs affinity 50");
-            Assert.That(RecruitmentSession.Judge(85, RecruitDecision.Undecided), Is.EqualTo(RecruitOutcome.Joined), "85 joins regardless");
+            // No formal proposal and no turn limit (user request 2026-09-30): a visitor who says they want in
+            // joins from ConversationJoinFloor up, and anyone joins on their own at AutoJoinAffinity.
+            int floor = RecruitmentSession.ConversationJoinFloor, auto = RecruitmentSession.AutoJoinAffinity;
+            Assert.That(floor, Is.LessThan(50), "joining in the flow of the talk no longer needs 50");
+            Assert.That(RecruitmentSession.Judge(floor, RecruitDecision.Join), Is.EqualTo(RecruitOutcome.Joined));
+            Assert.That(RecruitmentSession.Judge(floor - 1, RecruitDecision.Join), Is.EqualTo(RecruitOutcome.Ongoing), "still too wary");
+            Assert.That(RecruitmentSession.Judge(auto, RecruitDecision.Undecided), Is.EqualTo(RecruitOutcome.Joined), "joins on their own");
+            Assert.That(RecruitmentSession.Judge(auto - 1, RecruitDecision.Undecided), Is.EqualTo(RecruitOutcome.Ongoing));
             Assert.That(RecruitmentSession.Judge(34, RecruitDecision.Refuse), Is.EqualTo(RecruitOutcome.Left));
             Assert.That(RecruitmentSession.Judge(40, RecruitDecision.Refuse), Is.EqualTo(RecruitOutcome.Ongoing), "refuse above 35 keeps talking");
-            Assert.That(RecruitmentSession.Judge(60, RecruitDecision.Undecided), Is.EqualTo(RecruitOutcome.Ongoing), "no turn cap: undecided just continues, however long the talk");
+        }
+
+        /// <summary>User report 2026-10-18: a visitor the town had warmed up joined after a single, low-effort "안녕".</summary>
+        [Test]
+        public void Judge_NoJoiningBeforeBeingAskedOrTalkingAWhile_NorOnABadLine()
+        {
+            int floor = RecruitmentSession.ConversationJoinFloor, auto = RecruitmentSession.AutoJoinAffinity;
+            Assert.That(RecruitmentSession.MayJoin(invited: false, playerTurns: 1), Is.False);
+            Assert.That(RecruitmentSession.MayJoin(invited: true, playerTurns: 1), Is.True, "asked straight out");
+            Assert.That(RecruitmentSession.MayJoin(false, RecruitmentSession.OwnJoinMinTurns), Is.True, "talked a while");
+            Assert.That(RecruitmentSession.Judge(63, RecruitDecision.Join, mayJoin: false, lineDelta: 3), Is.EqualTo(RecruitOutcome.Ongoing), "first line, not asked");
+            Assert.That(RecruitmentSession.Judge(auto, RecruitDecision.Undecided, mayJoin: false, lineDelta: 3), Is.EqualTo(RecruitOutcome.Ongoing));
+            Assert.That(RecruitmentSession.Judge(63, RecruitDecision.Join, mayJoin: true, lineDelta: -2), Is.EqualTo(RecruitOutcome.Ongoing), "not on a low-effort line");
+            Assert.That(RecruitmentSession.Judge(floor, RecruitDecision.Join, mayJoin: true, lineDelta: 0), Is.EqualTo(RecruitOutcome.Joined));
+            Assert.That(RecruitmentSession.Judge(auto, RecruitDecision.Undecided, mayJoin: true, lineDelta: 1), Is.EqualTo(RecruitOutcome.Joined));
+            Assert.That(RecruitmentSession.Judge(20, RecruitDecision.Refuse, mayJoin: false, lineDelta: -12), Is.EqualTo(RecruitOutcome.Left), "leaving needs no guard");
+        }
+
+        [Test]
+        public void Greeting_PicksUpOnlyAnEarlierTalk_InTheirOwnVoice()
+        {
+            string first = RecruitmentSession.Greeting(false, false, NpcVoice.Register.Warm);
+            string heard = RecruitmentSession.Greeting(false, true, NpcVoice.Register.Warm);
+            string again = RecruitmentSession.Greeting(true, true, NpcVoice.Register.Warm);
+            Assert.That(first, Does.Not.Contain("아까"));
+            Assert.That(heard, Does.Not.Contain("아까"));
+            Assert.That(again, Does.Contain("아까"));
+            Assert.That(RecruitmentSession.Greeting(false, false, NpcVoice.Register.Haughty), Is.Not.EqualTo(first), "speech level shows");
+            Assert.That(RecruitmentSession.Greeting(false, false, NpcVoice.Register.Haughty), Does.Not.EndWith("요?"));
+        }
+
+        [Test]
+        public void Invitation_IsSaidInTheTalk_AndNaggingNeverPays()
+        {
+            Assert.That(RuleBasedRecruiter.IsInvitation("우리 길드에 들어와 줄래요?"), Is.True);
+            Assert.That(RuleBasedRecruiter.IsInvitation("함께하자, 우리 길드로 와."), Is.True);
+            Assert.That(RuleBasedRecruiter.IsInvitation("같이 하실래요?"), Is.True);
+            Assert.That(RuleBasedRecruiter.IsInvitation("오늘 날씨 좋네요."), Is.False);
+            // Asking again right away can never raise affinity (the old proposal button could be mashed).
+            Assert.That(RecruitmentSession.NaggedDelta(10), Is.EqualTo(-RecruitmentSession.NagPenalty));
+            Assert.That(RecruitmentSession.NaggedDelta(-3), Is.EqualTo(-3 - RecruitmentSession.NagPenalty));
+        }
+
+        [Test]
+        public void RuleBased_Invitation_AcceptedOnceWellDisposed()
+        {
+            var rng = new GameRandom(5);
+            var yes = RuleBasedRecruiter.Respond("우리 길드에 들어와 줄래요? 함께하면 좋겠어요.", "모험", 50, false, rng);
+            Assert.That(yes.Decision, Is.EqualTo(RecruitDecision.Join));
+            var notYet = RuleBasedRecruiter.Respond("우리 길드에 들어와 줄래요? 함께하면 좋겠어요.", "모험", 30, false, rng);
+            Assert.That(notYet.Decision, Is.EqualTo(RecruitDecision.Undecided), "not a refusal either, just not yet");
+            Assert.That(string.IsNullOrEmpty(notYet.Text), Is.False);
         }
 
         [Test]
@@ -33,7 +88,8 @@ namespace GuildMaster.Tests
             Assert.That(RecruitmentSession.InitialAffinity(null), Is.EqualTo(RecruitmentSession.StartAffinity));
             Assert.That(RecruitmentSession.InitialAffinity(TraitSet.FromIds(new[] { "loyal" }, db)), Is.EqualTo(55));
             Assert.That(RecruitmentSession.InitialAffinity(TraitSet.FromIds(new[] { "arrogant" }, db)), Is.EqualTo(25));
-            Assert.That(RecruitmentSession.InitialAffinity(TraitSet.FromIds(new[] { "arrogant", "greedy" }, db)), Is.EqualTo(15));
+            Assert.That(RecruitmentSession.InitialAffinity(TraitSet.FromIds(new[] { "arrogant", "greedy" }, db)), Is.EqualTo(RecruitmentSession.HardestStart),
+                "the hardest visitor still starts where a good talk can win them over");
         }
 
         [Test]
@@ -73,11 +129,114 @@ namespace GuildMaster.Tests
             Assert.IsNull(RuleBasedRecruiter.Topic("우리 길드는 마을 광장 옆에 있어요."));
 
             var rng = new GameRandom(7);
+            // The visitor's OWN value: keen.
+            var keen = RuleBasedRecruiter.Respond("우리는 무리한 의뢰를 받지 않아서 안전합니다.", "안전", 40, false, rng);
+            Assert.That(keen.Text, Does.Contain("무리한 의뢰").Or.Contain("돌아올 수 있는"));
+            // Someone else's value: acknowledged, then turned to what this visitor wants — which tells the
+            // guild master their values (user request 2026-09-29). It used to answer as if it were their passion.
             var topical = RuleBasedRecruiter.Respond("우리는 무리한 의뢰를 받지 않아서 안전합니다.", "명예", 40, false, rng);
             var filler = RuleBasedRecruiter.Respond("우리 길드는 마을 광장 옆에 있어요.", "명예", 40, false, rng);
             Assert.AreEqual(RecruitDecision.Undecided, topical.Decision);
             Assert.AreNotEqual(topical.Text, filler.Text);
-            Assert.That(topical.Text, Does.Contain("무리한 의뢰").Or.Contain("돌아올 수 있는"));
+            StringAssert.Contains("이름을 남길", topical.Text);
+            Assert.That(topical.Reveals, Is.EqualTo(VisitorReveal.Values));
+            Assert.That(filler.Reveals, Is.Null, "filler gives nothing away");
+        }
+
+        [Test]
+        public void RuleBased_StockLines_FollowTheSpeechLevel()
+        {
+            var warm = RuleBasedRecruiter.Respond("안녕하세요", "돈", 40, false, new GameRandom(3), null, NpcVoice.Register.Warm);
+            var haughty = RuleBasedRecruiter.Respond("안녕하세요", "돈", 40, false, new GameRandom(3), null, NpcVoice.Register.Haughty);
+            Assert.That(warm.Text, Is.Not.EqualTo(haughty.Text));
+            Assert.That(haughty.Text, Does.Not.Contain("요."), "the arrogant visitor does not speak politely");
+        }
+
+        // ---- finding out about a visitor (user request 2026-09-29) ----
+
+        static AdventurerData Visitor() => new()
+        {
+            name = "오스틴", mbti = "ESFJ", values = "돈", traitIds = new List<string> { "arrogant", "sturdy" },
+        };
+
+        // Fixed reveal rules (user report 2026-10-07: "정보가 드러나는 포인트가 애매모호함").
+
+        [Test]
+        public void Reveal_Personality_AfterAFewLines_OrWhenAsked()
+        {
+            var d = Visitor();
+            Assert.That(VisitorReveal.BeforeReply(d, "안녕하세요", 1, 30, out _), Is.Empty);
+            Assert.That(VisitorReveal.BeforeReply(d, "어떤 성격이세요?", 1, 10, out _).Select(s => s.Key), Does.Contain(VisitorReveal.Personality), "asked: at once");
+            Assert.That(VisitorReveal.BeforeReply(d, "날씨 좋네요", VisitorReveal.PersonalityTurns, 10, out _).Select(s => s.Key),
+                Does.Contain(VisitorReveal.Personality), "enough talk");
+            VisitorReveal.Reveal(d, VisitorReveal.Personality);
+            Assert.That(VisitorReveal.BeforeReply(d, "어떤 성격이세요?", 5, 50, out _), Is.Empty, "already known");
+        }
+
+        [Test]
+        public void Reveal_Values_WhenTouched_OrAskedOnceLikedEnough()
+        {
+            var d = Visitor();
+            var early = VisitorReveal.BeforeReply(d, "뭐가 제일 중요하세요?", 1, VisitorReveal.ValuesAskAffinity - 1, out var hint);
+            Assert.That(early, Is.Empty);
+            StringAssert.Contains(VisitorReveal.ValuesAskAffinity.ToString(), hint, "asked too early: says what it takes");
+            var asked = VisitorReveal.BeforeReply(d, "뭐가 제일 중요하세요?", 1, VisitorReveal.ValuesAskAffinity, out hint);
+            Assert.That(asked.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.Values }));
+            Assert.That(hint, Is.Null);
+            var touched = VisitorReveal.AfterReply(d, RecruitReaction.ValueMatch, false, null, 30, 38);
+            Assert.That(touched.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.Values }));
+            Assert.That(touched[0].Reason, Is.Not.Empty);
+            var clash = VisitorReveal.AfterReply(d, RecruitReaction.Clash, true, null, 30, 25);
+            Assert.That(clash.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.Values }));
+            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.Friendly, false, null, 30, 32), Is.Empty);
+        }
+
+        [Test]
+        public void Reveal_Traits_WhenOffered_OpeningUp_OrAsked()
+        {
+            var d = Visitor();
+            var offered = VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, "sturdy", 30, 36);
+            Assert.That(offered.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.TraitKey("sturdy") }), "the trait the words were for");
+            int mark = VisitorReveal.OpenUpAffinity[0];
+            var opened = VisitorReveal.AfterReply(d, RecruitReaction.Friendly, false, null, mark - 2, mark);
+            Assert.That(opened.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.TraitKey("arrogant") }), "opening up: the first hidden one");
+            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.Friendly, false, null, mark, mark + 3), Is.Empty, "only when crossing");
+            VisitorReveal.BeforeReply(d, "장점이 뭐예요?", 1, VisitorReveal.TraitsAskAffinity - 1, out var hint);
+            StringAssert.Contains(VisitorReveal.TraitsAskAffinity.ToString(), hint);
+            var asked = VisitorReveal.BeforeReply(d, "장점이 뭐예요?", 1, VisitorReveal.TraitsAskAffinity, out _);
+            Assert.That(asked.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.TraitKey("arrogant") }));
+            var notTwice = VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, "arrogant", 50, 56, asked);
+            Assert.That(notTwice, Is.Empty, "what was already planned is not repeated, and no other trait comes out in its place");
+            // 2026-10-29: a pitch for a trait already known does not give away a different one.
+            VisitorReveal.Reveal(d, VisitorReveal.TraitKey("sturdy"));
+            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, "sturdy", 50, 56), Is.Empty);
+            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, null, 50, 56).Count, Is.LessThanOrEqualTo(1), "a typed line the model judged may still show one");
+        }
+
+        [Test]
+        public void Reveal_IsAnnouncedOnce_AndEveryKindSaysHowToFindIt()
+        {
+            var d = Visitor();
+            Assert.That(VisitorReveal.Reveal(d, VisitorReveal.Values), Is.True);
+            Assert.That(VisitorReveal.Reveal(d, VisitorReveal.Values), Is.False, "already known");
+            Assert.That(VisitorReveal.IsRevealed(d, VisitorReveal.Values), Is.True);
+            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.ValueMatch, false, null, 30, 38), Is.Empty, "nothing new");
+            foreach (var kind in new[] { VisitorReveal.Personality, VisitorReveal.Values, "trait" })
+                Assert.That(VisitorReveal.HowToFind(kind), Is.Not.Empty);
+            foreach (var key in new[] { VisitorReveal.Personality, VisitorReveal.Values, VisitorReveal.TraitKey("arrogant") })
+            {
+                Assert.That(VisitorReveal.Confession(key, d), Is.Not.Empty);
+                Assert.That(VisitorReveal.ForModel(key, d), Is.Not.Empty);
+            }
+        }
+
+        [Test]
+        public void Reveal_Labels_ReadLikeTheProfile()
+        {
+            var d = Visitor();
+            Assert.That(VisitorReveal.Label(VisitorReveal.Values, d), Is.EqualTo("가치관: 돈"));
+            Assert.That(VisitorReveal.Label(VisitorReveal.Personality, d), Is.EqualTo("성격: ESFJ"));
+            Assert.That(VisitorReveal.Label(VisitorReveal.TraitKey("arrogant"), d, id => id == "arrogant" ? "오만함" : id), Is.EqualTo("특성: 오만함"));
         }
 
         [Test]
@@ -116,7 +275,9 @@ namespace GuildMaster.Tests
         public void Grammar_ChatReplyFirst_OfferDecisionFirst()
         {
             StringAssert.Contains("undecided", RecruitPrompt.Grammar);
-            StringAssert.Contains("affinity_delta", RecruitPrompt.Grammar);
+            StringAssert.DoesNotContain("reveal", RecruitPrompt.Grammar, "what is revealed is decided by VisitorReveal's rules, not the model");
+            StringAssert.Contains("reaction", RecruitPrompt.Grammar);
+            StringAssert.DoesNotContain("affinity_delta", RecruitPrompt.Grammar, "the model no longer picks the number (RecruitScoring does)");
             StringAssert.DoesNotContain("undecided", RecruitPrompt.ProposalGrammar);
             StringAssert.Contains("refuse", RecruitPrompt.ProposalGrammar);
             Assert.That(RecruitPrompt.Grammar.IndexOf("reply"), Is.LessThan(RecruitPrompt.Grammar.IndexOf("decision")), "chat: the line comes first");

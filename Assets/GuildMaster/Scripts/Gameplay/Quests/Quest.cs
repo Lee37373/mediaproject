@@ -62,6 +62,12 @@ namespace GuildMaster.Quests
         /// </summary>
         public Nest TargetNest { get; internal set; }
 
+        /// <summary>
+        /// Taken off the board by the guild after someone took it (QuestBoard.Cancel): the takers are paid, but the job
+        /// was not done, so the client pays nothing (economy round 2, 2026-10-29).
+        /// </summary>
+        public bool CalledOff { get; internal set; }
+
         // ---- Escort (P3-4a) ----
         public int MaxHours { get; }
         /// <summary>Paid escort time so far (game hours outside town with an escort nearby).</summary>

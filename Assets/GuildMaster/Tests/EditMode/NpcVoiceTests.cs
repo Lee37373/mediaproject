@@ -19,7 +19,49 @@ namespace GuildMaster.Tests
             StringAssert.Contains("말이 많은", sheet, "E is talkative");
             StringAssert.Contains("셈이 빠르다", sheet, "the value is a personality, not a slogan");
             StringAssert.Contains("겁이 많다.", sheet);
-            StringAssert.Contains("이야기가 그쪽으로 흐를 때만", sheet, "values show only when the topic touches them");
+            // Values used to be told to show "only when the topic touches them", so every visitor talked in
+            // the same neutral voice (user report 2026-09-29). Now they colour the whole attitude.
+            StringAssert.DoesNotContain("이야기가 그쪽으로 흐를 때만", sheet);
+            StringAssert.Contains("흥정", sheet, "a money-minded person haggles, whatever the topic");
+        }
+
+        [Test]
+        public void Sheet_TraitsAddHowTheyTalk()
+        {
+            string sheet = NpcVoice.Sheet("ISTJ", "안전", new[] { "자신이 최고라고 믿으며 남을 깔본다." }, new[] { "arrogant" });
+            StringAssert.Contains("자신이 최고라고", sheet);
+            StringAssert.Contains("한 수 아래로", sheet, "the trait's speech habit is added");
+            Assert.That(NpcVoice.TraitHabit("no_such_trait"), Is.Empty);
+        }
+
+        [Test]
+        public void ValuesAndTemperament_GiveDifferentTalkers()
+        {
+            // Different values push different topics; different letters change how long and how warm the line is.
+            var agendas = new[] { "돈", "명예", "동료", "모험", "안전", "지식" }.Select(NpcVoice.ValueAgenda).ToList();
+            Assert.That(agendas.Distinct().Count(), Is.EqualTo(agendas.Count));
+            Assert.That(NpcVoice.Temperament("ENFP"), Is.Not.EqualTo(NpcVoice.Temperament("ISTJ")));
+            StringAssert.Contains("두세 문장", NpcVoice.RegisterRule(NpcVoice.Register.Warm, "ENFP"));
+            StringAssert.Contains("한 문장", NpcVoice.RegisterRule(NpcVoice.Register.Warm, "INFP"));
+        }
+
+        [Test]
+        public void RecruitRegister_FollowsTraitsThenLetters()
+        {
+            Assert.That(NpcVoice.RecruitRegister("ENFP", new[] { "arrogant" }), Is.EqualTo(NpcVoice.Register.Haughty), "arrogance wins");
+            Assert.That(NpcVoice.RecruitRegister("ENFP", new[] { "loner" }), Is.EqualTo(NpcVoice.Register.Curt));
+            Assert.That(NpcVoice.RecruitRegister("INTP", null), Is.EqualTo(NpcVoice.Register.Curt));
+            Assert.That(NpcVoice.RecruitRegister("ESTJ", null), Is.EqualTo(NpcVoice.Register.Formal));
+            Assert.That(NpcVoice.RecruitRegister("ESFP", null), Is.EqualTo(NpcVoice.Register.Warm));
+            Assert.That(NpcVoice.RecruitRegister(null, null), Is.EqualTo(NpcVoice.Register.Warm));
+        }
+
+        [Test]
+        public void ExampleReply_DiffersByValueAndRegister()
+        {
+            Assert.That(NpcVoice.ExampleReply("돈", NpcVoice.Register.Warm), Is.Not.EqualTo(NpcVoice.ExampleReply("지식", NpcVoice.Register.Warm)));
+            Assert.That(NpcVoice.ExampleReply("돈", NpcVoice.Register.Warm), Is.Not.EqualTo(NpcVoice.ExampleReply("돈", NpcVoice.Register.Haughty)));
+            Assert.That(NpcVoice.ExampleReply("낚시", NpcVoice.Register.Formal), Is.Not.Empty, "unknown values still get a line");
         }
 
         [Test]

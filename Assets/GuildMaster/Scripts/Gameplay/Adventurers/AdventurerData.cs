@@ -40,6 +40,18 @@ namespace GuildMaster.Adventurers
         /// <summary>Recruitment talk state kept between talks (-1 = never talked).</summary>
         public int recruitAffinity = -1;
         public int recruitTurns;
+        /// <summary>
+        /// Persuasion progress (user decision 2026-10-29, Bannerlord-style): the stage reached (0-based) and the
+        /// successes and failures in it. Kept so closing the window does not start the stage over.
+        /// </summary>
+        public int recruitStage, recruitWins, recruitFails;
+        /// <summary>Said no to joining: never recruitable again.</summary>
+        public bool recruitRefused;
+        /// <summary>
+        /// What the guild master has found out about this visitor by talking ("values", "personality",
+        /// "trait:&lt;id&gt;"), see Recruitment.VisitorReveal. Only these are shown before they join.
+        /// </summary>
+        public List<string> revealed = new();
         public int potions;
         public int gearTier;
         public List<ItemStack> loot = new();

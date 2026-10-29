@@ -1,0 +1,274 @@
+{
+ "choices": [
+  {
+   "id": "listen_0",
+   "kind": "Listen",
+   "topic": "",
+   "text": "요즘 무슨 일 있어요? 편하게 얘기해 봐요."
+  },
+  {
+   "id": "listen_1",
+   "kind": "Listen",
+   "topic": "",
+   "text": "표정이 안 좋아 보여서 불렀어요. 뭐가 제일 걸려요?"
+  },
+  {
+   "id": "listen_2",
+   "kind": "Listen",
+   "topic": "",
+   "text": "천천히 말해도 돼요. 다 들어 줄게요."
+  },
+  {
+   "id": "empathy_0",
+   "kind": "Empathy",
+   "topic": "",
+   "text": "그동안 많이 힘들었죠. 고생 많았어요."
+  },
+  {
+   "id": "empathy_1",
+   "kind": "Empathy",
+   "topic": "",
+   "text": "괜찮아요. 여기선 솔직하게 말해도 돼요."
+  },
+  {
+   "id": "empathy_2",
+   "kind": "Empathy",
+   "topic": "",
+   "text": "혼자 끙끙 앓았을 생각하니 걱정되네요."
+  },
+  {
+   "id": "praise_0",
+   "kind": "Praise",
+   "topic": "",
+   "text": "늘 묵묵히 제 몫 해 줘서 고마워요."
+  },
+  {
+   "id": "praise_1",
+   "kind": "Praise",
+   "topic": "",
+   "text": "길드가 버티는 건 다 당신 덕분이에요."
+  },
+  {
+   "id": "praise_2",
+   "kind": "Praise",
+   "topic": "",
+   "text": "당신 같은 사람이 있어서 길드가 든든해요."
+  },
+  {
+   "id": "small_0",
+   "kind": "Small",
+   "topic": "",
+   "text": "오늘은 날씨가 참 좋네요."
+  },
+  {
+   "id": "small_1",
+   "kind": "Small",
+   "topic": "",
+   "text": "식당 아주머니가 오늘 고기 요리를 한대요."
+  },
+  {
+   "id": "tough_0",
+   "kind": "Tough",
+   "topic": "",
+   "text": "다들 힘들어요. 좀 참아 봐요."
+  },
+  {
+   "id": "tough_1",
+   "kind": "Tough",
+   "topic": "",
+   "text": "그 정도로 흔들리면 곤란해요."
+  },
+  {
+   "id": "touch_grief_0",
+   "kind": "Touch",
+   "topic": "Grief",
+   "text": "먼저 떠나보낸 동료 생각에 힘들었죠."
+  },
+  {
+   "id": "touch_grief_1",
+   "kind": "Touch",
+   "topic": "Grief",
+   "text": "동료를 잃고 많이 슬펐을 거예요."
+  },
+  {
+   "id": "solve_grief_0",
+   "kind": "Solve",
+   "topic": "Grief",
+   "text": "{subject}의 명복을 같이 빌어요. 당분간은 가까운 의뢰만 맡게 해 줄게요."
+  },
+  {
+   "id": "solve_grief_1",
+   "kind": "Solve",
+   "topic": "Grief",
+   "text": "{subject} 보내 주는 자리를 마련할게요. 당분간 곁에 있을게요."
+  },
+  {
+   "id": "touch_neglect_0",
+   "kind": "Touch",
+   "topic": "Neglect",
+   "text": "제가 그동안 신경을 못 써서 미안해요."
+  },
+  {
+   "id": "touch_neglect_1",
+   "kind": "Touch",
+   "topic": "Neglect",
+   "text": "부탁을 못 들어줘서 서운했죠. 정말 미안해요."
+  },
+  {
+   "id": "solve_neglect_0",
+   "kind": "Solve",
+   "topic": "Neglect",
+   "text": "앞으로는 부탁하면 꼭 들어줄게요. 약속해요."
+  },
+  {
+   "id": "solve_neglect_1",
+   "kind": "Solve",
+   "topic": "Neglect",
+   "text": "이번엔 제가 늦었어요. 바라는 거 있으면 챙겨 줄게요."
+  },
+  {
+   "id": "touch_fear_0",
+   "kind": "Touch",
+   "topic": "Fear",
+   "text": "그때 많이 무서웠겠어요. 그랬구나, 그럴 만해요."
+  },
+  {
+   "id": "touch_fear_1",
+   "kind": "Touch",
+   "topic": "Fear",
+   "text": "다친 뒤로 나가는 게 두렵죠. 그럴 수 있어요, 괜찮아요."
+  },
+  {
+   "id": "solve_fear_0",
+   "kind": "Solve",
+   "topic": "Fear",
+   "text": "몸이 다 나을 때까지 치료부터 받아요. 위험한 의뢰는 빼 줄게요."
+  },
+  {
+   "id": "solve_fear_1",
+   "kind": "Solve",
+   "topic": "Fear",
+   "text": "당분간은 성 안 경비만 맡아요. 안전한 일로 바꿔 줄게요."
+  },
+  {
+   "id": "touch_failure_0",
+   "kind": "Touch",
+   "topic": "Failure",
+   "text": "의뢰를 포기한 건 누구나 겪는 일이에요. 괜찮아요."
+  },
+  {
+   "id": "touch_failure_1",
+   "kind": "Touch",
+   "topic": "Failure",
+   "text": "그 실패가 당신 혼자 잘못은 아니에요. 속상했죠."
+  },
+  {
+   "id": "solve_failure_0",
+   "kind": "Solve",
+   "topic": "Failure",
+   "text": "다음엔 같이 가서 도와줄게요. 실패는 잊어요."
+  },
+  {
+   "id": "solve_failure_1",
+   "kind": "Solve",
+   "topic": "Failure",
+   "text": "포기한 의뢰는 다음에 함께 가서 끝내요. 제가 도와줄게요."
+  },
+  {
+   "id": "touch_conflict_0",
+   "kind": "Touch",
+   "topic": "Conflict",
+   "text": "동료랑 사이가 틀어져서 속상했죠."
+  },
+  {
+   "id": "touch_conflict_1",
+   "kind": "Touch",
+   "topic": "Conflict",
+   "text": "누구랑 다퉜다고 들었어요. 그랬군요, 속상했겠어요."
+  },
+  {
+   "id": "solve_conflict_0",
+   "kind": "Solve",
+   "topic": "Conflict",
+   "text": "{subject} 쪽과 이야기해 볼게요. 화해할 수 있게 제가 해결해 줄게요."
+  },
+  {
+   "id": "solve_conflict_1",
+   "kind": "Solve",
+   "topic": "Conflict",
+   "text": "당분간 {subject} 쪽과는 다른 파티로 나가게 해 줄게요. 불편하지 않게요."
+  },
+  {
+   "id": "touch_overwork_0",
+   "kind": "Touch",
+   "topic": "Overwork",
+   "text": "요즘 숨 돌릴 틈도 없이 나갔죠. 많이 지쳤을 거예요, 고생했어요."
+  },
+  {
+   "id": "touch_overwork_1",
+   "kind": "Touch",
+   "topic": "Overwork",
+   "text": "피곤해 보여요. 그동안 고생 많았어요."
+  },
+  {
+   "id": "solve_overwork_0",
+   "kind": "Solve",
+   "topic": "Overwork",
+   "text": "며칠 휴가 줄게요. 푹 쉬어요."
+  },
+  {
+   "id": "solve_overwork_1",
+   "kind": "Solve",
+   "topic": "Overwork",
+   "text": "의뢰 일정을 줄여 줄게요. 오늘은 일찍 잠자리에 들어요."
+  },
+  {
+   "id": "touch_money_0",
+   "kind": "Touch",
+   "topic": "Money",
+   "text": "요즘 돈 때문에 걱정이 많죠. 이해해요."
+  },
+  {
+   "id": "touch_money_1",
+   "kind": "Touch",
+   "topic": "Money",
+   "text": "빚 때문에 속상했죠. 그랬구나."
+  },
+  {
+   "id": "solve_money_0",
+   "kind": "Solve",
+   "topic": "Money",
+   "text": "이번 의뢰엔 보너스를 챙겨 줄게요."
+  },
+  {
+   "id": "solve_money_1",
+   "kind": "Solve",
+   "topic": "Money",
+   "text": "다음 보수는 조금 더 얹어 줄게요. 해결될 때까지 챙겨 줄게요."
+  },
+  {
+   "id": "touch_vague_0",
+   "kind": "Touch",
+   "topic": "Vague",
+   "text": "이유 없이 답답할 때가 있죠. 괜찮아요."
+  },
+  {
+   "id": "touch_vague_1",
+   "kind": "Touch",
+   "topic": "Vague",
+   "text": "요즘 기분이 가라앉아 보였어요. 걱정했어요."
+  },
+  {
+   "id": "solve_vague_0",
+   "kind": "Solve",
+   "topic": "Vague",
+   "text": "당분간 가벼운 일만 맡아요. 기분이 나아질 거예요."
+  },
+  {
+   "id": "solve_vague_1",
+   "kind": "Solve",
+   "topic": "Vague",
+   "text": "답답할 땐 언제든 와요. 제가 도와줄게요."
+  }
+ ]
+}

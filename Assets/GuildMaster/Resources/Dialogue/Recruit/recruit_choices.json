@@ -1,0 +1,352 @@
+{
+ "choices": [
+  {
+   "id": "greet_0",
+   "kind": "Greet",
+   "topic": "",
+   "text": "안녕하세요! 이 마을 길드를 맡고 있는 길드 마스터예요."
+  },
+  {
+   "id": "greet_1",
+   "kind": "Greet",
+   "topic": "",
+   "text": "처음 뵙네요. 저기 보이는 길드 건물의 길드 마스터예요."
+  },
+  {
+   "id": "greet_2",
+   "kind": "Greet",
+   "topic": "",
+   "text": "반가워요. 마을에 새 얼굴이 보여서 인사하러 왔어요."
+  },
+  {
+   "id": "about_0",
+   "kind": "About",
+   "topic": "",
+   "text": "이 마을엔 무슨 일로 오셨어요?"
+  },
+  {
+   "id": "about_1",
+   "kind": "About",
+   "topic": "",
+   "text": "어디서 오신 분이에요? 차림을 보니 꽤 다녀 본 것 같은데."
+  },
+  {
+   "id": "about_2",
+   "kind": "About",
+   "topic": "",
+   "text": "요즘은 어떤 일 하면서 지내세요?"
+  },
+  {
+   "id": "about_3",
+   "kind": "About",
+   "topic": "",
+   "text": "여기까지 오는 길은 괜찮았어요?"
+  },
+  {
+   "id": "askvalues_0",
+   "kind": "AskValues",
+   "topic": "",
+   "text": "일할 때 제일 중요하게 생각하는 게 뭐예요?"
+  },
+  {
+   "id": "askvalues_1",
+   "kind": "AskValues",
+   "topic": "",
+   "text": "떠돌며 일하는 이유가 따로 있어요? 뭘 위해 그러는지 궁금해서요."
+  },
+  {
+   "id": "askvalues_2",
+   "kind": "AskValues",
+   "topic": "",
+   "text": "길드를 고를 때 가장 바라는 조건이 뭐예요?"
+  },
+  {
+   "id": "askpersonality_0",
+   "kind": "AskPersonality",
+   "topic": "",
+   "text": "평소에 성격이 어떻다는 말 많이 들어요?"
+  },
+  {
+   "id": "askpersonality_1",
+   "kind": "AskPersonality",
+   "topic": "",
+   "text": "본인은 어떤 사람이라고 생각해요?"
+  },
+  {
+   "id": "askpersonality_2",
+   "kind": "AskPersonality",
+   "topic": "",
+   "text": "주변에선 당신을 어떤 타입이라고 해요?"
+  },
+  {
+   "id": "asktraits_0",
+   "kind": "AskTraits",
+   "topic": "",
+   "text": "싸울 때 특히 자신 있는 게 있어요?"
+  },
+  {
+   "id": "asktraits_1",
+   "kind": "AskTraits",
+   "topic": "",
+   "text": "본인 장점이랑 단점을 하나씩 꼽아 본다면요?"
+  },
+  {
+   "id": "asktraits_2",
+   "kind": "AskTraits",
+   "topic": "",
+   "text": "특기가 뭐예요? 반대로 약점은요?"
+  },
+  {
+   "id": "guild_0",
+   "kind": "Guild",
+   "topic": "",
+   "text": "우리 길드는 마을을 지키면서 맡겨진 의뢰를 처리해요."
+  },
+  {
+   "id": "guild_1",
+   "kind": "Guild",
+   "topic": "",
+   "text": "길드 건물엔 숙소랑 식당이 있어서 지내기 편해요."
+  },
+  {
+   "id": "guild_2",
+   "kind": "Guild",
+   "topic": "",
+   "text": "요즘 마을 주변에 몬스터가 늘어서 일손이 필요해요."
+  },
+  {
+   "id": "guild_3",
+   "kind": "Guild",
+   "topic": "",
+   "text": "길드원들은 아침마다 게시판에서 의뢰를 골라 나가요."
+  },
+  {
+   "id": "invite_0",
+   "kind": "Invite",
+   "topic": "",
+   "text": "우리 길드에 들어와 줄래요?"
+  },
+  {
+   "id": "invite_1",
+   "kind": "Invite",
+   "topic": "",
+   "text": "우리 길드에 합류하는 거 어때요?"
+  },
+  {
+   "id": "invite_2",
+   "kind": "Invite",
+   "topic": "",
+   "text": "길드원이 되어 줄 수 있어요?"
+  },
+  {
+   "id": "pitch_돈_0",
+   "kind": "Pitch",
+   "topic": "돈",
+   "text": "우리 길드는 의뢰 보상을 제때, 넉넉하게 챙겨 줘요."
+  },
+  {
+   "id": "pitch_돈_1",
+   "kind": "Pitch",
+   "topic": "돈",
+   "text": "솜씨만 있으면 여기서 골드 꽤 모을 수 있어요."
+  },
+  {
+   "id": "pitch_돈_2",
+   "kind": "Pitch",
+   "topic": "돈",
+   "text": "의뢰를 꾸준히 맡으면 수입도 꽤 짭짤해요."
+  },
+  {
+   "id": "pitch_명예_0",
+   "kind": "Pitch",
+   "topic": "명예",
+   "text": "의뢰를 해내면 마을 사람들이 다 그 이름을 기억해요."
+  },
+  {
+   "id": "pitch_명예_1",
+   "kind": "Pitch",
+   "topic": "명예",
+   "text": "여기서 공을 세우면 영웅 대접을 받아요."
+  },
+  {
+   "id": "pitch_명예_2",
+   "kind": "Pitch",
+   "topic": "명예",
+   "text": "우리 길드 출신 중엔 명성이 자자한 사람도 있어요."
+  },
+  {
+   "id": "pitch_동료_0",
+   "kind": "Pitch",
+   "topic": "동료",
+   "text": "우리 길드원들은 서로 동료를 끝까지 챙겨요."
+  },
+  {
+   "id": "pitch_동료_1",
+   "kind": "Pitch",
+   "topic": "동료",
+   "text": "길드 식구들끼리 밥도 함께 먹고 잘 지내요."
+  },
+  {
+   "id": "pitch_동료_2",
+   "kind": "Pitch",
+   "topic": "동료",
+   "text": "의뢰 나갈 때 늘 손발 맞는 팀으로 움직여요."
+  },
+  {
+   "id": "pitch_모험_0",
+   "kind": "Pitch",
+   "topic": "모험",
+   "text": "지도에 없는 숲 너머까지 탐험하는 의뢰도 있어요."
+  },
+  {
+   "id": "pitch_모험_1",
+   "kind": "Pitch",
+   "topic": "모험",
+   "text": "아직 가 보지 못한 새로운 곳에 갈 일이 많을 거예요."
+  },
+  {
+   "id": "pitch_모험_2",
+   "kind": "Pitch",
+   "topic": "모험",
+   "text": "이 길드에선 심심할 틈 없는 모험이 기다려요."
+  },
+  {
+   "id": "pitch_안전_0",
+   "kind": "Pitch",
+   "topic": "안전",
+   "text": "무리한 의뢰는 절대 안 시켜요. 안전이 먼저예요."
+  },
+  {
+   "id": "pitch_안전_1",
+   "kind": "Pitch",
+   "topic": "안전",
+   "text": "다치면 치료도 해 주고, 위험할 땐 서로 보호해요."
+  },
+  {
+   "id": "pitch_안전_2",
+   "kind": "Pitch",
+   "topic": "안전",
+   "text": "성벽 안쪽이라 밤에도 든든하게 지낼 수 있어요."
+  },
+  {
+   "id": "pitch_지식_0",
+   "kind": "Pitch",
+   "topic": "지식",
+   "text": "길드에 책이 꽤 쌓여 있어서 틈틈이 읽을 수 있어요."
+  },
+  {
+   "id": "pitch_지식_1",
+   "kind": "Pitch",
+   "topic": "지식",
+   "text": "선배들한테 배우는 것도 많을 거예요."
+  },
+  {
+   "id": "pitch_지식_2",
+   "kind": "Pitch",
+   "topic": "지식",
+   "text": "몬스터 생태를 연구하는 길드원도 있어요."
+  },
+  {
+   "id": "trait_brave_0",
+   "kind": "Trait",
+   "topic": "brave",
+   "text": "강한 몬스터와 싸워 볼 도전 기회도 많아요."
+  },
+  {
+   "id": "trait_sturdy_0",
+   "kind": "Trait",
+   "topic": "sturdy",
+   "text": "그 정도 체력이면 앞줄을 맡겨도 되겠어요."
+  },
+  {
+   "id": "trait_marksman_0",
+   "kind": "Trait",
+   "topic": "marksman",
+   "text": "솜씨가 좋아 보이는데, 실전에서 꼭 보고 싶네요."
+  },
+  {
+   "id": "trait_diligent_0",
+   "kind": "Trait",
+   "topic": "diligent",
+   "text": "맡은 일만 성실히 해 주면 그걸로 충분해요."
+  },
+  {
+   "id": "trait_quick_learner_0",
+   "kind": "Trait",
+   "topic": "quick_learner",
+   "text": "훈련장이 있어서 하루하루 성장하는 게 보일 거예요."
+  },
+  {
+   "id": "trait_nimble_0",
+   "kind": "Trait",
+   "topic": "nimble",
+   "text": "날렵한 사람은 우리 길드에서 귀한 대접 받아요."
+  },
+  {
+   "id": "trait_hawkeye_0",
+   "kind": "Trait",
+   "topic": "hawkeye",
+   "text": "눈썰미 좋은 사람한테 정찰을 맡기고 싶어요."
+  },
+  {
+   "id": "trait_sociable_0",
+   "kind": "Trait",
+   "topic": "sociable",
+   "text": "우리 길드원들은 저녁마다 모여서 잘 어울려요."
+  },
+  {
+   "id": "trait_loyal_0",
+   "kind": "Trait",
+   "topic": "loyal",
+   "text": "한번 인연을 맺으면 오래 믿고 가는 사이가 될 거예요."
+  },
+  {
+   "id": "trait_coward_0",
+   "kind": "Trait",
+   "topic": "coward",
+   "text": "위험하다 싶으면 바로 돌아와도 돼요. 무리하지 마세요."
+  },
+  {
+   "id": "trait_frail_0",
+   "kind": "Trait",
+   "topic": "frail",
+   "text": "몸이 안 좋을 땐 치료부터 받게 해 줄게요."
+  },
+  {
+   "id": "trait_clumsy_0",
+   "kind": "Trait",
+   "topic": "clumsy",
+   "text": "처음엔 실수해도 괜찮아요. 다들 그렇게 시작해요."
+  },
+  {
+   "id": "trait_lazy_0",
+   "kind": "Trait",
+   "topic": "lazy",
+   "text": "의뢰 없는 날엔 편한 대로 지내도 돼요."
+  },
+  {
+   "id": "trait_greedy_0",
+   "kind": "Trait",
+   "topic": "greedy",
+   "text": "공을 세운 만큼 몫을 확실히 챙겨 줄게요."
+  },
+  {
+   "id": "trait_sluggish_0",
+   "kind": "Trait",
+   "topic": "sluggish",
+   "text": "서두르지 않아도 돼요. 여유 있게 해요."
+  },
+  {
+   "id": "trait_loner_0",
+   "kind": "Trait",
+   "topic": "loner",
+   "text": "파티가 싫으면 혼자 다니는 의뢰도 있어요."
+  },
+  {
+   "id": "trait_arrogant_0",
+   "kind": "Trait",
+   "topic": "arrogant",
+   "text": "딱 보니 실력이 대단해 보이는데요."
+  }
+ ]
+}

@@ -157,6 +157,35 @@ namespace GuildMaster.Welfare
             return CareResult.Success(CareTexts.Relieved("면담", relief, before, Mathf.RoundToInt(d.stress)), reply);
         }
 
+        // ---------------- Counselling by conversation (user request 2026-10-01) ----------------
+
+        /// <summary>
+        /// A counselling talk (<see cref="CounselSession"/>) got its first line: counts as the interview (cooldown,
+        /// an asked-for talk is answered). Returns true when the member had asked for a talk.
+        /// </summary>
+        public bool BeginCounsel(Adventurer a)
+        {
+            if (NotAMember(a) != null) return false;
+            var c = Care(a);
+            bool asked = c.RecordInterview(_clock.TotalHours);
+            SettleDemand(a, c);
+            return asked;
+        }
+
+        /// <summary>One line of a counselling talk: positive <paramref name="relief"/> takes stress away, negative adds it.</summary>
+        public void ApplyCounsel(Adventurer a, int relief) => AdjustStress(a, -relief);
+
+        /// <summary>
+        /// Stress from everyday life outside the guild master's tools (town talks: a friend's comfort, a fight).
+        /// Positive adds stress; relief can also calm down a member who was about to leave.
+        /// </summary>
+        public void AdjustStress(Adventurer a, float delta)
+        {
+            if (NotAMember(a) != null || delta == 0f) return;
+            if (delta < 0f) Relieve(a, Care(a), -delta);
+            else AddStress(a, delta);
+        }
+
         /// <summary>Sends the member to rest for <see cref="CareRules.LeaveHours"/>; they take no quest until it is over.</summary>
         public CareResult GrantLeave(Adventurer a)
         {
