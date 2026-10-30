@@ -73,6 +73,9 @@ namespace GuildMaster.UI
                 case NotificationTarget.Bestiary:
                     Show<BestiaryView>();
                     break;
+                case NotificationTarget.Dilemmas:
+                    Show<DilemmaView>();
+                    break;
                 case NotificationTarget.Memorial:
                 {
                     if (!Services.TryGet<MemorialView>(out var wall)) break;

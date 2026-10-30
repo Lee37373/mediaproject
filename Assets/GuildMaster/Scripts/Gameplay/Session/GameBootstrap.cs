@@ -430,6 +430,11 @@ namespace GuildMaster.Session
             storyteller.Init(clock, world, eco, roster, Seed);
             Services.Register(storyteller);
             save.Register(storyteller);
+            // Decision cards (P4-111c, H3): dealt by the storyteller's mood, after everything a choice can touch.
+            var dilemmas = AddSystem<Dilemmas.DilemmaService>();
+            dilemmas.Init(clock, roster, treasury, world, Seed);
+            Services.Register(dilemmas);
+            save.Register(dilemmas);
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());
 
             // --- Presentation / input ---

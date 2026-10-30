@@ -64,6 +64,7 @@ namespace GuildMaster.Tests
             Incidents.IncidentService.Enabled = true;
             Storytelling.StorytellerService.Enabled = true;
             Seasons.SeasonService.Enabled = true;
+            Dilemmas.DilemmaService.Enabled = true;
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
@@ -100,6 +101,8 @@ namespace GuildMaster.Tests
             Storytelling.StorytellerService.Enabled = false;
             // Nor the seasons (P4-111b): spring's breeding would change the dens under every test.
             Seasons.SeasonService.Enabled = false;
+            // Nor decision cards (P4-111c): a card's thoughts, gold and visitors would change what a test measures.
+            Dilemmas.DilemmaService.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -5866,6 +5869,70 @@ namespace GuildMaster.Tests
                 EventBus.Unsubscribe(onCame);
                 Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
             }
+        }
+
+        /// <summary>
+        /// Decision cards (P4-111c, H3): a card is dealt with its notification and log line; a choice the vault cannot pay is
+        /// refused; one made spends its gold and leaves a card to follow, which comes when due; one left unanswered is decided
+        /// by its default when its 24 hours are up — fame, the members' thoughts, a notification saying so. Its section saves
+        /// as it is.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DecisionCards_AreDealt_Decided_FollowedUp_AndDefaultedWhenLeft()
+        {
+            yield return Boot();
+            Dilemmas.DilemmaService.Enabled = true;
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                var cards = Services.Get<Dilemmas.DilemmaService>();
+                var treasury = Services.Get<Economy.GuildTreasury>();
+                var rank = Services.Get<Guild.GuildRankService>();
+                var notifications = Services.Get<Notifications.NotificationCenter>();
+
+                var invest = cards.Deal(null, "investment");
+                Assert.That(invest, Is.Not.Null);
+                Assert.That(cards.Open, Does.Contain(invest));
+                Assert.That(notifications.Entries.Any(n => n.Title == "결정할 일: 교역로 투자"), Is.True, "told");
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[결정] 교역로 투자")), Is.True, "logged");
+
+                // The vault must hold what a choice costs.
+                int gold = treasury.Gold;
+                treasury.TrySpendGold(gold);
+                Assert.That(cards.CannotChoose(invest, 0), Is.Not.Null, "nothing in the vault");
+                Assert.That(cards.Choose(invest, 0), Is.False);
+                treasury.AddGold(gold);
+                Assert.That(cards.Choose(invest, 0), Is.True);
+                Assert.That(treasury.Gold, Is.EqualTo(gold - invest.Gold[0]), "paid in");
+                Assert.That(cards.Open.Contains(invest), Is.False, "decided");
+
+                // Three days on, the result follows.
+                JumpClockTo(Mathf.Ceil(invest.DealtHour + 72f) - 0.02f); // just before the hour that strikes it (an hour is ten real seconds)
+                yield return WaitFor(() => cards.Open.Any(c => c.Def.Id == "investment_result"), 5f);
+                var result = cards.Open.FirstOrDefault(c => c.Def.Id == "investment_result");
+                Assert.That(result, Is.Not.Null, "the investment's result follows");
+                Assert.That(result.Gold[0], Is.EqualTo(invest.Gold[0]), "on what was put in");
+                Assert.That(cards.Choose(result, 0), Is.True);
+
+                // Left alone, a card is decided by its default once its time is up.
+                var refugees = cards.Deal(null, "refugees");
+                Assert.That(refugees, Is.Not.Null);
+                rank.AddFame(20, "테스트"); // fame never goes below 0
+                int fame = rank.Fame;
+                JumpClockTo(Mathf.Ceil(refugees.DeadlineHour) - 0.02f);
+                yield return WaitFor(() => !cards.Open.Contains(refugees), 5f);
+                var record = cards.History.LastOrDefault(r => r.Title == refugees.Title);
+                Assert.That(record?.ByDeadline, Is.True, "decided by the clock");
+                Assert.That(record.Choice, Is.EqualTo(refugees.Label(refugees.Def.Default)));
+                Assert.That(rank.Fame, Is.LessThan(fame), "turned away: fame lost");
+                Assert.That(Roster.Members.Any(a => a.Data.thoughts.Any(t => t.id == ThoughtRules.DecisionDispleased.Id)), Is.True, "the members mind it");
+                Assert.That(notifications.Entries.Any(n => n.Title == "결정 기한 지남: " + refugees.Title), Is.True);
+
+                string saved = cards.Capture();
+                cards.Restore(saved, null);
+                Assert.That(cards.Capture(), Is.EqualTo(saved), "its section comes back as it was");
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
 
         /// <summary>A stretch of water nobody has explored yet, with walkable ground either side of it.</summary>

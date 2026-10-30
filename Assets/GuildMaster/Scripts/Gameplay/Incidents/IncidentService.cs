@@ -638,6 +638,9 @@ namespace GuildMaster.Incidents
         /// the way down (one that goes for people if any), two levels above the land there — and the treasure waits in the
         /// last room. <paramref name="index"/> is for tests and debug.
         /// </summary>
+        /// <summary>A ruin is left to be heard of: not looted and nothing going on there (a decision card's map, P4-111c).</summary>
+        public bool RuinLeftToFind => _world.Map.Ruins.Any(r => !_looted.Contains(r.Index) && ActiveAt(r) == null);
+
         public Incident StartRuin(int index = -1)
         {
             var map = _world.Map;

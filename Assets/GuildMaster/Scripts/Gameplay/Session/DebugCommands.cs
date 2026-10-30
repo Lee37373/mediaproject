@@ -2126,6 +2126,28 @@ namespace GuildMaster.Session
             return (fired ? "fired\n" : "nothing could happen\n") + s.Describe();
         }
 
+        /// <summary>Decision cards (P4-111c): the open ones and their choices, what follows, what was decided, and the facts behind the deal.</summary>
+        public static string Dilemmas()
+            => Services.TryGet<GuildMaster.Dilemmas.DilemmaService>(out var s) ? s.Describe() : "no decision cards";
+
+        /// <summary>Deals a card now: <paramref name="id"/> (any card, a follow-up too, if its members are there) or a random one that can come.</summary>
+        public static string DealDilemma(string id = null)
+        {
+            var s = Services.Get<GuildMaster.Dilemmas.DilemmaService>();
+            var card = s.Deal(null, string.IsNullOrEmpty(id) ? null : id);
+            return (card == null ? "none could come\n" : $"dealt #{card.Id}\n") + s.Describe();
+        }
+
+        /// <summary>Decides open card <paramref name="index"/> by its choice <paramref name="choice"/>.</summary>
+        public static string ChooseDilemma(int index, int choice)
+        {
+            var s = Services.Get<GuildMaster.Dilemmas.DilemmaService>();
+            if (index < 0 || index >= s.Open.Count) return "no open card " + index;
+            var card = s.Open[index];
+            string why = s.CannotChoose(card, choice);
+            return (why ?? (s.Choose(card, choice) ? "decided" : "failed")) + "\n" + s.Describe();
+        }
+
         public static string SetTension(float value)
         {
             var s = Services.Get<Storytelling.StorytellerService>();

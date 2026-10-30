@@ -40,6 +40,8 @@ namespace GuildMaster.Economy
         public const string Commission = "commission";
         /// <summary>The town's grant for a new guild rank (P4-106).</summary>
         public const string Grant = "grant";
+        /// <summary>What a decision card cost or brought in (P4-111c): the report's "other".</summary>
+        public const string Decision = "decision";
     }
 
     /// <summary>

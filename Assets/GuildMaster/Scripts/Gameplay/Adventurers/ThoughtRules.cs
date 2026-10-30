@@ -129,6 +129,23 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef Festival = D("festival", "수확 축제를 즐겼다", 6f, 24f, ThoughtTone.People, 1, "(오늘은 실컷 먹고 마시자!)", "(축제다, 축제!)");
         public static readonly ThoughtDef ColdCamp = D("cold_camp", "추운 밤 야영에 떨었다", -3f, 12f);
 
+        // Decision cards (P4-111c): what the guild master decided, as the members take it.
+        public static readonly ThoughtDef DecisionPleased = D("decision_pleased", "길드의 결정이 마음에 든다", 4f, 24f, ThoughtTone.Loyalty, 2);
+        public static readonly ThoughtDef DecisionDispleased = D("decision_displeased", "길드의 결정이 못마땅하다", -4f, 24f, ThoughtTone.Loyalty, 2, "(그걸 그렇게 정하다니...)");
+        public static readonly ThoughtDef DuelWon = D("duel_won", "{0}와(과)의 결투에서 이겼다", 6f, 24f, ThoughtTone.Glory, 1, "(내가 이겼다!)");
+        public static readonly ThoughtDef DuelLost = D("duel_lost", "{0}와(과)의 결투에서 졌다", -5f, 24f);
+        public static readonly ThoughtDef Cherished = D("cherished", "길드가 {0}와(과)의 사이를 축복해 주었다", 8f, 48f, ThoughtTone.People, 1, "(헤헤, 들켰네.)");
+        public static readonly ThoughtDef TabPaid = D("tab_paid", "길드가 외상을 갚아 주었다", 6f, 48f, ThoughtTone.Gain, 1, "(이 은혜는 꼭 갚을게.)");
+        public static readonly ThoughtDef Accused = Logged(D("accused", "도둑 누명을 썼다", -10f, 48f, ThoughtTone.Loyalty, 1, "(내가 그런 짓을 할 것 같아?)"));
+        public static readonly ThoughtDef KeptOn = D("kept_on", "길드가 나를 붙잡아 주었다", 6f, 48f, ThoughtTone.Loyalty, 1, "(조금만 더 해 볼까.)");
+        public static readonly ThoughtDef Mentored = D("mentored", "{0}에게 한 수 배웠다", 4f, 24f, ThoughtTone.People);
+        public static readonly ThoughtDef TownFeast = D("town_feast", "마을 잔치를 즐겼다", 5f, 24f, ThoughtTone.People);
+        public static readonly ThoughtDef CubCared = D("cub_cared", "다친 새끼를 돌봐 주었다", 5f, 24f);
+        public static readonly ThoughtDef CubSold = D("cub_sold", "다친 새끼를 팔아 버렸다", -5f, 24f);
+        public static readonly ThoughtDef WarmLodge = D("warm_lodge", "숙소가 따뜻하다", 3f, 48f);
+        public static readonly ThoughtDef ColdLodge = D("cold_lodge", "숙소가 춥다", -3f, 48f);
+        public static readonly ThoughtDef Thirsty = D("thirsty", "물이 모자라 목이 탄다", -3f, 24f);
+
         // The guild master's care (F-2).
         public static readonly ThoughtDef Talked = D("talked", "길드 마스터가 이야기를 들어 주었다", 5f, 24f, ThoughtTone.People);
         public static readonly ThoughtDef Bonus = D("bonus", "보너스를 받았다", 8f, 24f, ThoughtTone.Gain, 1, "(헤헤, 이 맛에 일하지.)");
@@ -157,6 +174,8 @@ namespace GuildMaster.Adventurers
             NearDeath, LastStand, Slew, GreatKill, SawDragon, RaidHeld, Trapped, LetItOut, Inspired, Brawled, BerserkVictim,
             DreadfulWork, DullWork, NewLand, QuirkGained, Chat, Quarrel, Grudge, AvengedByHand, Avenged, NemesisFell, HotSpring, Blessed, CosyCamp, Lookout,
             Festival, ColdCamp,
+            DecisionPleased, DecisionDispleased, DuelWon, DuelLost, Cherished, TabPaid, Accused, KeptOn, Mentored, TownFeast, CubCared, CubSold,
+            WarmLodge, ColdLodge, Thirsty,
             Talked, Bonus, Ignored, FriendLeft,
             HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival, Crowded, Lonely, WantsRest, Idle, Afraid,
         };

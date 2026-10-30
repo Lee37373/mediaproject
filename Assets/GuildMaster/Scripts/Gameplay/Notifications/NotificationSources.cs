@@ -101,6 +101,22 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Seasons.SeasonComingEvent>(OnSeasonComing);
             EventBus.Subscribe<Seasons.SeasonChangedEvent>(OnSeasonChanged);
             EventBus.Subscribe<Seasons.FestivalEvent>(OnFestival);
+            EventBus.Subscribe<Dilemmas.DilemmaDealtEvent>(OnDilemma);
+            EventBus.Subscribe<Dilemmas.DilemmaResolvedEvent>(OnDilemmaResolved);
+        }
+
+        // Decision cards (P4-111c): one to answer; once it is decided the call goes (and one decided by the clock says so).
+        void OnDilemma(Dilemmas.DilemmaDealtEvent e)
+            => _center.Post(NotificationKind.Quest, "결정할 일: " + e.Card.Title,
+                $"{e.Card.Text} ({Dilemmas.DilemmaRules.DeadlineHours:0}시간 안에 안 고르면 '{e.Card.Label(e.Card.Def.Default)}')",
+                "dilemma:" + e.Card.Id, NotificationLink.Dilemmas());
+
+        void OnDilemmaResolved(Dilemmas.DilemmaResolvedEvent e)
+        {
+            _center.Resolve("dilemma:" + e.Card.Id);
+            if (e.ByDeadline)
+                _center.Post(NotificationKind.Info, "결정 기한 지남: " + e.Card.Title, $"'{e.Card.Label(e.Choice)}'(으)로 정했습니다. {e.Result}",
+                    "dilemma_done:" + e.Card.Id, NotificationLink.Dilemmas());
         }
 
         // The seasons (P4-111b): told the day before so the guild can get ready, and as each comes.

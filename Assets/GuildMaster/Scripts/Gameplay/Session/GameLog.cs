@@ -310,6 +310,10 @@ namespace GuildMaster.Session
                 $"[계절] {Seasons.SeasonRules.Name(e.Season)}이 왔습니다{(e.Season == Seasons.Season.Spring ? $" ({e.Year}년째)" : "")}.", LogCategory.Info));
             EventBus.Subscribe<Seasons.FestivalEvent>(e => Add(
                 $"[계절] 오늘은 수확 축제입니다. 마을에 있으면 스트레스가 {Seasons.SeasonRules.FestivalStressRelief:0}배로 풀립니다.", LogCategory.Info));
+            // Decision cards (P4-111c).
+            EventBus.Subscribe<Dilemmas.DilemmaDealtEvent>(e => Add($"[결정] {e.Card.Title}: {e.Card.Text}", LogCategory.Info));
+            EventBus.Subscribe<Dilemmas.DilemmaResolvedEvent>(e => Add(
+                $"[결정] {e.Card.Title} → {e.Card.Label(e.Choice)}{(e.ByDeadline ? " (기한이 지나 기본 선택)" : "")}. {e.Result}", LogCategory.Info));
             // The guild's rank (P4-106).
             EventBus.Subscribe<Guild.GuildRankChangedEvent>(e => Add(
                 $"[등급] 길드가 {Guild.GuildRankRules.Name(e.Rank)}이 되었습니다! {Guild.GuildRankRules.Rewards(e.Rank)}", LogCategory.Quest));
