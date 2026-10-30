@@ -290,11 +290,12 @@ namespace GuildMaster.Data
 
             // Region lords (P4-83, user decisions 2026-10-17): one final boss of its own kind deep in each outer
             // region, guarded by that region's disaster kind (Monsters/RegionLords: level 35, health x15). They
-            // borrow a pack boss's art, tinted, until they get their own. Their trophy always drops; monsters
-            // leave it alone (unique, no slot), so the guild can carry it home.
+            // are drawn by their own Minimal EnemyMonster rig (P4-110), or borrow a pack boss's art, tinted, when it is
+            // not imported. Their trophy always drops; monsters leave it alone (unique, no slot), so the guild can
+            // carry it home.
             MonsterDefinition Lord(string id, string name, MonsterShape shape, Color body, Color accent, float scale,
                 float hp, float atk, float def, float range, float cd, float speed, Region region, MonsterDefinition escort,
-                string art, Color tint, string strike, string trophyId, string trophyName, Color trophyColor)
+                string art, Color tint, string rig, string strike, string trophyId, string trophyName, Color trophyColor)
             {
                 var m = Mon(id, name, shape, body, accent, scale, hp, atk, def, range, cd, speed, 8, DangerLevel.High, true, 1, 0f, 0, 20);
                 m.isRegionLord = true;
@@ -304,6 +305,7 @@ namespace GuildMaster.Data
                 m.bossArtKey = art;
                 m.artKey = art;
                 m.artTint = tint;
+                m.rigKey = rig;
                 m.combatTier = CombatTier.Veteran;
                 m.wanderRadius = 3f;
                 m.leashRadius = Monsters.RegionLords.LeashRadius;
@@ -318,16 +320,16 @@ namespace GuildMaster.Data
                 return m;
             }
             Lord("lord_desert", "모래 폭군 카르샤", MonsterShape.Humanoid, new Color(0.85f, 0.7f, 0.4f), new Color(0.55f, 0.35f, 0.2f), 1.5f,
-                34, 7.5f, 3, 1.3f, 1.2f, 3.4f, Region.Desert, sandGoblin, "boss_goblin", new Color(1f, 0.85f, 0.55f),
+                34, 7.5f, 3, 1.3f, 1.2f, 3.4f, Region.Desert, sandGoblin, "boss_goblin", new Color(1f, 0.85f, 0.55f), "evilmass_boxer",
                 "lord_sand_whirl", "lord_heart_desert", "모래 폭군의 심장", new Color(0.95f, 0.75f, 0.35f));
             Lord("lord_snow", "서리 리치 이스벨", MonsterShape.Humanoid, new Color(0.75f, 0.85f, 1f), new Color(0.3f, 0.4f, 0.6f), 1.4f,
-                28, 7f, 2, 4.5f, 1.4f, 3.0f, Region.Snow, frostSkull, "boss_skull", new Color(0.7f, 0.88f, 1f),
+                28, 7f, 2, 4.5f, 1.4f, 3.0f, Region.Snow, frostSkull, "boss_skull", new Color(0.7f, 0.88f, 1f), "reaper_death",
                 "lord_frost_roar", "lord_heart_snow", "서리 리치의 성물함", new Color(0.7f, 0.9f, 1f));
             Lord("lord_swamp", "독늪 여왕 무르가", MonsterShape.Brute, new Color(0.6f, 0.4f, 0.8f), new Color(0.9f, 0.75f, 0.3f), 1.6f,
-                38, 8f, 3, 1.5f, 1.6f, 3.2f, Region.Swamp, bogSlime, "boss_slime_king", new Color(0.78f, 0.55f, 1f),
+                38, 8f, 3, 1.5f, 1.6f, 3.2f, Region.Swamp, bogSlime, "boss_slime_king", new Color(0.78f, 0.55f, 1f), "toad_king",
                 "lord_toxic_spit", "lord_heart_swamp", "독늪 여왕의 왕관", new Color(0.7f, 0.45f, 0.95f));
             Lord("lord_wasteland", "잿불 거인 바흐람", MonsterShape.Brute, new Color(0.5f, 0.4f, 0.38f), new Color(0.95f, 0.45f, 0.2f), 1.7f,
-                40, 8f, 4, 1.4f, 1.6f, 3.2f, Region.Wasteland, ashSkull, "boss_stone_slime", new Color(0.8f, 0.5f, 0.42f),
+                40, 8f, 4, 1.4f, 1.6f, 3.2f, Region.Wasteland, ashSkull, "boss_stone_slime", new Color(0.8f, 0.5f, 0.42f), "carapace_iron",
                 "lord_quake_stomp", "lord_heart_wasteland", "잿불 거인의 핵", new Color(0.95f, 0.45f, 0.2f));
 
             // The dragon (P4-93, user decisions 2026-10-20): one, no habitat (never in a den, never a newcomer), asleep at

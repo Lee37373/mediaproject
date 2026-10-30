@@ -900,6 +900,40 @@ namespace GuildMaster.Tests
             var firstLord = first.Lair.LivingLord;
             Assert.That(firstLord.Stats.MaxHp, Is.EqualTo(Combat.ScaledHp(first.Def.maxHp) * RegionLords.HpMultiplier * MonsterLevel.HpScale(RegionLords.Level)).Within(1f));
 
+            // P4-110: with Minimal EnemyMonster imported each lord is its own rig — parts on the game's lit material, sorted
+            // as one piece by its row, the still kept on the undrawn body for its fog memory; a blow and a flinch play once.
+            // (Without the pack they keep the borrowed art and this part is skipped.)
+            Animator firstAnimator = null;
+            foreach (var l in lords.Lords)
+            {
+                var m = l.Lair.LivingLord;
+                var rig = Monster.RigFor(m.Def, true, false);
+                if (rig == null) continue;
+                Assert.That(m.Visual.HasRig, Is.True, m.Def.id);
+                var body = m.Visual.Body;
+                Assert.That((body.forceRenderingOff, body.sprite), Is.EqualTo((true, rig.portrait)), m.Def.id);
+                var animator = m.GetComponentInChildren<Animator>();
+                var parts = animator.GetComponentsInChildren<SpriteRenderer>(true);
+                Assert.That(parts.All(r => r.sharedMaterial == body.sharedMaterial), Is.True, "lit like every other sprite");
+                var group = animator.GetComponent<UnityEngine.Rendering.SortingGroup>();
+                Assert.That(group.sortingOrder, Is.EqualTo(Visuals.CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(m.transform.position.y * 8f)).Within(8));
+                if (m == firstLord) firstAnimator = animator;
+            }
+            if (firstAnimator != null)
+            {
+                bool Playing(string state) => firstAnimator.GetCurrentAnimatorStateInfo(0).IsName(state);
+                firstAnimator.cullingMode = AnimatorCullingMode.AlwaysAnimate; // far off and under the fog it would not move
+                firstLord.Visual.PlayAttack();
+                yield return null;
+                yield return null;
+                Assert.That(Playing("Attack"), Is.True, "a blow");
+                firstLord.Visual.PlayHit();
+                yield return null;
+                Assert.That(Playing("Attack"), Is.True, "a flinch does not cut a blow short");
+                yield return WaitFor(() => !Playing("Attack"), 5f);
+                Assert.That(Playing("Idle") || Playing("Walk"), Is.True, "a blow is played once");
+            }
+
             var board = Services.Get<QuestBoard>();
             var intel = Services.Get<GuildIntel>();
             var avatar = Services.Get<PlayerAvatar>();
@@ -945,6 +979,12 @@ namespace GuildMaster.Tests
                 Assert.That(quest.Status, Is.EqualTo(QuestStatus.Cancelled), "nobody had taken its quest: it comes down");
                 var trophy = first.Def.loot.First(e => e.item.uniqueEffect == "lord_trophy").item;
                 Assert.That(Services.Get<Items.GroundItemService>().Items.Any(g => g.Item == trophy), Is.True, "its trophy lies where it fell");
+                if (firstAnimator != null)
+                {
+                    yield return null;
+                    yield return null;
+                    Assert.That(firstAnimator.GetCurrentAnimatorStateInfo(0).IsName("Dead"), Is.True, "its rig plays its death");
+                }
 
                 // The other three — each fall is fame — and with them the last condition of the guild's rank S, which is the
                 // victory (P4-106, user decision 2026-10-27): not before the guild has climbed to it; then the game holds
@@ -962,6 +1002,11 @@ namespace GuildMaster.Tests
                 Assert.That(Clock.IsHeld, Is.True, "the victory screen holds the game");
                 typeof(VictoryView).GetMethod("Continue", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, null);
                 Assert.That(Clock.IsHeld, Is.False, "and play goes on");
+                if (firstAnimator != null)
+                {
+                    yield return WaitFor(() => !firstLord.gameObject.activeSelf || firstLord.IsAlive, 10f);
+                    Assert.That(!firstLord.gameObject.activeSelf || firstLord.IsAlive, Is.True, "a rig's corpse goes when its death has played");
+                }
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }

@@ -64,6 +64,7 @@ namespace GuildMaster.Units
 
             attacker.NextAttackTime = Time.time + attacker.AttackCooldownNow;
             attacker.Visual?.FaceTowards(target.Position);
+            attacker.Visual?.PlayAttack();
 
             if (attacker.Stats.IsRanged && Services.TryGet<ProjectileService>(out var projectiles))
                 projectiles.Launch(attacker, target);

@@ -389,7 +389,11 @@ namespace GuildMaster.Units
                 LastAttacker = source;
                 LastAttackedTime = Time.time;
             }
-            if (!overTime) Visual?.Flash();
+            if (!overTime)
+            {
+                Visual?.Flash();
+                Visual?.PlayHit();
+            }
             EventBus.Publish(new UnitDamagedEvent { Target = this, Source = source, Amount = amount, Critical = critical, OverTime = overTime });
             OnDamaged(amount, source);
             if (Hp <= 0f)

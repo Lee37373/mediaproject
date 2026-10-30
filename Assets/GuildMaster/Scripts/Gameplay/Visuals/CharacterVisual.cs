@@ -43,6 +43,12 @@ namespace GuildMaster.Visuals
         /// <summary>Art faces left by default (flip logic inverted).</summary>
         public bool ArtFacesLeft { get; set; }
 
+        // ---- Rigged art (P4-110, see CharacterRig) ----
+        CharacterRig _rig;
+
+        /// <summary>Drawn by a rigged prefab (<see cref="InitRig"/>).</summary>
+        public bool HasRig => _rig != null;
+
         /// <summary>Uses animated frames (idle/run loops, one-shot death) instead of a single sprite.</summary>
         public void InitAnimated(CharacterAnimSet set, float scale = 1f)
         {
@@ -54,13 +60,40 @@ namespace GuildMaster.Visuals
             _shadow.enabled = !set.HasShadow;
         }
 
-        /// <summary>Plays the death frames once (animated characters only).</summary>
+        /// <summary>
+        /// Drawn by a rigged prefab (P4-110) with its own shadow. The body keeps its still, never drawn, for what reads
+        /// one sprite: a fog ghost's copy, the corpse's colour.
+        /// </summary>
+        public void InitRig(CharacterArtCatalog.MonsterRig art, float scale = 1f)
+        {
+            if (_rig != null && _rig.Prefab != art.prefab) ReleaseRig();
+            InitBody(art.portrait, scale);
+            _body.forceRenderingOff = true;
+            _shadow.forceRenderingOff = true;
+            if (_rig == null) _rig = new CharacterRig(art.prefab, _bodyT, _body.sharedMaterial, _body.sortingLayerID);
+            else _rig.Reset();
+        }
+
+        void ReleaseRig()
+        {
+            _rig.Release();
+            _rig = null;
+        }
+
+        /// <summary>Plays the death frames once (animated characters and rigs only).</summary>
         public void PlayDeath()
         {
+            if (_rig != null) { _rig.PlayDeath(); return; }
             if (_anim == null || _anim.Die.Length == 0 || _dying) return;
             _dying = true;
             _animTime = 0f;
         }
+
+        /// <summary>Swings once (rigs only; a sprite has no blow to show).</summary>
+        public void PlayAttack() => _rig?.PlayAttack();
+
+        /// <summary>Flinches once (rigs only).</summary>
+        public void PlayHit() => _rig?.PlayHit();
 
         void TickAnimation(bool moving)
         {
@@ -76,6 +109,12 @@ namespace GuildMaster.Visuals
         }
 
         public void Init(Sprite sprite, float scale = 1f)
+        {
+            if (_rig != null) ReleaseRig();
+            InitBody(sprite, scale);
+        }
+
+        void InitBody(Sprite sprite, float scale)
         {
             if (_body == null)
             {
@@ -95,6 +134,8 @@ namespace GuildMaster.Visuals
             _anim = null;
             SortingBoost = 0;
             if (_shadow) _shadow.enabled = true;
+            _body.forceRenderingOff = false;
+            _shadow.forceRenderingOff = false;
             _bodyT.localScale = Vector3.one * scale;
             _shadow.transform.localScale = new Vector3(scale, 0.45f * scale, 1f);
             _mover = GetComponent<PathFollower>();
@@ -155,12 +196,13 @@ namespace GuildMaster.Visuals
                       : _shownLeft;
             if (left != _shownLeft) { _shownLeft = left; Turns++; }
             _faceOverrideTimer -= Time.deltaTime;
-            _body.flipX = ArtFacesLeft ? !left : left;
+            // Rigs face left (P4-110).
+            _body.flipX = ArtFacesLeft || _rig != null ? !left : left;
 
             if (moving) _bobPhase += Time.deltaTime * 14f;
             else _bobPhase = Mathf.MoveTowards(_bobPhase, 0f, Time.deltaTime * 10f);
             // Animated art has its own motion; single sprites bob while walking.
-            float bob = moving && _anim == null ? Mathf.Abs(Mathf.Sin(_bobPhase)) * 0.08f : 0f;
+            float bob = moving && _anim == null && _rig == null ? Mathf.Abs(Mathf.Sin(_bobPhase)) * 0.08f : 0f;
             if (_anim != null) TickAnimation(moving);
             if (Lying)
             {
@@ -177,16 +219,15 @@ namespace GuildMaster.Visuals
             _body.sortingOrder = order;
             _shadow.sortingOrder = order - 1;
 
+            Color shown;
             if (_flashTimer > 0f)
             {
                 _flashTimer -= Time.deltaTime;
-                _body.color = Shown(_flashTimer > 0f ? new Color(1f, 0.35f, 0.35f, _tint.a) : _tint);
+                shown = Shown(_flashTimer > 0f ? new Color(1f, 0.35f, 0.35f, _tint.a) : _tint);
             }
-            else
-            {
-                var shown = Shown(_tint);
-                if (_body.color != shown) _body.color = shown;
-            }
+            else shown = Shown(_tint);
+            if (_body.color != shown) _body.color = shown;
+            _rig?.Tick(moving, _body.flipX, order, shown);
         }
     }
 }

@@ -76,6 +76,13 @@ namespace GuildMaster.Data
         [Tooltip("Tint over the art: a kind that borrows another's image until it has its own (P4-72 disaster monsters).")]
         public Color artTint = Color.white;
 
+        [Header("Rigged art (P4-110, Minimal EnemyMonster)")]
+        [Tooltip("Animated prefab drawn instead of the art above when imported (prefab name in lower case, e.g. \"toad_king\"); its own picture, so no art tint.")]
+        public string rigKey;
+        public string rangedRigKey;
+        [Tooltip("Rig of the pack boss; the species' own rig (drawn bigger) when empty or missing.")]
+        public string bossRigKey;
+
         [Header("Boss (P4-57)")]
         [Tooltip("Name of the species' pack boss (Monsters/MonsterBoss).")]
         public string bossName;

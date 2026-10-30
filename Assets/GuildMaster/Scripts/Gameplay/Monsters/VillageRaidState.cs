@@ -47,6 +47,7 @@ namespace GuildMaster.Monsters
                     m.NextAttackTime = Time.time + m.AttackCooldownNow;
                     v.Damage(VillageRules.Blow(m.Stats.Attack), m, Services.Get<GameClock>().TotalHours);
                     m.Visual.Flash();
+                    m.Visual.PlayAttack();
                 }
                 return;
             }

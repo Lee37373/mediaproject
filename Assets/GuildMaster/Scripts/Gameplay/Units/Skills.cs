@@ -57,6 +57,7 @@ namespace GuildMaster.Units
         protected void Announce(Unit self)
         {
             StartCooldown();
+            if (!IsSupport) self.Visual?.PlayAttack(); // a rig swings (P4-110)
             EventBus.Publish(new SkillUsedEvent { User = self, Name = Name, Color = Color });
         }
 

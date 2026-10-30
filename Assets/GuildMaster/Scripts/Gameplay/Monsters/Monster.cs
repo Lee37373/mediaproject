@@ -29,6 +29,12 @@ namespace GuildMaster.Monsters
         public const string PoolKey = "unit.monster";
         const float SenseInterval = 0.4f;
         const float CorpseTime = 1.2f;
+        /// <summary>
+        /// A rig plays its death clip (1.5 s), which fades the body itself and leaves a puff of dust; the last
+        /// <see cref="RigCorpseFade"/> fades whatever is left (P4-110).
+        /// </summary>
+        const float RigCorpseTime = 1.5f;
+        const float RigCorpseFade = 0.3f;
 
         public MonsterDefinition Def { get; private set; }
         public Nest Home { get; private set; }
@@ -225,19 +231,24 @@ namespace GuildMaster.Monsters
         {
             var def = Def;
             RefreshStats(fullHeal: true);
+            var rig = RigFor(def, IsBoss, IsRangedVariant);
             var art = ImportedArt(def, IsBoss, IsRangedVariant);
             if (def.isDragon) ShowPose(DragonPose.Sleeping, force: true);
+            else if (rig != null) Visual.InitRig(rig, Scale);
             else Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
             // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
             var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
+            // A rig is the kind's own picture: the tint of borrowed art does not apply (P4-110).
+            var artTint = rig != null ? Color.white : def.artTint;
             // A rare variant shines in its own colour instead of the land's (P4-85).
             // The dragon keeps its own colours wherever it is (P4-93).
             Visual.SetTint(def.isDragon ? Color.white
-                : IsRare ? RareMonster.Tint(RareVariant) : baseTint * def.artTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
+                : IsRare ? RareMonster.Tint(RareVariant) : baseTint * artTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
             if (!def.isDragon)
             {
                 var bar = GetComponent<HealthBar>();
-                bar.Init(this, 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
+                // A rig's height varies by kind: just over the top of its still (the body stands 0.3 below the unit).
+                bar.Init(this, rig != null ? rig.portrait.bounds.max.y * Scale - 0.15f : 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
                 bar.AlwaysVisible = false; // a pooled body may have been the dragon's
                 _poseShown = false;
             }
@@ -251,9 +262,21 @@ namespace GuildMaster.Monsters
             _corpseTimer = 0f;
         }
 
-        /// <summary>Imported Casual Monsters art when available (archer variants and bosses have their own image), else null.</summary>
+        /// <summary>The imported rig (P4-110; archer variants and bosses may have their own), else null.</summary>
+        public static CharacterArtCatalog.MonsterRig RigFor(MonsterDefinition def, bool boss, bool ranged)
+        {
+            var rig = boss && !string.IsNullOrEmpty(def.bossRigKey) ? ArtLibrary.MonsterRig(def.bossRigKey)
+                    : ranged && !string.IsNullOrEmpty(def.rangedRigKey) ? ArtLibrary.MonsterRig(def.rangedRigKey) : null;
+            return rig ?? ArtLibrary.MonsterRig(def.rigKey);
+        }
+
+        /// <summary>
+        /// One still of how it is drawn when imported: the rig's (P4-110), else Casual Monsters art (archer variants and
+        /// bosses have their own image), else null.
+        /// </summary>
         public static Sprite ImportedArt(MonsterDefinition def, bool boss, bool ranged)
         {
+            if (RigFor(def, boss, ranged) is { } rig) return rig.portrait;
             var art = boss && !string.IsNullOrEmpty(def.bossArtKey) ? ArtLibrary.Monster(def.bossArtKey) : null;
             return art != null ? art : ArtLibrary.Monster(ranged && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
         }
@@ -762,9 +785,11 @@ namespace GuildMaster.Monsters
             if (!IsAlive)
             {
                 _corpseTimer += Time.deltaTime;
+                float corpseTime = Visual.HasRig ? RigCorpseTime : CorpseTime;
+                float fade = Visual.HasRig ? RigCorpseFade : CorpseTime;
                 var c = Visual.Body.color;
-                Visual.SetTint(new Color(c.r, c.g, c.b, Mathf.Clamp01(1f - _corpseTimer / CorpseTime)));
-                if (_corpseTimer >= CorpseTime && Services.TryGet<PoolService>(out var pool)) pool.Despawn(gameObject);
+                Visual.SetTint(new Color(c.r, c.g, c.b, Mathf.Clamp01((corpseTime - _corpseTimer) / fade)));
+                if (_corpseTimer >= corpseTime && Services.TryGet<PoolService>(out var pool)) pool.Despawn(gameObject);
                 return;
             }
 
@@ -968,6 +993,7 @@ namespace GuildMaster.Monsters
                 Visual.Init(DragonArt.Corpse(), Scale);
                 _poseShown = false;
             }
+            else Visual.PlayDeath(); // a rig's death (P4-110); a single picture just fades
         }
 
         static readonly System.Collections.Generic.List<ItemStack> s_noLoot = new();

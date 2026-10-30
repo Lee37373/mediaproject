@@ -97,6 +97,7 @@ namespace GuildMaster.Monsters
                     m.NextAttackTime = Time.time + m.AttackCooldownNow;
                     _gate.Damage(m.Stats.Attack * RaidState.BuildingDamageMul, m);
                     m.Visual?.Flash();
+                    m.Visual?.PlayAttack();
                 }
                 return;
             }

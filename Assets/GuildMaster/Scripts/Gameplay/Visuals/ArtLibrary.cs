@@ -55,6 +55,17 @@ namespace GuildMaster.Visuals
             return m != null && m.sprite != null ? m.sprite : null;
         }
 
+        /// <summary>
+        /// Rigged monster (P4-110), e.g. "toad_king" — the prefab name in lower case. Null if absent or not fully
+        /// built (no still), so the caller falls back to <see cref="Monster"/>.
+        /// </summary>
+        public static CharacterArtCatalog.MonsterRig MonsterRig(string key)
+        {
+            if (string.IsNullOrEmpty(key) || Catalog == null) return null;
+            var r = Catalog.rigs.FirstOrDefault(x => x.key == key);
+            return r != null && r.prefab != null && r.portrait != null ? r : null;
+        }
+
         /// <summary>Animated adventurer skin, e.g. "knight". Null if absent.</summary>
         public static CharacterAnimSet Adventurer(string skin)
         {
