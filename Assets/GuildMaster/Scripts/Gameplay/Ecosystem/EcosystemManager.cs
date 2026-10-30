@@ -434,6 +434,7 @@ namespace GuildMaster.Ecosystem
         {
             StirTheWilds();
             var rng = GameRandom.Shared;
+            float season = Seasons.SeasonService.Breed; // spring breeds, winter less (P4-111b)
             foreach (var nest in _nests)
             {
                 if (nest.IsEmpty)
@@ -449,7 +450,7 @@ namespace GuildMaster.Ecosystem
                 float food = FoodFactor(s);
 
                 // Logistic growth; lone survivors breed slowly.
-                float rate = s.growthPerHour * nest.GrowthFactor * pop * (1f - pop / (float)nest.Capacity);
+                float rate = s.growthPerHour * nest.GrowthFactor * season * pop * (1f - pop / (float)nest.Capacity);
                 if (pop < 2) rate *= 0.35f;
                 if (s.prey.Count > 0) rate *= 0.25f + 0.75f * food;
                 nest.GrowthAccumulator += Mathf.Max(0f, rate);

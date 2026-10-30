@@ -256,8 +256,8 @@ namespace GuildMaster.Storytelling
             return false;
         }
 
-        /// <summary>The season's say in the draw (P4-111b).</summary>
-        static float SeasonWeight(StoryBeat b) => 1f;
+        /// <summary>The season's say in the draw (P4-111b): summer's disasters, winter's hungry raids and hordes.</summary>
+        static float SeasonWeight(StoryBeat b) => Seasons.SeasonService.BeatWeight(b);
 
         bool TrySet(StoryBeat beat, GameRandom rng, out string detail)
         {
@@ -326,8 +326,10 @@ namespace GuildMaster.Storytelling
                 foreach (var id in n.Species.skillIds)
                     if (DisasterRules.KindOfSkill(id) is { } kind) { dens.Add((n, kind)); break; }
             }
-            rng.Shuffle(dens);
-            foreach (var (nest, kind) in dens)
+            // A weighted order (the season favours its own: summer fires, winter avalanches): key u^(1/w), highest first.
+            var order = dens.Select(d => (d.nest, d.kind, key: Mathf.Pow(rng.Value, 1f / Mathf.Max(0.01f, Seasons.SeasonService.DisasterKindWeight(d.kind)))))
+                .OrderByDescending(d => d.key).ToList();
+            foreach (var (nest, kind, _) in order)
             {
                 var d = disasters.StartNear(kind, nest.WorldPosition, StorytellerRules.DisasterSearch, rng);
                 if (d == null) continue;

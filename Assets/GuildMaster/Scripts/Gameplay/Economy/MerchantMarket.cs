@@ -80,8 +80,9 @@ namespace GuildMaster.Economy
 
         public bool CanSell(ItemDefinition item) => item != null && item.baseValue > 0;
 
+        // Autumn's buyers pay more (P4-111b).
         int UnitPrice(ItemDefinition item, float sold)
-            => Mathf.Max(1, Mathf.RoundToInt(item.baseValue * SaleRate * Scarcity(item) * SaturationFor(sold)));
+            => Mathf.Max(1, Mathf.RoundToInt(item.baseValue * SaleRate * Scarcity(item) * SaturationFor(sold) * Seasons.SeasonService.MerchantPrice));
 
         /// <summary>Current price for one unit.</summary>
         public int Price(ItemDefinition item) => item == null ? 0 : UnitPrice(item, Sold(item.id));

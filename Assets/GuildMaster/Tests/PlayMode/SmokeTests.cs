@@ -63,6 +63,7 @@ namespace GuildMaster.Tests
             TownQuestPoster.Enabled = true;
             Incidents.IncidentService.Enabled = true;
             Storytelling.StorytellerService.Enabled = true;
+            Seasons.SeasonService.Enabled = true;
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
@@ -97,6 +98,8 @@ namespace GuildMaster.Tests
             Nemeses.NemesisService.Enabled = false;
             // Nor the storyteller (P4-111): each system rolls its own as before, and no raid or horde comes out of turn.
             Storytelling.StorytellerService.Enabled = false;
+            // Nor the seasons (P4-111b): spring's breeding would change the dens under every test.
+            Seasons.SeasonService.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -5799,6 +5802,70 @@ namespace GuildMaster.Tests
                 Assert.That((Storytelling.StorytellerService.Directs, Storytelling.StorytellerService.EcoFactor), Is.EqualTo((false, 1f)), "off, every system its own");
             }
             finally { Unit.GuildInvulnerable = false; }
+        }
+
+        /// <summary>
+        /// The seasons (P4-111b, H11): spring from the start; the harvest festival cheers those in town and doubles their
+        /// stress relief; the town tells of winter the day before and as it comes, and winter's numbers bite — walking, meals,
+        /// a night by the fire, the dens' hunger — and a winter camp is cold. Off, there are no seasons.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Seasons_AreToldTheDayBefore_ComeWithTheDay_AndChangeTheNumbers()
+        {
+            yield return Boot();
+            Seasons.SeasonService.Enabled = true;
+            Assert.That(Seasons.SeasonService.Label, Is.EqualTo("봄 1일"));
+            Assert.That(Seasons.SeasonService.Breed, Is.EqualTo(Seasons.SeasonRules.BreedFactor(Seasons.Season.Spring)));
+            var coming = new System.Collections.Generic.List<Seasons.Season>();
+            var came = new System.Collections.Generic.List<Seasons.Season>();
+            Action<Seasons.SeasonComingEvent> onComing = e => coming.Add(e.Season);
+            Action<Seasons.SeasonChangedEvent> onCame = e => came.Add(e.Season);
+            EventBus.Subscribe(onComing);
+            EventBus.Subscribe(onCame);
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                // The festival (autumn's third day, day 13): those in town have a good time of it.
+                JumpClockTo(12 * 24f + 11.95f);
+                yield return WaitFor(() => Roster.Members.Any(a => a.Data.thoughts.Any(t => t.id == ThoughtRules.Festival.Id)), 5f);
+                Assert.That(Roster.Members.Any(a => a.Data.thoughts.Any(t => t.id == ThoughtRules.Festival.Id)), Is.True, "the festival");
+                Assert.That(Town.FacilityService.TownStressRelief, Is.EqualTo(Seasons.SeasonRules.FestivalStressRelief), "no dormitory: the festival's alone");
+                Assert.That(Seasons.SeasonService.MerchantPrice, Is.GreaterThan(1f), "autumn's buyers");
+
+                // The eve of the first winter, then winter.
+                JumpClockTo(14 * 24f - 0.05f);
+                yield return WaitFor(() => coming.Count > 0, 5f);
+                Assert.That(coming, Is.EqualTo(new[] { Seasons.Season.Winter }), "told the day before");
+                var notifications = Services.Get<Notifications.NotificationCenter>();
+                Assert.That(notifications.Entries.Any(n => n.Title == "내일부터 겨울"), Is.True);
+                JumpClockTo(15 * 24f - 0.05f);
+                yield return WaitFor(() => came.Count > 0, 5f);
+                Assert.That(came, Is.EqualTo(new[] { Seasons.Season.Winter }));
+                Assert.That(Seasons.SeasonService.Label, Is.EqualTo("겨울 1일"));
+                Assert.That((Seasons.SeasonService.Walk, Seasons.SeasonService.Meal, Seasons.SeasonService.CampRest, Seasons.SeasonService.Raid),
+                    Is.EqualTo((Seasons.SeasonRules.WalkFactor(Seasons.Season.Winter), Seasons.SeasonRules.MealFactor(Seasons.Season.Winter),
+                        Seasons.SeasonRules.CampRestFactor(Seasons.Season.Winter), Seasons.SeasonRules.RaidFactor(Seasons.Season.Winter))));
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[계절] 겨울이 왔습니다")), Is.True, "logged");
+                Assert.That(Town.FacilityService.TownStressRelief, Is.EqualTo(1f), "the festival is over");
+
+                // A winter night out is cold.
+                var world = Services.Get<World.WorldService>();
+                Assert.That(world.Grid.TryFindNearestWalkable(world.Map.TownCenter + new Vector2Int(0, -36), 6, out var cell), Is.True);
+                var camper = Roster.Members.First(a => a.IsAlive);
+                camper.Mover.Stop();
+                camper.transform.position = World.GridMap.CellToWorld(cell);
+                Assert.That(DebugCommands.CampNow(Roster.Members.ToList().IndexOf(camper), true), Does.Not.StartWith("no spot"));
+                Assert.That(camper.Data.thoughts.Any(t => t.id == ThoughtRules.ColdCamp.Id), Is.True, "a cold camp");
+
+                Seasons.SeasonService.Enabled = false;
+                Assert.That((Seasons.SeasonService.Label, Seasons.SeasonService.Meal), Is.EqualTo(("", 1f)), "off, no seasons");
+            }
+            finally
+            {
+                EventBus.Unsubscribe(onComing);
+                EventBus.Unsubscribe(onCame);
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+            }
         }
 
         /// <summary>A stretch of water nobody has explored yet, with walkable ground either side of it.</summary>

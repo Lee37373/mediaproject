@@ -115,8 +115,9 @@ namespace GuildMaster.Adventurers
 
         void OnDay(DayPassedEvent e)
         {
+            int meal = UnityEngine.Mathf.RoundToInt(MealGold * Seasons.SeasonService.Meal); // dearer in winter (P4-111b)
             foreach (var a in _roster.Members)
-                if (a != null && a.IsAlive) _meals += Charge(a, MealGold);
+                if (a != null && a.IsAlive) _meals += Charge(a, meal);
 
             EventBus.Publish(new LivingCostsDayEvent
             {

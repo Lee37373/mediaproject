@@ -236,8 +236,9 @@ namespace GuildMaster.Town
                 if (migration != null && migration.IsMigrating(nest)) continue;
                 if (villageRaids != null && villageRaids.IsRaiding(nest)) continue;
                 int level = LevelOf(nest);
-                // The storyteller's breather quiets the dens too (P4-111); the same draw either way.
-                if (level <= 0 || GameRandom.Shared.Value >= level * _cfg.ChancePerLevelPerHour * Storytelling.StorytellerService.EcoFactor) continue;
+                // The storyteller's breather quiets the dens too, winter's hunger stirs them (P4-111); the same draw either way.
+                float chance = level * _cfg.ChancePerLevelPerHour * Storytelling.StorytellerService.EcoFactor * Seasons.SeasonService.Raid;
+                if (level <= 0 || GameRandom.Shared.Value >= chance) continue;
                 // Only a nest by the town sends its band against the walls; one by another village raids
                 // that (P4-84); the others move their home a step closer instead (P4-56, user decision 2026-09-22).
                 if (migration == null || IsByTheTown(nest)) Launch(nest);

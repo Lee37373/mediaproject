@@ -172,7 +172,7 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             float hours = dt / AdvCtx.Clock.RealSecondsPerGameHour;
             a.Heal(a.Stats.MaxHp * healPerHour * hours);
-            a.Data.fatigue = Mathf.Max(0f, a.Data.fatigue - fatiguePerHour * hours);
+            a.Data.fatigue = Mathf.Max(0f, a.Data.fatigue - fatiguePerHour * Seasons.SeasonService.CampRest * hours); // a cold winter night (P4-111b)
             a.Data.stress = Mathf.Max(0f, a.Data.stress - 6f * hours);
         }
 

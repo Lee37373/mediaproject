@@ -112,7 +112,7 @@ namespace GuildMaster.Town
         public bool StartVisit()
         {
             if (Merchant != null) return false;
-            NextVisitHour = _clock.TotalHours + IntervalHours;
+            NextVisitHour = _clock.TotalHours + Seasons.SeasonService.MerchantInterval(IntervalHours); // autumn: more often (P4-111b)
             var gates = _world.Map.Gates;
             var gate = gates.Count > 0 ? GridMap.CellToWorld(gates[GameRandom.Shared.Range(0, gates.Count)]) : _stall;
             Merchant = Merchant.Create(gate, _stall, transform, OnMerchantArrived, OnMerchantLeft);

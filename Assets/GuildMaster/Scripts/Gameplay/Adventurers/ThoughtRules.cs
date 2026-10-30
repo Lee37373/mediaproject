@@ -125,6 +125,10 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef CosyCamp = D("cosy_camp", "버려진 야영지에서 아늑하게 밤을 보냈다", 3f, 12f);
         public static readonly ThoughtDef Lookout = D("lookout", "감시탑에서 멀리 내다봤다", 2f, 12f, ThoughtTone.Plain, 1, "(저 멀리까지 다 보여!)");
 
+        // The seasons (P4-111b).
+        public static readonly ThoughtDef Festival = D("festival", "수확 축제를 즐겼다", 6f, 24f, ThoughtTone.People, 1, "(오늘은 실컷 먹고 마시자!)", "(축제다, 축제!)");
+        public static readonly ThoughtDef ColdCamp = D("cold_camp", "추운 밤 야영에 떨었다", -3f, 12f);
+
         // The guild master's care (F-2).
         public static readonly ThoughtDef Talked = D("talked", "길드 마스터가 이야기를 들어 주었다", 5f, 24f, ThoughtTone.People);
         public static readonly ThoughtDef Bonus = D("bonus", "보너스를 받았다", 8f, 24f, ThoughtTone.Gain, 1, "(헤헤, 이 맛에 일하지.)");
@@ -152,6 +156,7 @@ namespace GuildMaster.Adventurers
             ComradeDiedClose, ComradeDiedFriend, ComradeDied, RivalDied, SawComradeFall, QuestDone, QuestFailed, LevelUp, NewGear, GoodHaul, WellRested,
             NearDeath, LastStand, Slew, GreatKill, SawDragon, RaidHeld, Trapped, LetItOut, Inspired, Brawled, BerserkVictim,
             DreadfulWork, DullWork, NewLand, QuirkGained, Chat, Quarrel, Grudge, AvengedByHand, Avenged, NemesisFell, HotSpring, Blessed, CosyCamp, Lookout,
+            Festival, ColdCamp,
             Talked, Bonus, Ignored, FriendLeft,
             HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival, Crowded, Lonely, WantsRest, Idle, Afraid,
         };

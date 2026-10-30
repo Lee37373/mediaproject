@@ -303,6 +303,13 @@ namespace GuildMaster.Session
             // The bestiary (P4-107).
             EventBus.Subscribe<Bestiary.ResearchLevelEvent>(e => Add(
                 $"[도감] {e.Species.displayName} 연구 {e.Level}단계: {Bestiary.BestiaryText.LevelNews(e.Species, e.Level)}", LogCategory.Info));
+            // The seasons (P4-111b): every season's name ends on a consonant ("봄이", "겨울이").
+            EventBus.Subscribe<Seasons.SeasonComingEvent>(e => Add(
+                $"[계절] 내일부터 {Seasons.SeasonRules.Name(e.Season)}: {Seasons.SeasonRules.Changes(e.Season)}.", LogCategory.Info));
+            EventBus.Subscribe<Seasons.SeasonChangedEvent>(e => Add(
+                $"[계절] {Seasons.SeasonRules.Name(e.Season)}이 왔습니다{(e.Season == Seasons.Season.Spring ? $" ({e.Year}년째)" : "")}.", LogCategory.Info));
+            EventBus.Subscribe<Seasons.FestivalEvent>(e => Add(
+                $"[계절] 오늘은 수확 축제입니다. 마을에 있으면 스트레스가 {Seasons.SeasonRules.FestivalStressRelief:0}배로 풀립니다.", LogCategory.Info));
             // The guild's rank (P4-106).
             EventBus.Subscribe<Guild.GuildRankChangedEvent>(e => Add(
                 $"[등급] 길드가 {Guild.GuildRankRules.Name(e.Rank)}이 되었습니다! {Guild.GuildRankRules.Rewards(e.Rank)}", LogCategory.Quest));

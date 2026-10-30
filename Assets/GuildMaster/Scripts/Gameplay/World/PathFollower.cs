@@ -170,7 +170,7 @@ namespace GuildMaster.World
             var cell = GridMap.WorldToCell(pos);
             float cost = World.Grid.InBounds(cell) ? World.Grid.Cost(cell) : 1f;
             if (float.IsInfinity(cost)) cost = 1f;
-            float top = speed * SpeedMultiplier * BuffMultiplier / cost * speedFactor;
+            float top = speed * SpeedMultiplier * BuffMultiplier * Seasons.SeasonService.Walk / cost * speedFactor; // winter (P4-111b)
             var desired = Vector2.ClampMagnitude(direction, 1f) * top;
             _steerVelocity = Vector2.MoveTowards(_steerVelocity, desired, top * SteerAcceleration * dt);
 
@@ -297,7 +297,7 @@ namespace GuildMaster.World
             var cell = GridMap.WorldToCell(pos);
             float cost = World.Grid.InBounds(cell) ? World.Grid.Cost(cell) : 1f;
             if (float.IsInfinity(cost)) cost = 1f;
-            float step = speed * SpeedMultiplier * BuffMultiplier / cost * Time.deltaTime;
+            float step = speed * SpeedMultiplier * BuffMultiplier * Seasons.SeasonService.Walk / cost * Time.deltaTime; // winter (P4-111b)
 
             Vector2 next;
             if (_recentring)

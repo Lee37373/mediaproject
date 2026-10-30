@@ -63,8 +63,12 @@ namespace GuildMaster.Town
         /// <summary>How much faster members in town shed stress (1 with no dormitory standing).</summary>
         public float StressRelief { get { Refresh(); return _stressRelief; } }
 
-        /// <summary><see cref="StressRelief"/> of the running game, or 1 with none (pure tests, before boot).</summary>
-        public static float TownStressRelief => Services.TryGet<FacilityService>(out var f) && f.IsLive ? f.StressRelief : 1f;
+        /// <summary>
+        /// <see cref="StressRelief"/> of the running game, or 1 with none (pure tests, before boot) — times the harvest
+        /// festival's on its day (P4-111b), the one other thing that eases stress in town.
+        /// </summary>
+        public static float TownStressRelief
+            => (Services.TryGet<FacilityService>(out var f) && f.IsLive ? f.StressRelief : 1f) * Seasons.SeasonService.FestivalRelief;
 
         /// <summary>Members get the guild's scale; visitors, candidates and refugees only the weakened base.</summary>
         public StatScale ScaleFor(Adventurer a)

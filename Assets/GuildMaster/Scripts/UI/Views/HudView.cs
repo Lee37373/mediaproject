@@ -44,7 +44,7 @@ namespace GuildMaster.UI
             var h = UIBuilder.HLayout(bar, 14, 6);
             h.padding = new RectOffset(14, 14, 6, 6);
 
-            _time = UIBuilder.Label(bar.transform, "", 18, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(250);
+            _time = UIBuilder.Label(bar.transform, "", 18, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(330);
             // One button per GameClock.SpeedScales entry, so a new speed needs no change here.
             _speedButtons = new Button[GameClock.SpeedScales.Length];
             for (int i = 0; i < _speedButtons.Length; i++)
@@ -70,7 +70,10 @@ namespace GuildMaster.UI
             _timer = 0.25f;
             if (!Services.TryGet<GameClock>(out var clock)) return;
 
-            _time.text = clock.FormatTime() + (clock.IsNight ? " ☾" : " ☀") + (clock.IsHeld ? UIBuilder.Colored(" 정지 중", UITheme.TextMuted) : "");
+            // The season and its day before the clock (P4-111b): "가을 3일 · 13일차 08:00".
+            string season = Seasons.SeasonService.Label;
+            if (season.Length > 0) season = UIBuilder.Colored(season, SeasonColor(Seasons.SeasonService.Now)) + " · ";
+            _time.text = season + clock.FormatTime() + (clock.IsNight ? " ☾" : " ☀") + (clock.IsHeld ? UIBuilder.Colored(" 정지 중", UITheme.TextMuted) : "");
             for (int i = 0; i < _speedButtons.Length; i++)
                 _speedButtons[i].GetComponentInChildren<Text>().color = i == clock.SpeedIndex ? UITheme.Accent : UITheme.TextMuted;
 
@@ -95,6 +98,14 @@ namespace GuildMaster.UI
             _monsters.text = $"시야 내 몬스터 {Services.Get<GuildIntel>().VisibleMonsters}";
             _extra.text = ExtraStatus?.Invoke() ?? "";
         }
+
+        static Color SeasonColor(Seasons.Season s) => s switch
+        {
+            Seasons.Season.Spring => new Color(0.55f, 0.85f, 0.45f),
+            Seasons.Season.Summer => new Color(0.95f, 0.7f, 0.3f),
+            Seasons.Season.Autumn => new Color(0.9f, 0.55f, 0.25f),
+            _ => new Color(0.6f, 0.8f, 1f),
+        };
 
         /// <summary>
         /// Every frame: the shown gold rolls towards the treasury's less what is still flying in — quickly, so a big sum

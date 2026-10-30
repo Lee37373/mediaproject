@@ -210,8 +210,9 @@ namespace GuildMaster.Disasters
             if (_clock == null) return;
             if (!FindGround(e.Kind, GridMap.WorldToCell(e.Point), out var cell)) return;
             if (!CanStartAt(cell)) return;
-            // The storyteller's breather quiets them too (P4-111); a test's own chance stands as it is.
-            float chance = ChanceOverride >= 0f ? ChanceOverride : DisasterRules.TriggerChance * Storytelling.StorytellerService.EcoFactor;
+            // The storyteller's breather quiets them, summer stirs them (P4-111); a test's own chance stands as it is.
+            float chance = ChanceOverride >= 0f ? ChanceOverride
+                : DisasterRules.TriggerChance * Storytelling.StorytellerService.EcoFactor * Seasons.SeasonService.Disaster;
             if (!GameRandom.Shared.Chance(chance)) return;
             Begin(e.Kind, cell);
         }

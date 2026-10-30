@@ -98,7 +98,22 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<QuirkGainedEvent>(OnQuirk);
             EventBus.Subscribe<Nemeses.NemesisDeedEvent>(OnNemesisDeed);
             EventBus.Subscribe<Nemeses.NemesisFellEvent>(OnNemesisFell);
+            EventBus.Subscribe<Seasons.SeasonComingEvent>(OnSeasonComing);
+            EventBus.Subscribe<Seasons.SeasonChangedEvent>(OnSeasonChanged);
+            EventBus.Subscribe<Seasons.FestivalEvent>(OnFestival);
         }
+
+        // The seasons (P4-111b): told the day before so the guild can get ready, and as each comes.
+        void OnSeasonComing(Seasons.SeasonComingEvent e)
+            => _center.Post(NotificationKind.Info, $"내일부터 {Seasons.SeasonRules.Name(e.Season)}", Seasons.SeasonRules.Changes(e.Season) + ".", "season_eve:" + e.Day);
+
+        void OnSeasonChanged(Seasons.SeasonChangedEvent e)
+            => _center.Post(e.Season == Seasons.Season.Winter ? NotificationKind.Warning : NotificationKind.Info,
+                $"{Seasons.SeasonRules.Name(e.Season)}이 왔습니다", Seasons.SeasonRules.Changes(e.Season) + ".", "season:" + e.Day);
+
+        void OnFestival(Seasons.FestivalEvent e)
+            => _center.Post(NotificationKind.Success, "수확 축제", $"오늘 하루, 마을에 있는 길드원은 스트레스가 {Seasons.SeasonRules.FestivalStressRelief:0}배로 풀리고 축제를 즐깁니다.",
+                "festival:" + e.Day);
 
         /// <summary>
         /// A nemesis named or grown (P4-109), pointing at where it was: a danger for a member killed, a warning for one driven

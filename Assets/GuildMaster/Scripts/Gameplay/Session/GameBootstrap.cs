@@ -388,6 +388,10 @@ namespace GuildMaster.Session
             rank.Init(clock, roster, treasury, loading: load != null);
             Services.Register(rank);
             save.Register(rank);
+            // The seasons (P4-111b, H11): from the day, nothing saved; the others ask it for their factor.
+            var seasons = AddSystem<Seasons.SeasonService>();
+            seasons.Init(clock, roster, world);
+            Services.Register(seasons);
 
             // --- Camera ---
             var cam = SetupCamera(world);
