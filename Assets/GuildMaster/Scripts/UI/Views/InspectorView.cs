@@ -366,10 +366,11 @@ namespace GuildMaster.UI
         void ShowMonster(Monster m)
         {
             var d = m.Def;
-            _title.text = $"{(m.IsRegionLord ? UIBuilder.Colored("[지대 군주] ", UITheme.Accent) : m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(m.Danger), UITheme.Danger(m.Danger))}";
+            _title.text = $"{(m.IsNemesis ? UIBuilder.Colored("[원수] ", UITheme.Bad) : m.IsRegionLord ? UIBuilder.Colored("[지대 군주] ", UITheme.Accent) : m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(m.Danger), UITheme.Danger(m.Danger))}";
             string prey = d.prey.Count == 0 ? "-" : string.Join(", ", d.prey.Select(p => p.displayName));
             string rivals = d.rivals.Count == 0 ? "-" : string.Join(", ", d.rivals.Select(p => p.displayName));
             _body.text =
+                NemesisText(m) +
                 $"상태: {UIBuilder.Colored(m.StateLabel, UITheme.Accent)} · 소속: {HomeName(m)}\n" +
                 $"HP {m.Hp:0}/{m.Stats.MaxHp:0} · 공격 {m.Stats.Attack:0.#} · 방어 {m.Stats.Defense:0.#}\n" +
                 $"성향: {(d.aggressiveToHumans ? UIBuilder.Colored("사람을 공격함", UITheme.Bad) : "먼저 공격하지 않음")} · 전투 {CombatTiers.Label(m.Tier)}\n" +
@@ -377,6 +378,13 @@ namespace GuildMaster.UI
                 ResearchText(d) +
                 GearText(m) +
                 $"{Muted("전리품: " + string.Join(", ", d.loot.Where(l => l.item).Select(l => $"{l.item.displayName}({l.chance * 100:0}%)")))}";
+        }
+
+        /// <summary>A nemesis's story (P4-109): its kind, what it did to the guild and when, its bounty. Empty for any other monster.</summary>
+        static string NemesisText(Monster m)
+        {
+            if (!m.IsNemesis || !Services.TryGet<Nemeses.NemesisService>(out var nemeses) || nemeses.Of(m) is not { } n) return "";
+            return $"{UIBuilder.Colored("원수", UITheme.Bad)} {Muted($"({m.Def.displayName})")}: {nemeses.Story(n)}\n";
         }
 
         /// <summary>The bestiary's line (P4-107): the research level, from 2 its weakness and strength, at 3 the mastery.</summary>

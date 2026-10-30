@@ -126,10 +126,11 @@ namespace GuildMaster.Adventurers
                 {
                     // A newcomer's quest out beyond its ground is a dare (P4-100): rolled here, once a look.
                     float score = QuestRisk.NewcomerHoldsBack(a, q) ? 0f : RuleBasedDecisionMaker.Score(a, q);
+                    bool revenge = score > 0f && Nemeses.NemesisService.Avenges(a, q); // P4-109
                     into.Add(new ThinkOption
                     {
                         Action = AdventurerAction.AcceptQuest, Quest = q, Score = score, Label = $"의뢰 '{q.Title}'",
-                        Reason = "보상 대비 위험이 적당하다", Say = $"{q.Title}, 내가 맡지!",
+                        Reason = revenge ? "원수를 갚을 기회다" : "보상 대비 위험이 적당하다", Say = revenge ? "원수는 내가 갚는다!" : $"{q.Title}, 내가 맡지!",
                     });
                 }
             }

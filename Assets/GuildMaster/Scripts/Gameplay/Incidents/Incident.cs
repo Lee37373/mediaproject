@@ -2,8 +2,10 @@ using UnityEngine;
 
 namespace GuildMaster.Incidents
 {
-    /// <summary>The four sudden incidents (P4-85). The order is kept: saves store the number.</summary>
-    public enum IncidentKind { RareMonster, Horde, Rescue, Ruin }
+    /// <summary>
+    /// The four sudden incidents (P4-85), and the town's bounty on a nemesis (P4-109). The order is kept: saves store the number.
+    /// </summary>
+    public enum IncidentKind { RareMonster, Horde, Rescue, Ruin, Nemesis }
 
     /// <summary>How an incident ended (<see cref="None"/> while it goes on).</summary>
     public enum IncidentOutcome
@@ -53,7 +55,7 @@ namespace GuildMaster.Incidents
         public Quests.Quest Quest;
 
         // ---- Rare monster ----
-        /// <summary>The rare variant while it lives (cleared when it dies: its pooled body is reused).</summary>
+        /// <summary>The rare variant (or the nemesis, P4-109) while it lives (cleared when it dies: its pooled body is reused).</summary>
         public Monsters.Monster Target;
         /// <summary>Its name and level, kept for the log after it is gone.</summary>
         public string TargetName;
@@ -85,6 +87,11 @@ namespace GuildMaster.Incidents
         /// <summary>Which ruin (<see cref="World.MapData.Ruins"/>).</summary>
         public int RuinIndex = -1;
         public bool ChestOpened;
+
+        // ---- Nemesis bounty (the nemesis is Target) ----
+        /// <summary>Its pack as the guild last saw it (the hunt's danger), and what the bounty pays over a hunt of that danger.</summary>
+        public int PackSize;
+        public float RewardFactor = 1f;
 
         /// <summary>A monster this incident's quest is about: the rare one, a member of the horde, an ambusher, a guardian.</summary>
         public bool IsTarget(Monsters.Monster m) => m != null && (m == Target || Members.Contains(m));

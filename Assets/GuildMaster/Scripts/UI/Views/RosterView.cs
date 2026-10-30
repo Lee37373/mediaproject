@@ -226,8 +226,8 @@ namespace GuildMaster.UI
                 var d = a.Data;
                 string hpColor = UITheme.Hex(a.HpRatio > 0.6f ? UITheme.Good : a.HpRatio > 0.3f ? UITheme.Warn : UITheme.Bad);
                 string star = leader ? UIBuilder.Colored("★ ", UITheme.Accent) : "";
-                // Titles (P4-83): one for each region lord this member helped bring down.
-                string titles = d.titles.Count > 0 ? " " + UIBuilder.Colored($"[군주 토벌 {d.titles.Count}]", UITheme.Accent) : "";
+                // Titles: a region lord or the dragon it helped bring down (P4-83, P4-93), a nemesis it slew (P4-109).
+                string titles = d.titles.Count > 0 ? " " + UIBuilder.Colored($"[칭호 {d.titles.Count}]", UITheme.Accent) : "";
                 // Weaker than the monsters round the town (P4-99): it trains, or hunts close in on its own.
                 if (a.IsNewcomer) titles += " " + UIBuilder.Colored("[신입]", UITheme.Exp);
                 _main.text = $"{star}{d.name} {InspectorView.GradeTag(d.grade)}{titles}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +

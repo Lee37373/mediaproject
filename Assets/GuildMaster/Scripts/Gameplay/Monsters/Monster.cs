@@ -156,6 +156,7 @@ namespace GuildMaster.Monsters
             UnitId = id;
             RareVariant = rare;
             InHorde = false;
+            IsNemesis = false;
             // A region lord (P4-83) is always its lair's boss, under its own name.
             IsBoss = boss || def.isRegionLord;
             DisplayName = def.isRegionLord || def.isDragon ? def.displayName : boss ? MonsterBoss.Name(def.displayName, def.bossName)
@@ -316,6 +317,16 @@ namespace GuildMaster.Monsters
         /// <summary>Which rare variant it is (P4-85, <see cref="RareMonster"/>), or -1 for an ordinary member of its kind.</summary>
         public int RareVariant { get; private set; } = -1;
         public bool IsRare => RareVariant >= 0;
+
+        /// <summary>A nemesis (P4-109, <see cref="Nemeses.NemesisService"/>): it killed or drove off a member, and is named for it.</summary>
+        public bool IsNemesis { get; private set; }
+
+        /// <summary>Takes the name its deeds gave it (P4-109); the nemesis service keeps its story.</summary>
+        internal void MarkNemesis(string name)
+        {
+            IsNemesis = true;
+            DisplayName = name;
+        }
         /// <summary>Drawn size: the species' scale, bigger for a boss or a rare variant.</summary>
         public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : IsRare ? RareMonster.SizeMultiplier : 1f);
         public Color ProjectileColor => new(0.8f, 0.7f, 0.45f);
@@ -415,6 +426,20 @@ namespace GuildMaster.Monsters
         {
             if (!IsAlive || Level >= MonsterLevel.MaxLevel || Def.isRegionLord || Def.isDragon) return;
             Level++;
+            Exp = Mathf.Min(Exp, ExpToNext - 1);
+            ApplyLevel();
+            RefreshStats();
+        }
+
+        /// <summary>
+        /// Up to <paramref name="level"/> from a deed against the guild (P4-109), HP share kept; the EXP towards the next level
+        /// carries over.
+        /// </summary>
+        internal void GrowTo(int level)
+        {
+            level = Mathf.Min(level, MonsterLevel.MaxLevel);
+            if (!IsAlive || level <= Level || Def.isRegionLord || Def.isDragon) return;
+            Level = level;
             Exp = Mathf.Min(Exp, ExpToNext - 1);
             ApplyLevel();
             RefreshStats();

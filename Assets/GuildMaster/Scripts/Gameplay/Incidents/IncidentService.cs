@@ -108,6 +108,7 @@ namespace GuildMaster.Incidents
                 case IncidentKind.Horde: TickHorde(i); break;
                 case IncidentKind.Rescue: TickRescue(i); break;
                 case IncidentKind.Ruin: TickRuin(i); break;
+                case IncidentKind.Nemesis: TickNemesis(i); break;
             }
             if (!i.Over && !i.Rumoured && Now >= i.RumourAtHour) SpreadRumour(i);
         }
@@ -255,6 +256,71 @@ namespace GuildMaster.Incidents
             if (i.Quest.Assignees.Count > 0) _board.SettleTownQuest(i.Quest, reason);
             else _board.FailIncidentQuest(i.Quest, reason);
         }
+
+        // ---------------- Nemesis bounty (P4-109) ----------------
+
+        /// <summary>
+        /// The town puts a bounty on a nemesis the guild has seen (<see cref="Nemeses.NemesisService"/>): no rumour, the guild
+        /// saw it — the hunt's area is <paramref name="at"/> (its known den, or where it was last seen), its danger a hunt of its
+        /// level among <paramref name="pack"/>, and it pays <paramref name="factor"/> times such a hunt. It lasts until it falls.
+        /// </summary>
+        public Incident StartNemesisBounty(Monster nemesis, Vector2 at, int pack, float factor)
+        {
+            if (nemesis == null || !nemesis.IsAlive) return null;
+            var i = new Incident
+            {
+                Id = _nextId++, Kind = IncidentKind.Nemesis, StartedHour = Now, Spot = at, RumourAtHour = Now, EndsAtHour = float.MaxValue,
+                Target = nemesis, TargetName = nemesis.DisplayName, TargetLevel = nemesis.Level, PackSize = Mathf.Max(1, pack), RewardFactor = factor,
+                Sighted = true, LastSeen = at, LastSeenHour = Now,
+            };
+            _active.Add(i);
+            Debug.Log($"[Incident] #{i.Id} bounty on {nemesis.DisplayName} Lv{nemesis.Level} at ({at.x:0},{at.y:0}), {QuestBoard.DescribeArea(at)}");
+            SpreadRumour(i);
+            return i;
+        }
+
+        /// <summary>
+        /// Seen, the area follows it (as a rare one's); its name and level follow what it has become. Out of sight for a while
+        /// and away from the area, the town hears where it is now (a rumour's circle, as for a horde). It falls: as a rare one.
+        /// </summary>
+        void TickNemesis(Incident i)
+        {
+            var m = i.Target;
+            if (m == null) return;
+            if (!m.IsAlive)
+            {
+                i.Target = null;
+                bool byQuest = i.Quest != null && i.Quest.Status is QuestStatus.Completed or QuestStatus.TurnedIn;
+                End(i, byQuest ? IncidentOutcome.Resolved : IncidentOutcome.SettledByOthers);
+                SettleQuest(i, NemesisSlainReason);
+                return;
+            }
+            i.Spot = m.Position;
+            i.TargetName = m.DisplayName;
+            if (_fog != null && _fog.IsVisibleRaw(m.Position))
+            {
+                i.LastSeen = m.Position;
+                i.LastSeenHour = Now;
+                i.TargetLevel = m.Level;
+                if (i.Quest != null && i.Quest.IsActive)
+                {
+                    i.Quest.Point = m.Position;
+                    i.Quest.Radius = IncidentRules.SightedRadius;
+                }
+                return;
+            }
+            if (i.Quest == null || !i.Quest.IsActive || Now - i.LastSeenHour < Nemeses.NemesisRules.RumourEvery
+                || Now < i.NextRumourHour || Vector2.Distance(m.Position, i.Quest.Point) <= i.Quest.Radius) return;
+            i.RumourCentre = IncidentRules.RumourCentre(m.Position, IncidentRules.RumourOffset(IncidentRules.RareRoam), GameRandom.Shared);
+            i.RumourRadius = IncidentRules.RumourRadius;
+            i.NextRumourHour = Now + Nemeses.NemesisRules.RumourEvery;
+            i.Quest.Point = i.RumourCentre;
+            i.Quest.Radius = i.RumourRadius;
+            EventBus.Publish(new IncidentRumourUpdatedEvent { Incident = i });
+        }
+
+        /// <summary>Why the board took a bounty down: the nemesis fell to someone not on it.</summary>
+        public const string NemesisSlainReason = "원수가 이미 쓰러졌습니다";
 
         // ---------------- Horde ----------------
 
@@ -776,6 +842,19 @@ namespace GuildMaster.Incidents
                     };
                     return _board.PostIncidentQuest(draft, i);
                 }
+                case IncidentKind.Nemesis:
+                {
+                    var species = i.Target != null ? i.Target.Def : null;
+                    if (species == null) return null;
+                    var danger = IncidentRules.NemesisDanger(i.TargetLevel, i.PackSize);
+                    int gold = IncidentRules.NemesisReward(danger, Vector2.Distance(i.RumourCentre, _world.TownCenterWorld), i.RewardFactor);
+                    var draft = new QuestDraft
+                    {
+                        Type = QuestType.Hunt, Species = species, Count = 1, Point = i.RumourCentre, HasPoint = true, Radius = i.RumourRadius,
+                        RewardGold = gold, RewardExp = QuestPricing.RewardExp(gold), MaxParty = QuestPricing.PartyFor(danger),
+                    };
+                    return _board.PostIncidentQuest(draft, i);
+                }
             }
             return null;
         }
@@ -830,6 +909,8 @@ namespace GuildMaster.Incidents
             public Vector2 destination;
             public int ruin = -1;
             public bool chest_opened;
+            public int pack_size;
+            public float reward_factor = 1f;
         }
 
         [System.Serializable]
@@ -858,7 +939,7 @@ namespace GuildMaster.Incidents
                 target = i.Target != null && i.Target.IsAlive ? i.Target.UnitId : null, target_name = i.TargetName, target_level = i.TargetLevel,
                 requirement = i.Requirement, horde_size = i.HordeSize, species_name = i.SpeciesName, horde_level = i.HordeLevel,
                 band = i.Band != null && !i.Over ? i.Band.Id : -1, site = i.Site != null ? _eco.Nests.IndexOf(i.Site) : -1, next_rumour = i.NextRumourHour,
-                destination = i.Destination, ruin = i.RuinIndex, chest_opened = i.ChestOpened,
+                destination = i.Destination, ruin = i.RuinIndex, chest_opened = i.ChestOpened, pack_size = i.PackSize, reward_factor = i.RewardFactor,
             };
             foreach (var m in i.Members) if (m != null && m.IsAlive) s.members.Add(m.UnitId);
             if (i.Traveller != null && i.Traveller.IsAlive)
@@ -904,7 +985,7 @@ namespace GuildMaster.Incidents
                 TargetName = s.target_name, TargetLevel = s.target_level, Requirement = s.requirement,
                 HordeSize = s.horde_size, SpeciesName = s.species_name, HordeLevel = s.horde_level, NextRumourHour = s.next_rumour,
                 Site = s.site >= 0 && s.site < _eco.Nests.Count ? _eco.Nests[s.site] : null, Destination = s.destination,
-                RuinIndex = s.ruin, ChestOpened = s.chest_opened,
+                RuinIndex = s.ruin, ChestOpened = s.chest_opened, PackSize = s.pack_size, RewardFactor = s.reward_factor,
             };
             if (s.traveller)
             {

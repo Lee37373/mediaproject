@@ -304,6 +304,13 @@ namespace GuildMaster.Tests
             ruin.RumourAtHour = clock.TotalHours;
             // A guild facility (P4-87), raised a level.
             Assert.That(DebugCommands.BuildFacility("PoisonLab", 2), Does.StartWith("PoisonLab Lv2"));
+            // A nemesis (P4-109): a monster named for a member it killed, a friend's grudge against it, its bounty to come.
+            var nemesisDen = System.Linq.Enumerable.First(eco.Nests, n => n.Members.Count > 1 && !n.IsLair && n != hordeSite && n.Species.id != "slime"
+                && !waveManager.IsRaiding(n) && !migration.IsMigrating(n));
+            var roster = Services.Get<Adventurers.GuildRoster>().Members;
+            var named = Services.Get<Nemeses.NemesisService>().Record(nemesisDen.Members[1], roster[roster.Count - 1], Nemeses.DeedKind.Killed,
+                new System.Collections.Generic.List<Adventurers.Adventurer> { roster[0] });
+            Assert.That(named, Is.Not.Null, "a nemesis");
 
             clock.SetSpeed(3);
             float start = clock.TotalHours;
@@ -349,10 +356,25 @@ namespace GuildMaster.Tests
             marked.Afflictions.Poison(12f, 3f, poisoner);
             marked.Afflictions.BreakArmor(0.2f, 3f);
             marked.Afflictions.Chill(0.3f, 2f);
+            var nemeses = Services.Get<Nemeses.NemesisService>().Living.Select(n => (n.UnitId, n.Name, n.Monster.Level, bounty: n.Bounty?.Quest?.Id)).ToList();
+            Assert.That(nemeses.Any(n => n.UnitId == named.UnitId), Is.True, "the nemesis lives on");
+            Assert.That(named.Bounty?.Quest, Is.Not.Null, "with its bounty up");
 
             var a = Saves.Capture();
             yield return BootFrom(a);
             AssertSameSections(a, _afterBoot);
+            // Every nemesis under its own name, at its level, its bounty on it; the friend's grudge kept (P4-109).
+            var loadedNemeses = Services.Get<Nemeses.NemesisService>();
+            foreach (var (id, name, level, bountyId) in nemeses)
+            {
+                var n = loadedNemeses.Find(id);
+                Assert.That(n?.Monster, Is.Not.Null, name);
+                Assert.That((n.Monster.IsNemesis, n.Monster.DisplayName, n.Monster.Level), Is.EqualTo((true, name, level)), name);
+                if (bountyId != null)
+                    Assert.That(Services.Get<Quests.QuestBoard>().FindById(bountyId)?.TargetUnit, Is.SameAs(n.Monster), "its bounty is on it");
+            }
+            Assert.That(Services.Get<Adventurers.GuildRoster>().Members[0].Data.thoughts.Any(t => t.id == Adventurers.ThoughtRules.Grudge.Id && t.about == named.UnitId),
+                Is.True, "the grudge");
             // Every one of them (P4-102: a third who sat down short of its seat came back awake).
             foreach (var id in sleeperIds)
             {

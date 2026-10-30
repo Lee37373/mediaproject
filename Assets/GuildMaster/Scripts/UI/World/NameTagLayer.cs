@@ -27,6 +27,7 @@ namespace GuildMaster.UI
         static readonly Color AdventurerColor = new(0.7f, 1f, 0.7f);
         static readonly Color MonsterColor = new(1f, 0.72f, 0.66f);
         static readonly Color BossColor = new(1f, 0.55f, 0.2f);
+        static readonly Color NemesisColor = new(1f, 0.32f, 0.42f);
         static readonly Color MasterColor = new(1f, 0.88f, 0.45f);
         static readonly Color VisitorColor = new(0.85f, 0.8f, 1f);
 
@@ -107,7 +108,8 @@ namespace GuildMaster.UI
             {
                 Adventurer { IsVisitor: true } a => $"{a.Data.name} Lv.{a.Data.level} (방문자)",
                 Adventurer a => $"{a.Data.name} Lv.{a.Data.level} · {CombatTiers.Label(a.Tier)}",
-                Monster m => $"{(m.IsBoss ? "[보스] " : "")}Lv.{m.Level} {m.DisplayName} · {CombatTiers.Label(m.Tier)}",
+                // A nemesis (P4-109) goes by the name its deeds gave it.
+                Monster m => $"{(m.IsNemesis ? "[원수] " : m.IsBoss ? "[보스] " : "")}Lv.{m.Level} {m.DisplayName} · {CombatTiers.Label(m.Tier)}",
                 _ => ""
             };
             _labels[unit] = (key, source, text);
@@ -143,7 +145,7 @@ namespace GuildMaster.UI
                             break;
                         case Monster m:
                             if (fog != null && !fog.IsVisible(m.Position)) break;
-                            Place(m.transform.position + new Vector3(0f, HeadOffset * m.Scale), m, m.IsBoss ? BossColor : MonsterColor);
+                            Place(m.transform.position + new Vector3(0f, HeadOffset * m.Scale), m, m.IsNemesis ? NemesisColor : m.IsBoss ? BossColor : MonsterColor);
                             break;
                     }
                 }

@@ -96,6 +96,28 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<MentalBreakEvent>(OnBreak);
             EventBus.Subscribe<InspirationEvent>(OnInspired);
             EventBus.Subscribe<QuirkGainedEvent>(OnQuirk);
+            EventBus.Subscribe<Nemeses.NemesisDeedEvent>(OnNemesisDeed);
+            EventBus.Subscribe<Nemeses.NemesisFellEvent>(OnNemesisFell);
+        }
+
+        /// <summary>
+        /// A nemesis named or grown (P4-109), pointing at where it was: a danger for a member killed, a warning for one driven
+        /// off (most of them — 24 of 29 in a measured run).
+        /// </summary>
+        void OnNemesisDeed(Nemeses.NemesisDeedEvent e)
+        {
+            var n = e.Nemesis;
+            _center.Post(e.Deed.kind == Nemeses.DeedKind.Killed ? NotificationKind.Danger : NotificationKind.Warning,
+                e.IsNew ? "원수 등장" : "원수", Nemeses.NemesisService.DeedText(e),
+                "nemesis:" + n.UnitId, NotificationLink.Location(n.LastSeen));
+        }
+
+        /// <summary>A nemesis fell: good news when a member brought it down.</summary>
+        void OnNemesisFell(Nemeses.NemesisFellEvent e)
+        {
+            _center.Resolve("nemesis:" + e.Nemesis.UnitId);
+            _center.Post(e.Slayer != null ? NotificationKind.Success : NotificationKind.Info, "원수 쓰러짐", Nemeses.NemesisService.FellText(e),
+                "nemesis:" + e.Nemesis.UnitId + ":fell", e.Slayer != null ? NotificationLink.Management(e.Slayer.Data.id) : default);
         }
 
         /// <summary>A quirk picked up (P4-104e): a fear is a warning, the others are good news.</summary>
@@ -164,6 +186,8 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<MentalBreakEvent>(OnBreak);
             EventBus.Unsubscribe<InspirationEvent>(OnInspired);
             EventBus.Unsubscribe<QuirkGainedEvent>(OnQuirk);
+            EventBus.Unsubscribe<Nemeses.NemesisDeedEvent>(OnNemesisDeed);
+            EventBus.Unsubscribe<Nemeses.NemesisFellEvent>(OnNemesisFell);
         }
 
         // ---------------- Sudden incidents (P4-85): heard by rumour ----------------
@@ -173,7 +197,7 @@ namespace GuildMaster.Notifications
         void OnIncidentRumoured(Incidents.IncidentRumouredEvent e)
         {
             var i = e.Incident;
-            _center.Post(NotificationKind.Quest, $"{Incidents.IncidentRules.Tag(i.Kind)} 소문", Incidents.IncidentRules.RumourText(i),
+            _center.Post(NotificationKind.Quest, Incidents.IncidentRules.RumourHeadline(i), Incidents.IncidentRules.RumourText(i),
                 IncidentKey(i), NotificationLink.Location(i.RumourCentre));
         }
 
@@ -181,6 +205,8 @@ namespace GuildMaster.Notifications
         {
             if (!e.Known) return;
             _center.Resolve(IncidentKey(e.Incident));
+            // A nemesis's fall is told as its own (P4-109).
+            if (e.Incident.Kind == Incidents.IncidentKind.Nemesis) return;
             if (e.Incident.Outcome == Incidents.IncidentOutcome.Resolved && Incidents.IncidentRules.EndedText(e.Incident) is { } text)
                 _center.Post(NotificationKind.Success, Incidents.IncidentRules.Tag(e.Incident.Kind), text, IncidentKey(e.Incident) + ":end");
         }

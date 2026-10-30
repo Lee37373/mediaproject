@@ -103,6 +103,8 @@ namespace GuildMaster.Adventurers
             if (d.values == "명예" && q.Danger == DangerLevel.High) value *= 1.5f;
             if (d.values == "동료" && q.Assignees.Count > 0) value *= 1.3f;
             if (a.Traits != null) value = a.Traits.AdjustQuestValue(q, value);
+            // A grudge (P4-109): the bounty on the monster that killed a friend or drove it off is worth more to it.
+            if (Nemeses.NemesisService.Avenges(a, q)) value *= Nemeses.NemesisRules.RevengeValue;
 
             float distance = Vector2.Distance(a.Position, q.Point);
             return value / (1f + (int)q.Danger * 0.5f) / (1f + distance / 80f) * Mathf.Min(margin, 2f) * Welfare.StressRules.QuestScoreFactor(d.stress);

@@ -279,6 +279,11 @@ namespace GuildMaster.Session
             Services.Register(new MemoryRecorder(clock, roster));
             // Thoughts and mood (P4-104c): what happens to members and round them, fading in time.
             Services.Register(new ThoughtRecorder(clock, roster));
+            // Nemeses (P4-109): a monster seen killing or driving off a member is named for it; grudges, the town's bounty.
+            var nemeses = AddSystem<Nemeses.NemesisService>();
+            nemeses.Init(clock, fog, roster, intel, incidents);
+            Services.Register(nemeses);
+            save.Register(nemeses);
             // Multi-person quests: the first taker invites idle members (each answers by the rules);
             // party work is gathered for over hours as members come home (P4-97), so it is saved.
             var partyInvites = new PartyService(board, roster, clock);

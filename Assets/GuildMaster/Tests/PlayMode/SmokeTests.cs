@@ -92,6 +92,8 @@ namespace GuildMaster.Tests
             TownQuestPoster.Enabled = false;
             // Nor sudden incidents (P4-85): a rare monster out of nowhere fights whatever it meets.
             Incidents.IncidentService.Enabled = false;
+            // Nor nemeses (P4-109): a member's death or retreat would rename and grow the monster a test is about.
+            Nemeses.NemesisService.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -4256,6 +4258,110 @@ namespace GuildMaster.Tests
             int change = BanterRules.FriendlyChange(x.Data.values == y.Data.values, false) * BreakRules.SocialTalkFactor;
             Assert.That((Relationships.Get(x, y) - xy, Relationships.Get(y, x) - yx), Is.EqualTo((change, change)));
             Assert.That(y.Data.thoughts.Any(t => t.id == ThoughtRules.Chat.Id), Is.True, "a pleasant chat");
+        }
+
+        /// <summary>
+        /// P4-109 (G4, user decisions 2026-10-30): a goblin the guild sees kill a member is named for it and grows, the friend of
+        /// the fallen holds a grudge, and once out of the fight it has a bounty on it — that goblin alone — which the friend wants
+        /// more. Driving another member off adds to its story; a deed nobody saw makes no nemesis. The member who brings it down
+        /// earns a title, the grudge is settled and the bounty comes down.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Nemesis_NamedForAKill_ItsBountyIsWanted_AndItsSlayerIsHonoured()
+        {
+            yield return Boot();
+            Nemeses.NemesisService.Enabled = true;
+            var legacy = Services.Get<Legacy.GuildLegacy>();
+            legacy.ForcedRoll = 1f; // no last stand
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true; // nothing happens but what the test does
+            try
+            {
+                var nemeses = Services.Get<Nemeses.NemesisService>();
+                var fog = Services.Get<Fog.FogOfWar>();
+                var world = Services.Get<World.WorldService>();
+                var m = Roster.Members.Where(a => a.IsAlive).ToList();
+                var (victim, friend, slayer) = (m[0], m[1], m[2]);
+                Relationships.Add(friend, victim, 50, "테스트");
+                Relationships.Add(slayer, victim, -100, "테스트");
+
+                // Out of town, alone with a goblin, in its own sight.
+                Assert.That(world.Grid.TryFindNearestWalkable(world.Map.TownCenter + new Vector2Int(0, -32), 6, out var cell), Is.True);
+                var spot = World.GridMap.CellToWorld(cell);
+                victim.Mover.Stop();
+                victim.transform.position = spot;
+                var goblin = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, spot + new Vector2(1.5f, 0f));
+                goblin.Setup(Services.Get<EcosystemManager>().Species.First(s => s.id == "goblin"), null);
+                yield return WaitFor(() => fog.IsVisibleRaw(goblin.Position), 5f);
+                Assert.That(fog.IsVisibleRaw(goblin.Position), Is.True, "the guild sees it");
+                string kind = goblin.DisplayName;
+                int level = 0;
+
+                string toldAs = null;
+                // Its level as the death is told (the kill's EXP comes first and may already have raised it).
+                Action<AdventurerDiedEvent> onDied = e => { toldAs = e.Killer?.DisplayName; level = goblin.Level; };
+                EventBus.Subscribe(onDied);
+                Unit.GuildInvulnerable = false;
+                victim.ReceiveDamage(victim.Hp + 999f, goblin, false);
+                Unit.GuildInvulnerable = true;
+                EventBus.Unsubscribe(onDied);
+                Assert.That(victim.IsAlive, Is.False);
+                Assert.That(toldAs, Is.EqualTo(kind), "the death is told under the name it had");
+                yield return null; // recorded at the frame's end
+                var n = nemeses.Of(goblin);
+                Assert.That(n, Is.Not.Null, "a nemesis");
+                Assert.That(goblin.DisplayName, Is.EqualTo($"{victim.Data.name} 잡이 {kind} {n.Personal}"));
+                Assert.That(goblin.Level, Is.EqualTo(Mathf.Min(MonsterLevel.MaxLevel, level + Nemeses.NemesisRules.KillLevels)), "it grew");
+                Assert.That(friend.Data.thoughts.Any(t => t.id == ThoughtRules.Grudge.Id && t.about == goblin.UnitId), Is.True, "the friend holds a grudge");
+                Assert.That(slayer.Data.thoughts.Any(t => t.id == ThoughtRules.Grudge.Id), Is.False, "one who disliked the fallen does not");
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[원수]")), Is.True, "logged");
+
+                // Out of the fight, the town's bounty: that goblin alone, and the friend wants it more.
+                yield return WaitFor(() => n.Bounty != null, 15f);
+                var bounty = n.Bounty?.Quest;
+                Assert.That(bounty, Is.Not.Null, "a bounty");
+                Assert.That(bounty.HuntsParticularMonsters && bounty.Fights(goblin) && bounty.Title.StartsWith("[현상금]"), Is.True, bounty.Title);
+                Assert.That((Nemeses.NemesisService.Avenges(friend, bounty), Nemeses.NemesisService.Avenges(slayer, bounty)), Is.EqualTo((true, false)));
+                var grudge = friend.Data.thoughts.First(t => t.id == ThoughtRules.Grudge.Id);
+                float wanted = RuleBasedDecisionMaker.Score(friend, bounty);
+                friend.Data.thoughts.Remove(grudge);
+                float plain = RuleBasedDecisionMaker.Score(friend, bounty);
+                friend.Data.thoughts.Add(grudge);
+                if (plain > 0f) Assert.That(wanted, Is.EqualTo(plain * Nemeses.NemesisRules.RevengeValue).Within(plain * 1e-3f), "worth more to the friend");
+
+                // The friend, near it, driven off: its story grows, a level more, the kill still names it.
+                friend.Mover.Stop();
+                friend.transform.position = spot;
+                yield return WaitFor(() => fog.IsVisibleRaw(goblin.Position), 5f);
+                int before = goblin.Level;
+                EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = friend, Threat = goblin });
+                EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = friend, Threat = goblin }); // twice is one deed
+                yield return null;
+                Assert.That(n.Deeds.Count, Is.EqualTo(2));
+                Assert.That(goblin.Level, Is.EqualTo(Mathf.Min(MonsterLevel.MaxLevel, before + Nemeses.NemesisRules.DriveOffLevels)));
+                Assert.That(goblin.DisplayName, Does.StartWith($"{victim.Data.name} 잡이"));
+
+                // A close call nobody saw: nothing.
+                var unseen = UnitRegistry.All.OfType<Monster>().First(x => x.IsAlive && x != goblin && !x.IsDragon && !fog.IsVisibleRaw(x.Position));
+                EventBus.Publish(new AdventurerRetreatedEvent { Adventurer = slayer, Threat = unseen });
+                yield return null;
+                Assert.That(unseen.IsNemesis, Is.False, "the guild never saw it");
+
+                // Brought down by one not on the bounty: a title and a glad thought, the grudge settled, the bounty down.
+                goblin.ReceiveDamage(goblin.Hp + 9999f, slayer, false);
+                Assert.That(n.Fallen && n.SlainBy == slayer.Data.name, Is.True);
+                Assert.That(slayer.Data.titles, Does.Contain(Nemeses.NemesisRules.SlayerTitle(n.Personal)));
+                Assert.That(slayer.Data.thoughts.Any(t => t.id == ThoughtRules.AvengedByHand.Id), Is.True);
+                Assert.That(friend.Data.thoughts.Any(t => t.id == ThoughtRules.Grudge.Id), Is.False, "the grudge is settled");
+                Assert.That(friend.Data.thoughts.Any(t => t.id == ThoughtRules.Avenged.Id), Is.True);
+                yield return WaitFor(() => !bounty.IsActive, 3f);
+                Assert.That(bounty.IsActive, Is.False, "the bounty comes down");
+                Assert.That(n.Bounty.Outcome, Is.EqualTo(Incidents.IncidentOutcome.SettledByOthers));
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+                legacy.ForcedRoll = null;
+            }
         }
 
         /// <summary>

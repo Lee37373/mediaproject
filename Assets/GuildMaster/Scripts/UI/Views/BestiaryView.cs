@@ -73,13 +73,17 @@ namespace GuildMaster.UI
                 return;
             }
             if (_chosen == null || !kinds.Contains(_chosen)) _chosen = kinds[0];
+            Services.TryGet<Nemeses.NemesisService>(out var nemeses);
             for (int i = 0; i < kinds.Count; i++)
             {
                 var k = kinds[i];
                 int level = bestiary.Level(k);
                 var stars = new string('★', level) + new string('☆', BestiaryRules.MaxLevel - level);
                 string name = k == _chosen ? UIBuilder.Colored(k.displayName, UITheme.Accent) : k.displayName;
-                _rows[i].SetLabel($"  {name}  {UIBuilder.Colored(stars, level >= BestiaryRules.MaxLevel ? UITheme.Good : UITheme.Warn)}");
+                // Its living nemeses (P4-109).
+                int living = nemeses != null ? nemeses.Living.Count(n => n.Species == k) : 0;
+                string marked = living > 0 ? "  " + UIBuilder.Colored($"원수 {living}", UITheme.Bad) : "";
+                _rows[i].SetLabel($"  {name}  {UIBuilder.Colored(stars, level >= BestiaryRules.MaxLevel ? UITheme.Good : UITheme.Warn)}{marked}");
                 _rows[i].onClick.RemoveAllListeners();
                 _rows[i].onClick.AddListener(() => { _chosen = k; Refresh(); });
             }
@@ -91,7 +95,32 @@ namespace GuildMaster.UI
             lines.Add(next > 0
                 ? UIBuilder.Colored($"다음 단계까지 연구 {points}/{next} — 2단계: 스킬·생태·약점과 강함, 3단계: 숙련(피해 +10%·받는 피해 −5%)", UITheme.TextMuted)
                 : UIBuilder.Colored("연구 완료", UITheme.Good));
+            if (nemeses != null) AddNemeses(lines, nemeses);
             _page.text = string.Join("\n", lines);
+        }
+
+        /// <summary>The kind's nemeses (P4-109): the living with where they were last seen, then the fallen and who brought them down.</summary>
+        void AddNemeses(List<string> lines, Nemeses.NemesisService nemeses)
+        {
+            var list = nemeses.OfKind(_chosen).ToList();
+            if (list.Count == 0) return;
+            Services.TryGet<Ecosystem.GuildIntel>(out var intel);
+            lines.Add("");
+            lines.Add(UIBuilder.Colored("원수", UITheme.Bad));
+            foreach (var n in list)
+            {
+                string story = nemeses.Story(n);
+                if (n.Fallen)
+                {
+                    string by = n.SlainBy != null ? $"{n.SlainBy}{Adventurers.MemoryRecorder.Josa(n.SlainBy, "이", "가")} 쓰러뜨림" : "쓰러짐";
+                    lines.Add(UIBuilder.Colored($"  {n.Name} Lv.{n.Level} — {story} · {by}", UITheme.TextMuted));
+                }
+                else
+                {
+                    string seen = intel != null ? $"마지막 목격 {intel.AgoText(n.LastSeenHour)}" : "";
+                    lines.Add($"  {UIBuilder.Colored(n.Name, UITheme.Bad)} Lv.{n.Level} — {story} · {seen}");
+                }
+            }
         }
     }
 }

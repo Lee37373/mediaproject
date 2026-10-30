@@ -188,13 +188,17 @@ namespace GuildMaster.Session
                 Add(e.DealtWith ? $"[재해] {e.Disaster.NameEul} 수습했습니다." : $"[재해] {e.Disaster.NameI} 저절로 사그라들었습니다.", LogCategory.Ecosystem);
             });
             // Sudden incidents (P4-85): heard by rumour; the end only when the guild knew of it.
-            EventBus.Subscribe<Incidents.IncidentRumouredEvent>(e => Add($"[소문] {Incidents.IncidentRules.RumourText(e.Incident)}", LogCategory.Danger));
+            EventBus.Subscribe<Incidents.IncidentRumouredEvent>(e => Add(
+                $"{(e.Incident.Kind == Incidents.IncidentKind.Nemesis ? Incidents.IncidentRules.Tag(e.Incident.Kind) : "[소문]")} {Incidents.IncidentRules.RumourText(e.Incident)}", LogCategory.Danger));
             EventBus.Subscribe<Incidents.IncidentRumourUpdatedEvent>(e => Add($"[소문] {Incidents.IncidentRules.RumourUpdateText(e.Incident)}", LogCategory.Danger));
             EventBus.Subscribe<Incidents.IncidentSightedEvent>(e => Add($"{Incidents.IncidentRules.Tag(e.Incident.Kind)} {Incidents.IncidentRules.SightedText(e.Incident)}", LogCategory.Danger));
             EventBus.Subscribe<Incidents.IncidentEndedEvent>(e =>
             {
                 if (e.Known && Incidents.IncidentRules.EndedText(e.Incident) is { } text) Add($"{Incidents.IncidentRules.Tag(e.Incident.Kind)} {text}", LogCategory.Ecosystem);
             });
+            // Nemeses (P4-109): what the guild saw a monster do to it, and its fall.
+            EventBus.Subscribe<Nemeses.NemesisDeedEvent>(e => Add($"[원수] {Nemeses.NemesisService.DeedText(e)}", LogCategory.Danger));
+            EventBus.Subscribe<Nemeses.NemesisFellEvent>(e => Add($"[원수] {Nemeses.NemesisService.FellText(e)}", LogCategory.Combat));
             // A raid the guild never saw stays unknown.
             EventBus.Subscribe<Town.RaidEndedEvent>(e => { if (e.Sighted) Add(e.Withdrawn > 0
                 ? $"[침공] 남은 적 {e.Withdrawn}마리가 물러갔습니다. (처치 {e.Killed})"

@@ -206,6 +206,15 @@ namespace GuildMaster.Incidents
         public static string RuinProgress(Incident i)
             => i.ChestOpened ? "보물 확보" : i.Sighted ? $"탐사 중 · 수호자 {i.Members.Count}마리 남음(추정)" : "입구 찾는 중";
 
+        // ---------------- Nemesis bounty (P4-109) ----------------
+
+        /// <summary>The bounty's danger: a hunt of its level and the pack it was seen with (it is fought among them).</summary>
+        public static DangerLevel NemesisDanger(int level, int pack) => QuestBoard.HuntDanger(level, Mathf.Max(1, pack));
+
+        /// <summary>The town's total for the bounty (fee included): a five-kill hunt of that danger at that distance, times the factor.</summary>
+        public static int NemesisReward(DangerLevel danger, float distance, float factor)
+            => QuestPricing.HuntReward(danger, QuestPricing.HuntKills, distance, factor);
+
         // ---------------- Every incident ----------------
 
         public static DangerLevel Danger(Incident i) => i.Kind switch
@@ -213,6 +222,7 @@ namespace GuildMaster.Incidents
             IncidentKind.Horde => HordeDanger(i.HordeLevel, i.HordeSize),
             IncidentKind.Rescue => QuestBoard.HuntDanger(i.TargetLevel, Mathf.Max(1, i.Members.Count)),
             IncidentKind.Ruin => QuestBoard.HuntDanger(i.TargetLevel, Mathf.Max(1, i.Members.Count)),
+            IncidentKind.Nemesis => NemesisDanger(i.TargetLevel, i.PackSize),
             _ => DangerLevel.High,
         };
 
@@ -226,7 +236,7 @@ namespace GuildMaster.Incidents
         public static string ClientName(IncidentKind k) => k switch
         {
             IncidentKind.RareMonster => "희귀 몬스터 수집가",
-            IncidentKind.Horde => "우리 마을",
+            IncidentKind.Horde or IncidentKind.Nemesis => "우리 마을",
             IncidentKind.Rescue => "여행자 가족",
             _ => "학자회",
         };
@@ -254,13 +264,18 @@ namespace GuildMaster.Incidents
                 IncidentKind.Ruin => i.Sighted
                     ? $"{QuestBoard.DescribeArea(i.RumourCentre)}에서 '{i.TargetName}'의 입구를 찾았습니다. {client} 안을 탐사해 달라는 의뢰를 냈습니다."
                     : $"{QuestBoard.DescribeArea(i.RumourCentre)} 부근에 '{i.TargetName}'(이)라는 오래된 유적이 있다는 소문입니다. {client} 안을 탐사해 달라는 의뢰를 냈습니다.",
+                IncidentKind.Nemesis => $"{client} 원수 {i.TargetName}(Lv.{i.TargetLevel})에게 현상금을 걸었습니다. {QuestBoard.DescribeArea(i.RumourCentre)}에서 찾아보라고 합니다.",
                 _ => $"{QuestBoard.DescribeArea(i.RumourCentre)} 부근에서 무슨 일이 일어났다는 소문입니다.",
             };
         }
 
-        /// <summary>A later rumour of where a moving incident (a horde) is now.</summary>
-        public static string RumourUpdateText(Incident i)
-            => $"{i.SpeciesName} 무리가 {QuestBoard.DescribeArea(i.RumourCentre)} 부근까지 왔다는 소식입니다.";
+        /// <summary>The headline of its rumour ("[대규모 무리] 소문"; a bounty is no rumour, the guild saw it).</summary>
+        public static string RumourHeadline(Incident i) => i.Kind == IncidentKind.Nemesis ? Tag(i.Kind) : $"{Tag(i.Kind)} 소문";
+
+        /// <summary>A later rumour of where a moving incident (a horde, a nemesis out of sight) is now.</summary>
+        public static string RumourUpdateText(Incident i) => i.Kind == IncidentKind.Nemesis
+            ? $"원수 {With(i.TargetName, "이", "가")} {QuestBoard.DescribeArea(i.RumourCentre)} 부근에서 보였다는 소문입니다. 현상금 의뢰 구역을 옮깁니다."
+            : $"{i.SpeciesName} 무리가 {QuestBoard.DescribeArea(i.RumourCentre)} 부근까지 왔다는 소식입니다.";
 
         public static string SightedText(Incident i) => i.Kind switch
         {
@@ -284,6 +299,8 @@ namespace GuildMaster.Incidents
             (IncidentKind.Rescue, IncidentOutcome.SettledByOthers) => $"{With(i.TargetName, "이", "가")} 무사히 길을 떠났다는 소식입니다.",
             (IncidentKind.Rescue, IncidentOutcome.Expired) => $"{With(i.TargetName, "이", "가")} 끝내 목숨을 잃었다는 소식입니다.",
             (IncidentKind.Ruin, IncidentOutcome.Resolved) => $"'{i.TargetName}'의 보물을 찾아냈습니다!",
+            (IncidentKind.Nemesis, IncidentOutcome.Resolved) => $"원수 {With(i.TargetName, "을", "를")} 쓰러뜨려 현상금을 받았습니다!",
+            (IncidentKind.Nemesis, IncidentOutcome.SettledByOthers) => $"원수 {With(i.TargetName, "이", "가")} 쓰러져 현상금이 내려갔습니다.",
             _ => null,
         };
 
@@ -293,6 +310,7 @@ namespace GuildMaster.Incidents
             IncidentKind.RareMonster => "[희귀 몬스터]",
             IncidentKind.Horde => "[대규모 무리]",
             IncidentKind.Rescue => "[구출]",
+            IncidentKind.Nemesis => "[현상금]",
             _ => "[유적]",
         };
 
@@ -306,6 +324,7 @@ namespace GuildMaster.Incidents
                 IncidentKind.Horde => $"[대규모 무리] {i.SpeciesName} 무리 요격 x{q.RequiredCount} ({where})",
                 IncidentKind.Rescue => $"[구출] {i.TargetName} 구출 ({where})",
                 IncidentKind.Ruin => $"[유적 탐사] {i.TargetName} ({where})",
+                IncidentKind.Nemesis => $"[현상금] {i.TargetName} 토벌 ({where})",
                 _ => $"[돌발] {q.Species?.displayName} ({where})",
             };
         }

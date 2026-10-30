@@ -113,6 +113,12 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef Chat = D("chat", "즐거운 잡담을 나눴다", 2f, 8f, ThoughtTone.People, 2);
         public static readonly ThoughtDef Quarrel = D("quarrel", "{0}와(과) 말다툼을 했다", -3f, 12f, ThoughtTone.People, 1, "(쳇, 말이 안 통해.)");
 
+        // Nemeses (P4-109, G4): a grudge against the monster that killed a friend or drove it off, and the day it falls.
+        public static readonly ThoughtDef Grudge = D("grudge", "원수 {0}을(를) 잊지 않는다", -3f, 168f, ThoughtTone.Plain, 1, "({0}... 반드시 갚아 준다.)", "(두고 봐라, {0}.)");
+        public static readonly ThoughtDef AvengedByHand = Logged(D("avenged_hand", "원수 {0}을(를) 내 손으로 쓰러뜨렸다", 15f, 72f, ThoughtTone.Glory, 1, "(갚았다... 드디어 갚았어!)"));
+        public static readonly ThoughtDef Avenged = D("avenged", "원수 {0}이(가) 쓰러졌다", 8f, 48f, ThoughtTone.People, 1, "(이제야 편히 쉬겠구나.)");
+        public static readonly ThoughtDef NemesisFell = D("nemesis_fell", "원수 {0}이(가) 남의 손에 죽었다", 3f, 24f);
+
         // Places worth going to (P4-105b).
         public static readonly ThoughtDef HotSpring = D("hot_spring", "온천에서 몸을 녹였다", 8f, 36f, ThoughtTone.Plain, 1, "(아... 살 것 같다.)");
         public static readonly ThoughtDef Blessed = D("blessed", "신의 가호를 받았다", 6f, 48f, ThoughtTone.Plain, 1, "(마음이 한결 편해졌어.)");
@@ -145,7 +151,7 @@ namespace GuildMaster.Adventurers
         {
             ComradeDiedClose, ComradeDiedFriend, ComradeDied, RivalDied, SawComradeFall, QuestDone, QuestFailed, LevelUp, NewGear, GoodHaul, WellRested,
             NearDeath, LastStand, Slew, GreatKill, SawDragon, RaidHeld, Trapped, LetItOut, Inspired, Brawled, BerserkVictim,
-            DreadfulWork, DullWork, NewLand, QuirkGained, Chat, Quarrel, HotSpring, Blessed, CosyCamp, Lookout,
+            DreadfulWork, DullWork, NewLand, QuirkGained, Chat, Quarrel, Grudge, AvengedByHand, Avenged, NemesisFell, HotSpring, Blessed, CosyCamp, Lookout,
             Talked, Bonus, Ignored, FriendLeft,
             HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival, Crowded, Lonely, WantsRest, Idle, Afraid,
         };

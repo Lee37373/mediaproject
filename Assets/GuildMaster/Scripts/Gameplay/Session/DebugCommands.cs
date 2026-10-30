@@ -2103,5 +2103,54 @@ namespace GuildMaster.Session
             Services.Get<MentalBreaks>().Inspire(members[index], k);
             return $"{members[index].Data.name}: {BreakRules.Label(k)} (atk {members[index].Stats.Attack:0.0})";
         }
+
+        // ---------------- Nemeses (P4-109) ----------------
+
+        /// <summary>Every nemesis (real values): name, kind, level, deeds, where it is, its bounty; then the fallen and who got them.</summary>
+        public static string Nemeses()
+        {
+            var svc = Services.Get<GuildMaster.Nemeses.NemesisService>();
+            var sb = new StringBuilder($"enabled={GuildMaster.Nemeses.NemesisService.Enabled} living {svc.Living.Count} fallen {svc.FallenOnes.Count}\n");
+            for (int i = 0; i < svc.Living.Count; i++)
+            {
+                var n = svc.Living[i];
+                var m = n.Monster;
+                string bounty = n.Bounty == null ? (n.BountyDue ? "bounty due" : "no bounty")
+                    : $"bounty #{n.Bounty.Id} {n.Bounty.Quest?.Id} {n.Bounty.Quest?.Status} area ({n.Bounty.Quest?.Point.x:0},{n.Bounty.Quest?.Point.y:0}) r{n.Bounty.Quest?.Radius:0}";
+                sb.AppendLine($"[{i}] {n.Name} ({n.Species?.id}, {n.UnitId}) Lv{m?.Level} at ({m?.Position.x:0},{m?.Position.y:0}) {m?.StateLabel} home={(m?.Home != null ? m.Home.DisplayName : "-")} · {svc.Story(n)} · {bounty}");
+                var holders = Services.Get<GuildRoster>().Members.Where(a => a.Data.thoughts.Any(t => t.id == ThoughtRules.Grudge.Id && t.about == n.UnitId)).Select(a => a.Data.name);
+                sb.AppendLine($"    grudges: {string.Join(", ", holders)}");
+            }
+            foreach (var n in svc.FallenOnes)
+                sb.AppendLine($"(fallen {n.FallenHour:0.0}h) {n.Name} Lv{n.Level} · {svc.Story(n)} · by {n.SlainBy ?? "-"}");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// A deed by hand: the living monster nearest the camera (not the dragon) did it to the member at that roster index —
+        /// killed (the member is not hurt; its friends take the grudge) or drove off — as if the guild had seen it.
+        /// </summary>
+        public static string MakeNemesis(int memberIndex, bool killed = false)
+        {
+            var members = Services.Get<GuildRoster>().Members;
+            if (memberIndex < 0 || memberIndex >= members.Count) return "no member " + memberIndex;
+            var cam = Camera.main != null ? (Vector2)Camera.main.transform.position : Services.Get<World.WorldService>().TownCenterWorld;
+            if (UnitRegistry.FindNearest(cam, 999f, u => u is Monster m && m.IsAlive && !m.IsDragon) is not Monster monster) return "no monster";
+            var n = Services.Get<GuildMaster.Nemeses.NemesisService>().Record(monster, members[memberIndex],
+                killed ? GuildMaster.Nemeses.DeedKind.Killed : GuildMaster.Nemeses.DeedKind.DroveOff);
+            return n == null ? "not recorded" : Nemeses();
+        }
+
+        /// <summary>The member at that roster index brings the nemesis at that index down (where it stands).</summary>
+        public static string KillNemesis(int nemesisIndex, int memberIndex)
+        {
+            var svc = Services.Get<GuildMaster.Nemeses.NemesisService>();
+            var members = Services.Get<GuildRoster>().Members;
+            if (nemesisIndex < 0 || nemesisIndex >= svc.Living.Count) return "no nemesis " + nemesisIndex;
+            if (memberIndex < 0 || memberIndex >= members.Count) return "no member " + memberIndex;
+            var m = svc.Living[nemesisIndex].Monster;
+            m.ReceiveDamage(m.Hp + 9999f, members[memberIndex], false);
+            return Nemeses();
+        }
     }
 }

@@ -371,7 +371,9 @@ namespace GuildMaster.Adventurers
             if (c == null) return (false, null);
             if (quest != null && (QuestRisk.NewcomerHoldsBack(c, quest) || QuestRisk.HoldsBack(c, quest))) return (false, TooGreenLine);
             float chance = AcceptChanceOverride ?? Math.Min(0.95f, RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f, Relationships.Get(c, leader))
-                                                               + (QuestRisk.IsBossWork(quest) ? BossWorkEagerness : 0f));
+                                                               + (QuestRisk.IsBossWork(quest) ? BossWorkEagerness : 0f)
+                                                               // A grudge against what it goes after (P4-109).
+                                                               + (Nemeses.NemesisService.Avenges(c, quest) ? Nemeses.NemesisRules.RevengeEagerness : 0f));
             bool accept = GameRandom.Shared.Value < chance;
             return (accept, accept ? "좋아, 같이 가자!" : "이번엔 사양할게.");
         }
