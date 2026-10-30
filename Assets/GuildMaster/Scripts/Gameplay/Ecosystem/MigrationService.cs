@@ -406,7 +406,8 @@ namespace GuildMaster.Ecosystem
             foreach (var band in _bands.ToList())
                 if (_clock.TotalHours - band.StartedAtHour >= MaxHours) GoHome(band);
             if (!NoNewcomers && GameRandom.Shared.Value < ArrivalChancePerHour) TryArrive();
-            if (!NoNewcomers && GameRandom.Shared.Value < WildsPressure.InvasionChancePerHour(EcosystemManager.Days)) TryInvade();
+            if (!NoNewcomers && GameRandom.Shared.Value < WildsPressure.InvasionChancePerHour(EcosystemManager.Days) * Storytelling.StorytellerService.EcoFactor)
+                TryInvade();
         }
 
         /// <summary>Beaten back on the way or at the target: rest, then try elsewhere (or go home).</summary>

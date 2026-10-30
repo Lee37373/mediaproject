@@ -221,9 +221,22 @@ namespace GuildMaster.Dragons
                     _plannedDay = e.Day;
                     _wakesToday = DragonRules.WakesOn(_seed, e.Day, out _wakeHour, out _flightHours);
                 }
-                if (_wakesToday && e.Hour == Mathf.FloorToInt(_wakeHour) && Asleep) Wake(e.Day, _flightHours);
+                // Its flights are the storyteller's to time when it is there (P4-111).
+                if (_wakesToday && e.Hour == Mathf.FloorToInt(_wakeHour) && Asleep && !Storytelling.StorytellerService.Directs) Wake(e.Day, _flightHours);
             }
             PostQuests();
+        }
+
+        /// <summary>
+        /// The storyteller wakes it now (P4-111): the day's round and length as the day's own stream has them. False when it
+        /// is away, dead or has no lair.
+        /// </summary>
+        public bool WakeForStory(int day)
+        {
+            if (!Asleep) return false;
+            DragonRules.WakesOn(_seed, day, out _, out float flightHours);
+            Wake(day, flightHours);
+            return true;
         }
 
         /// <summary>Wakes and takes off on the day's round (the day's own stream draws the places) — or after a thief, if robbed.</summary>
@@ -598,6 +611,7 @@ namespace GuildMaster.Dragons
             var d = Dragon;
             s.Append($"{d.DisplayName} Lv.{d.Level} 체력 {d.Hp:0}/{d.Stats.MaxHp:0} 공격 {d.Stats.Attack:0.0} 방어 {d.Stats.Defense:0.0}, 상태 {d.StateLabel}, 위치 {GridMap.WorldToCell(d.Position)}");
             if (!Asleep) s.Append($", 경로 {_leg}/{_route.Count} 다음 {GridMap.WorldToCell(NextWaypoint)}, 비행 끝 {_flightEndsHour:0.0}시 (지금 {_clock.TotalHours:0.0}), 귀가 {Homebound}·도망 {Retreating}, 공중 피해 {d.AirDamage:0}{(Quarry != null ? $", 추격 {Quarry.DisplayName}" : "")}");
+            if (Storytelling.StorytellerService.Directs) return s.Append(", 깨어남은 스토리텔러가 정함").ToString();
             for (int day = _clock.Day; day < _clock.Day + 7; day++)
                 if (DragonRules.WakesOn(_seed, day, out float h, out float len)) { s.Append($", 다음 깨어남 {day}일 {h:0.0}시 ({len:0.0}시간)"); break; }
             return s.ToString();

@@ -2104,6 +2104,35 @@ namespace GuildMaster.Session
             return $"{members[index].Data.name}: {BreakRules.Label(k)} (atk {members[index].Stats.Attack:0.0})";
         }
 
+        // ---------------- Storyteller (P4-111) ----------------
+
+        /// <summary>The storyteller's phase, tension, the guild's strength, the next big event, the wilds' factor and what it set off.</summary>
+        public static string Storyteller()
+            => Services.TryGet<Storytelling.StorytellerService>(out var s) ? s.Describe() : "no storyteller";
+
+        /// <summary>Sets a big event off now: "raid", "horde", "dragon", "disaster", or empty for the storyteller's own draw.</summary>
+        public static string StoryNow(string kind = "")
+        {
+            var s = Services.Get<Storytelling.StorytellerService>();
+            Storytelling.StoryBeat? only = kind switch
+            {
+                "raid" => Storytelling.StoryBeat.TownRaid,
+                "horde" => Storytelling.StoryBeat.Horde,
+                "dragon" => Storytelling.StoryBeat.DragonFlight,
+                "disaster" => Storytelling.StoryBeat.Disaster,
+                _ => null,
+            };
+            bool fired = s.Fire(Mathf.FloorToInt(Services.Get<GameClock>().TotalHours), only);
+            return (fired ? "fired\n" : "nothing could happen\n") + s.Describe();
+        }
+
+        public static string SetTension(float value)
+        {
+            var s = Services.Get<Storytelling.StorytellerService>();
+            s.SetTension(value);
+            return s.Describe();
+        }
+
         // ---------------- Nemeses (P4-109) ----------------
 
         /// <summary>Every nemesis (real values): name, kind, level, deeds, where it is, its bounty; then the fallen and who got them.</summary>

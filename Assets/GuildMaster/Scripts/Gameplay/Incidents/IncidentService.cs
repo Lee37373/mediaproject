@@ -78,8 +78,9 @@ namespace GuildMaster.Incidents
             if (e.Day >= IncidentRules.RareFirstDay && !_active.Any(i => i.Kind == IncidentKind.RareMonster)
                 && rng.Value < IncidentRules.RareChancePerHour)
                 StartRareMonster();
+            // A horde is the storyteller's to send when it is there (P4-111); the draw stays so the others roll as before.
             if (e.Day >= IncidentRules.HordeFirstDay && !_active.Any(i => i.Kind == IncidentKind.Horde)
-                && rng.Value < IncidentRules.HordeChancePerHour)
+                && rng.Value < IncidentRules.HordeChancePerHour && !Storytelling.StorytellerService.Directs)
                 StartHorde();
             if (e.Day >= IncidentRules.RescueFirstDay && !_active.Any(i => i.Kind == IncidentKind.Rescue)
                 && rng.Value < IncidentRules.RescueChancePerHour)

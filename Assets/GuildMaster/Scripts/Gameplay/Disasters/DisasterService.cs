@@ -210,9 +210,29 @@ namespace GuildMaster.Disasters
             if (_clock == null) return;
             if (!FindGround(e.Kind, GridMap.WorldToCell(e.Point), out var cell)) return;
             if (!CanStartAt(cell)) return;
-            float chance = ChanceOverride >= 0f ? ChanceOverride : DisasterRules.TriggerChance;
+            // The storyteller's breather quiets them too (P4-111); a test's own chance stands as it is.
+            float chance = ChanceOverride >= 0f ? ChanceOverride : DisasterRules.TriggerChance * Storytelling.StorytellerService.EcoFactor;
             if (!GameRandom.Shared.Chance(chance)) return;
             Begin(e.Kind, cell);
+        }
+
+        /// <summary>
+        /// The storyteller sets one off (P4-111): on ground that suits it within <paramref name="radius"/> of
+        /// <paramref name="point"/> (a disaster monster's den), if there is room for another. Null when none fits.
+        /// </summary>
+        public Disaster StartNear(DisasterKind kind, Vector2 point, float radius, GameRandom rng)
+        {
+            if (_clock == null) return null;
+            var at = GridMap.WorldToCell(point);
+            for (int attempt = 0; attempt < 16; attempt++)
+            {
+                var off = attempt == 0 ? Vector2.zero : rng.InsideUnitCircle() * radius;
+                var c = new Vector2Int(at.x + Mathf.RoundToInt(off.x), at.y + Mathf.RoundToInt(off.y));
+                if (!Grid.InBounds(c) || Grid.IsInTown(c) || !FindGround(kind, c, out var cell) || !CanStartAt(cell)) continue;
+                var d = Begin(kind, cell);
+                if (d != null) return d;
+            }
+            return null;
         }
 
         /// <summary>

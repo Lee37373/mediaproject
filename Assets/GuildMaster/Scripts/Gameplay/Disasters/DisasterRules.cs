@@ -53,6 +53,17 @@ namespace GuildMaster.Disasters
         /// <summary>A disaster that ended (dealt with or died down) clears its remaining cells over this many game hours.</summary>
         public const float RecedeHours = 1f;
 
+        /// <summary>The disaster a disaster monster's skill sets off (P4-72), null for any other skill.</summary>
+        public static DisasterKind? KindOfSkill(string skillId) => skillId switch
+        {
+            "ember" => DisasterKind.Wildfire,
+            "toxic_spit" => DisasterKind.PoisonFog,
+            "frost_roar" => DisasterKind.Avalanche,
+            "sand_whirl" => DisasterKind.Sandstorm,
+            "quake_stomp" => DisasterKind.Quake,
+            _ => null,
+        };
+
         public static HazardKind HazardOf(DisasterKind k) => k switch
         {
             DisasterKind.Wildfire => HazardKind.Fire,

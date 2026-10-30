@@ -62,6 +62,7 @@ namespace GuildMaster.Tests
             GameSettings.PaintGround = true;
             TownQuestPoster.Enabled = true;
             Incidents.IncidentService.Enabled = true;
+            Storytelling.StorytellerService.Enabled = true;
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
@@ -94,6 +95,8 @@ namespace GuildMaster.Tests
             Incidents.IncidentService.Enabled = false;
             // Nor nemeses (P4-109): a member's death or retreat would rename and grow the monster a test is about.
             Nemeses.NemesisService.Enabled = false;
+            // Nor the storyteller (P4-111): each system rolls its own as before, and no raid or horde comes out of turn.
+            Storytelling.StorytellerService.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -5720,6 +5723,82 @@ namespace GuildMaster.Tests
             if (hunter.Mover.IsMoving)
                 Assert.That(Vector2.Distance(hunter.Position, hunter.Mover.Destination),
                     Is.LessThanOrEqualTo(ExplorationRoute.LegLength + 6f), "it walks a leg, not the whole way");
+        }
+
+        /// <summary>
+        /// The storyteller (P4-111a, G5): it sets off each of its big events — a town raid from a den near enough (seed
+        /// 20260920: goblins 74 cells out), a horde, a disaster by a disaster monster's den, the dragon's flight — and gives a
+        /// breather after, the wilds' factor down; it feels a member's death, and two lost of four is a guild near its end:
+        /// recovery, the wilds quieter still, a visitor soon. Its section saves as it is; off, nothing is its to time.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Storyteller_SetsOffItsBigEvents_FeelsTheLosses_AndHoldsOffNearTheEnd()
+        {
+            yield return Boot();
+            Storytelling.StorytellerService.Enabled = true;
+            Services.Get<Legacy.GuildLegacy>().ForcedRoll = 1f; // no last stand
+            Unit.GuildInvulnerable = true; // nothing happens to the members but what the test does
+            try
+            {
+                var story = Services.Get<Storytelling.StorytellerService>();
+                Assert.That(Storytelling.StorytellerService.Directs, Is.True);
+                Assert.That((story.Phase, Storytelling.StorytellerService.EcoFactor), Is.EqualTo((Storytelling.StoryPhase.Calm, 1f)));
+                int hour = Mathf.FloorToInt(Clock.TotalHours);
+
+                Assert.That(story.Fire(hour, Storytelling.StoryBeat.TownRaid), Is.True, "a raid from a den near enough");
+                Assert.That(Services.Get<Town.WaveManager>().RaidActive, Is.True);
+                Assert.That(story.Phase, Is.EqualTo(Storytelling.StoryPhase.Relax), "a breather after it");
+                Assert.That(Storytelling.StorytellerService.EcoFactor, Is.EqualTo(Storytelling.StorytellerRules.RelaxFactor));
+                Assert.That(Storytelling.StorytellerService.HoldsOff, Is.True);
+
+                // A horde heads for an empty den site; at the start every site is held, so one is emptied.
+                Assert.That(story.Fire(hour, Storytelling.StoryBeat.Horde), Is.False, "no empty site yet");
+                var town = Services.Get<World.WorldService>().TownCenterWorld;
+                var site = Services.Get<EcosystemManager>().Nests.Where(n => !n.IsLair && !n.IsEmpty && Vector2.Distance(n.WorldPosition, town) > 30f)
+                    .OrderBy(n => Vector2.Distance(n.WorldPosition, town)).First();
+                foreach (var m in site.Members.ToList()) m.Perish();
+                Assert.That(site.IsEmpty, Is.True);
+                Assert.That(story.Fire(hour, Storytelling.StoryBeat.Horde), Is.True, "a horde");
+                var horde = Services.Get<Incidents.IncidentService>().Active.FirstOrDefault(i => i.Kind == Incidents.IncidentKind.Horde);
+                Assert.That(horde?.HordeSize, Is.GreaterThanOrEqualTo(Storytelling.StorytellerRules.HordeMinSize));
+                Assert.That(story.Fire(hour, Storytelling.StoryBeat.Disaster), Is.True, "a disaster by a disaster monster's den");
+                Assert.That(Services.Get<DisasterService>().Active.Count, Is.GreaterThan(0));
+                var dragon = Services.Get<Dragons.DragonService>();
+                Assert.That(story.Fire(hour, Storytelling.StoryBeat.DragonFlight), Is.True, "the dragon wakes");
+                Assert.That(dragon.Asleep, Is.False);
+                Assert.That(story.Fire(hour, Storytelling.StoryBeat.DragonFlight), Is.False, "not while it is away");
+                Assert.That(story.History.Select(r => r.Beat), Is.EqualTo(new[]
+                {
+                    Storytelling.StoryBeat.TownRaid, Storytelling.StoryBeat.Horde, Storytelling.StoryBeat.Disaster, Storytelling.StoryBeat.DragonFlight,
+                }));
+
+                // A member's death weighs on it; two lost of the four is near the end.
+                var members = Roster.Members.Where(a => a.IsAlive).ToList();
+                Assert.That(members.Count, Is.EqualTo(4));
+                float before = story.Tension;
+                Unit.GuildInvulnerable = false;
+                members[0].ReceiveDamage(members[0].Hp + 999f, null, false);
+                Unit.GuildInvulnerable = true;
+                Assert.That(story.Tension, Is.EqualTo(Mathf.Min(100f, before + Storytelling.StorytellerRules.MemberDied)).Within(0.01f));
+                Assert.That(story.Phase, Is.Not.EqualTo(Storytelling.StoryPhase.Recovery), "one of four");
+                Unit.GuildInvulnerable = false;
+                members[1].ReceiveDamage(members[1].Hp + 999f, null, false);
+                Unit.GuildInvulnerable = true;
+                Assert.That(story.Phase, Is.EqualTo(Storytelling.StoryPhase.Recovery), "two left");
+                Assert.That(Storytelling.StorytellerService.EcoFactor, Is.EqualTo(Storytelling.StorytellerRules.RecoveryFactor));
+                float nextVisit = (float)typeof(Recruitment.VisitorService).GetField("_nextVisitHour", BindingFlags.NonPublic | BindingFlags.Instance)
+                    .GetValue(Services.Get<Recruitment.VisitorService>());
+                Assert.That(nextVisit, Is.LessThanOrEqualTo(Clock.TotalHours + Storytelling.StorytellerRules.VisitorWithinHours + 0.01f), "someone comes soon");
+
+                // Its section comes back as it was.
+                string saved = story.Capture();
+                story.Restore(saved, null);
+                Assert.That(story.Capture(), Is.EqualTo(saved));
+
+                Storytelling.StorytellerService.Enabled = false;
+                Assert.That((Storytelling.StorytellerService.Directs, Storytelling.StorytellerService.EcoFactor), Is.EqualTo((false, 1f)), "off, every system its own");
+            }
+            finally { Unit.GuildInvulnerable = false; }
         }
 
         /// <summary>A stretch of water nobody has explored yet, with walkable ground either side of it.</summary>

@@ -282,11 +282,16 @@ namespace GuildMaster.Ecosystem
             if (pack.Bound == null && now >= pack.DesperateAtHour && !Raiding(pack) && !pack.Members.Any(m => m.IsInFight())
                 && pack.Members.Average(m => m.HpRatio) >= WalkOnHp)
             {
-                pack.DesperateAtHour = now + DesperateHours;
-                if (Services.TryGet<Town.WaveManager>(out var waves) && waves.LaunchHomeless(pack.Members) > 0)
+                // The storyteller's breather (P4-111): it roams a while longer rather than come at a guild catching its breath.
+                if (Storytelling.StorytellerService.HoldsOff) pack.DesperateAtHour = now + Storytelling.StorytellerRules.HomelessHoldHours;
+                else
                 {
-                    Debug.Log($"[Roaming] pack #{pack.Id}: {pack.Members.Count} {pack.Species.displayName}, homeless since {pack.LeftAtHour:0}h, come at the town");
-                    return;
+                    pack.DesperateAtHour = now + DesperateHours;
+                    if (Services.TryGet<Town.WaveManager>(out var waves) && waves.LaunchHomeless(pack.Members) > 0)
+                    {
+                        Debug.Log($"[Roaming] pack #{pack.Id}: {pack.Members.Count} {pack.Species.displayName}, homeless since {pack.LeftAtHour:0}h, come at the town");
+                        return;
+                    }
                 }
             }
             if (pack.Moving)

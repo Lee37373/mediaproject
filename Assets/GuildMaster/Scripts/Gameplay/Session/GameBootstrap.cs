@@ -421,6 +421,11 @@ namespace GuildMaster.Session
             Services.Register(villageRaids);
             save.Register(villageRaids);
             AddSystem<DefenseCoordinator>().Init(waves, roster, world, Balance.raidDefendRadius);
+            // The storyteller (P4-111, G5): after everything it sets off or quiets — raids, hordes, the dragon, disasters.
+            var storyteller = AddSystem<Storytelling.StorytellerService>();
+            storyteller.Init(clock, world, eco, roster, Seed);
+            Services.Register(storyteller);
+            save.Register(storyteller);
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());
 
             // --- Presentation / input ---

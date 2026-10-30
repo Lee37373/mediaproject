@@ -190,6 +190,9 @@ namespace GuildMaster.Recruitment
         /// <summary>Visitors who count against the cap: everyone but refugees.</summary>
         int RegularVisitors => _visitors.Count(v => v != null && !_refugees.Contains(v.Data.id));
 
+        /// <summary>The next visitor comes within <paramref name="hours"/> (the storyteller, for a guild near its end — P4-111).</summary>
+        public void CallSoon(float hours) => _nextVisitHour = Mathf.Min(_nextVisitHour, _clock.TotalHours + hours);
+
         /// <summary>Spawns a visitor at a random gate now (also used by debug commands).</summary>
         public Adventurer SpawnVisitor()
         {

@@ -943,12 +943,8 @@ namespace GuildMaster.Units
             "charge" => new ChargeSkill(),
             "slam" => new GroundSlamSkill(),
             "howl" => new PackHowlSkill(),
-            // Disaster monsters (P4-72).
-            "ember" => new HazardStrikeSkill(Disasters.DisasterKind.Wildfire),
-            "toxic_spit" => new HazardStrikeSkill(Disasters.DisasterKind.PoisonFog),
-            "frost_roar" => new HazardStrikeSkill(Disasters.DisasterKind.Avalanche),
-            "sand_whirl" => new HazardStrikeSkill(Disasters.DisasterKind.Sandstorm),
-            "quake_stomp" => new HazardStrikeSkill(Disasters.DisasterKind.Quake),
+            // Disaster monsters (P4-72): ember, toxic_spit, frost_roar, sand_whirl, quake_stomp.
+            _ when Disasters.DisasterRules.KindOfSkill(id) is { } hazard => new HazardStrikeSkill(hazard),
             // Region lords (P4-83).
             "lord_toxic_spit" => new LordStrikeSkill(Disasters.DisasterKind.PoisonFog),
             "lord_frost_roar" => new LordStrikeSkill(Disasters.DisasterKind.Avalanche),
