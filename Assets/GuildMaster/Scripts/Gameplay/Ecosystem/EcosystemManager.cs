@@ -306,7 +306,7 @@ namespace GuildMaster.Ecosystem
         {
             if (!species.LivesAt(region, biome)) return 0f;
             float biomeFit = species.biomes.Count == 0 || species.biomes.Contains(biome) ? 1f : BiomeMismatch;
-            return biomeFit * Rarity(species);
+            return biomeFit * Rarity(species) * species.nestWeight;
         }
 
         static float Rarity(MonsterDefinition s) => s.danger switch

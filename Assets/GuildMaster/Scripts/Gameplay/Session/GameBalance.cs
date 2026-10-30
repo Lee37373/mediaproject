@@ -24,15 +24,19 @@ namespace GuildMaster.Session
         public int mapWidth = 512;
         public int mapHeight = 512;
         public int townHalfSize = 11;
-        /// <summary>P4-81 (user decision): the whole map keeps 64 nests — fewer near the town than on the 256 map.</summary>
-        public int nestCount = 64;
+        /// <summary>
+        /// P4-81 (user decision): the whole map keeps 64 nests — fewer near the town than on the 256 map. P4-110 (user
+        /// decision 2026-10-30): 96, so the thirteen new kinds come on top of the old ones instead of halving them (two dens
+        /// each for sure, the rest drawn at <see cref="Data.MonsterDefinition.nestWeight"/> 0.15 — about 37 dens in all).
+        /// </summary>
+        public int nestCount = 96;
         /// <summary>
         /// P4-81: nests placed within this many cells of the town along x and y (the old 256 map's
         /// square) before the rest go further out — spread evenly, 64 nests would leave a quarter of
-        /// them near the town.
+        /// them near the town. Half of them still (P4-110: 48 of 96).
         /// </summary>
         public int innerHalfSize = 128;
-        public int innerNestCount = 32;
+        public int innerNestCount = 48;
         /// <summary>
         /// P5-1: was 24, which left no nest inside the first day's walk. Species are placed by
         /// distance now, so the closest ring is the weakest one and it should be findable early.

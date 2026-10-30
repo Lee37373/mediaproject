@@ -112,6 +112,9 @@ namespace GuildMaster.Data
         [Tooltip("Nests this species is guaranteed on a map (P5-1). The weak ring around town needs " +
                  "several, or the early economy runs dry: potions are made from slime jelly.")]
         public int minNests = 1;
+        [Tooltip("Weight in the draw for the dens beyond minNests, on top of its rarity (P4-110: the new kinds share the " +
+                 "added dens without crowding out the old ones).")]
+        public float nestWeight = 1f;
         public int nestCapacity = 6;
         [Tooltip("Logistic growth rate per game hour.")]
         public float growthPerHour = 0.05f;

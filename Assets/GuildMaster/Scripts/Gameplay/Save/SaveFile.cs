@@ -17,8 +17,9 @@ namespace GuildMaster.Save
         /// 4: ridges, rivers and landforms (P4-101) — a seed makes another map, with the dens elsewhere.
         /// 5: zones, their landmarks and the road network (P4-102) — again another map for the same seed.
         /// 6: deep woods instead of the ridges on the region borders (P4-103) — another map again.
+        /// 7: 96 dens instead of 64 and thirteen new kinds (P4-110) — the dens of a version-6 save are not where a seed puts them now.
         /// </summary>
-        public const int CurrentVersion = 6;
+        public const int CurrentVersion = 7;
 
         public int version = CurrentVersion;
         public int seed;

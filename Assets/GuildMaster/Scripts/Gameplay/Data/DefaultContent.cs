@@ -288,6 +288,137 @@ namespace GuildMaster.Data
             sandGoblin.bossName = "사막 고블린 족장";
             ashSkull.bossName = "잿빛 해골 장군";
 
+            // ---------- Minimal EnemyMonster kinds (P4-110, user decisions 2026-10-30: about 13 new kinds, each with a
+            // material of its own that only the merchant buys) ----------
+            // Drawn by their rigs (Visuals/CharacterRig); the shape and colours are the generated picture where the pack is
+            // not imported. Base stats and EXP stay within about ±30% of the goblin's like the rest (P4-58: the level is the
+            // strength). The map has 96 dens instead of 64 (user decision); each new kind is sure of two of them and draws for
+            // the rest at 0.15 weight (on top of Medium rarity for the hunters and brutes), so the old kinds hold about as many
+            // dens as before and the new ones share the 32 added (about 37 on eight seeds). Prey (rabbit, larva, horse) run from
+            // their hunters and never start a fight. No new rivalries: a kind of two dens beside a feuding neighbour was gone
+            // in two days (measured, orcs against goblin warriors).
+            const float NewKindNestWeight = 0.15f;
+            MonsterDefinition Kind(MonsterDefinition m, string rig, string bossRig, string bossName, CombatTier tier,
+                float territory, params Region[] regions)
+            {
+                m.nestWeight = NewKindNestWeight;
+                m.minNests = 2; // a kind on one den of two or three dies out in a day or two
+                m.rigKey = rig;
+                m.bossRigKey = bossRig;
+                m.bossName = bossName;
+                m.combatTier = tier;
+                m.territoryRadius = territory;
+                m.regions.AddRange(regions);
+                return m;
+            }
+            ItemDefinition NewMaterial(string id, string name, int value, Color color) => Item(id, name, ItemCategory.Material, value, color);
+
+            // The town's grassland holds only three or four of the 64 dens, so these live farther afield too: a hare of the
+            // grass and the snow, a swarm of the grass and the swamp, a keeper of any wood (like the goblins), a herd of the grass
+            // and the desert.
+            var hornRabbit = Kind(Mon("horn_rabbit", "뿔토끼", MonsterShape.Beast, new Color(0.95f, 0.85f, 0.95f), new Color(0.6f, 0.85f, 0.95f), 0.9f,
+                    24, 5, 0, 1.0f, 1.1f, 3.4f, 6, DangerLevel.Low, false, 8, 0.28f, 5, 10, Biome.Plains),
+                "hornrabbit_jelly", "hornrabbit_crystal", "수정뿔 토끼", CombatTier.Instinct, 3.5f, Region.Grassland, Region.Snow);
+            hornRabbit.fleesFromPredators = true;
+            Loot(hornRabbit, NewMaterial("rabbit_horn", "토끼 뿔", 5, new Color(0.75f, 0.9f, 1f)), 0.8f);
+
+            var bee = Kind(Mon("great_bee", "왕벌", MonsterShape.Beast, new Color(1f, 0.8f, 0.2f), new Color(0.25f, 0.2f, 0.1f), 0.8f,
+                    22, 5.5f, 0, 1.0f, 0.9f, 3.6f, 7, DangerLevel.Medium, true, 10, 0.1f, 5, 12, Biome.Forest, Biome.Plains),
+                "wingdemon_bee", "wingdemon_apple", "여왕벌", CombatTier.Instinct, 4.5f, Region.Grassland, Region.Swamp);
+            bee.packHunter = true;
+            bee.skillIds.Add("howl");
+            Loot(bee, NewMaterial("bee_stinger", "벌침", 7, new Color(0.95f, 0.8f, 0.3f)), 0.75f);
+
+            var fungus = Kind(Mon("forest_fungus", "숲 버섯", MonsterShape.Brute, new Color(0.95f, 0.6f, 0.45f), new Color(0.95f, 0.9f, 0.8f), 0.8f,
+                    34, 6, 3, 1.2f, 1.5f, 1.6f, 5, DangerLevel.Medium, false, 6, 0.12f, 3, 13, Biome.Forest),
+                "fungus_horn", "fungus_rock", "바위 버섯 장로", CombatTier.Instinct, 4f, Region.Grassland);
+            fungus.skillIds.Add("slam");
+            fungus.habitatBiomes.Add(Biome.Forest); // any wood, like the goblins
+            fungus.wanderRadius = 3f;
+            Loot(fungus, NewMaterial("mushroom_cap", "버섯 갓", 6, new Color(0.95f, 0.55f, 0.4f)), 0.8f, 1, 2);
+
+            var horse = Kind(Mon("wild_horse", "야생마", MonsterShape.Beast, new Color(0.7f, 0.45f, 0.25f), new Color(0.35f, 0.2f, 0.1f), 0.85f,
+                    28, 5, 1, 1.1f, 1.2f, 3.8f, 8, DangerLevel.Medium, false, 10, 0.12f, 4, 12, Biome.Plains),
+                "horse_bronco", "horse_nightmare", "나이트메어", CombatTier.Instinct, 5.5f, Region.Grassland, Region.Desert);
+            horse.fleesFromPredators = true;
+            horse.skillIds.Add("charge");
+            Loot(horse, NewMaterial("horse_mane", "말갈기", 6, new Color(0.45f, 0.3f, 0.2f)), 0.8f);
+
+            // Swamp: a crawling prey that swallows what it finds, a heavy toad, a pack of raptors (also on the wasteland).
+            var larva = Kind(Mon("leech_larva", "거머리 애벌레", MonsterShape.Slime, new Color(0.55f, 0.35f, 0.6f), new Color(0.85f, 0.6f, 0.75f), 0.9f,
+                    24, 5, 1, 1.0f, 1.2f, 1.8f, 5, DangerLevel.Low, false, 8, 0.25f, 5, 10, Biome.Shore, Biome.Plains),
+                "larva_leech", "larva_knight", "기사 애벌레", CombatTier.Instinct, 3.5f, Region.Swamp);
+            larva.fleesFromPredators = true;
+            larva.pickupMode = MonsterPickupMode.Absorb;
+            Loot(larva, NewMaterial("leech_sac", "점액 주머니", 5, new Color(0.7f, 0.45f, 0.7f)), 0.8f, 1, 2);
+
+            var toad = Kind(Mon("swamp_toad", "늪 두꺼비", MonsterShape.Brute, new Color(0.75f, 0.55f, 0.3f), new Color(0.95f, 0.85f, 0.6f), 1.15f,
+                    36, 7, 2, 1.3f, 1.5f, 2.0f, 6, DangerLevel.Medium, true, 6, 0.06f, 3, 15, Biome.Shore, Biome.Plains),
+                "toad_giant", "toad_horn", "뿔 두꺼비 대장", CombatTier.Novice, 5f, Region.Swamp);
+            toad.skillIds.Add("slam");
+            toad.pickupMode = MonsterPickupMode.Absorb;
+            Loot(toad, NewMaterial("toad_gland", "두꺼비 독샘", 12, new Color(0.6f, 0.75f, 0.3f)), 0.7f);
+
+            var raptor = Kind(Mon("raptor", "랩터", MonsterShape.Beast, new Color(0.35f, 0.5f, 0.4f), new Color(0.2f, 0.3f, 0.35f), 0.95f,
+                    26, 7, 1, 1.1f, 1.0f, 3.6f, 8, DangerLevel.Medium, true, 8, 0.07f, 3, 15, Biome.Forest, Biome.Shore),
+                "raptor_swamp", "raptor_mechanic", "강철 랩터", CombatTier.Novice, 6f, Region.Swamp, Region.Wasteland);
+            raptor.packHunter = true;
+            raptor.skillIds.Add("howl");
+            Loot(raptor, NewMaterial("raptor_claw", "랩터 발톱", 10, new Color(0.85f, 0.85f, 0.75f)), 0.7f);
+
+            // Desert: a serpent that spits from afar, a charging rhino (also on the wasteland).
+            var serpent = Kind(Mon("sand_serpent", "모래 뱀", MonsterShape.Beast, new Color(0.95f, 0.8f, 0.4f), new Color(0.6f, 0.4f, 0.2f), 0.7f,
+                    24, 6, 1, 4.5f, 1.5f, 2.4f, 8, DangerLevel.Medium, true, 6, 0.07f, 3, 14, Biome.Plains),
+                "worm_lightning", "worm_poison", "독사 우두머리", CombatTier.Novice, 5f, Region.Desert);
+            Loot(serpent, NewMaterial("serpent_scale", "뱀 비늘", 9, new Color(0.95f, 0.85f, 0.45f)), 0.75f);
+
+            var rhino = Kind(Mon("rhino", "코뿔소", MonsterShape.Brute, new Color(0.5f, 0.6f, 0.75f), new Color(0.9f, 0.9f, 0.85f), 1.1f,
+                    36, 7.5f, 4, 1.3f, 1.5f, 2.6f, 6, DangerLevel.Medium, true, 5, 0.05f, 3, 17, Biome.Plains, Biome.Mountain),
+                "rhino_huge", "rhino_armor", "철갑 코뿔소", CombatTier.Novice, 6f, Region.Desert, Region.Wasteland);
+            rhino.skillIds.Add("charge");
+            Loot(rhino, NewMaterial("rhino_horn", "코뿔소 뿔", 14, new Color(0.9f, 0.88f, 0.8f)), 0.65f);
+
+            // Snow: a yeti, a swarm of vampire bats, an ogre that wears what it finds.
+            var yeti = Kind(Mon("yeti", "설인", MonsterShape.Brute, new Color(0.95f, 0.97f, 1f), new Color(0.6f, 0.75f, 0.9f), 1.0f,
+                    36, 7.5f, 3, 1.3f, 1.5f, 2.4f, 6, DangerLevel.Medium, true, 6, 0.06f, 3, 16, Biome.Plains, Biome.Mountain),
+                "winter_snow", "winter_ice", "얼음 거인", CombatTier.Novice, 5.5f, Region.Snow);
+            yeti.skillIds.Add("slam");
+            Loot(yeti, NewMaterial("yeti_fur", "설인 털", 12, new Color(0.95f, 0.97f, 1f)), 0.7f);
+
+            var bat = Kind(Mon("vampire_bat", "흡혈 박쥐", MonsterShape.Beast, new Color(0.5f, 0.4f, 0.45f), new Color(0.85f, 0.3f, 0.35f), 0.9f,
+                    20, 6, 0, 1.0f, 0.9f, 3.8f, 8, DangerLevel.Medium, true, 10, 0.1f, 4, 13, Biome.Forest, Biome.Mountain),
+                "wingdemon_vampire", "wingdemon_eye", "외눈 박쥐 대장", CombatTier.Instinct, 5f, Region.Snow);
+            bat.packHunter = true;
+            bat.skillIds.Add("howl");
+            Loot(bat, NewMaterial("bat_wing", "박쥐 날개", 7, new Color(0.45f, 0.35f, 0.4f)), 0.75f);
+
+            var ogre = Kind(Mon("snow_ogre", "설원 오우거", MonsterShape.Brute, new Color(0.6f, 0.62f, 0.68f), new Color(0.9f, 0.5f, 0.55f), 1.0f,
+                    36, 8, 3, 1.3f, 1.6f, 2.4f, 6, DangerLevel.Medium, true, 5, 0.04f, 3, 18, Biome.Mountain, Biome.Plains),
+                "evilmass_angry", "evilmass_knight", "오우거 기사", CombatTier.Novice, 6f, Region.Snow);
+            ogre.skillIds.Add("slam");
+            ogre.pickupMode = MonsterPickupMode.Equip;
+            Loot(ogre, NewMaterial("ogre_tusk", "오우거 송곳니", 15, new Color(0.95f, 0.92f, 0.8f)), 0.65f);
+
+            // Wasteland: orcs, a raiding band that wears what it finds (the late raiders beside the goblin warriors).
+            var orc = Kind(Mon("orc", "오크", MonsterShape.Humanoid, new Color(0.45f, 0.65f, 0.3f), new Color(0.5f, 0.35f, 0.25f), 0.95f,
+                    32, 7, 3, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.03f, 3, 16, Biome.Plains, Biome.Mountain),
+                "orcsword_rookie", "orcsmasher_warlord", "오크 전쟁군주", CombatTier.Novice, 6f, Region.Wasteland);
+            orc.packHunter = true;
+            orc.canRaid = true;
+            orc.raidThreshold = 9; orc.raidStep = 3; // 9 / 12 / 15, like the goblin warriors
+            orc.pickupMode = MonsterPickupMode.Equip;
+            orc.startingGear.Add(new LootEntry { item = rustyDagger, chance = 0.3f, min = 1, max = 1 });
+            Loot(orc, NewMaterial("orc_tusk", "오크 엄니", 10, new Color(0.95f, 0.9f, 0.75f)), 0.75f);
+
+            // Their place in the food web: the prey run from these hunters.
+            goblin.prey.Add(hornRabbit);
+            bee.prey.Add(hornRabbit);
+            toad.prey.Add(larva);
+            raptor.prey.AddRange(new[] { larva, stoneSlime });
+            serpent.prey.Add(horse);
+            ogre.prey.Add(skull);
+            orc.prey.Add(stoneSlime);
+
             // Region lords (P4-83, user decisions 2026-10-17): one final boss of its own kind deep in each outer
             // region, guarded by that region's disaster kind (Monsters/RegionLords: level 35, health x15). They
             // are drawn by their own Minimal EnemyMonster rig (P4-110), or borrow a pack boss's art, tinted, when it is

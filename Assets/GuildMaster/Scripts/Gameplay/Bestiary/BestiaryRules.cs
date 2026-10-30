@@ -63,6 +63,20 @@ namespace GuildMaster.Bestiary
             ["lord_swamp"] = (AdventurerClass.Priest, AdventurerClass.Ranger),
             ["lord_wasteland"] = (AdventurerClass.Ranger, AdventurerClass.Warrior),
             ["dragon"] = (AdventurerClass.Ranger, AdventurerClass.Mage),
+            // P4-110: arrows catch the quick, fire takes fur and swarms, blades break shells, the holy undo the blood-drinkers.
+            ["horn_rabbit"] = (AdventurerClass.Ranger, AdventurerClass.Warrior),
+            ["great_bee"] = (AdventurerClass.Mage, AdventurerClass.Warrior),
+            ["forest_fungus"] = (AdventurerClass.Mage, AdventurerClass.Ranger),
+            ["wild_horse"] = (AdventurerClass.Ranger, AdventurerClass.Warrior),
+            ["leech_larva"] = (AdventurerClass.Mage, AdventurerClass.Warrior),
+            ["swamp_toad"] = (AdventurerClass.Ranger, AdventurerClass.Warrior),
+            ["raptor"] = (AdventurerClass.Warrior, AdventurerClass.Ranger),
+            ["sand_serpent"] = (AdventurerClass.Warrior, AdventurerClass.Mage),
+            ["rhino"] = (AdventurerClass.Mage, AdventurerClass.Warrior),
+            ["yeti"] = (AdventurerClass.Mage, AdventurerClass.Warrior),
+            ["vampire_bat"] = (AdventurerClass.Priest, AdventurerClass.Ranger),
+            ["snow_ogre"] = (AdventurerClass.Ranger, AdventurerClass.Warrior),
+            ["orc"] = (AdventurerClass.Mage, AdventurerClass.Warrior),
         };
 
         public static IEnumerable<string> SpeciesWithMatchups => Matchups.Keys;

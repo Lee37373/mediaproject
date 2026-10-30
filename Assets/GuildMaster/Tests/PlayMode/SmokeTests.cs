@@ -900,6 +900,16 @@ namespace GuildMaster.Tests
             var firstLord = first.Lair.LivingLord;
             Assert.That(firstLord.Stats.MaxHp, Is.EqualTo(Combat.ScaledHp(first.Def.maxHp) * RegionLords.HpMultiplier * MonsterLevel.HpScale(RegionLords.Level)).Within(1f));
 
+            // P4-110 (user decisions 2026-10-30): the thirteen Minimal EnemyMonster kinds hold dens of their own, two at least,
+            // and are drawn by their rigs when the pack is imported.
+            foreach (var s in eco.Species.Where(s => !string.IsNullOrEmpty(s.rigKey) && !s.isRegionLord))
+            {
+                var dens = eco.Nests.Where(n => !n.IsLair && n.Species == s).ToList();
+                Assert.That(dens.Count, Is.GreaterThanOrEqualTo(s.minNests), s.id);
+                var one = dens.SelectMany(n => n.Members).FirstOrDefault(m => m.IsAlive && !m.IsBoss);
+                if (one != null && Monster.RigFor(s, false, false) != null) Assert.That(one.Visual.HasRig, Is.True, s.id);
+            }
+
             // P4-110: with Minimal EnemyMonster imported each lord is its own rig — parts on the game's lit material, sorted
             // as one piece by its row, the still kept on the undrawn body for its fog memory; a blow and a flinch play once.
             // (Without the pack they keep the borrowed art and this part is skipped.)
@@ -3301,6 +3311,7 @@ namespace GuildMaster.Tests
             }
             var soaker = team[0];
             (soaker.Data.stress, soaker.Data.fatigue) = (70f, 20f);
+            soaker.Data.potions = 2; // one with none would buy one first (a body need), as it may on another world (P4-110: 96 dens)
             var decision = RuleBasedDecisionMaker.Decide(soaker, new System.Collections.Generic.List<Quest>());
             Assert.That(decision.Action, Is.EqualTo(AdventurerAction.Visit), soaker.LastThinking?.Describe());
             Assert.That((decision.Place.Kind, places.IsKnown(decision.Place)), Is.EqualTo((World.PlaceKind.HotSpring, true)), "stressed: off to a known spring before any work");
