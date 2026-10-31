@@ -130,8 +130,11 @@ namespace GuildMaster.Town
 
         // ---------------- Placing ----------------
 
-        /// <summary>Starts "click where it goes"; a preview follows the cursor until the click.</summary>
-        public bool BeginPlacement(BuildingType type, out string error)
+        /// <summary>
+        /// Starts "click where it goes"; a preview follows the cursor until the click. A click where it cannot go says why
+        /// and asks again (<paramref name="note"/>): it used to end the placing without a word, as if the click were lost.
+        /// </summary>
+        public bool BeginPlacement(BuildingType type, out string error, string note = null)
         {
             error = CannotBuildReason(type);
             if (error != null) return false;
@@ -140,8 +143,12 @@ namespace GuildMaster.Town
             _isPlacing = true;
             ShowPreview(type);
             EventBus.Publish(new PlacementChangedEvent { Active = true, Type = type });
-            picker.Begin($"{BuildingNames.Of(type)}을(를) 지을 자리를 클릭하세요 (우클릭·ESC 취소)",
-                p => { EndPlacement(); TryBuild(type, p, out _); },
+            string name = BuildingNames.Of(type);
+            picker.Begin($"{(note != null ? note + " — " : "")}{name}{Adventurers.MemoryRecorder.Josa(name, "을", "를")} 지을 자리를 클릭하세요 (우클릭·ESC 취소)",
+                p =>
+                {
+                    if (TryBuild(type, p, out var why) || !BeginPlacement(type, out _, why)) EndPlacement();
+                },
                 EndPlacement);
             return true;
         }

@@ -1710,8 +1710,22 @@ namespace GuildMaster.Tests
             var far = center + new Vector2(24f, 0f);
             Assert.That(fog.IsVisibleRaw(far), Is.False, "the town watch alone does not reach out there");
 
+            // The build window's way: a click where it cannot go says why and asks again (it used to end without a word).
             int goldBefore = treasury.Gold;
-            Assert.That(construction.TryBuild(Town.BuildingType.Watchtower, spot, out var error), Is.True, error);
+            var picker = Services.Get<Player.MapPicker>();
+            string prompt = null;
+            System.Action<Player.MapPickingChangedEvent> onPrompt = e => { if (e.Active) prompt = e.Prompt; };
+            EventBus.Subscribe(onPrompt);
+            Assert.That(construction.BeginPlacement(Town.BuildingType.Watchtower, out var error), Is.True, error);
+            var onGate = center + new Vector2(12f, 0f);
+            string why = construction.CannotPlaceAt(Town.BuildingType.Watchtower, onGate);
+            picker.PickAt(onGate);
+            Assert.That(construction.IsPlacing && picker.IsPicking, Is.True, "still placing after a click on the gate");
+            Assert.That(prompt, Does.StartWith(why), "and the prompt says why");
+            Assert.That(treasury.Gold, Is.EqualTo(goldBefore), "nothing paid for it");
+            picker.PickAt(spot);
+            EventBus.Unsubscribe(onPrompt);
+            Assert.That(construction.IsPlacing || picker.IsPicking, Is.False, "built, and done placing");
             Assert.That(treasury.Gold, Is.EqualTo(goldBefore - cost.goldCost), "gold paid");
             foreach (var c in cost.itemCosts) Assert.That(treasury.GetStock(c.itemId), Is.EqualTo(0), "materials used up");
 
