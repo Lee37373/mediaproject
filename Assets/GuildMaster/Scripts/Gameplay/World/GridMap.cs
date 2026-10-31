@@ -131,9 +131,13 @@ namespace GuildMaster.World
 
         public bool IsInTown(Vector2 world) => IsInTown(WorldToCell(world));
 
-        /// <summary>Spiral search for the nearest walkable cell (used when a target is inside an obstacle).</summary>
-        public bool TryFindNearestWalkable(Vector2Int origin, int maxRadius, out Vector2Int result)
+        /// <summary>
+        /// Spiral search for the nearest walkable cell (used when a target is inside an obstacle). A monster's search
+        /// (<paramref name="passesGates"/> false) skips what is shut to it: the gates, and the guild hall's floor (P4-115).
+        /// </summary>
+        public bool TryFindNearestWalkable(Vector2Int origin, int maxRadius, out Vector2Int result, bool passesGates = true)
         {
+            bool IsWalkable(Vector2Int c) => this.IsWalkable(c, passesGates);
             if (IsWalkable(origin)) { result = origin; return true; }
             for (int r = 1; r <= maxRadius; r++)
             {

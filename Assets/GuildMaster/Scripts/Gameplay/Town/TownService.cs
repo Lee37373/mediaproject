@@ -100,7 +100,11 @@ namespace GuildMaster.Town
             var c = world.Map.TownCenter;
             // Layout relative to the plaza (roads run along c.x and c.y).
             Place(BuildingType.TownHall, new RectInt(c.x + 2, c.y + 2, 6, 5), new Vector2Int(c.x + 5, c.y + 1), true, 600f, mapRenderer);
-            Place(BuildingType.GuildHall, new RectInt(c.x - 8, c.y + 2, 7, 5), new Vector2Int(c.x - 4, c.y + 1), true, 400f, mapRenderer);
+            // The guild hall people walk into (P4-115): its "door" is the middle of the room, its walls and furniture block.
+            var hallRect = GuildHallLayout.FootprintAt(c);
+            var hall = Place(BuildingType.GuildHall, hallRect, GuildHallLayout.ToMap(hallRect, GuildHallLayout.Lobby), false, 400f, mapRenderer);
+            HallInside = hall.gameObject.AddComponent<GuildHallInterior>();
+            HallInside.Init(world, hall);
             Place(BuildingType.Blacksmith, new RectInt(c.x + 2, c.y - 6, 4, 4), new Vector2Int(c.x + 4, c.y - 1), true, 250f, mapRenderer);
             Place(BuildingType.Apothecary, new RectInt(c.x + 7, c.y - 5, 3, 3), new Vector2Int(c.x + 8, c.y - 1), true, 200f, mapRenderer);
             Place(BuildingType.TrainingGround, new RectInt(c.x - 9, c.y - 8, 7, 6), new Vector2Int(c.x - 5, c.y - 5), false, 150f, mapRenderer);
@@ -147,6 +151,9 @@ namespace GuildMaster.Town
         }
 
         public Building Get(BuildingType type) => _buildings.Find(b => b.Type == type);
+
+        /// <summary>The inside of the guild hall: its places, and who is at them (P4-115).</summary>
+        public GuildHallInterior HallInside { get; private set; }
 
         public bool IsInTown(Vector2 pos) => _world.Grid.IsInTown(pos);
 

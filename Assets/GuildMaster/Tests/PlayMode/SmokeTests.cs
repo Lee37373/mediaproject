@@ -1074,6 +1074,10 @@ namespace GuildMaster.Tests
                 treasury.AddGold(cost.goldCost);
                 foreach (var c in cost.itemCosts) treasury.AddStock(c.itemId, c.count);
                 int gold = treasury.Gold;
+                // Members trading at the counter meanwhile (P4-115: they walk to it inside the hall, so a purchase may land in these seconds).
+                int trading = 0;
+                Action<Economy.GoldFlowEvent> onTrade = e => { if (e.Reason is Economy.GoldReason.Goods or Economy.GoldReason.Loot or Economy.GoldReason.Living) trading += e.Amount; };
+                EventBus.Subscribe(onTrade);
                 // The counter in view, so the grant's coins fly (H8).
                 Services.Get<CameraControl.CameraController>().JumpTo(hall.DoorPosition);
                 yield return null;
@@ -1087,7 +1091,8 @@ namespace GuildMaster.Tests
                 yield return WaitFor(() => hud.Withheld == 0, 3f);
                 Assert.That(hud.Withheld, Is.Zero, "and every coin landed");
                 Assert.That(ups, Is.EqualTo(new[] { Guild.GuildRank.E }));
-                Assert.That(treasury.Gold, Is.EqualTo(gold - cost.goldCost + Guild.GuildRankRules.Grant(Guild.GuildRank.E)), "the town's grant");
+                EventBus.Unsubscribe(onTrade);
+                Assert.That(treasury.Gold, Is.EqualTo(gold - cost.goldCost + Guild.GuildRankRules.Grant(Guild.GuildRank.E) + trading), "the town's grant");
                 Assert.That(Services.Get<Notifications.NotificationCenter>().Entries.Any(n => n.Title.Contains("E등급")), Is.True, "told");
                 Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[등급]")), Is.True, "and logged");
 
@@ -1743,6 +1748,83 @@ namespace GuildMaster.Tests
             yield return WaitFor(() => !fog.IsVisibleRaw(far), 5f);
             Assert.That(fog.IsVisibleRaw(far), Is.False, "and it stops watching once it is gone");
             Assert.That(world.Grid.IsWalkable(World.GridMap.WorldToCell(spot)), Is.True, "its ground is free again");
+        }
+
+        /// <summary>
+        /// The guild hall people walk into (P4-115, user decisions 2026-10-31): its walls and furniture block and its floor is
+        /// shut to monsters but open to the guild; close in, its inside shows, and far out its roof; members rest at a seat,
+        /// do their business at the counter, wait round the big table, and look at the board before taking a quest.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator GuildHall_IsWalkedInto_KeepsMonstersOut_ShowsItsInsideClose_AndMembersLiveInIt()
+        {
+            yield return Boot();
+            var world = Services.Get<World.WorldService>();
+            var town = Services.Get<Town.TownService>();
+            var inside = town.HallInside;
+            var hall = town.Get(Town.BuildingType.GuildHall);
+            var r = hall.Footprint;
+            var grid = world.Grid;
+            var entrance = Town.GuildHallLayout.ToMap(r, Town.GuildHallLayout.Entrance);
+            var lobby = Town.GuildHallLayout.ToMap(r, Town.GuildHallLayout.Lobby);
+            Assert.That(r.width * r.height, Is.GreaterThanOrEqualTo(72), "big from the start");
+            Assert.That(hall.DoorCell, Is.EqualTo(lobby), "the guild's door is the middle of the room");
+            Assert.That(grid.IsWalkable(Town.GuildHallLayout.ToMap(r, new Vector2Int(1, 0))), Is.False, "its walls block");
+            Assert.That(grid.IsWalkable(Town.GuildHallLayout.ToMap(r, Town.GuildHallLayout.BigTable)), Is.False, "and its tables");
+            Assert.That(grid.IsWalkable(entrance, true) && !grid.IsWalkable(entrance, false), Is.True, "the way in is the guild's only");
+            var path = new System.Collections.Generic.List<Vector2Int>();
+            var plaza = world.Map.TownCenter;
+            Assert.That(world.Pathfinder.FindPath(plaza, lobby, path), Is.True, "a member walks in");
+            Assert.That(path.Contains(entrance), Is.True, "through the entrance");
+            Assert.That(world.Pathfinder.FindPath(plaza, lobby, path, passesGates: false), Is.False, "a monster does not");
+
+            // Close in, the inside; far out, the roof.
+            var cam = Services.Get<CameraControl.CameraController>();
+            var outside = hall.GetComponent<SpriteRenderer>();
+            cam.SetZoom(10f);
+            yield return WaitFor(() => inside.ShowsInside && outside.color.a < 0.01f, 5f);
+            Assert.That(inside.ShowsInside && outside.color.a < 0.01f, Is.True, "the roof is off close in");
+            cam.SetZoom(25f);
+            yield return WaitFor(() => !inside.ShowsInside && outside.color.a > 0.99f, 5f);
+            Assert.That(!inside.ShowsInside && outside.color.a > 0.99f, Is.True, "and on far out");
+            cam.SetZoom(12f);
+
+            // Resting: a seat; handing in: the counter; a party waiting: the big table.
+            var board = Services.Get<QuestBoard>();
+            var m = Roster.Members.Where(a => a.IsAlive).ToList();
+            Clock.SetSpeed(1);
+            var rester = m[0];
+            rester.Data.fatigue = 90f;   // tired enough to stay seated a while
+            rester.ChangeState(rester.RestState);
+            Assert.That(inside.TryGetPlace(rester, out var seat, out var use) && use is Town.HallUse.Seat or Town.HallUse.Table, Is.True, "a seat to rest in");
+            var visitor = m[1];
+            visitor.ChangeState(visitor.VisitState);
+            Assert.That(inside.TryGetPlace(visitor, out _, out var counter) && counter == Town.HallUse.Counter, Is.True, "business at the counter");
+            var waiter = m[2];
+            Assert.That(inside.TryTake(waiter, Town.HallUse.Table, out var tableSeat), Is.True);
+            Assert.That(Town.GuildHallLayout.Spots.Count(s => s.Use == Town.HallUse.Table && Town.GuildHallLayout.ToMap(r, s.Cell) == World.GridMap.WorldToCell(tableSeat)),
+                        Is.EqualTo(1), "round the big table");
+            inside.Release(waiter);
+            yield return WaitFor(() => !rester.Mover.IsMoving, 10f);
+            Assert.That(Vector2.Distance(rester.Position, seat), Is.LessThan(0.7f), $"sitting there ({rester.StateLabel})");
+
+            // Picking a quest: a look at the board first, then it is taken.
+            MakeKnown(Services.Get<EcosystemManager>().Species.First(s => s.id == "slime"));
+            var solo = board.FindById(DebugCommands.PostHunt("slime", 2, 40, 10, party: 1));
+            var looker = m[3];
+            looker.Mover.Warp(World.GridMap.CellToWorld(plaza) + new Vector2(1f, -1f));
+            looker.Data.fatigue = 0f;
+            looker.Data.potions = 2;
+            looker.Data.gold = 0;
+            Assert.That(RuleBasedDecisionMaker.Decide(looker, board.AvailableFor(looker).ToList()).QuestId, Is.EqualTo(solo.Id));
+            looker.ChangeState(looker.DecidingState);
+            yield return WaitFor(() => looker.StateLabel == "게시판 확인", 3f);
+            Assert.That(looker.StateLabel, Is.EqualTo("게시판 확인"), "off to the board");
+            Assert.That(solo.IsAssigned(looker), Is.False, "not taken yet");
+            yield return WaitFor(() => solo.IsAssigned(looker), 15f);
+            Assert.That(solo.IsAssigned(looker), Is.True, $"taken at the board ({looker.StateLabel})");
+            var boardFace = Town.GuildHallLayout.ToMap(r, new Vector2(Town.GuildHallLayout.BoardX, Town.GuildHallLayout.Height - 1));
+            Assert.That(Vector2.Distance(looker.Position, boardFace), Is.LessThan(2.5f), "in front of it");
         }
 
         /// <summary>

@@ -72,7 +72,8 @@ namespace GuildMaster.Monsters
             _repath -= dt;
             if (_repath > 0f && m.Mover.IsMoving) return;
             _repath = RepathSeconds;
-            if (world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(edge), 3, out var cell))
+            // Where a monster can stand: not on the guild hall's floor, shut to it (P4-115).
+            if (world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(edge), 3, out var cell, m.PassesGates))
             {
                 _spot = GridMap.CellToWorld(cell);
                 // The wave marches as one (P4-63): woodland kinds come at the town through the trees.

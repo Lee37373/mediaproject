@@ -102,6 +102,10 @@ namespace GuildMaster.Visuals
             float dw = big ? 14f : lofty ? 12f : 10.5f, dh = big ? 22f : lofty ? 20f : 15f;
             float ww = big ? 7.5f : lofty ? 6.5f : 4.8f, wh = big ? 14f : lofty ? 16f : 10f, wy = big ? 20f : lofty ? 22f : 17f;
             float upY = wy + wh + ww + 10f;
+            // Upstairs: a floor, and more while a tall wall has room (P4-115: the guild hall people walk into stands three high).
+            var floors = new System.Collections.Generic.List<float>();
+            if (k.Upstairs)
+                for (float y = upY; floors.Count == 0 || y + wh * 0.85f + ww < eave - 12f; y += wh * 0.85f + ww + 12f) floors.Add(y);
 
             c.Shape(Ellipse(w * 0.5f, 9f, w * 0.48f, 8f), FootShadow, FootShadow, 0f);
 
@@ -114,7 +118,7 @@ namespace GuildMaster.Visuals
             {
                 c.Shape(RoundRect(x0 + 2f, 9f, x0 + 7f, wallTop - 1f, 1f), Timber, Ink, 1.5f);         // corner posts
                 c.Shape(RoundRect(x1 - 7f, 9f, x1 - 2f, wallTop - 1f, 1f), Timber, Ink, 1.5f);
-                if (k.Upstairs) c.Shape(RoundRect(x0 + 2f, upY - 7f, x1 - 2f, upY - 3.5f, 1f), Timber, Ink, 1.5f);   // the floor between
+                foreach (float y in floors) c.Shape(RoundRect(x0 + 2f, y - 7f, x1 - 2f, y - 3.5f, 1f), Timber, Ink, 1.5f);   // the floors between
             }
             c.Shape(RoundRect(x0 - 2f, 4f, x1 + 2f, 13f, 3f), Stonework, Ink, 2.5f);                    // the plinth
             for (float x = x0 + 12f; x < x1 - 4f; x += 14f)
@@ -125,11 +129,13 @@ namespace GuildMaster.Visuals
             float clear = dw + (k.Lanterns ? 15f : 4f);
             Windows(c, k, x0 + 6f, doorX - clear, wy, ww, wh);
             Windows(c, k, doorX + clear, x1 - 6f, wy, ww, wh);
-            if (k.Upstairs)
+            for (int f = 0; f < floors.Count; f++)
             {
-                float over = dw + 8f;   // above the door hangs the sign, or the gable rises
-                Windows(c, k, x0 + 6f, doorX - over, upY, ww, wh * 0.85f);
-                Windows(c, k, doorX + over, x1 - 6f, upY, ww, wh * 0.85f);
+                // Over the door hangs the sign or rises the gable; a floor higher up has windows right across.
+                if (f > 0) { Windows(c, k, x0 + 6f, x1 - 6f, floors[f], ww, wh * 0.85f); continue; }
+                float over = dw + 8f;
+                Windows(c, k, x0 + 6f, doorX - over, floors[f], ww, wh * 0.85f);
+                Windows(c, k, doorX + over, x1 - 6f, floors[f], ww, wh * 0.85f);
             }
             if (k.Lanterns)
                 for (int s = -1; s <= 1; s += 2) Lantern(c, doorX + s * (dw + 8f), 8f + dh * 0.95f, s);
@@ -156,7 +162,8 @@ namespace GuildMaster.Visuals
             }
             c.ShapeClipped(RoundRect(w * 0.66f, 0f, w, h, 0f), roof, ShadeTint);
             c.ShapeClipped(RoundRect(0f, 0f, w, eave + 2.5f, 0f), roofIn, Darker(k.Roof, 0.68f));
-            float gableHalf = k.Gable ? Mathf.Min(dw + 22f, w * 0.2f) : 0f;
+            // A tall roof gets a broader gable (the big guild hall), the others keep theirs.
+            float gableHalf = k.Gable ? Mathf.Min(dw + 22f + Mathf.Max(0f, top - eave - 80f) * 0.5f, w * 0.2f) : 0f;
             if (level >= 2) Dormers(c, k, type, w, eave, top, inset, doorX, gableHalf, big ? 2 : 1);
             c.Shape(RoundRect(4f + inset, top - 6.5f, w - 4f - inset, top, 2.5f), Darker(k.Roof, 0.7f), Ink, 2.5f);   // ridge
             if (level >= 3) Cresting(c, 4f + inset, w - 4f - inset, top);
@@ -867,7 +874,8 @@ namespace GuildMaster.Visuals
         /// </summary>
         public static Sprite BuildingInterior(BT type, int tilesW, int tilesH)
         {
-            if (type is BT.TrainingGround or BT.Watchtower or BT.ArrowTower) return null;
+            // The guild hall is walked into (P4-115): its own inside, Town.GuildHallInterior.
+            if (type is BT.TrainingGround or BT.Watchtower or BT.ArrowTower or BT.GuildHall) return null;
             string key = $"c_interior:{type}:{tilesW}x{tilesH}";
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;

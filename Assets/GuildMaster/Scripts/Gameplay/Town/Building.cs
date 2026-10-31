@@ -190,6 +190,13 @@ namespace GuildMaster.Town
             if (IsDestroyed) EventBus.Publish(new BuildingDestroyedEvent { Building = this });
         }
 
+        /// <summary>How much of the outside shows (the guild hall opened up when the camera comes close, P4-115).</summary>
+        public void SetOutsideAlpha(float alpha)
+        {
+            _alpha = alpha;
+            ApplyColor();
+        }
+
         void ApplyColor()
         {
             var color = new Color(_tint.r, _tint.g, _tint.b, _alpha);

@@ -83,11 +83,50 @@ namespace GuildMaster.Adventurers
             return Services.TryGet<CampService>(out var camps) && camps.TryNightCamp(a);
         }
 
-        public static void Wander(Adventurer a, ref float timer, float dt)
+        /// <summary>How often a member idling in town goes to hang about in the guild hall rather than the plaza (P4-115).</summary>
+        public const float HallIdleShare = 0.55f;
+
+        /// <summary>A place in the guild hall for this (P4-115), taken for the member; false with no hall or none free.</summary>
+        public static bool HallPlace(Adventurer a, HallUse use, out Vector2 at)
+        {
+            at = default;
+            var inside = Services.TryGet<TownService>(out var town) ? town.HallInside : null;
+            return inside != null && inside.TryTake(a, use, out at);
+        }
+
+        static void LeaveHallPlace(Adventurer a)
+        {
+            if (Services.TryGet<TownService>(out var town) && town.HallInside != null) town.HallInside.Release(a);
+        }
+
+        public static void Wander(Adventurer a, ref float timer, float dt) => Wander(a, ref timer, dt, HallUse.Loiter);
+
+        /// <summary>
+        /// Idling in town: about the plaza, or for a while at a place in the guild hall (P4-115: about half the time — the
+        /// counter, the board, a table, the fire). Waiting with its party (<see cref="HallUse.Table"/>): round the big table.
+        /// </summary>
+        public static void Wander(Adventurer a, ref float timer, float dt, HallUse use)
         {
             if (a.Mover.IsMoving) return;
             timer -= dt;
             if (timer > 0f) return;
+            var inside = Services.TryGet<TownService>(out var town) ? town.HallInside : null;
+            // At its place in the hall already: it stays a while longer as often as not (and always round the table).
+            if (inside != null && inside.TryGetPlace(a, out var held, out var heldUse) && (held - a.Position).sqrMagnitude < 0.5f
+                && (use == HallUse.Loiter ? GameRandom.Shared.Chance(0.5f) : heldUse == use))
+            {
+                timer = GameRandom.Shared.Range(8f, 20f);
+                return;
+            }
+            // The table full: somewhere else in the hall.
+            if ((use != HallUse.Loiter || GameRandom.Shared.Chance(HallIdleShare))
+                && (HallPlace(a, use, out var at) || use != HallUse.Loiter && HallPlace(a, HallUse.Loiter, out at)))
+            {
+                timer = GameRandom.Shared.Range(8f, 20f);
+                a.Mover.SetDestination(at, 0.12f);
+                return;
+            }
+            LeaveHallPlace(a);
             timer = GameRandom.Shared.Range(1.5f, 4f);
             a.Mover.SetDestination(Town.RandomPlazaSpot(GameRandom.Shared, 6));
         }
@@ -150,13 +189,20 @@ namespace GuildMaster.Adventurers
         float _wanderTimer;
         float _startRealTime;
         float _guardTimer;
+        /// <summary>A quest chosen, taken once the member has looked at the board in the guild hall (P4-115).</summary>
+        AdventurerDecision? _atBoard;
+        float _boardSince, _boardLook;
 
-        public override string Label => "고민 중";
+        /// <summary>How far a member walks to the board before taking a quest (cells), how long it may take (real seconds) and how long it looks.</summary>
+        const float BoardReach = 14f, BoardTimeoutReal = 12f, BoardLookSeconds = 0.8f;
+
+        public override string Label => _atBoard != null ? "게시판 확인" : "고민 중";
 
         public override void Enter()
         {
             var a = Owner;
             var available = AdvCtx.Board.AvailableFor(a).ToList();
+            _atBoard = null;
             _cts = new CancellationTokenSource();
             _wanderTimer = 1f;
             _startRealTime = Time.unscaledTime;
@@ -172,6 +218,16 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             if (TownGuardState.TryStart(a, a.IdleState, ref _guardTimer, dt)) return;
+            if (_atBoard is { } chosen)
+            {
+                // At the board (or it took too long to get there): a moment's look, then the quest is taken.
+                if (a.Mover.IsMoving && Time.unscaledTime - _boardSince < BoardTimeoutReal) return;
+                _boardLook += dt;
+                if (_boardLook < BoardLookSeconds) return;
+                _atBoard = null;
+                Apply(chosen);
+                return;
+            }
             AdvCtx.Wander(a, ref _wanderTimer, dt);
 
             if (_task.IsCompleted)
@@ -179,6 +235,7 @@ namespace GuildMaster.Adventurers
                 var decision = _task.Status == TaskStatus.RanToCompletion
                     ? _task.Result
                     : RuleBasedDecisionMaker.Decide(a, AdvCtx.Board.AvailableFor(a).ToList());
+                if (GoToBoardFirst(decision)) return;
                 Apply(decision);
             }
             else if (Time.unscaledTime - _startRealTime > TimeoutRealSeconds)
@@ -186,6 +243,22 @@ namespace GuildMaster.Adventurers
                 _cts.Cancel();
                 Apply(RuleBasedDecisionMaker.Decide(a, AdvCtx.Board.AvailableFor(a).ToList()));
             }
+        }
+
+        /// <summary>
+        /// A quest is picked in front of the board in the guild hall (P4-115, user decision): the member walks there first
+        /// when it is in town, a place there is free and the walk is short; whoever got there before may have taken it.
+        /// </summary>
+        bool GoToBoardFirst(AdventurerDecision d)
+        {
+            var a = Owner;
+            if (d.Action != AdventurerAction.AcceptQuest || !AdvCtx.Town.IsInTown(a.Position)) return false;
+            if (!AdvCtx.HallPlace(a, HallUse.Board, out var board)) return false;
+            if (Vector2.Distance(a.Position, board) > BoardReach || !a.Mover.SetDestination(board, 0.12f)) return false;
+            _atBoard = d;
+            _boardSince = Time.unscaledTime;
+            _boardLook = 0f;
+            return true;
         }
 
         void Apply(AdventurerDecision d)
@@ -866,9 +939,16 @@ namespace GuildMaster.Adventurers
             // Home: whatever it was fighting out there is behind it (P4-98: a foe left over from the way back stayed its target).
             a.Engage.Clear();
             _shopped = false;
-            _goingToDoor = Vector2.Distance(a.Position, AdvCtx.GuildDoor) > 1.2f;
-            if (_goingToDoor) a.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
-            else DoBusiness();
+            GoToCounter(a);
+            if (!_goingToDoor) DoBusiness();
+        }
+
+        /// <summary>Business is done at the guild hall's counter (P4-115), or in the middle of the hall when both places there are taken.</summary>
+        void GoToCounter(Adventurer a)
+        {
+            var at = AdvCtx.HallPlace(a, HallUse.Counter, out var counter) ? counter : AdvCtx.GuildDoor;
+            _goingToDoor = Vector2.Distance(a.Position, at) > 1.2f;
+            if (_goingToDoor) a.Mover.SetDestination(at, at == AdvCtx.GuildDoor ? 0.6f : 0.12f);
         }
 
         void DoBusiness()
@@ -944,9 +1024,9 @@ namespace GuildMaster.Adventurers
         public override void ResumeState(string json, SaveContext ctx)
         {
             var s = JsonUtility.FromJson<Saved>(json);
-            _goingToDoor = s.going_to_door;
             _shopped = s.shopped;
-            if (_goingToDoor) Owner.Mover.SetDestination(AdvCtx.GuildDoor, 0.6f);
+            _goingToDoor = false;
+            if (s.going_to_door) GoToCounter(Owner);
         }
 
         public override void Tick(float dt)
@@ -962,8 +1042,8 @@ namespace GuildMaster.Adventurers
             }
             if (!_shopped)
             {
-                // Waiting by the guild for the others and the leader's split.
-                if (Waiting) { AdvCtx.Wander(a, ref _wanderTimer, dt); return; }
+                // Waiting round the big table for the others and the leader's split (P4-115).
+                if (Waiting) { AdvCtx.Wander(a, ref _wanderTimer, dt, HallUse.Table); return; }
                 Shop();
             }
             if (TimeInState < VisitSeconds) return;
@@ -982,7 +1062,9 @@ namespace GuildMaster.Adventurers
         public override void Enter()
         {
             Owner.Engage.Clear(); // resting, not fighting (P4-98)
-            Owner.Mover.SetDestination(AdvCtx.GuildDoor + GameRandom.Shared.InsideUnitCircle() * 1.2f, 0.3f);
+            // A chair at a table or a stool by the fire in the guild hall (P4-115); by the door when every seat is taken.
+            if (AdvCtx.HallPlace(Owner, HallUse.Seat, out var seat)) Owner.Mover.SetDestination(seat, 0.12f);
+            else Owner.Mover.SetDestination(AdvCtx.GuildDoor + GameRandom.Shared.InsideUnitCircle() * 1.2f, 0.3f);
         }
 
         public override void Tick(float dt)
