@@ -95,6 +95,41 @@ namespace GuildMaster.Fog
             }
         }
 
+        // ---------------- Save (P5-4) ----------------
+
+        /// <summary>What it remembers, to draw it again after a load: a monster's kind, or an item.</summary>
+        public string SourceId { get; set; }
+        public string SpeciesId { get; set; }
+        public bool Boss { get; set; }
+        public bool Ranged { get; set; }
+        public string ItemId { get; set; }
+
+        public Color BodyColor => _body.color;
+        public Vector3 BodyScale => _body.transform.localScale;
+        public bool BodyFlip => _body.flipX;
+        public Vector3 BarPosition => _bar.localPosition;
+
+        /// <summary>Draws a saved memory again with the given picture (the original sighting's copy is gone).</summary>
+        public void Restore(Sprite sprite, Color color, Vector3 scale, bool flip, Vector3 bar, string label, float hp, float hour)
+        {
+            Label = label;
+            HpRatio = hp;
+            SeenAtHour = hour;
+            _body.sprite = sprite;
+            _body.color = color;
+            _body.flipX = flip;
+            _body.transform.localScale = scale;
+            _bar.localPosition = bar;
+            bool showBar = HpRatio >= 0f && HpRatio < 0.999f;
+            _bar.gameObject.SetActive(showBar);
+            if (showBar)
+            {
+                float r = Mathf.Clamp01(HpRatio);
+                _barFill.localScale = new Vector3(BarWidth * r, BarHeight, 1f);
+                _barFill.localPosition = new Vector3(-BarWidth * (1f - r) * 0.5f, 0f, 0f);
+            }
+        }
+
         public void OnSpawned() { }
 
         public void OnDespawned()

@@ -37,10 +37,18 @@ namespace GuildMaster.Adventurers
         float _campCheck;
         int _enemies;
         int _nestNearby;
+        /// <summary>The known den whose territory we stand in (the one <see cref="_nestNearby"/> counts), null for none.</summary>
+        Nest _nestHere;
+        /// <summary>Per kind, those from the known dens round here that would pile in (P4-104b), worked out once a survey.</summary>
+        readonly System.Collections.Generic.Dictionary<MonsterDefinition, int> _crowd = new();
         HuntBand _band;
         /// <summary>Us and the members close enough to fight beside us, as the fight estimate sees them.</summary>
         readonly System.Collections.Generic.List<CombatStats> _bandStats = new();
         readonly System.Collections.Generic.List<float> _bandHp = new();
+        /// <summary>Each one's class, alongside <see cref="_bandStats"/> (P4-107: a researched kind's weakness or strength).</summary>
+        readonly System.Collections.Generic.List<AdventurerClass> _bandClasses = new();
+        /// <summary>The band as it stands against a researched kind, worked out once a count.</summary>
+        readonly System.Collections.Generic.Dictionary<MonsterDefinition, System.Collections.Generic.List<CombatStats>> _bandFor = new();
         static readonly System.Collections.Generic.List<Unit> AllyBuffer = new();
         /// <summary>How far out this band roams (P4-38): grows with what it could take on.</summary>
         float _reach = FreeHunt.Radius;
@@ -70,6 +78,8 @@ namespace GuildMaster.Adventurers
             _nextBackOffLine = 0f;
             _enemies = 1;
             _nestNearby = 0;
+            _nestHere = null;
+            _crowd.Clear();
             _surprises = 0;
             LegsWalked = 0;
             _correctionsAtAim = Owner.Mover.RouteCorrections;
@@ -78,15 +88,61 @@ namespace GuildMaster.Adventurers
             Owner.Mover.UnknownToMe = ExplorationRoute.KnowledgeOf(Services.TryGet<Fog.FogOfWar>(out var fog) ? fog : null);
             CountBand(Owner);
             _band = Services.TryGet<HuntBandService>(out var bands) ? bands.Join(Owner) : null;
+            // Back on the hunt after mending (P4-71): the band goes on, its time out still counted from the gate.
+            if (_band != null && _band.Paused)
+            {
+                _band.Paused = false;
+                _startHour = _band.SetOutHour;
+            }
             // With invitations out the leader has already asked (P4-51).
             bool inviting = _band != null && Services.TryGet<PartyService>(out var invites) && invites.IsGathering(_band);
             if (_band != null && _band.Leader == Owner && _band.Members.Count == 1 && !inviting) Owner.Say("사냥 나갈 사람?");
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class Saved
+        {
+            public float start_hour;
+            public bool scouting;
+            public int surprises;
+        }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved
+        {
+            start_hour = _startHour, scouting = _scouting, surprises = _surprises,
+        });
+
+        /// <summary>As <see cref="Enter"/>, but back in its band (restored with it) without asking around again.</summary>
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            _searchTimer = 0f;
+            _roamTimer = 0f;
+            _formationRepath = 0f;
+            _nextBackOffLine = 0f;
+            _enemies = 1;
+            _nestNearby = 0;
+            _nestHere = null;
+            _crowd.Clear();
+            _correctionsAtAim = Owner.Mover.RouteCorrections;
+            Owner.Mover.UnknownToMe = ExplorationRoute.KnowledgeOf(Services.TryGet<Fog.FogOfWar>(out var fog) ? fog : null);
+            CountBand(Owner);
+            // Only the band it was in (restored with the bands): joining would open a new one and
+            // ask everyone in town along again.
+            _band = Services.TryGet<HuntBandService>(out var bands) ? bands.BandOf(Owner) : null;
+            _startHour = s.start_hour;
+            _scouting = s.scouting;
+            _surprises = s.surprises;
         }
 
         public override void Exit()
         {
             Owner.Mover.SpeedMultiplier = 1f;
             Owner.Mover.UnknownToMe = null;
+            // Pulling back to mend (P4-71): still one of the band, which goes on afterwards.
+            if (_band != null && _band.Paused) { _band = null; return; }
             if (_band != null && !_band.Mustering) _band.GoingHome = true;
             if (Services.TryGet<HuntBandService>(out var bands)) bands.Leave(Owner);
             _band = null;
@@ -97,7 +153,41 @@ namespace GuildMaster.Adventurers
         /// <summary>Worth attacking: one we can handle (P4-43: nothing is spared any more).</summary>
         bool Huntable(Unit u)
             => u is Monster m && m.IsAlive && m.Def != null
-               && FreeHunt.CanTake(_bandStats, _bandHp, m.Stats, FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby));
+               && FreeHunt.CanTake(BandAgainst(m.Def), _bandHp, FoeAgainst(m.Def, m.Stats),
+                   FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby) + CrowdOf(m.Def));
+
+        /// <summary>
+        /// The band against a kind the guild has researched (P4-107, user decision 2026-10-27): each one's blows counted with
+        /// the kind's weakness or strength against its class, and mastery's edge; as it is for a kind not yet studied.
+        /// </summary>
+        System.Collections.Generic.List<CombatStats> BandAgainst(MonsterDefinition s)
+        {
+            if (s == null || Bestiary.BestiaryService.LevelOf(s) < 2) return _bandStats;
+            if (_bandFor.TryGetValue(s, out var band)) return band;
+            band = new System.Collections.Generic.List<CombatStats>(_bandStats.Count);
+            for (int i = 0; i < _bandStats.Count; i++)
+            {
+                var st = _bandStats[i];
+                if (i < _bandClasses.Count) st.Attack *= Bestiary.BestiaryService.KnownAttackFactor(s, _bandClasses[i]);
+                band.Add(st);
+            }
+            _bandFor[s] = band;
+            return band;
+        }
+
+        /// <summary>A mastered kind's blows, counted lighter.</summary>
+        static CombatStats FoeAgainst(MonsterDefinition s, CombatStats stats)
+        {
+            stats.Attack *= Bestiary.BestiaryService.KnownTakenFactor(s);
+            return stats;
+        }
+
+        /// <summary>The known dens of that kind round here, the one we stand at left out, that would pile in (P4-104b, as the den choice).</summary>
+        int CrowdOf(MonsterDefinition s)
+        {
+            if (!_crowd.TryGetValue(s, out int n)) _crowd[s] = n = AreaRisk.ExtraFoesAround(s, Owner.Position, _nestHere);
+            return n;
+        }
 
         /// <summary>What the guild expects at a den now: its last count, grown back since (P4-42).</summary>
         static int ExpectedAt(GuildIntel intel, Nest n)
@@ -111,6 +201,9 @@ namespace GuildMaster.Adventurers
 
         /// <summary>What may be fought at all: our own prey, plus anything that has just hit us.</summary>
         bool Allowed(Unit u) => Huntable(u) || Owner.WasRecentlyAttackedBy(u);
+
+        /// <summary>The two filters above as delegates, made once (P5-2).</summary>
+        System.Func<Unit, bool> _huntable, _allowed;
 
         public override void Tick(float dt)
         {
@@ -126,18 +219,22 @@ namespace GuildMaster.Adventurers
                 return;
             }
 
-            // Waiting at the gate for company (user request: hunt as a party).
+            // Waiting at the gate for company (user request: hunt as a party) — fighting what comes at the town first
+            // (P4-93: archers waiting by the gate watched the dragon burn the smithy).
             if (_band != null && _band.Mustering)
             {
+                if (a.HandleCombat(dt)) return;
                 if (!a.Mover.IsMoving && Vector2.Distance(a.Position, AdvCtx.GuildDoor) > 2f)
                     a.Mover.SetDestination(AdvCtx.GuildDoor, 1.5f);
                 return;
             }
 
-            if (a.HandleCombat(dt, Huntable, Allowed)) return;
+            if (a.HandleCombat(dt, _huntable ??= Huntable, _allowed ??= Allowed)) return;
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
             // Night out on a hunt: the band may make camp, then head home in the morning (P4-66).
             if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;
+            // A brave or greedy leader may make for the dragon's hoard instead (P4-93); the band follows it there.
+            if (Services.TryGet<Dragons.DragonService>(out var dragon) && dragon.RaidTick(a, _startHour, _band == null || _band.Leader == a)) return;
 
             _searchTimer -= dt;
             if (_searchTimer <= 0f)
@@ -170,7 +267,12 @@ namespace GuildMaster.Adventurers
             // whenever the terrain it discovers forces the walk to redraw its route, it re-aims at
             // once instead of trudging on along a plan made of guesses.
             var spot = Spot(a);
-            if (Vector2.Distance(a.Position, spot) < SpotReached) { spot = PickSpot(); _surprises = 0; }
+            if (Reached(a, spot))
+            {
+                ClimbTowerAt(a, spot);
+                spot = PickSpot();
+                _surprises = 0;
+            }
             bool surprised = a.Mover.RouteCorrections != _correctionsAtAim;
             if (a.Mover.IsMoving && !surprised) return;
             _roamTimer -= dt;
@@ -179,10 +281,29 @@ namespace GuildMaster.Adventurers
             if (surprised && ++_surprises >= ReconsiderAfterSurprises)
             {
                 // The way there keeps turning out worse than it looked: somewhere else, then.
-                spot = PickSpot();
+                spot = PickSpot(spot);
                 _surprises = 0;
             }
             AimLeg(a, spot);
+        }
+
+        /// <summary>
+        /// At the spot, or as close as the ground lets: a scouting spot picked in the fog may turn out
+        /// to be water or rock, and the walk then ends at the nearest walkable cell up to six away
+        /// (P4-73: the band stood there re-aiming at it for hours).
+        /// </summary>
+        static bool Reached(Adventurer a, Vector2 spot)
+        {
+            float d = Vector2.Distance(a.Position, spot);
+            if (d < SpotReached) return true;
+            return !a.Mover.IsMoving && d < 7f && !Services.Get<WorldService>().Grid.IsWalkable(GridMap.WorldToCell(spot));
+        }
+
+        /// <summary>At a watchtower it made for (P4-105c): up it goes, and the band with it sees the view.</summary>
+        void ClimbTowerAt(Adventurer a, Vector2 spot)
+        {
+            if (!_scouting || !Services.TryGet<Places.PlaceVisits>(out var visits) || visits.TowerAt(spot) is not { } tower) return;
+            visits.Climb(a, tower, _band?.Members);
         }
 
         /// <summary>
@@ -193,15 +314,16 @@ namespace GuildMaster.Adventurers
         void AimLeg(Adventurer a, Vector2 spot)
         {
             var world = Services.Get<WorldService>();
-            var fog = Services.TryGet<Fog.FogOfWar>(out var f) ? f : null;
             float caution = RouteChoice.ForParty(a);
-            _leg = ExplorationRoute.NextLeg(world, fog, a.Position, spot, caution, _scouting);
+            _leg = ExplorationRoute.NextLeg(world, a.Mover.UnknownToMe, a.Position, spot, caution, _scouting);
             _correctionsAtAim = a.Mover.RouteCorrections;
             // The band walks the leader's route (P4-63): its nerve decides how wide of the woods it goes.
             if (a.Mover.SetDestination(_leg, 1f, caution)) { LegsWalked++; return; }
+            // Somewhere else, not the same den again (P4-80: the best den was picked straight back,
+            // and the band tried the same unwalkable leg until a scouting roll took it elsewhere).
             if (++_surprises >= ReconsiderAfterSurprises)
             {
-                PickSpot();
+                PickSpot(spot);
                 _surprises = 0;
             }
         }
@@ -213,10 +335,21 @@ namespace GuildMaster.Adventurers
         bool ShouldGoHome(Adventurer a)
         {
             if (_band != null && _band.GoingHome) return true;
-            bool quest = AdvCtx.Board.AvailableFor(a).Any();
-            if (FreeHunt.ShouldGoHome(AdvCtx.Clock.TotalHours - _startHour, a.Data.LootCount, quest, a.HpRatio)) return true;
+            if (FreeHunt.ShouldGoHome(AdvCtx.Clock.TotalHours - _startHour, a.Data.LootCount, NewQuestWorthTaking(a), a.HpRatio)) return true;
             var leader = _band?.Leader;
             return leader != null && leader != a && leader.Fsm.Current == leader.ReturnState;
+        }
+
+        /// <summary>
+        /// A quest posted since this hunt set out that this member would consider taking. Any open quest
+        /// used to count (P4-77): one nobody would take — too dangerous, waiting for persuasion — sent every
+        /// band home the moment it left the guild, to decide on a hunt again, back and forth all day.
+        /// </summary>
+        bool NewQuestWorthTaking(Adventurer a)
+        {
+            foreach (var q in AdvCtx.Board.AvailableFor(a))
+                if (q.PostedAtHour >= _startHour && RuleBasedDecisionMaker.Score(a, q) > 0f) return true;
+            return false;
         }
 
         /// <summary>
@@ -230,29 +363,47 @@ namespace GuildMaster.Adventurers
             CountBand(a);
             _enemies = UnitRegistry.CountInRadius(a.Position, a.Stats.SightRadius, u => u is Monster m && m.IsAlive && a.CanSee(m)); // only what it sees (P4-48)
             _nestNearby = 0;
+            _nestHere = null;
+            _crowd.Clear();
             if (!Services.TryGet<GuildIntel>(out var intel)) return;
             foreach (var n in intel.KnownNests)
-                if (Vector2.Distance(n.WorldPosition, a.Position) <= NestNearRadius)
-                    _nestNearby = Mathf.Max(_nestNearby, intel.Get(n).LastCount);
+            {
+                if (Vector2.Distance(n.WorldPosition, a.Position) > NestNearRadius) continue;
+                int seen = intel.Get(n).LastCount;
+                if (_nestHere != null && seen <= _nestNearby) continue;
+                _nestNearby = Mathf.Max(_nestNearby, seen);
+                _nestHere = n;
+            }
         }
 
-        /// <summary>Ourselves first, then every living member within <see cref="FreeHunt.AllyRadius"/>.</summary>
+        /// <summary>Ourselves first, then every living member within <see cref="FreeHunt.AllyRadius"/> — a newcomer only itself (P4-99).</summary>
         void CountBand(Adventurer a)
         {
             _bandStats.Clear();
             _bandHp.Clear();
+            _bandClasses.Clear();
+            _bandFor.Clear();
             _bandStats.Add(a.Stats);
             _bandHp.Add(a.Hp);
+            _bandClasses.Add(a.Data.cls);
+            // A newcomer (P4-99, user decision 2026-10-21) hunts what it can take on its own, close in: no further than where
+            // the young are born no stronger than it — not out to the near ring every other hunt reaches.
+            if (a.IsNewcomer)
+            {
+                _reach = a.NewcomerReach;
+                return;
+            }
             UnitRegistry.Collect(a.Position, FreeHunt.AllyRadius, u => u != a && u is Adventurer m && m.IsGuildMember, AllyBuffer);
             foreach (var u in AllyBuffer)
             {
                 _bandStats.Add(u.Stats);
                 _bandHp.Add(u.Hp);
+                _bandClasses.Add(((Adventurer)u).Data.cls);
             }
             // Judged at full health: how far out the band goes is its strength, not today's scratches
             // (being hurt already sends it home, see FreeHunt.ShouldGoHome).
             _reach = Services.TryGet<EcosystemManager>(out var eco)
-                ? FreeHunt.RoamRadius(_bandStats, null, eco.Species)
+                ? FreeHunt.RoamRadius(_bandStats, null, eco.Species, eco.OutermostDistance)
                 : FreeHunt.Radius;
         }
 
@@ -309,10 +460,18 @@ namespace GuildMaster.Adventurers
                     var s = intel.SpeciesOf(n);
                     int count = ExpectedAt(intel, n);
                     if (s == null || count <= 0) continue;
+                    // A region lord's lair is gone to on its quest, not on a whim (P4-83): it is far beyond a den's danger.
+                    if (intel.KnownLordAt(n) != null) continue;
                     if (Vector2.Distance(n.WorldPosition, town) > _reach) continue;
                     if (Vector2.Distance(n.WorldPosition, a.Position) < SpotReached * 2f) continue;
                     if (avoid != null && Vector2.Distance(n.WorldPosition, avoid.Value) <= _reach * 0.3f) continue;
-                    if (!FreeHunt.CanTake(_bandStats, _bandHp, FreeHunt.StatsOf(s, n.BirthLevel), FreeHunt.ExpectedEnemies(1, s, count))) continue;
+                    // With the known dens next door that would pile in, and in known deep woods only a fight well within
+                    // the band's means (P4-104b: bands took a den at a time and died to the zone, or blind in the woods).
+                    int foes = FreeHunt.ExpectedEnemies(1, s, count) + AreaRisk.ExtraFoesAround(s, n.WorldPosition, n);
+                    bool deep = AreaRisk.KnownDeep(n.WorldPosition);
+                    if (deep && Guild.GuildLaws.KeepToTrails) continue; // the guild's rule keeps hunts out of the deep woods (P4-112)
+                    float share = deep ? DeepWoodRules.HuntLossShare : 1f;
+                    if (!FreeHunt.CanTake(BandAgainst(s), _bandHp, FoeAgainst(s, FreeHunt.StatsOf(s, n.BirthLevel)), foes, share)) continue;
                     float score = FreeHunt.DenScore(s, count, Vector2.Distance(n.WorldPosition, a.Position), n.BirthLevel);
                     if (score <= bestScore) continue;
                     bestScore = score;
@@ -321,7 +480,12 @@ namespace GuildMaster.Adventurers
                 }
             }
 
-            if (!found)
+            // A ruined watchtower the guild knows and nobody has climbed yet (P4-105c): the scouts make for it first — from its
+            // top the land round is seen at once.
+            if (!found && Services.TryGet<Places.PlaceVisits>(out var visits)
+                       && visits.TowerToClimb(a.Position, _reach, avoid, _reach * 0.3f) is { } tower)
+                chosen = tower.WorldPosition;
+            else if (!found)
             {
                 // Scouting: uniform in distance from town, so the near rings get walked too, and
                 // among the tries the one with the least explored ground around it (P4-64) — the
@@ -332,6 +496,8 @@ namespace GuildMaster.Adventurers
                 {
                     float angle = rng.Range(0f, Mathf.PI * 2f);
                     var p = town + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * FreeHunt.ScoutDistance(rng.Value, _reach);
+                    // P4-81: a reach into the outer land can be wider than the map is from the town.
+                    p = new Vector2(Mathf.Clamp(p.x, 2f, world.Grid.Width - 3f), Mathf.Clamp(p.y, 2f, world.Map.SurfaceHeight - 3f));
                     var cell0 = GridMap.WorldToCell(p);
                     // An unseen cell is a fine place to walk to; only known-blocked ground is moved off.
                     if (!ExplorationRoute.Unseen(fog, cell0))
@@ -339,7 +505,11 @@ namespace GuildMaster.Adventurers
                         if (!world.Grid.TryFindNearestWalkable(cell0, 3, out cell0)) continue;
                         p = GridMap.CellToWorld(cell0);
                     }
+                    // Not fog the ground seen round it walls in, though (P4-80).
+                    if (ExplorationRoute.Unseen(fog, cell0) && !ExplorationRoute.OpensOut(world.Grid, a.Mover.UnknownToMe, cell0)) continue;
                     if (world.Grid.IsInTown(cell0)) continue;
+                    // Not into deep woods it knows of (P4-103): a scout sees a cell or two in there, and is ambushed for it.
+                    if (fog != null && fog.IsExploredRaw(cell0) && world.Grid.IsDeep(cell0)) continue;
                     if (avoid != null && Vector2.Distance(p, avoid.Value) < _reach * 0.3f) continue;
                     float unseen = fog == null ? 0f : 1f - fog.ExploredFraction(p, 10f);
                     if (unseen <= bestUnseen) continue;

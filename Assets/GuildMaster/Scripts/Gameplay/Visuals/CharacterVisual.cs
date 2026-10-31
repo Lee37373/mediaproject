@@ -9,7 +9,14 @@ namespace GuildMaster.Visuals
     /// </summary>
     public class CharacterVisual : MonoBehaviour
     {
-        public const int BaseSortingOrder = 2000;
+        /// <summary>
+        /// Order of something standing at y = 0; one cell further north is 8 lower. On the 512 map (P4-81) the north
+        /// edge is 4096 lower, so this must stay above that plus the ground (0) and the telegraphs (6): at 2000 every
+        /// unit and building front north of y = 250 — our town too — was drawn under the ground. The overlays (fog,
+        /// bars, effects) sit above the highest unit, see <see cref="Fog.FogOfWar.SortingOrder"/>. P4-85: 4200 → 4800 —
+        /// the underground band above the surface reaches y = 588 (4704 lower), and the ruins' halls were under the ground.
+        /// </summary>
+        public const int BaseSortingOrder = 4800;
 
         SpriteRenderer _body;
         SpriteRenderer _shadow;
@@ -20,17 +27,21 @@ namespace GuildMaster.Visuals
         Color _tint = Color.white;
         bool _facingLeftOverride;
         float _faceOverrideTimer;
+        bool _shownLeft;
 
         public SpriteRenderer Body => _body;
 
-        // ---- People drawn with the CharacterMaker rig (2026-10-30, see HumanRig) ----
-        HumanRig _rig;
+        /// <summary>Times the sprite turned round (left ↔ right), never reset (a pooled unit keeps counting): read differences. Debug, P4-92.</summary>
+        public int Turns { get; private set; }
+
+        // ---- People drawn with the CharacterMaker rig (2026-10-30, see HumanRig; monsters use CharacterRig below) ----
+        HumanRig _humanRig;
         Units.Unit _unit;
         float _attackStamp;
         Color _rigTint = Color.white;
         bool _rigLying;
 
-        public HumanRig Rig => _rig;
+        public HumanRig Rig => _humanRig;
 
         /// <summary>
         /// Draws this character with the CharacterMaker rig (people only). False when that pack is not imported:
@@ -42,7 +53,7 @@ namespace GuildMaster.Visuals
             Init(null, 1f);
             var rig = HumanRig.Create(transform, look);
             if (rig == null) return false;
-            _rig = rig;
+            _humanRig = rig;
             // The rig has its own shadow and parts; the plain body sprite stays empty.
             _shadow.enabled = false;
             _unit = GetComponent<Units.Unit>();
@@ -51,7 +62,7 @@ namespace GuildMaster.Visuals
         }
 
         /// <summary>Plays the rig's skill swing (no-op for sprite characters).</summary>
-        public void PlaySkill() => _rig?.PlaySkill();
+        public void PlaySkill() => _humanRig?.PlaySkill();
 
         // ---- Frame animation (imported art, see ArtLibrary) ----
         CharacterAnimSet _anim;
@@ -61,6 +72,12 @@ namespace GuildMaster.Visuals
 
         /// <summary>Art faces left by default (flip logic inverted).</summary>
         public bool ArtFacesLeft { get; set; }
+
+        // ---- Rigged art (P4-110, see CharacterRig) ----
+        CharacterRig _rig;
+
+        /// <summary>Drawn by a rigged prefab (<see cref="InitRig"/>).</summary>
+        public bool HasRig => _rig != null;
 
         /// <summary>Uses animated frames (idle/run loops, one-shot death) instead of a single sprite.</summary>
         public void InitAnimated(CharacterAnimSet set, float scale = 1f)
@@ -73,14 +90,41 @@ namespace GuildMaster.Visuals
             _shadow.enabled = !set.HasShadow;
         }
 
-        /// <summary>Plays the death frames once (animated characters only).</summary>
+        /// <summary>
+        /// Drawn by a rigged prefab (P4-110) with its own shadow. The body keeps its still, never drawn, for what reads
+        /// one sprite: a fog ghost's copy, the corpse's colour.
+        /// </summary>
+        public void InitRig(CharacterArtCatalog.MonsterRig art, float scale = 1f)
+        {
+            if (_rig != null && _rig.Prefab != art.prefab) ReleaseRig();
+            InitBody(art.portrait, scale);
+            _body.forceRenderingOff = true;
+            _shadow.forceRenderingOff = true;
+            if (_rig == null) _rig = new CharacterRig(art.prefab, _bodyT, _body.sharedMaterial, _body.sortingLayerID);
+            else _rig.Reset();
+        }
+
+        void ReleaseRig()
+        {
+            _rig.Release();
+            _rig = null;
+        }
+
+        /// <summary>Plays the death frames once (animated characters and rigs only).</summary>
         public void PlayDeath()
         {
+            if (_humanRig != null) { _humanRig.PlayDeath(); return; }
             if (_rig != null) { _rig.PlayDeath(); return; }
             if (_anim == null || _anim.Die.Length == 0 || _dying) return;
             _dying = true;
             _animTime = 0f;
         }
+
+        /// <summary>Swings once (rigs only; a sprite has no blow to show).</summary>
+        public void PlayAttack() => _rig?.PlayAttack();
+
+        /// <summary>Flinches once (rigs only).</summary>
+        public void PlayHit() => _rig?.PlayHit();
 
         void TickAnimation(bool moving)
         {
@@ -96,6 +140,12 @@ namespace GuildMaster.Visuals
         }
 
         public void Init(Sprite sprite, float scale = 1f)
+        {
+            if (_rig != null) ReleaseRig();
+            InitBody(sprite, scale);
+        }
+
+        void InitBody(Sprite sprite, float scale)
         {
             if (_body == null)
             {
@@ -113,7 +163,10 @@ namespace GuildMaster.Visuals
             }
             _body.sprite = sprite;
             _anim = null;
+            SortingBoost = 0;
             if (_shadow) _shadow.enabled = true;
+            _body.forceRenderingOff = false;
+            _shadow.forceRenderingOff = false;
             _bodyT.localScale = Vector3.one * scale;
             _shadow.transform.localScale = new Vector3(scale, 0.45f * scale, 1f);
             _mover = GetComponent<PathFollower>();
@@ -126,25 +179,31 @@ namespace GuildMaster.Visuals
         /// <summary>Asleep by a campfire (P4-66): the body lies on its side, head away from the fire.</summary>
         public bool Lying { get; set; }
 
+        /// <summary>
+        /// Drawn this much above its row's usual order (P4-93: a flying dragon passes over what stands on the ground).
+        /// Reset by <see cref="Init"/>; stays below the fog.
+        /// </summary>
+        public int SortingBoost { get; set; }
+
         /// <summary>Extra transparency on top of the tint (1 = solid). Used by stealth, P4-19.</summary>
         public float Fade { get; set; } = 1f;
 
         void UpdateRig(bool moving, bool left)
         {
-            _rig.Face(left);
-            _rig.SetMoving(moving);
+            _humanRig.Face(left);
+            _humanRig.SetMoving(moving);
             // A new attack started (Combat sets the next attack time when it swings): play the swing.
             if (_unit != null && _unit.NextAttackTime > _attackStamp + 0.01f)
             {
                 _attackStamp = _unit.NextAttackTime;
-                _rig.PlayAttack();
+                _humanRig.PlayAttack();
             }
             if (Lying != _rigLying)
             {
                 _rigLying = Lying;
-                _rig.SetLying(Lying);
+                _humanRig.SetLying(Lying);
             }
-            _rig.SetSorting(BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f));
+            _humanRig.SetSorting(BaseSortingOrder + SortingBoost - Mathf.RoundToInt(transform.position.y * 8f));
             Color want;
             if (_flashTimer > 0f)
             {
@@ -155,7 +214,7 @@ namespace GuildMaster.Visuals
             if (want != _rigTint)
             {
                 _rigTint = want;
-                _rig.SetTint(want);
+                _humanRig.SetTint(want);
             }
         }
 
@@ -165,14 +224,25 @@ namespace GuildMaster.Visuals
             if (_body) _body.color = Shown(c);
         }
 
-        Color Shown(Color c) => new(c.r, c.g, c.b, c.a * Mathf.Clamp01(Fade));
+        /// <summary>A mark laid over the tint (P4-87: poison, chill, broken armour; white = none).</summary>
+        public Color StatusTint { get; set; } = Color.white;
+
+        Color Shown(Color c) => new(c.r * StatusTint.r, c.g * StatusTint.g, c.b * StatusTint.b, c.a * Mathf.Clamp01(Fade));
 
         public void Flash(float duration = 0.1f) => _flashTimer = duration;
+
+        /// <summary>
+        /// Within this many cells of straight above or below the target a unit keeps the way it faces (P4-92: skilled
+        /// units side-stepping round a target crossed above and below it every few frames and the sprite flickered).
+        /// </summary>
+        public const float FaceDeadZone = 0.3f;
 
         /// <summary>Face toward a world x position for a moment (e.g. when attacking).</summary>
         public void FaceTowards(Vector2 target)
         {
-            _facingLeftOverride = target.x < transform.position.x;
+            float dx = target.x - transform.position.x;
+            if (Mathf.Abs(dx) > FaceDeadZone) _facingLeftOverride = dx < 0f;
+            else if (_faceOverrideTimer <= 0f) _facingLeftOverride = _shownLeft;
             _faceOverrideTimer = 0.4f;
         }
 
@@ -180,15 +250,21 @@ namespace GuildMaster.Visuals
         {
             if (_body == null) return;
             bool moving = _mover != null && (_mover.IsMoving || _mover.IsSteering);
-            bool left = _faceOverrideTimer > 0f ? _facingLeftOverride : _mover != null && _mover.FacingLeft;
+            // Looking somewhere on purpose (a blow, a target), else the way it walks — and standing still, the way it
+            // last looked (P4-92: after each blow a unit turned back to where it had last walked, twice a swing).
+            bool left = _faceOverrideTimer > 0f ? _facingLeftOverride
+                      : moving && _mover != null ? _mover.FacingLeft
+                      : _shownLeft;
+            if (left != _shownLeft) { _shownLeft = left; Turns++; }
             _faceOverrideTimer -= Time.deltaTime;
-            if (_rig != null) { UpdateRig(moving, left); return; }
-            _body.flipX = ArtFacesLeft ? !left : left;
+            if (_humanRig != null) { UpdateRig(moving, left); return; }
+            // Rigs face left (P4-110).
+            _body.flipX = ArtFacesLeft || _rig != null ? !left : left;
 
             if (moving) _bobPhase += Time.deltaTime * 14f;
             else _bobPhase = Mathf.MoveTowards(_bobPhase, 0f, Time.deltaTime * 10f);
             // Animated art has its own motion; single sprites bob while walking.
-            float bob = moving && _anim == null ? Mathf.Abs(Mathf.Sin(_bobPhase)) * 0.08f : 0f;
+            float bob = moving && _anim == null && _rig == null ? Mathf.Abs(Mathf.Sin(_bobPhase)) * 0.08f : 0f;
             if (_anim != null) TickAnimation(moving);
             if (Lying)
             {
@@ -201,16 +277,19 @@ namespace GuildMaster.Visuals
                 _bodyT.localPosition = new Vector3(0f, -0.3f + bob, 0f);
             }
 
-            int order = BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f);
+            int order = BaseSortingOrder + SortingBoost - Mathf.RoundToInt(transform.position.y * 8f);
             _body.sortingOrder = order;
             _shadow.sortingOrder = order - 1;
 
+            Color shown;
             if (_flashTimer > 0f)
             {
                 _flashTimer -= Time.deltaTime;
-                _body.color = Shown(_flashTimer > 0f ? new Color(1f, 0.35f, 0.35f, _tint.a) : _tint);
+                shown = Shown(_flashTimer > 0f ? new Color(1f, 0.35f, 0.35f, _tint.a) : _tint);
             }
-            else if (!Mathf.Approximately(_body.color.a, _tint.a * Mathf.Clamp01(Fade))) _body.color = Shown(_tint);
+            else shown = Shown(_tint);
+            if (_body.color != shown) _body.color = shown;
+            _rig?.Tick(moving, _body.flipX, order, shown);
         }
     }
 }

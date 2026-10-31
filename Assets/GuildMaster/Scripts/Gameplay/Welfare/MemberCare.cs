@@ -35,6 +35,11 @@ namespace GuildMaster.Welfare
         public bool OnQuest;
         /// <summary>Free and in town (waiting, deciding, resting, at the guild): the only time they can quit.</summary>
         public bool InTownFree;
+        /// <summary>
+        /// In the middle of a fight, its own or its party's (P4-96): it does not walk off its quest then — that left a member
+        /// running home alone from a boss fight; it waits for the fight to be over.
+        /// </summary>
+        public bool InFight;
     }
 
     public readonly struct CareCheck
@@ -77,6 +82,35 @@ namespace GuildMaster.Welfare
         public QuitCause Cause { get; private set; }
 
         public bool Resigning => ResignAt > 0f;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        public class CareSave
+        {
+            public string member;
+            public CareDemand demand;
+            public float demand_raised, demand_cooldown, interview_ready, leave_ready, bonus_ready, leave_until;
+            public int grudges;
+            public float last_grudge, breaking_hours;
+            public bool warned;
+            public float resign_at;
+            public QuitCause cause;
+        }
+
+        internal CareSave Capture(string member) => new()
+        {
+            member = member, demand = Demand, demand_raised = DemandRaisedAt, demand_cooldown = DemandCooldownUntil,
+            interview_ready = InterviewReadyAt, leave_ready = LeaveReadyAt, bonus_ready = BonusReadyAt, leave_until = LeaveUntil,
+            grudges = Grudges, last_grudge = LastGrudgeAt, breaking_hours = BreakingHours, warned = Warned, resign_at = ResignAt, cause = Cause,
+        };
+
+        internal static MemberCare Restore(CareSave s) => new()
+        {
+            Demand = s.demand, DemandRaisedAt = s.demand_raised, DemandCooldownUntil = s.demand_cooldown, InterviewReadyAt = s.interview_ready,
+            LeaveReadyAt = s.leave_ready, BonusReadyAt = s.bonus_ready, LeaveUntil = s.leave_until, Grudges = s.grudges,
+            LastGrudgeAt = s.last_grudge, BreakingHours = s.breaking_hours, Warned = s.warned, ResignAt = s.resign_at, Cause = s.cause,
+        };
 
         public bool OnLeave(float now) => LeaveUntil > 0f && now < LeaveUntil;
 
@@ -221,7 +255,7 @@ namespace GuildMaster.Welfare
                 ResignAt = 0f;
                 steps |= CareStep.Quit;
             }
-            else if (s.OnQuest && s.Stress >= StressRules.BreakingAt && roll() < CareRules.SabotageChancePerHour)
+            else if (s.OnQuest && !s.InFight && s.Stress >= StressRules.BreakingAt && roll() < CareRules.SabotageChancePerHour)
             {
                 steps |= CareStep.Sabotage;
             }

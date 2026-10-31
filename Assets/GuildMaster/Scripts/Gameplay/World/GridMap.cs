@@ -11,6 +11,7 @@ namespace GuildMaster.World
         public readonly MapData Data;
         readonly bool[] _blocked;
         readonly bool[] _gateClosed;
+        readonly HazardKind[] _hazard;
 
         public int Width => Data.Width;
         public int Height => Data.Height;
@@ -23,6 +24,7 @@ namespace GuildMaster.World
             Data = data;
             _blocked = new bool[data.Width * data.Height];
             _gateClosed = new bool[data.Width * data.Height];
+            _hazard = new HazardKind[data.Width * data.Height];
         }
 
         public bool InBounds(Vector2Int c) => Data.InBounds(c);
@@ -66,9 +68,16 @@ namespace GuildMaster.World
         {
             int i = y * Width + x;
             var t = Data.Tiles[i];
-            float cost = MapData.MoveCost(t);
-            return t is TileType.Road or TileType.TownFloor or TileType.Gate ? cost : cost * TerrainRegions.MoveMultiplier(Data.Regions[i]);
+            float cost = MapData.MoveCost(t) * Hazards.CostFactor(_hazard[i]);
+            if (t is TileType.Road or TileType.TownFloor or TileType.Gate) return cost;
+            cost *= TerrainRegions.MoveMultiplier(Data.Regions[i]);
+            // The deep woods' undergrowth (P4-103), while they stand.
+            return Data.Deep[i] && !Hazards.ClearsForest(_hazard[i]) && t == TileType.Forest ? cost * DeepWoodRules.MoveFactor : cost;
         }
+
+        /// <summary>Deep woods standing here (P4-103: not burnt down).</summary>
+        public bool IsDeep(int x, int y) => Data.IsDeep(x, y) && IsForest(x, y);
+        public bool IsDeep(Vector2Int c) => IsDeep(c.x, c.y);
 
         /// <summary>Mountains, walls and buildings fully block projectiles / sight lines.</summary>
         public bool IsHardCover(int x, int y)
@@ -78,13 +87,33 @@ namespace GuildMaster.World
             return _blocked[i] || MapData.IsHardCover(Data.Tiles[i]);
         }
 
-        public bool HasTree(int x, int y) => Data.HasTree(x, y);
+        public bool HasTree(int x, int y) => Data.HasTree(x, y) && !Hazards.ClearsForest(_hazard[y * Width + x]);
 
         /// <summary>Forest floor (P4-48: blocks the view from outside, shortens it inside).</summary>
-        public bool IsForest(int x, int y) => Data.InBounds(x, y) && Data.Tiles[y * Width + x] == TileType.Forest;
+        public bool IsForest(int x, int y)
+            => Data.InBounds(x, y) && Data.Tiles[y * Width + x] == TileType.Forest && !Hazards.ClearsForest(_hazard[y * Width + x]);
         public bool IsForest(Vector2Int c) => IsForest(c.x, c.y);
 
         public float Cost(Vector2Int c) => Cost(c.x, c.y);
+
+        // ---------------- Hazards (P4-72) ----------------
+
+        public HazardKind HazardAt(int x, int y) => Data.InBounds(x, y) ? _hazard[y * Width + x] : HazardKind.None;
+        public HazardKind HazardAt(Vector2Int c) => HazardAt(c.x, c.y);
+
+        /// <summary>Lays a hazard on a cell (or clears it with <see cref="HazardKind.None"/>). Walkers re-check their paths when a wall of snow or a crack comes or goes.</summary>
+        public void SetHazard(Vector2Int c, HazardKind kind)
+        {
+            if (!Data.InBounds(c)) return;
+            int i = c.y * Width + c.x;
+            var old = _hazard[i];
+            if (old == kind) return;
+            _hazard[i] = kind;
+            if (Hazards.Blocks(old) != Hazards.Blocks(kind)) Version++;
+        }
+
+        /// <summary>The tiles themselves changed (P4-86: the walls moved out): walkers re-check their paths.</summary>
+        public void TerrainChanged() => Version++;
 
         public void SetBlocked(RectInt area, bool blocked)
         {
@@ -102,9 +131,13 @@ namespace GuildMaster.World
 
         public bool IsInTown(Vector2 world) => IsInTown(WorldToCell(world));
 
-        /// <summary>Spiral search for the nearest walkable cell (used when a target is inside an obstacle).</summary>
-        public bool TryFindNearestWalkable(Vector2Int origin, int maxRadius, out Vector2Int result)
+        /// <summary>
+        /// Spiral search for the nearest walkable cell (used when a target is inside an obstacle). A monster's search
+        /// (<paramref name="passesGates"/> false) skips what is shut to it: the gates, and the guild hall's floor (P4-115).
+        /// </summary>
+        public bool TryFindNearestWalkable(Vector2Int origin, int maxRadius, out Vector2Int result, bool passesGates = true)
         {
+            bool IsWalkable(Vector2Int c) => this.IsWalkable(c, passesGates);
             if (IsWalkable(origin)) { result = origin; return true; }
             for (int r = 1; r <= maxRadius; r++)
             {

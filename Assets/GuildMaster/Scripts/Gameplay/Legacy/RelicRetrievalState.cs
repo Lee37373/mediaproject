@@ -40,6 +40,31 @@ namespace GuildMaster.Legacy
             if (!a.Mover.SetDestination(_target, 0.8f)) _cannotReach = true;
         }
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class Saved
+        {
+            public int record = -1;
+            public Vector2 target;
+        }
+
+        /// <summary>Save id of a fallen member's record (registered by <see cref="GuildLegacy"/>).</summary>
+        public static string RecordKey(int id) => "fallen:" + id;
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved { record = Record?.Id ?? -1, target = _target });
+
+        public override void ResumeState(string json, Core.SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            Record = s.record >= 0 ? ctx.Find<FallenRecord>(RecordKey(s.record)) : null;
+            _target = s.target;
+            _linger = 0f;
+            _cannotReach = false;
+            _timeout = AdvCtx.Clock.HoursToSeconds(LegacyRules.RetrievalHours);
+            if (!Owner.Mover.SetDestination(_target, 0.8f)) _cannotReach = true;
+        }
+
         public override void Tick(float dt)
         {
             var a = Owner;

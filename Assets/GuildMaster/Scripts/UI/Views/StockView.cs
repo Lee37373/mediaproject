@@ -92,7 +92,9 @@ namespace GuildMaster.UI
         {
             var trade = Services.Get<TradeService>();
             _rateLabel.text = $"전리품 매입가 배율: {UIBuilder.Colored($"x{trade.LootBuyRate:0.00}", UITheme.Accent)}  ·  상품 판매가 배율 x{trade.GoodsSellRate:0.00}";
-            _priceHint.text = "매입가를 높이면 모험가가 더 많은 골드를 벌어 장비와 물약을 사고, 낮추면 길드 자금을 아낄 수 있습니다.";
+            _priceHint.text = Guild.GuildLaws.LootShare < 1f
+                ? UIBuilder.Colored($"길드 규칙 '전리품 길드 귀속': 매입가의 {Guild.GuildLawRules.LootFeeShare * 100f:0}%만 수고비로 줍니다.", UITheme.Warn)
+                : "매입가를 높이면 모험가가 더 많은 골드를 벌어 장비와 물약을 사고, 낮추면 길드 자금을 아낄 수 있습니다.";
 
             var t = Services.Get<GuildTreasury>();
             var db = Services.Get<GameDatabase>();
@@ -107,9 +109,9 @@ namespace GuildMaster.UI
             for (int i = 0; i < items.Count; i++)
             {
                 var (item, count) = items[i];
-                string cat = item.category switch { ItemCategory.Material => "재료", ItemCategory.Potion => "물약", _ => "장비" };
+                string cat = item.category switch { ItemCategory.Material => "재료", ItemCategory.Potion => "물약", ItemCategory.Tool => "도구", _ => "장비" };
                 string price = item.category == ItemCategory.Material
-                    ? $"매입가 {trade.LootPrice(item)}G"
+                    ? $"매입가 {trade.LootPay(item)}G"
                     : $"판매가 {trade.GoodsPrice(item)}G";
                 _rows[i].text = $"<color=#{UITheme.Hex(item.color)}>■</color> {item.displayName} x{count}  {UIBuilder.Colored($"[{cat}] 기준가 {item.baseValue}G · {price}", UITheme.TextMuted)}";
             }

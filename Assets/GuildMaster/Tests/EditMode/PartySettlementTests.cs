@@ -1,6 +1,5 @@
 using System.Linq;
 using GuildMaster.Adventurers;
-using GuildMaster.Adventurers.Prompts;
 using NUnit.Framework;
 
 namespace GuildMaster.Tests
@@ -78,18 +77,6 @@ namespace GuildMaster.Tests
             var none = new[] { 10, 20 };
             PartySettlement.GiveTheFallensShares(new[] { false, false }, none);
             Assert.That(none, Is.EqualTo(new[] { 0, 0 }), "nobody left to pay");
-        }
-
-        [Test]
-        public void LeaderAnswer_IsScaledToThePool_AndRejectedWhenEmpty()
-        {
-            var dto = new SplitPrompt.ResponseDto { m1 = 60, m2 = 30, m3 = 30, say = "고생했어." };
-            Assert.That(SplitPrompt.TryInterpret(dto, 3, 240, out var shares, out var say), Is.True);
-            Assert.That(shares, Is.EqualTo(new[] { 120, 60, 60 }), "the model's arithmetic is not trusted");
-            Assert.That(say, Is.EqualTo("고생했어."));
-
-            Assert.That(SplitPrompt.TryInterpret(new SplitPrompt.ResponseDto(), 2, 100, out _, out _), Is.False, "all zero → rule split");
-            Assert.That(SplitPrompt.Grammar(3), Does.Contain("m3").And.Not.Contain("m4"));
         }
     }
 }

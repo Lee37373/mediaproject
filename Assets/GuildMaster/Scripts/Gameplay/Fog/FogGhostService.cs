@@ -12,7 +12,7 @@ namespace GuildMaster.Fog
     /// same subject is seen and lost again. Discovered nests get the same treatment in place:
     /// they are tinted as a memory while out of sight.
     /// </summary>
-    public class FogGhostService : MonoBehaviour
+    public class FogGhostService : MonoBehaviour, ISaveable, ISaveLink
     {
         const float SweepInterval = 0.25f;
         /// <summary>
@@ -61,6 +61,7 @@ namespace GuildMaster.Fog
 
             var ghost = _pool.Spawn<FogGhost>(FogGhost.PoolKey, subject.GhostBody.transform.position);
             ghost.Capture(subject, _clock.TotalHours);
+            NoteSource(ghost, subject);
             _ghosts.Add(ghost);
             _bySubject[h] = ghost;
         }
@@ -132,5 +133,105 @@ namespace GuildMaster.Fog
 
         /// <summary>"3시간 전" / "방금" for a sighting time in total game hours.</summary>
         public string AgoText(float hour) => _clock.AgoText(hour);
+
+        // ---------------- Save (P5-4) ----------------
+
+        /// <summary>Remembers what the ghost shows, so a load can draw it again without the original.</summary>
+        static void NoteSource(FogGhost ghost, IFogGhostSubject subject)
+        {
+            ghost.SourceId = null;
+            ghost.SpeciesId = null;
+            ghost.ItemId = null;
+            switch (subject)
+            {
+                case Monsters.Monster m:
+                    ghost.SourceId = m.UnitId;
+                    ghost.SpeciesId = m.Def != null ? m.Def.id : null;
+                    ghost.Boss = m.IsBoss;
+                    ghost.Ranged = m.IsRangedVariant;
+                    break;
+                case Items.GroundItem g:
+                    ghost.ItemId = g.Item != null ? g.Item.id : null;
+                    break;
+            }
+        }
+
+        [System.Serializable]
+        class SavedGhost
+        {
+            public string source;
+            public string species;
+            public bool boss;
+            public bool ranged;
+            public string item;
+            public Vector3 position;
+            public Color color;
+            public Vector3 scale;
+            public bool flip;
+            public Vector3 bar;
+            public string label;
+            public float hp;
+            public float hour;
+        }
+
+        [System.Serializable]
+        class SaveData { public List<SavedGhost> ghosts = new(); }
+
+        SaveData _restoring;
+        readonly List<FogGhost> _restored = new();
+
+        public string SaveKey => "ghosts";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var g in _ghosts)
+            {
+                if (g == null || !g.IsActive) continue;
+                s.ghosts.Add(new SavedGhost
+                {
+                    source = g.SourceId, species = g.SpeciesId, boss = g.Boss, ranged = g.Ranged, item = g.ItemId,
+                    position = g.transform.position, color = g.BodyColor, scale = g.BodyScale, flip = g.BodyFlip, bar = g.BarPosition,
+                    label = g.Label, hp = g.HpRatio, hour = g.SeenAtHour,
+                });
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        /// <summary>Each memory drawn again from its kind's picture (a monster's art, an item's dot).</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            var db = Services.Get<Data.GameDatabase>();
+            _restored.Clear();
+            foreach (var sg in _restoring.ghosts)
+            {
+                Sprite sprite = null;
+                if (db.Monster(sg.species) is { } def) sprite = Monsters.Monster.ArtFor(def, sg.boss, sg.ranged);
+                else if (!string.IsNullOrEmpty(sg.item)) sprite = Items.GroundItem.DotSprite;
+                var ghost = _pool.Spawn<FogGhost>(FogGhost.PoolKey, sg.position);
+                ghost.Restore(sprite, sg.color, sg.scale, sg.flip, sg.bar, sg.label, sg.hp, sg.hour);
+                ghost.SourceId = sg.source;
+                ghost.SpeciesId = sg.species;
+                ghost.Boss = sg.boss;
+                ghost.Ranged = sg.ranged;
+                ghost.ItemId = sg.item;
+                _ghosts.Add(ghost);
+                _restored.Add(ghost);
+            }
+        }
+
+        /// <summary>A memory of a monster still alive belongs to it again (seeing and losing it replaces the memory).</summary>
+        public void Link(SaveContext ctx)
+        {
+            for (int i = 0; i < _restored.Count; i++)
+            {
+                var id = _restoring.ghosts[i].source;
+                if (string.IsNullOrEmpty(id)) continue;
+                if (ctx.Find<Units.Unit>(id) is { } u && u.GetComponent<FogHideable>() is { } h) _bySubject[h] = _restored[i];
+            }
+            _restored.Clear();
+            _restoring = null;
+        }
     }
 }

@@ -22,13 +22,100 @@ namespace GuildMaster.World
 
         public Vector2 TownCenterWorld => GridMap.CellToWorld(Map.TownCenter);
 
-        public Bounds WorldBounds => new(new Vector3(Map.Width / 2f, Map.Height / 2f), new Vector3(Map.Width, Map.Height));
+        /// <summary>
+        /// Cells the walls have moved out since the start (P4-86: 0, 4, 8, 12). Distances "from the town" that mean
+        /// "out past the walls" add it, so they keep their gap from the walls as the town grows.
+        /// </summary>
+        public int TownGrowth => Map.TownHalfSize - Map.BaseTownHalfSize;
 
-        /// <summary><paramref name="caution"/> weighs risky ground (P4-63, <see cref="RouteRisk"/>); 0 is the shortest way.</summary>
+        /// <summary>The surface (P4-85: the underground band above it is not the land the camera roams).</summary>
+        public Bounds WorldBounds => new(new Vector3(Map.Width / 2f, Map.SurfaceHeight / 2f), new Vector3(Map.Width, Map.SurfaceHeight));
+
+        /// <summary>The dungeon the camera looks into at this point (with a little dark round it), or null on the surface.</summary>
+        public Bounds? UndergroundBoundsAt(Vector2 p)
+        {
+            var ruin = Map.RuinAt(GridMap.WorldToCell(p));
+            if (ruin == null) return null;
+            var a = ruin.Area;
+            return new Bounds(new Vector3(a.center.x, a.center.y), new Vector3(a.width + 8f, a.height + 8f));
+        }
+
+        // ---------------- Portals (P4-85 ruins) ----------------
+
+        /// <summary>
+        /// Where a point is as far as the surface goes: down in a ruin, its way down (a dungeon's coordinates are hundreds of
+        /// cells from the town; the walk home is from the ruin). Anywhere else, the point itself.
+        /// </summary>
+        public Vector2 OnTheSurface(Vector2 p)
+        {
+            if (p.y < Map.SurfaceHeight) return p;
+            var ruin = Map.RuinAt(GridMap.WorldToCell(p));
+            return ruin != null ? GridMap.CellToWorld(ruin.Entrance) : p;
+        }
+
+        /// <summary>The portal on the other side of this cell (a ruin's way down or up), if it is one.</summary>
+        public bool TryGetPortalExit(Vector2Int c, out Vector2Int exit)
+        {
+            foreach (var r in Map.Ruins)
+            {
+                if (r.Entrance == c) { exit = r.Inside; return true; }
+                if (r.Inside == c) { exit = r.Entrance; return true; }
+            }
+            exit = default;
+            return false;
+        }
+
+        /// <summary>Which side of the portals a cell is on: 0 the surface, 1 + a ruin's index its dungeon, -1 the dark between.</summary>
+        public int LayerOf(Vector2Int c)
+        {
+            if (c.y < Map.SurfaceHeight) return 0;
+            var r = Map.RuinAt(c);
+            return r != null ? r.Index + 1 : -1;
+        }
+
+        static readonly List<Vector2Int> s_leg = new();
+
+        /// <summary>
+        /// <paramref name="caution"/> weighs risky ground (P4-63, <see cref="RouteRisk"/>); 0 is the shortest way. Between the
+        /// surface and a dungeon (P4-85) the route goes through the ruin's way down or up: one leg to the portal, a step to
+        /// its other side (two cells far apart in the result — <see cref="PathFollower"/> steps through), and the rest.
+        /// </summary>
         public bool FindPath(Vector2 from, Vector2 to, List<Vector2Int> result, bool passesGates = true,
             System.Func<int, int, bool> believedShut = null, float caution = 0f,
             System.Func<int, int, bool> unknown = null)
-            => Pathfinder.FindPathWorld(from, to, result, passesGates, believedShut, caution, unknown);
+        {
+            if (Map.Ruins.Count == 0) return Pathfinder.FindPathWorld(from, to, result, passesGates, believedShut, caution, unknown);
+            var a = GridMap.WorldToCell(from);
+            var b = GridMap.WorldToCell(to);
+            int la = LayerOf(a), lb = LayerOf(b);
+            if (la == lb || la < 0 || lb < 0) return Pathfinder.FindPath(a, b, result, passesGates, believedShut, caution, unknown);
+            result.Clear();
+            var at = a;
+            if (la > 0)
+            {
+                var up = Map.Ruins[la - 1];
+                if (!Pathfinder.FindPath(at, up.Inside, s_leg, passesGates, believedShut, caution, unknown)) return false;
+                Append(result, s_leg);
+                result.Add(up.Entrance);
+                at = up.Entrance;
+            }
+            if (lb > 0)
+            {
+                var down = Map.Ruins[lb - 1];
+                if (!Pathfinder.FindPath(at, down.Entrance, s_leg, passesGates, believedShut, caution, unknown)) return false;
+                Append(result, s_leg);
+                result.Add(down.Inside);
+                at = down.Inside;
+            }
+            if (!Pathfinder.FindPath(at, b, s_leg, passesGates, believedShut, caution, unknown)) return false;
+            Append(result, s_leg);
+            return true;
+        }
+
+        static void Append(List<Vector2Int> into, List<Vector2Int> leg)
+        {
+            foreach (var c in leg) if (into.Count == 0 || into[^1] != c) into.Add(c);
+        }
 
         /// <summary>
         /// Grid ray cast (Amanatides–Woo DDA) from a to b. Stops at the first hard-cover cell
@@ -87,7 +174,10 @@ namespace GuildMaster.World
 
         static float Sq(float x) => x * x;
 
-        /// <summary>True if a straight segment crosses only walkable cells (used for path smoothing).</summary>
+        /// <summary>
+        /// True if a straight segment crosses only walkable cells free of the hazards a path goes round (used for path
+        /// smoothing, footwork and kiting spots; P4-98: <see cref="Hazards.KeepsLinesOff"/>).
+        /// </summary>
         public bool HasClearLine(Vector2 a, Vector2 b)
         {
             float dist = Vector2.Distance(a, b);
@@ -96,14 +186,16 @@ namespace GuildMaster.World
             {
                 var p = Vector2.Lerp(a, b, i / (float)steps);
                 var c = GridMap.WorldToCell(p);
-                if (!Grid.IsWalkable(c)) return false;
+                if (!Open(c)) return false;
                 // Reject lines that clip wall corners.
                 var off = new Vector2(p.x - c.x - 0.5f, p.y - c.y - 0.5f);
                 var sx = new Vector2Int(c.x + (off.x > 0.3f ? 1 : off.x < -0.3f ? -1 : 0), c.y);
                 var sy = new Vector2Int(c.x, c.y + (off.y > 0.3f ? 1 : off.y < -0.3f ? -1 : 0));
-                if (!Grid.IsWalkable(sx) || !Grid.IsWalkable(sy)) return false;
+                if (!Open(sx) || !Open(sy)) return false;
             }
             return true;
         }
+
+        bool Open(Vector2Int c) => Grid.IsWalkable(c) && !Hazards.KeepsLinesOff(Grid.HazardAt(c));
     }
 }

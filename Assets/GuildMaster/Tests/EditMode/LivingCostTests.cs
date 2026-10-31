@@ -1,5 +1,4 @@
 using GuildMaster.Adventurers;
-using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Economy;
 using GuildMaster.Recruitment;
 using GuildMaster.Reports;
@@ -45,10 +44,9 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void Debt_CountsAgainstMoney_InThePromptAndOnScreen()
+        public void Debt_CountsAgainstMoney_OnScreen()
         {
-            Assert.That(DecisionPrompt.MoneyLabel(LivingCostRules.NetWorth(200, 0)), Is.EqualTo("넉넉"));
-            Assert.That(DecisionPrompt.MoneyLabel(LivingCostRules.NetWorth(0, 20)), Is.EqualTo("부족"), "owing is short of money");
+            Assert.That(LivingCostRules.NetWorth(0, 20), Is.LessThan(0), "owing is short of money");
             Assert.That(LivingCostRules.Purse(120, 0), Is.EqualTo("골드 120"));
             Assert.That(LivingCostRules.Purse(0, 30), Is.EqualTo("골드 0 (빚 30)"));
         }

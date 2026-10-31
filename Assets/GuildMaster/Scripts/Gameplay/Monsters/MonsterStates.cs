@@ -81,7 +81,9 @@ namespace GuildMaster.Monsters
             var m = Owner;
             var target = m.Engage.Target;
             // Too far from home and nothing keeps it here (see MonsterLeash for the whole rule).
-            if (MonsterLeash.ShouldReturn(m))
+            bool leash;
+            using (s_leashMarker.Auto()) leash = MonsterLeash.ShouldReturn(m);
+            if (leash)
             {
                 m.Engage.Clear();
                 Machine.ChangeState(m.ReturnState);
@@ -90,6 +92,7 @@ namespace GuildMaster.Monsters
 
             // Veterans losing a fight drag the pursuer through another species' territory (P4-18).
             if (m.Tier >= CombatTier.Veteran && m.HpRatio < 0.35f && Time.time >= m.NextLureTime)
+            using (s_lureMarker.Auto())
             {
                 m.NextLureTime = Time.time + 20f;
                 var pursuer = Ecosystem.TerritoryTactics.FindPursuer(m);
@@ -102,9 +105,13 @@ namespace GuildMaster.Monsters
             }
 
             // Skilled+ monsters losing a fight alone fall back to their pack and strike back together (P4-28).
-            if (m.TryStartRegroup()) return;
+            using (s_regroupMarker.Auto())
+                if (m.TryStartRegroup()) return;
 
-            if (m.Engage.Tick(dt) == EngageStatus.Lost)
+            EngageStatus status;
+            using (s_engageMarker.Auto()) status = m.Engage.Tick(dt);
+            if (status == EngageStatus.Lost)
+            using (s_lostMarker.Auto())
             {
                 // Chased someone back behind the walls (P4-39, user decision): the gate is what is
                 // in the way, so break it.
@@ -117,6 +124,10 @@ namespace GuildMaster.Monsters
         }
 
         public override void Exit() => Owner.Mover.Stop();
+
+        static readonly Unity.Profiling.ProfilerMarker s_leashMarker = new("MonsterEngage.Leash"),
+            s_regroupMarker = new("MonsterEngage.Regroup"), s_engageMarker = new("MonsterEngage.Engagement"),
+            s_lureMarker = new("MonsterEngage.Lure"), s_lostMarker = new("MonsterEngage.Lost");
     }
 
     /// <summary>Run directly away from a predator until out of sight.</summary>
@@ -133,6 +144,24 @@ namespace GuildMaster.Monsters
         {
             _repath = 0f;
             Owner.Mover.SpeedMultiplier = 1.25f;
+        }
+
+        [System.Serializable]
+        class Saved
+        {
+            public string from;
+            public Vector2 point;
+        }
+
+        public override string SaveState()
+            => JsonUtility.ToJson(new Saved { from = From != null && From.IsAlive ? From.UnitId : null, point = FromPoint });
+
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            From = ctx.Find<Unit>(s.from);
+            FromPoint = s.point;
+            Enter();
         }
 
         public override void Tick(float dt)
@@ -172,6 +201,17 @@ namespace GuildMaster.Monsters
 
         public override string Label => "유인";
 
+        [System.Serializable]
+        class Saved { public Vector2 point; }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved { point = Point });
+
+        public override void ResumeState(string json, SaveContext ctx)
+        {
+            Point = JsonUtility.FromJson<Saved>(json).point;
+            Enter();
+        }
+
         public override void Enter()
         {
             var m = Owner;
@@ -193,6 +233,13 @@ namespace GuildMaster.Monsters
     /// <summary>Walk back to the nest, regenerating health on the way.</summary>
     public class MonsterReturnState : State<Monster>
     {
+        /// <summary>
+        /// This close to the den is home. The walk aims at the den's very centre, and pack mates standing or
+        /// fighting there could hold one back just short of it for hours, walking on the spot (P4-77:
+        /// measured 4.1 game hours at 1.4 cells, not defending anything meanwhile).
+        /// </summary>
+        const float HomeRadius = 2f;
+
         public override string Label => "귀소";
 
         public override void Enter()
@@ -206,7 +253,9 @@ namespace GuildMaster.Monsters
             var m = Owner;
             m.Heal(m.Stats.MaxHp * 0.05f * dt);
             // Home: its default life (wandering, or the pack's road if it roams), not always wandering.
-            if (!m.Mover.IsMoving) m.GoToDefaultState();
+            if (m.Mover.IsMoving && (m.Position - m.HomePosition).sqrMagnitude > HomeRadius * HomeRadius) return;
+            m.Mover.Stop();
+            m.GoToDefaultState();
         }
     }
 }

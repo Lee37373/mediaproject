@@ -10,7 +10,7 @@ namespace GuildMaster.Visuals
         const string RingKey = "fx.ring";
         const string SparkKey = "fx.spark";
         const string LineKey = "fx.line";
-        public const int SortingOrder = 2960;
+        public const int SortingOrder = Fog.FogOfWar.SortingOrder - 40;
 
         PoolService _pool;
 

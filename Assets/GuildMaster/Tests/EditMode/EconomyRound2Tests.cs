@@ -40,7 +40,7 @@ namespace GuildMaster.Tests
         [Test]
         public void BuyingFood_CostsGuildGold()
         {
-            var treasury = new GuildTreasury(100, 0, 0f, 0);
+            var treasury = new GuildTreasury(100, 0);
             var store = new FoodStore(null, treasury, 2);
             try
             {

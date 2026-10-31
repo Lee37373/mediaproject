@@ -12,8 +12,30 @@ namespace GuildMaster.Town
     /// navigation grid shut to monsters where a gate stands, and repairs broken or battered gates
     /// for gold (user decision 2026-09-21).
     /// </summary>
-    public class GateService : MonoBehaviour
+    public class GateService : MonoBehaviour, ISaveable
     {
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData { public List<float> hp = new(); }
+
+        public string SaveKey => "gates";
+
+        /// <summary>Durability per gate, in the map's gate order (the same for the same seed).</summary>
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var g in _gates) s.hp.Add(g.Hp);
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            if (s.hp.Count != _gates.Count) ctx.Warnings.Add($"gates: saved {s.hp.Count}, map has {_gates.Count}");
+            for (int i = 0; i < _gates.Count && i < s.hp.Count; i++) _gates[i].RestoreHp(s.hp[i]);
+        }
+
         /// <summary>A monster this close to a gate keeps the carpenters away.</summary>
         public const float RepairSafeDistance = 4f;
 
@@ -21,7 +43,7 @@ namespace GuildMaster.Town
         WorldService _world;
         GuildTreasury _treasury;
 
-        public IReadOnlyList<TownGate> Gates => _gates;
+        public ListView<TownGate> Gates => new(_gates);
         public float RepairGoldPerHp { get; private set; }
 
         public void Init(WorldService world, GuildTreasury treasury, float maxHp, float repairGoldPerHp)
@@ -40,6 +62,23 @@ namespace GuildMaster.Town
                 gate.Init(this, cell, outward, maxHp);
                 _gates.Add(gate);
                 world.Grid.SetGateClosed(gate.Cells, true);
+            }
+            UpdateSealed();
+        }
+
+        /// <summary>
+        /// The walls moved out (P4-86): each gate moves to its place in the map's gate list. New walls come with
+        /// whole gates (<paramref name="mend"/>); a saved town being rebuilt keeps the durability it loaded.
+        /// </summary>
+        public void FollowWalls(bool mend)
+        {
+            for (int i = 0; i < _gates.Count && i < _world.Map.Gates.Count; i++)
+            {
+                var g = _gates[i];
+                _world.Grid.SetGateClosed(g.Cells, false);
+                g.MoveTo(_world.Map.Gates[i]);
+                if (mend && g.Hp < g.MaxHp) g.RestoreHp(g.MaxHp);
+                _world.Grid.SetGateClosed(g.Cells, !g.IsBroken);
             }
             UpdateSealed();
         }
@@ -110,7 +149,7 @@ namespace GuildMaster.Town
         {
             if (CannotRepairReason(g) != null) return false;
             int cost = RepairCost(g);
-            if (_treasury != null && !_treasury.TrySpendGold(cost)) return false;
+            if (_treasury != null && !_treasury.TrySpendGold(cost, GoldReason.Repair)) return false;
             g.RepairFull();
             if (Services.TryGet<Session.GameLog>(out var log))
                 log.Add($"{g.DisplayName}을 수리했습니다(-{cost}G).", Session.LogCategory.Economy);

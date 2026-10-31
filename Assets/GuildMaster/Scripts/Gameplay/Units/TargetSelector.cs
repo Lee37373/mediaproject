@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace GuildMaster.Units
@@ -21,21 +22,38 @@ namespace GuildMaster.Units
         /// <summary>Best candidate within radius passing the filter (and not ignored by the engagement), or null.</summary>
         public static Unit Pick(Unit self, float radius, Func<Unit, bool> filter, Engagement engage = null)
         {
-            Unit best = null;
-            float bestScore = float.NegativeInfinity;
-            float r2 = radius * radius;
-            foreach (var u in UnitRegistry.All)
+            // Filters may pick targets of their own: a nested call gets its own list.
+            var near = s_depth++ == 0 ? s_near : new List<Unit>();
+            try
             {
-                if (u == null || u == self || !u.IsAlive) continue;
-                if ((u.Position - self.Position).sqrMagnitude > r2) continue;
-                if (filter != null && !filter(u)) continue;
-                if (engage != null && engage.IsIgnoring(u)) continue;
-                if (!u.IsTargetableBy(self)) continue;
-                float s = Score(self, u, self.Tier, engage?.Target);
-                if (s > bestScore) { bestScore = s; best = u; }
+                UnitRegistry.Collect(self.Position, radius, near);
+                Unit best = null;
+                float bestScore = float.NegativeInfinity;
+                var tier = self.Tier;
+                var current = engage?.Target;
+                foreach (var u in near)
+                {
+                    if (u == self || !Combat.CanReach(self, u)) continue;
+                    // Scored first: the filter (a line-of-sight walk) only matters for whoever would win.
+                    float s = Score(self, u, tier, current);
+                    if (s <= bestScore) continue;
+                    if (filter != null && !filter(u)) continue;
+                    if (engage != null && engage.IsIgnoring(u)) continue;
+                    if (!u.IsTargetableBy(self)) continue;
+                    bestScore = s;
+                    best = u;
+                }
+                return best;
             }
-            return best;
+            finally
+            {
+                s_depth--;
+                if (near == s_near) near.Clear();
+            }
         }
+
+        static readonly List<Unit> s_near = new();
+        static int s_depth;
 
         public static float Score(Unit self, Unit u, CombatTier tier, Unit current)
         {
@@ -50,7 +68,10 @@ namespace GuildMaster.Units
             if (tier == CombatTier.Instinct) return score;
 
             // Allies already fighting this candidate (same side as us, targeting it).
-            int crowd = UnitRegistry.CountInRadius(u.Position, CrowdRadius, a => IsAlly(self, a) && a.CurrentTarget == u);
+            int crowd = 0;
+            var at = u.Position;
+            foreach (var a in u.TargetedBy)
+                if ((a.Position - at).sqrMagnitude <= CrowdRadius * CrowdRadius && IsAlly(self, a)) crowd++;
             bool finishable = u.Hp <= self.Stats.Attack * 2.5f;
             if (u == self.CalledTarget) score += CalledTargetBonus;                   // the leader's call: pile on
             else if (tier >= CombatTier.Heroic && finishable) score += 3f + crowd * 1f; // focus fire on a kill

@@ -34,6 +34,11 @@ namespace GuildMaster.LLM
         /// <summary>A newer request with the same key supersedes a queued older one.</summary>
         public string DedupeKey;
         public float TimeoutSeconds = 30f;
+        /// <summary>
+        /// Longest time it may wait in the queue before it is dropped as "queue timeout" (P5-3):
+        /// the caller falls back to its rules instead of an NPC standing about for minutes.
+        /// </summary>
+        public float MaxWaitSeconds = 45f;
         /// <summary>May be cancelled mid-generation when a higher-priority request arrives (small talk).</summary>
         public bool Preemptible;
         public string Tag;

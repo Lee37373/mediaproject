@@ -1,10 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
-using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Core;
-using GuildMaster.LLM;
 using UnityEngine;
 
 namespace GuildMaster.Adventurers
@@ -15,15 +12,13 @@ namespace GuildMaster.Adventurers
         public Party Party;
         public int Pool;
         public IReadOnlyList<(Adventurer member, int share)> Shares;
-        public bool FromLlm;
         public string Say;
     }
 
     /// <summary>
-    /// Splitting a party's pool back at the guild (P4-50, user decision 2026-09-22): the leader
-    /// decides (LLM, from its personality, each member's part in the fights and its feelings), with
-    /// a rule split as fallback — half equal, half by contribution (damage dealt and taken, healing,
-    /// kills). Then each member weighs its
+    /// Splitting a party's pool back at the guild (P4-50, user decision 2026-09-22): half equal, half by
+    /// contribution (damage dealt and taken, healing, kills) — the leader's model used to decide it, the rules
+    /// do since P4-91 (user decision 2026-10-19). Then each member weighs its
     /// share: under <see cref="UnfairShare"/> of an equal share it is unhappy and likely to leave
     /// (more so if it dislikes the leader); a member on bad terms with another member leaves too.
     /// EXP is not split here: kills share it and quest EXP goes by contribution, as before.
@@ -39,10 +34,6 @@ namespace GuildMaster.Adventurers
         /// <summary>At or below this feeling (껄끄러움) a member may leave.</summary>
         public const int UneasyWithMate = -15;
         public const float UneasyLeaveChance = 0.35f;
-
-        readonly LlmGateway _gateway;
-
-        public PartySettlement(LlmGateway gateway) { _gateway = gateway; }
 
         // ---------------- Pure rules (EditMode-tested) ----------------
 
@@ -71,17 +62,25 @@ namespace GuildMaster.Adventurers
             return shares;
         }
 
-        /// <summary>Rule split: half of the pool equally, half by each member's part in the fights.</summary>
-        public static int[] RuleSplit(int pool, IReadOnlyList<float> contribution)
+        /// <summary>
+        /// Rule split: <paramref name="equalShare"/> of the pool equally, the rest by each member's part in the fights — half and
+        /// half unless the guild's split rule says even (1) or by deeds (0) (P4-112).
+        /// </summary>
+        public static int[] RuleSplit(int pool, IReadOnlyList<float> contribution, float equalShare = 0.5f)
         {
             int n = contribution.Count;
             if (n == 0) return Array.Empty<int>();
             float total = contribution.Sum(c => Mathf.Max(0f, c));
+            float byDeeds = 1f - equalShare;
             var weights = new float[n];
             for (int i = 0; i < n; i++)
-                weights[i] = 0.5f / n + (total > 0f ? 0.5f * Mathf.Max(0f, contribution[i]) / total : 0.5f / n);
+                weights[i] = equalShare / n + (total > 0f ? byDeeds * Mathf.Max(0f, contribution[i]) / total : byDeeds / n);
             return Distribute(pool, weights);
         }
+
+        /// <summary>What the one splitting says, by the split rule.</summary>
+        static string SplitLine(float equalShare)
+            => equalShare >= 1f ? "모두 똑같이 나누자." : equalShare <= 0f ? "활약한 만큼 가져가자." : "활약한 만큼, 그리고 고르게 나누자.";
 
         /// <summary>
         /// Chance this member walks out after the split: an unfair share (under 70% of an equal one)
@@ -104,82 +103,22 @@ namespace GuildMaster.Adventurers
         public void Begin(Party p, GuildParties parties)
         {
             var members = p.Arrived.Where(m => m != null && m.IsAlive && p.Has(m)).ToList();
-            // The leader first (m1), then joining order.
+            // The leader first, then joining order (the first one back splits if the leader is still out).
             members.Sort((x, y) => p.Members.IndexOf(x).CompareTo(p.Members.IndexOf(y)));
             if (members.Count == 0 || p.Pool <= 0)
             {
-                Conclude(p, parties, members, new int[members.Count], null, false);
+                Conclude(p, parties, members, new int[members.Count], null);
                 return;
             }
-            _ = SplitAsync(p, parties, members);
-        }
-
-        async Task SplitAsync(Party p, GuildParties parties, List<Adventurer> members)
-        {
-            int pool = p.Pool;
             var contribution = members.Select(m => p.Out.TryGetValue(m, out var r) ? r.Weight : 0f).ToList();
-            int[] shares = null;
-            string say = null;
-            bool fromLlm = false;
-            var splitter = members[0]; // the leader, or the first one back if the leader is still out
-            try
-            {
-                if (_gateway != null && _gateway.Enabled && _gateway.IsReady && members.Count >= 2 && members.Count <= SplitPrompt.MaxMembers)
-                {
-                    var ctx = BuildContext(splitter, members, p, pool);
-                    var result = await _gateway.RequestAsync(SplitPrompt.BuildRequest(ctx, splitter.Data.id));
-                    if (result.Ok && LlmJson.TryParse<SplitPrompt.ResponseDto>(result.Text, out var dto)
-                        && SplitPrompt.TryInterpret(dto, members.Count, pool, out shares, out say))
-                    {
-                        fromLlm = true;
-                        if (result.Exchange != null) result.Exchange.Note = "채택: " + string.Join("/", shares);
-                    }
-                    else if (result.Exchange != null) result.Exchange.Note = "규칙 분배로 대체: " + (result.Ok ? "parse" : result.Error);
-                }
-            }
-            catch (Exception ex) { Debug.LogException(ex); }
-
-            if (shares == null)
-            {
-                shares = RuleSplit(pool, contribution);
-                say = "활약한 만큼, 그리고 고르게 나누자.";
-            }
-            Conclude(p, parties, members, shares, say, fromLlm);
-        }
-
-        static SplitPrompt.ContextDto BuildContext(Adventurer leader, List<Adventurer> members, Party p, int pool)
-        {
-            var basic = DecisionPrompt.BuildContext(leader, Array.Empty<Quests.Quest>());
-            return new SplitPrompt.ContextDto
-            {
-                name = leader.Data.name,
-                mbti = leader.Data.mbti,
-                values = leader.Data.values,
-                traits = basic.traits,
-                pool_gold = pool,
-                members = members.Select((m, i) =>
-                {
-                    p.Out.TryGetValue(m, out var r);
-                    return new SplitPrompt.MemberDto
-                    {
-                        key = SplitPrompt.Key(i),
-                        name = m.Data.name,
-                        @class = AdventurerData.ClassLabel(m.Data.cls),
-                        level = m.Data.level,
-                        damage = Mathf.RoundToInt(r?.Damage ?? 0f),
-                        damage_taken = Mathf.RoundToInt(r?.Taken ?? 0f),
-                        healing = Mathf.RoundToInt(r?.Healing ?? 0f),
-                        kills = r?.Kills ?? 0,
-                        my_feeling = m == leader ? "나" : Relationships.Describe(Relationships.Get(leader, m)),
-                    };
-                }).ToArray(),
-            };
+            float equal = Guild.GuildLaws.SplitEqualShare;
+            Conclude(p, parties, members, RuleSplit(p.Pool, contribution, equal), SplitLine(equal));
         }
 
         /// <summary>
-        /// Shares of members who died while the split was being worked out (the LLM takes seconds)
-        /// go to the living, evenly (the first ones take the remainder); they used to be paid into
-        /// the purse of a corpse and vanish. Pure bookkeeping on <paramref name="shares"/>.
+        /// Shares of members who are no longer alive go to the living, evenly (the first ones take the remainder); they
+        /// used to be paid into the purse of a corpse and vanish (when the model took seconds to split). Pure bookkeeping
+        /// on <paramref name="shares"/>.
         /// </summary>
         public static void GiveTheFallensShares(IReadOnlyList<bool> alive, int[] shares)
         {
@@ -199,7 +138,7 @@ namespace GuildMaster.Adventurers
             }
         }
 
-        void Conclude(Party p, GuildParties parties, List<Adventurer> members, int[] shares, string say, bool fromLlm)
+        void Conclude(Party p, GuildParties parties, List<Adventurer> members, int[] shares, string say)
         {
             var splitter = members.Count > 0 ? members[0] : null;
             if (splitter != null && !string.IsNullOrEmpty(say) && p.Pool > 0) splitter.Say(say);
@@ -214,7 +153,7 @@ namespace GuildMaster.Adventurers
                 keep?.Settle(members[i]); // a share pays off the slate first (P4-68)
             }
             int pool = p.Pool;
-            EventBus.Publish(new PartySettledEvent { Party = p, Pool = pool, Shares = paid, FromLlm = fromLlm, Say = say });
+            EventBus.Publish(new PartySettledEvent { Party = p, Pool = pool, Shares = paid, Say = say });
 
             // Who stays: an unfair share, or bad blood with another member, sends one away.
             var rng = GameRandom.Shared;

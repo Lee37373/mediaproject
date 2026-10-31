@@ -29,6 +29,18 @@ namespace GuildMaster.Visuals
             public Sprite sprite;
         }
 
+        /// <summary>
+        /// A rigged monster from Minimal EnemyMonster (P4-110): the prefab (parts, Animator with Idle/Walk/Attack/Hit/Dead)
+        /// and a still of its first idle frame, baked by the editor tool, for what can only hold one sprite (fog ghosts).
+        /// </summary>
+        [Serializable]
+        public class MonsterRig
+        {
+            public string key;
+            public GameObject prefab;
+            public Sprite portrait;
+        }
+
         public List<Skin> skins = new();
         public List<MonsterArt> monsters = new();
 
@@ -54,5 +66,6 @@ namespace GuildMaster.Visuals
         public List<HumanPart> humanParts = new();
         /// <summary>Effect prefabs by file name ("Hit1_White", "Levelup_Yellow", ...). Empty without the package.</summary>
         public List<Vfx> vfx = new();
+        public List<MonsterRig> rigs = new();
     }
 }

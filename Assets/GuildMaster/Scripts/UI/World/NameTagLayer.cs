@@ -27,6 +27,7 @@ namespace GuildMaster.UI
         static readonly Color AdventurerColor = new(0.7f, 1f, 0.7f);
         static readonly Color MonsterColor = new(1f, 0.72f, 0.66f);
         static readonly Color BossColor = new(1f, 0.55f, 0.2f);
+        static readonly Color NemesisColor = new(1f, 0.32f, 0.42f);
         static readonly Color MasterColor = new(1f, 0.88f, 0.45f);
         static readonly Color VisitorColor = new(0.85f, 0.8f, 1f);
 
@@ -70,6 +71,51 @@ namespace GuildMaster.UI
             t.rectTransform.anchoredPosition = local;
         }
 
+        void Place(Vector3 world, Unit unit, Color color)
+        {
+            if (!WorldOverlay.TryWorldToLocal(_layer, world, out var local)) return;
+            var t = Acquire();
+            t.text = LabelFor(unit);
+            t.color = color;
+            t.rectTransform.anchoredPosition = local;
+        }
+
+        /// <summary>
+        /// Labels are rebuilt only when what they show changes (P5-2: formatting every visible
+        /// unit's label every frame was most of this layer's garbage).
+        /// </summary>
+        readonly Dictionary<Unit, (int key, object source, string text)> _labels = new();
+
+        string LabelFor(Unit unit)
+        {
+            int key;
+            object source;
+            switch (unit)
+            {
+                case Adventurer a:
+                    key = a.Data.level * 64 + (int)a.Tier * 2 + (a.IsVisitor ? 1 : 0);
+                    source = a.Data.name;
+                    break;
+                case Monster m:
+                    key = m.Level * 64 + (int)m.Tier * 2 + (m.IsBoss ? 1 : 0);
+                    source = m.DisplayName;
+                    break;
+                default:
+                    return "";
+            }
+            if (_labels.TryGetValue(unit, out var cached) && cached.key == key && ReferenceEquals(cached.source, source)) return cached.text;
+            string text = unit switch
+            {
+                Adventurer { IsVisitor: true } a => $"{a.Data.name} Lv.{a.Data.level} (방문자)",
+                Adventurer a => $"{a.Data.name} Lv.{a.Data.level} · {CombatTiers.Label(a.Tier)}",
+                // A nemesis (P4-109) goes by the name its deeds gave it.
+                Monster m => $"{(m.IsNemesis ? "[원수] " : m.IsBoss ? "[보스] " : "")}Lv.{m.Level} {m.DisplayName} · {CombatTiers.Label(m.Tier)}",
+                _ => ""
+            };
+            _labels[unit] = (key, source, text);
+            return text;
+        }
+
         void Update()
         {
             var kb = Keyboard.current;
@@ -92,15 +138,14 @@ namespace GuildMaster.UI
                     switch (u)
                     {
                         case Adventurer a:
-                            if (a.IsVisitor) Place(a.transform.position + new Vector3(0f, HeadOffset), $"{a.Data.name} Lv.{a.Data.level} (방문자)", VisitorColor);
-                            else Place(a.transform.position + new Vector3(0f, HeadOffset), $"{a.Data.name} Lv.{a.Data.level} · {CombatTiers.Label(a.Tier)}", AdventurerColor);
+                            Place(a.transform.position + new Vector3(0f, HeadOffset), a, a.IsVisitor ? VisitorColor : AdventurerColor);
                             break;
                         case Town.Merchant merchant:
                             Place(merchant.transform.position + new Vector3(0f, HeadOffset), "행상인", VisitorColor);
                             break;
                         case Monster m:
                             if (fog != null && !fog.IsVisible(m.Position)) break;
-                            Place(m.transform.position + new Vector3(0f, HeadOffset * m.Scale), $"{(m.IsBoss ? "[보스] " : "")}Lv.{m.Level} {m.DisplayName} · {CombatTiers.Label(m.Tier)}", m.IsBoss ? BossColor : MonsterColor);
+                            Place(m.transform.position + new Vector3(0f, HeadOffset * m.Scale), m, m.IsNemesis ? NemesisColor : m.IsBoss ? BossColor : MonsterColor);
                             break;
                     }
                 }

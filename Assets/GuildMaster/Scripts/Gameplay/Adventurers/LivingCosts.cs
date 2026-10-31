@@ -29,7 +29,7 @@ namespace GuildMaster.Adventurers
     /// wherever a member is; lodging every game hour a member rests in town (<see cref="RestState"/>);
     /// a camp in the wild costs nothing. The rules are <see cref="LivingCostRules"/>.
     /// </summary>
-    public class LivingCosts : IDisposable
+    public class LivingCosts : IDisposable, ISaveable
     {
         readonly GuildRoster _roster;
         readonly GuildTreasury _treasury;
@@ -43,6 +43,32 @@ namespace GuildMaster.Adventurers
 
         /// <summary>All gold received since the game began (balance runs).</summary>
         public int TotalReceived { get; private set; }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SaveData
+        {
+            public int meals, lodging, repaid, new_debt, total;
+        }
+
+        public string SaveKey => "living";
+
+        /// <summary>The day's tally so far (each member's debt is in its own data).</summary>
+        public string Capture() => UnityEngine.JsonUtility.ToJson(new SaveData
+        {
+            meals = _meals, lodging = _lodging, repaid = _repaid, new_debt = _newDebt, total = TotalReceived,
+        });
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = UnityEngine.JsonUtility.FromJson<SaveData>(json);
+            _meals = s.meals;
+            _lodging = s.lodging;
+            _repaid = s.repaid;
+            _newDebt = s.new_debt;
+            TotalReceived = s.total;
+        }
 
         public LivingCosts(GuildRoster roster, GuildTreasury treasury, WorldService world, int mealGold, int lodgingGoldPerHour)
         {
@@ -78,10 +104,12 @@ namespace GuildMaster.Adventurers
 
         void OnHour(HourPassedEvent e)
         {
+            // The guild's rule may keep its members at its own cost (P4-112): nothing is charged, and nothing comes in.
+            bool charged = !Guild.GuildLaws.GuildPaysUpkeep;
             foreach (var a in _roster.Members)
             {
                 if (a == null || !a.IsAlive) continue;
-                if (IsLodging(a)) _lodging += Charge(a, LodgingGoldPerHour);
+                if (charged && IsLodging(a)) _lodging += Charge(a, LodgingGoldPerHour);
                 // Catches gold that arrived by a path that does not settle on its own (a bonus, say).
                 Settle(a);
             }
@@ -89,8 +117,10 @@ namespace GuildMaster.Adventurers
 
         void OnDay(DayPassedEvent e)
         {
-            foreach (var a in _roster.Members)
-                if (a != null && a.IsAlive) _meals += Charge(a, MealGold);
+            int meal = UnityEngine.Mathf.RoundToInt(MealGold * Seasons.SeasonService.Meal); // dearer in winter (P4-111b)
+            if (!Guild.GuildLaws.GuildPaysUpkeep)
+                foreach (var a in _roster.Members)
+                    if (a != null && a.IsAlive) _meals += Charge(a, meal);
 
             EventBus.Publish(new LivingCostsDayEvent
             {

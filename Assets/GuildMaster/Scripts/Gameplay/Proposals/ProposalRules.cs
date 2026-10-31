@@ -33,6 +33,10 @@ namespace GuildMaster.Proposals
         public Vector2 Point;
         /// <summary>The <see cref="MonsterDefinition"/> behind the target (handed back untouched).</summary>
         public object Source;
+        /// <summary>The den (a <c>Nest</c>) the hunt is for (handed back untouched; null in tests).</summary>
+        public object Den;
+        /// <summary>A region lord's lair with its lord (P4-83): one kill, weighed against the lord's own requirement.</summary>
+        public bool IsLord;
     }
 
     /// <summary>One candidate quest on the proposal list: what would be posted, and how it is described.</summary>
@@ -45,33 +49,25 @@ namespace GuildMaster.Proposals
         public DangerLevel Danger;
         public int Count;
         public int Party;
+        /// <summary>Everything the client pays (P4-82): the guild keeps <see cref="FeeGold"/>, the members share <see cref="MemberGold"/>.</summary>
         public int RewardGold;
         public int RewardExp;
-        /// <summary>The reward as proposed; the guild master may move <see cref="RewardGold"/> within a range around it.</summary>
-        public int BaseRewardGold;
         /// <summary>How the guild's strongest member sees it with this party (<see cref="QuestRisk"/>).</summary>
         public string Risk;
         public string Title;
         public string Pitch;
         public bool FromLlm;
 
-        public int MinRewardGold => ProposalRules.RoundGold(BaseRewardGold * ProposalRules.MinRewardFactor);
-        public int MaxRewardGold => ProposalRules.RoundGold(BaseRewardGold * ProposalRules.MaxRewardFactor);
-
-        /// <summary>Moves the gold reward by whole <see cref="ProposalRules.RewardStep"/>s inside the allowed range. False when nothing changed.</summary>
-        public bool AdjustReward(int steps)
-        {
-            int next = Mathf.Clamp(RewardGold + steps * ProposalRules.RewardStep, MinRewardGold, MaxRewardGold);
-            if (next == RewardGold) return false;
-            RewardGold = next;
-            return true;
-        }
+        public int MemberGold => QuestPricing.Split(RewardGold).members;
+        public int FeeGold => QuestPricing.Split(RewardGold).fee;
     }
 
     /// <summary>
     /// The rule half of the LLM quest proposals (F-8), pure so it is covered by EditMode tests: turns what the guild
-    /// knows into plans that are always valid and affordable, and picks a varied few. The LLM only chooses among
-    /// these and words them (<see cref="ProposalPrompt"/>); without it the rules alone fill the list.
+    /// knows into plans that are always valid, and picks a varied few. The LLM only chooses among these and words
+    /// them (<see cref="ProposalPrompt"/>); without it the rules alone fill the list. P4-82 (user decision
+    /// 2026-10-17): a card is another client's request for a den not on the board yet — the client pays, so the
+    /// treasury no longer limits the list, and the guild master only takes a card or passes it.
     /// </summary>
     public static class ProposalRules
     {
@@ -81,11 +77,8 @@ namespace GuildMaster.Proposals
         public const int PoolSize = 8;
         /// <summary>Game hours before the list can be redrawn.</summary>
         public const float RerollCooldownHours = 4f;
-        /// <summary>No automatic proposals while this many quests are already open.</summary>
+        /// <summary>No automatic proposals while this many taken cards (patron quests) are still open.</summary>
         public const int MaxOpenQuests = 5;
-        public const int RewardStep = 10;
-        public const float MinRewardFactor = 0.5f;
-        public const float MaxRewardFactor = 2f;
 
         static readonly ProposalStyle[] Styles = { ProposalStyle.Balanced, ProposalStyle.Safe, ProposalStyle.Bold };
 
@@ -109,35 +102,29 @@ namespace GuildMaster.Proposals
             _ => 1.4f,
         };
 
-        static int DangerGold(DangerLevel d) => d switch
-        {
-            DangerLevel.Low => 40,
-            DangerLevel.Medium => 100,
-            _ => 220,
-        };
-
-        public static int RoundGold(float value) => Mathf.Max(10, Mathf.RoundToInt(value / 5f) * 5);
-
+        /// <summary>What the client pays, fee included: the same price as the town's own hunt (<see cref="QuestPricing.HuntReward"/>), by style.</summary>
         public static int RewardGold(QuestType type, DangerLevel danger, int count, float distance, ProposalStyle style)
-        {
-            // A nest is worth a little more than a five-kill hunt; far places pay up to half again.
-            float size = type == QuestType.Hunt ? count / 5f : 1.5f;
-            float far = 1f + Mathf.Clamp(distance, 0f, 60f) / 120f;
-            return RoundGold(DangerGold(danger) * size * far * StyleFactor(style));
-        }
+            => type == QuestType.Hunt
+                ? QuestPricing.HuntReward(danger, count, distance, StyleFactor(style))
+                // A nest is worth a little more than a five-kill hunt.
+                : QuestPricing.RoundGold(QuestPricing.DangerGold(danger) * 1.5f * QuestPricing.FarFactor(distance) * StyleFactor(style));
 
-        public static int RewardExp(int gold) => Mathf.Max(5, Mathf.RoundToInt(gold * 0.6f / 5f) * 5);
+        public static int RewardExp(int gold) => QuestPricing.RewardExp(gold);
 
         /// <summary>
         /// Party size to recommend: the smallest that reaches the comfort the style stands for — "여유" for safe,
         /// "적당" for balanced, "위험" for bold — or the largest allowed.
         /// </summary>
         public static int PartyFor(ProposalStyle style, float power, DangerLevel danger, int maxParty)
+            => PartyFor(style, power, RuleBasedDecisionMaker.DangerRequirement(danger), Mathf.Min(maxParty, 4));
+
+        /// <summary>As above, against a given requirement (a region lord's, P4-83: up to two parties).</summary>
+        public static int PartyFor(ProposalStyle style, float power, float requirement, int maxParty)
         {
-            maxParty = Mathf.Clamp(maxParty, 1, 4);
+            maxParty = Mathf.Clamp(maxParty, 1, Monsters.RegionLords.QuestParty);
             float want = style switch { ProposalStyle.Safe => 2f, ProposalStyle.Balanced => 1f, _ => 0.8f };
             for (int size = 1; size <= maxParty; size++)
-                if (QuestRisk.Margin(power, size, danger) >= want) return size;
+                if (QuestRisk.MarginAgainst(power, size, requirement) >= want) return size;
             return maxParty;
         }
 
@@ -145,13 +132,9 @@ namespace GuildMaster.Proposals
 
         static ProposalPlan MakePlan(ProposalTarget t, ProposalStyle style, float power, int maxParty)
         {
-            int count = 1;
-            if (t.Type == QuestType.Hunt)
-            {
-                // Never ask for more than the guild has seen, when it has seen any.
-                count = HuntCount(style);
-                if (t.Observed > 0) count = Mathf.Min(count, Mathf.Max(2, t.Observed));
-            }
+            if (t.IsLord) return MakeLordPlan(t, style, power, maxParty);
+            // Never ask for more than the guild has seen, when it has seen any.
+            int count = t.Type == QuestType.Hunt ? QuestPricing.HuntCount(t.Observed, HuntCount(style)) : 1;
             var danger = EffectiveDanger(t.Type, t.Danger, count);
             int party = PartyFor(style, power, danger, maxParty);
             int gold = RewardGold(t.Type, danger, count, t.Distance, style);
@@ -163,28 +146,46 @@ namespace GuildMaster.Proposals
                 Count = count,
                 Party = party,
                 RewardGold = gold,
-                BaseRewardGold = gold,
                 RewardExp = RewardExp(gold),
                 Risk = QuestRisk.Label(QuestRisk.Margin(power, party, danger)),
             };
         }
 
+        /// <summary>A region lord (P4-83): one kill, priced like its lair, weighed against the lord's own requirement.</summary>
+        static ProposalPlan MakeLordPlan(ProposalTarget t, ProposalStyle style, float power, int maxParty)
+        {
+            float need = Monsters.RegionLords.RiskRequirement;
+            int party = PartyFor(style, power, need, maxParty);
+            int gold = QuestPricing.LordReward(t.Observed, t.Distance, StyleFactor(style));
+            return new ProposalPlan
+            {
+                Target = t,
+                Style = style,
+                Danger = DangerLevel.High,
+                Count = 1,
+                Party = party,
+                RewardGold = gold,
+                RewardExp = RewardExp(gold),
+                Risk = QuestRisk.Label(QuestRisk.MarginAgainst(power, party, need)),
+            };
+        }
+
         /// <summary>
-        /// Plans for every target in every style, minus the ones that are reckless for the guild's strongest member
-        /// or that the treasury cannot pay in advance; then a varied <see cref="PoolSize"/> of them, numbered P1, P2...
-        /// A <paramref name="rng"/> shuffles near-equal choices so a redraw looks different.
+        /// Plans for every target in every style, minus the ones that are reckless for the guild's strongest member;
+        /// then a varied <see cref="PoolSize"/> of them, numbered P1, P2... A <paramref name="rng"/> shuffles
+        /// near-equal choices so a redraw looks different.
         /// </summary>
-        public static List<ProposalPlan> BuildPool(IReadOnlyList<ProposalTarget> targets, float power, int members, int gold, int exp, GameRandom rng = null)
+        public static List<ProposalPlan> BuildPool(IReadOnlyList<ProposalTarget> targets, float power, int members, GameRandom rng = null)
         {
             var all = new List<ProposalPlan>();
             if (targets == null || members <= 0) return all;
             int maxParty = Mathf.Clamp(members, 1, 4);
+            int lordParty = Mathf.Clamp(members, 1, Monsters.RegionLords.QuestParty);
             foreach (var t in targets)
             foreach (var style in Styles)
             {
-                var plan = MakePlan(t, style, power, maxParty);
+                var plan = MakePlan(t, style, power, t.IsLord ? lordParty : maxParty);
                 if (plan.Risk == QuestRisk.Reckless) continue;
-                if (plan.RewardGold > gold || plan.RewardExp > exp) continue;
                 all.Add(plan);
             }
             var pool = Select(all, PoolSize, rng);

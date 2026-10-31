@@ -21,10 +21,18 @@ namespace GuildMaster.UI
         class Bubble
         {
             public RectTransform Root;
+            public Image Background;
             public Text Text;
             public Transform Target;
             public float TimeLeft;
         }
+
+        static readonly Color SpeechColor = new(0.98f, 0.96f, 0.9f, 0.95f);
+        static readonly Color SpeechText = new(0.12f, 0.1f, 0.14f);
+        /// <summary>What goes through a member's head (P4-104c): a cool blue bubble, the words dark blue in italics.</summary>
+        static readonly Color ThoughtColor = new(0.80f, 0.86f, 0.98f, 0.97f);
+        static readonly Color ThoughtText = new(0.10f, 0.14f, 0.34f);
+        const float ThoughtDuration = 3.5f;
 
         RectTransform _layer;
         readonly Dictionary<Transform, Bubble> _active = new();
@@ -36,21 +44,30 @@ namespace GuildMaster.UI
             _layer = layer;
             EventBus.Subscribe<AdventurerSpeechEvent>(OnAdventurerSpeech);
             EventBus.Subscribe<SpeechRequestEvent>(OnSpeech);
+            EventBus.Subscribe<ThoughtAddedEvent>(OnThought);
         }
 
         void OnDestroy()
         {
             EventBus.Unsubscribe<AdventurerSpeechEvent>(OnAdventurerSpeech);
             EventBus.Unsubscribe<SpeechRequestEvent>(OnSpeech);
+            EventBus.Unsubscribe<ThoughtAddedEvent>(OnThought);
         }
 
         void OnAdventurerSpeech(AdventurerSpeechEvent e) => Show(e.Adventurer.transform, e.Text, DefaultDuration);
         void OnSpeech(SpeechRequestEvent e) => Show(e.Speaker, e.Text, e.Duration > 0 ? e.Duration : DefaultDuration);
 
+        /// <summary>A strong new thought (P4-104c) — not over what the member is saying just now.</summary>
+        void OnThought(ThoughtAddedEvent e)
+        {
+            if (e.Adventurer == null || string.IsNullOrEmpty(e.Inner) || _active.ContainsKey(e.Adventurer.transform)) return;
+            Show(e.Adventurer.transform, e.Inner, ThoughtDuration, thought: true);
+        }
+
         /// <summary>Nothing is said while the world stands still (pause button, dialogue hold).</summary>
         static bool Paused => Time.timeScale <= 0f;
 
-        public void Show(Transform speaker, string text, float duration)
+        public void Show(Transform speaker, string text, float duration, bool thought = false)
         {
             if (speaker == null || string.IsNullOrWhiteSpace(text) || Paused) return;
             if (!_active.TryGetValue(speaker, out var b))
@@ -59,6 +76,9 @@ namespace GuildMaster.UI
                 b.Target = speaker;
                 _active[speaker] = b;
             }
+            b.Background.color = thought ? ThoughtColor : SpeechColor;
+            b.Text.fontStyle = thought ? FontStyle.Italic : FontStyle.Normal;
+            b.Text.color = thought ? ThoughtText : SpeechText;
             b.Text.text = text.Length > 200 ? text.Substring(0, 199) + "…" : text;
             b.TimeLeft = duration;
             b.Root.gameObject.SetActive(true);
@@ -66,7 +86,7 @@ namespace GuildMaster.UI
 
         Bubble Create()
         {
-            var img = UIBuilder.Panel(_layer, "Bubble", new Color(0.98f, 0.96f, 0.9f, 0.95f), raycast: false);
+            var img = UIBuilder.Panel(_layer, "Bubble", SpeechColor, raycast: false);
             var rt = img.rectTransform;
             rt.pivot = new Vector2(0.5f, 0f);
             var layout = UIBuilder.VLayout(img, 0, 6);
@@ -75,10 +95,10 @@ namespace GuildMaster.UI
             var fitter = img.gameObject.AddComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-            var text = UIBuilder.Label(img.transform, "", 14, TextAnchor.MiddleCenter, new Color(0.12f, 0.1f, 0.14f));
+            var text = UIBuilder.Label(img.transform, "", 14, TextAnchor.MiddleCenter, SpeechText);
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
             text.Size(-1, -1).GetComponent<LayoutElement>().preferredWidth = 220;
-            return new Bubble { Root = rt, Text = text };
+            return new Bubble { Root = rt, Background = img, Text = text };
         }
 
         void LateUpdate()

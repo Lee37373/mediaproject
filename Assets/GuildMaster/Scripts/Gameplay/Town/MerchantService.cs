@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using GuildMaster.Core;
 using GuildMaster.Economy;
@@ -17,7 +18,7 @@ namespace GuildMaster.Town
     /// from a gate, sets up a cart on the plaza and buys the guild's stock for
     /// <see cref="StayHours"/> hours (prices in <see cref="MerchantMarket"/>), then leaves.
     /// </summary>
-    public class MerchantService : MonoBehaviour
+    public class MerchantService : MonoBehaviour, ISaveable
     {
         public const float IntervalHours = 48f;
         public const float StayHours = 6f;
@@ -37,6 +38,53 @@ namespace GuildMaster.Town
         public float CloseAtHour { get; private set; }
         /// <summary>Gold the guild earned from the current (or last) visit.</summary>
         public int EarnedThisVisit { get; private set; }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public float next_visit;
+            public float close_at;
+            public int earned;
+            public bool present;
+            public Merchant.Phase phase;
+            public Vector2 position;
+            public List<string> sold_items = new();
+            public List<float> sold = new();
+        }
+
+        public string SaveKey => "merchant";
+
+        public string Capture()
+        {
+            var s = new SaveData { next_visit = NextVisitHour, close_at = CloseAtHour, earned = EarnedThisVisit, present = Merchant != null };
+            if (Merchant != null)
+            {
+                s.phase = Merchant.Current;
+                s.position = Merchant.Position;
+            }
+            var ids = new List<string>(Market.SoldTable.Keys);
+            ids.Sort(System.StringComparer.Ordinal);
+            foreach (var id in ids) { s.sold_items.Add(id); s.sold.Add(Market.SoldTable[id]); }
+            return JsonUtility.ToJson(s);
+        }
+
+        /// <summary>The merchant comes back where it was: on the road in, at the stall (cart and all), or on the way out.</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            NextVisitHour = s.next_visit;
+            CloseAtHour = s.close_at;
+            EarnedThisVisit = s.earned;
+            Market.SoldTable.Clear();
+            for (int i = 0; i < s.sold_items.Count && i < s.sold.Count; i++) Market.SoldTable[s.sold_items[i]] = s.sold[i];
+            if (!s.present) return;
+            Merchant = Merchant.Create(s.position, _stall, transform, OnMerchantArrived, OnMerchantLeft);
+            Merchant.RestorePhase(s.phase);
+            if (s.phase == Merchant.Phase.Trading) ShowCart(Merchant.Position);
+            ctx.Register(Merchant.UnitId, Merchant);
+        }
 
         public void Init(GameClock clock, WorldService world, MerchantMarket market)
         {
@@ -64,7 +112,7 @@ namespace GuildMaster.Town
         public bool StartVisit()
         {
             if (Merchant != null) return false;
-            NextVisitHour = _clock.TotalHours + IntervalHours;
+            NextVisitHour = _clock.TotalHours + Seasons.SeasonService.MerchantInterval(IntervalHours); // autumn: more often (P4-111b)
             var gates = _world.Map.Gates;
             var gate = gates.Count > 0 ? GridMap.CellToWorld(gates[GameRandom.Shared.Range(0, gates.Count)]) : _stall;
             Merchant = Merchant.Create(gate, _stall, transform, OnMerchantArrived, OnMerchantLeft);

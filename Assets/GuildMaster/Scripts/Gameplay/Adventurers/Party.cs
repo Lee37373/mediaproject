@@ -24,14 +24,18 @@ namespace GuildMaster.Adventurers
     /// A standing party (P4-50, user decision 2026-09-22): formed in town by a leader, it goes out
     /// together (a quest or a free hunt), pools the gold it brings back, and at the guild the leader
     /// splits it (<see cref="PartySettlement"/>). It stays together over several outings; a member
-    /// unhappy with the split, or on bad terms with another, leaves. Members are in joining order,
+    /// unhappy with the split, or on bad terms with another, leaves, and a party that does not go out
+    /// again within <see cref="GuildParties.DisbandIdleHours"/> of a split breaks up (P4-71). Members are in joining order,
     /// the first leads; when the leader falls the next one takes over.
     /// </summary>
     public class Party
     {
         static int s_next;
 
-        public readonly int Id = ++s_next;
+        public int Id { get; internal set; } = ++s_next;
+
+        /// <summary>The next id (saved, P5-4).</summary>
+        internal static int NextId { get => s_next; set => s_next = value; }
         public readonly List<Adventurer> Members = new();
         public Adventurer Leader => Members.Count > 0 ? Members[0] : null;
         public string Name => Leader != null ? $"{Leader.Data.name}의 파티" : "파티";
@@ -48,6 +52,8 @@ namespace GuildMaster.Adventurers
         public readonly Dictionary<Adventurer, float> ArrivedAt = new();
         public float FirstArrivalHour { get; internal set; } = -1f;
         public bool Settling { get; internal set; }
+        /// <summary>Game hour the last outing was settled; the party breaks up if it does not go out again soon (P4-71).</summary>
+        public float SettledAtHour { get; internal set; } = -1f;
 
         public bool Has(Adventurer a) => Members.Contains(a);
         public bool WentOut(Adventurer a) => OnOuting && Out.ContainsKey(a);
@@ -58,12 +64,17 @@ namespace GuildMaster.Adventurers
     /// (contribution from combat events, the gold pool, who is back) and starting the split once
     /// everyone who went out is back at the guild.
     /// </summary>
-    public class GuildParties : MonoBehaviour
+    public class GuildParties : MonoBehaviour, ISaveable, ISaveLink
     {
         /// <summary>Game hours a member back waits by the guild for the rest; after that it goes about town, still owed its share.</summary>
         public const float WaitForRestHours = 2f;
         /// <summary>Game hours after the first one is back before the split goes ahead without the missing.</summary>
         public const float GiveUpOnMissingHours = 12f;
+        /// <summary>
+        /// Game hours after a split before a party that has not gone out together again breaks up
+        /// (P4-71, user decision 2026-10-03: "it never breaks up once back in town").
+        /// </summary>
+        public const float DisbandIdleHours = 6f;
 
         readonly List<Party> _parties = new();
         readonly Dictionary<Adventurer, Party> _of = new();
@@ -71,6 +82,113 @@ namespace GuildMaster.Adventurers
         PartySettlement _settlement;
 
         public IReadOnlyList<Party> Parties => _parties;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedRecord
+        {
+            public string member;
+            public float damage;
+            public float taken;
+            public float healing;
+            public int kills;
+            public int deposited;
+        }
+
+        [System.Serializable]
+        class SavedParty
+        {
+            public int id;
+            public List<string> members = new();
+            public bool on_outing;
+            public List<SavedRecord> out_records = new();
+            public int pool;
+            public List<string> arrived = new();
+            public List<float> arrived_at = new();
+            public float first_arrival;
+            public float settled_at;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public List<SavedParty> parties = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "parties";
+
+        /// <summary>A split under way is not saved: it starts again once loaded (the leader asks anew).</summary>
+        public string Capture()
+        {
+            var s = new SaveData { next_id = Party.NextId };
+            foreach (var p in _parties)
+            {
+                var sp = new SavedParty
+                {
+                    id = p.Id, on_outing = p.OnOuting, pool = p.Pool, first_arrival = p.FirstArrivalHour, settled_at = p.SettledAtHour,
+                };
+                foreach (var m in p.Members) sp.members.Add(m.Data.id);
+                foreach (var kv in p.Out)
+                {
+                    if (kv.Key == null) continue;
+                    sp.out_records.Add(new SavedRecord
+                    {
+                        member = kv.Key.Data.id, damage = kv.Value.Damage, taken = kv.Value.Taken, healing = kv.Value.Healing,
+                        kills = kv.Value.Kills, deposited = kv.Value.Deposited,
+                    });
+                }
+                sp.out_records.Sort((a, b) => string.CompareOrdinal(a.member, b.member));
+                var arrived = new List<Adventurer>(p.Arrived);
+                arrived.Sort((a, b) => string.CompareOrdinal(a.Data.id, b.Data.id));
+                foreach (var a in arrived)
+                {
+                    sp.arrived.Add(a.Data.id);
+                    sp.arrived_at.Add(p.ArrivedAt.TryGetValue(a, out var at) ? at : 0f);
+                }
+                s.parties.Add(sp);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+        }
+
+        /// <summary>Parties are their members: built once the members are back.</summary>
+        public void Link(SaveContext ctx)
+        {
+            foreach (var sp in _restoring.parties)
+            {
+                var p = new Party
+                {
+                    Id = sp.id, OnOuting = sp.on_outing, Pool = sp.pool, FirstArrivalHour = sp.first_arrival, SettledAtHour = sp.settled_at,
+                };
+                foreach (var id in sp.members)
+                {
+                    if (ctx.Find<Adventurer>(id) is not { } a) continue;
+                    p.Members.Add(a);
+                    _of[a] = p;
+                }
+                foreach (var r in sp.out_records)
+                    if (ctx.Find<Adventurer>(r.member) is { } a)
+                        p.Out[a] = new OutingRecord { Damage = r.damage, Taken = r.taken, Healing = r.healing, Kills = r.kills, Deposited = r.deposited };
+                for (int i = 0; i < sp.arrived.Count && i < sp.arrived_at.Count; i++)
+                {
+                    if (ctx.Find<Adventurer>(sp.arrived[i]) is not { } a) continue;
+                    p.Arrived.Add(a);
+                    p.ArrivedAt[a] = sp.arrived_at[i];
+                }
+                _parties.Add(p);
+            }
+            // Building them counted ids up again: the saved counter goes on from where it was.
+            Party.NextId = _restoring.next_id;
+            _restoring = null;
+        }
 
         public void Init(GameClock clock, PartySettlement settlement)
         {
@@ -94,12 +212,42 @@ namespace GuildMaster.Adventurers
             EventBus.Unsubscribe<PartyFormedEvent>(OnQuestPartyFormed);
         }
 
-        /// <summary>A quest party leaves town: it becomes (or stays) a standing party on an outing.</summary>
+        /// <summary>
+        /// A quest party leaves town: it becomes (or stays) a standing party on an outing. Another standing party that came
+        /// along as a whole (party work, P4-97) goes out as itself and splits its own pool: folded into the leader's party it
+        /// would stay one party of eight, and its members, left over by the next quest's four places, would wait in town
+        /// for their leader the whole of it (P4-77). On the way they are one group all the same (PartyTactics: by quest).
+        /// </summary>
         void OnQuestPartyFormed(PartyFormedEvent e)
         {
+            // Led by one of a standing party whose leader stays home — a newcomer deciding for itself (P4-99): it goes on its
+            // own account. Its party's outing is not set going without its leader, nor does a party form round it (P4-100
+            // measured run: the leader, and a member waiting for it, stood in town half a day for an outing they were never on).
+            if (PartyOf(e.Leader) is { } led && led.Leader != e.Leader && !Goes(e, led.Leader)) return;
             var goers = new List<Adventurer> { e.Leader };
-            foreach (var m in e.Members) if (m != e.Leader) goers.Add(m);
+            var own = PartyOf(e.Leader);
+            var others = new List<Party>();
+            var going = new HashSet<Adventurer>();
+            foreach (var m in e.Members)
+            {
+                if (m == e.Leader) continue;
+                going.Add(m);
+                if (PartyOf(m) is { } p && p != own) { if (!others.Contains(p)) others.Add(p); }
+                else goers.Add(m);
+            }
             SetOut(goers);
+            foreach (var p in others)
+            {
+                var theirs = new List<Adventurer>();
+                foreach (var m in p.Members) if (going.Contains(m)) theirs.Add(m);
+                SetOut(theirs);
+            }
+        }
+
+        static bool Goes(PartyFormedEvent e, Adventurer a)
+        {
+            foreach (var m in e.Members) if (m == a) return true;
+            return false;
         }
 
         public Party PartyOf(Adventurer a) => a != null && _of.TryGetValue(a, out var p) ? p : null;
@@ -133,7 +281,13 @@ namespace GuildMaster.Adventurers
             }
             if (party.Members.Count < 2) { Disband(party, null); return null; }
 
-            if (party.OnOuting && !party.Settling) return party; // already out: late joiners share the pool
+            if (party.OnOuting && !party.Settling)
+            {
+                // Already out: late joiners go out with it and share the pool (they were left out of
+                // the outing's record, so their pay went to themselves and the split passed them by).
+                foreach (var a in goers) if (a != null && a.IsAlive && !party.Out.ContainsKey(a)) party.Out[a] = new OutingRecord();
+                return party;
+            }
             party.OnOuting = true;
             party.Settling = false;
             party.Pool = 0;
@@ -160,11 +314,30 @@ namespace GuildMaster.Adventurers
         {
             var p = PartyOf(a);
             if (p == null || !p.WentOut(a)) return false;
-            if (p.Arrived.Count == 0) p.FirstArrivalHour = Hour;
-            if (p.Arrived.Add(a)) p.ArrivedAt[a] = Hour;
+            MarkArrived(p, a);
             TrySettle(p);
             return p.OnOuting;
         }
+
+        void MarkArrived(Party p, Adventurer a)
+        {
+            if (p.Arrived.Count == 0) p.FirstArrivalHour = Hour;
+            if (p.Arrived.Add(a)) p.ArrivedAt[a] = Hour;
+        }
+
+        /// <summary>
+        /// Back in town and at rest without having reported at the guild counter (P4-76: a raid's
+        /// defence ended with everyone idling about town, nobody counted as back, the outing never
+        /// settled, and its leader — waiting for the split — kept the whole party in town for days).
+        /// The guild-visit state reports on its own, so it is not counted here — and neither is
+        /// making up one's mind: a quest party sets out while its leader is still deciding in town
+        /// (P4-76: counting that as back forced the split twelve hours into the quest, and the party
+        /// "broke up in town" six hours later while still out). Home for good, a member idles first.
+        /// </summary>
+        static bool HomeWithoutReport(Adventurer m)
+            => m != null && m.IsAlive && m.IsGuildMember
+               && (m.Fsm.Current == m.IdleState || m.Fsm.Current == m.RestState)
+               && Services.TryGet<World.WorldService>(out var world) && world.Grid.IsInTown(m.Position);
 
         /// <summary>Still waiting for the split (or for the others to come back).</summary>
         public bool IsWaiting(Adventurer a)
@@ -172,6 +345,30 @@ namespace GuildMaster.Adventurers
 
         /// <summary>Its party is still out (or settling): no new outing is decided until it is over.</summary>
         public bool OutingUnfinished(Adventurer a) => PartyOf(a) is { OnOuting: true };
+
+        /// <summary>
+        /// One of this leader's party is still resting or busy at the guild counter in town: the leader waits
+        /// for it before deciding on the next outing, so they go out together (P4-79, user decision 2026-10-10:
+        /// it set out with whoever stood about, and the one left behind — a party member waits for its leader —
+        /// stood in town for fourteen hours). Those on leave, badly wounded or at the breaking point stay home
+        /// anyway (P4-69), and one with a quest of its own goes back to it: neither is waited for.
+        /// </summary>
+        public bool MembersGettingReady(Adventurer leader)
+        {
+            if (PartyOf(leader) is not { } p || p.Leader != leader) return false;
+            foreach (var m in p.Members)
+            {
+                if (m == leader || m == null || !m.IsAlive || !m.IsGuildMember) continue;
+                if (!HuntBandService.SameFooting(m, leader)) continue; // not taken out by this leader (P4-99)
+                var s = m.Fsm.Current;
+                if (s != m.RestState && s != m.VisitState && s != m.TownGuardState) continue;
+                if (m.CurrentQuest != null && m.CurrentQuest.IsActive) continue;
+                if (!Welfare.GuildWelfare.MayGoOut(m)) continue;
+                if (Services.TryGet<World.WorldService>(out var world) && !world.Grid.IsInTown(m.Position)) continue;
+                return true;
+            }
+            return false;
+        }
 
         float Hour => _clock != null ? _clock.TotalHours : Time.time / 10f;
 
@@ -182,8 +379,23 @@ namespace GuildMaster.Adventurers
                 var p = _parties[i];
                 p.Members.RemoveAll(m => m == null || !m.IsGuildMember);
                 if (p.Members.Count < 2) { Disband(p, "인원 부족"); continue; }
+                if (!p.OnOuting && p.SettledAtHour >= 0f && Hour - p.SettledAtHour >= DisbandIdleHours && !Gathering(p)) { Disband(p, "마을에서 해산"); continue; }
+                if (p.OnOuting && !p.Settling)
+                    foreach (var m in p.Out.Keys)
+                        if (!p.Arrived.Contains(m) && HomeWithoutReport(m)) MarkArrived(p, m);
                 if (p.OnOuting && !p.Settling && p.Arrived.Count > 0) TrySettle(p);
             }
+        }
+
+        /// <summary>
+        /// One of it has taken a quest and waits in town for the rest of its party work (P4-97): it is going out together,
+        /// not idle — two parties broke up "in town" while gathering for a lord in a natural run.
+        /// </summary>
+        static bool Gathering(Party p)
+        {
+            foreach (var m in p.Members)
+                if (m != null && m.CurrentQuest != null && m.CurrentQuest.IsActive) return true;
+            return false;
         }
 
         void TrySettle(Party p)
@@ -202,6 +414,7 @@ namespace GuildMaster.Adventurers
         internal void Finish(Party p)
         {
             p.OnOuting = false;
+            p.SettledAtHour = Hour;
             p.Settling = false;
             p.Out.Clear();
             p.Arrived.Clear();
@@ -216,7 +429,8 @@ namespace GuildMaster.Adventurers
             if (p == null || !p.Members.Remove(a)) return;
             _of.Remove(a);
             EventBus.Publish(new PartyChangedEvent { Party = p, Member = a, Joined = false, Reason = reason });
-            if (p.Members.Count < 2 && !p.Settling) Disband(p, reason);
+            // The one left behind did not move or die: its party simply ran out (P4-73: it was logged with the leaver's reason).
+            if (p.Members.Count < 2 && !p.Settling) Disband(p, "인원 부족");
         }
 
         void Disband(Party p, string reason)

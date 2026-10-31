@@ -46,6 +46,12 @@ namespace GuildMaster.Data
             var ironOre = Item("iron_ore", "철광석", ItemCategory.Material, 15, new Color(0.5f, 0.5f, 0.55f));
             var crownShard = Item("crown_shard", "왕관 조각", ItemCategory.Material, 60, new Color(0.95f, 0.8f, 0.3f));
             var royalJelly = Item("royal_jelly", "왕의 젤", ItemCategory.Material, 35, new Color(0.35f, 0.85f, 0.4f));
+            // A rare variant's certain spoils (P4-85, Monsters.RareMonster.AddSpoils): no monster wears or swallows it.
+            Item(Monsters.RareMonster.TrophyId, "빛나는 정수", ItemCategory.Material, 150, new Color(1f, 0.9f, 0.45f));
+            // A ruin's treasure (P4-85, Incidents.IncidentRules.AddTreasure).
+            Item(Incidents.IncidentRules.RelicId, "고대 유물", ItemCategory.Material, 250, new Color(0.8f, 0.7f, 0.95f));
+            // Picked at a herb patch (P4-105b, Places.PlaceRules): the apothecary makes potions of it too.
+            Item(Places.PlaceRules.HerbId, "약초", ItemCategory.Material, 5, new Color(0.45f, 0.75f, 0.35f));
 
             // Monster use (P4-21): what monsters wear when they find these, and the one unique item.
             rustyDagger.equipSlot = EquipSlot.Weapon; rustyDagger.monsterAttackBonus = 2f;
@@ -55,6 +61,8 @@ namespace GuildMaster.Data
 
             var potion = Item(Potion, "체력 물약", ItemCategory.Potion, 20, new Color(0.9f, 0.2f, 0.25f));
             potion.healAmount = 40f;
+            // P4-94: shot by members when a foe slips out of sight (Flares.FlareRules).
+            Item(Flares.FlareRules.ItemId, "조명탄", ItemCategory.Tool, 25, new Color(1f, 0.85f, 0.35f));
             for (int tier = 1; tier <= 3; tier++)
             {
                 var g = Item($"gear_t{tier}", $"{tier}등급 장비", ItemCategory.Gear, 60 * tier * tier, new Color(0.7f, 0.75f, 0.85f));
@@ -226,6 +234,256 @@ namespace GuildMaster.Data
             goblin.rivals.Add(goblinWarrior);
             goblinWarrior.rivals.Add(goblin);
 
+            // Disaster monsters (P4-72, user decision 2026-10-03): one kind for each sort of ground, whose
+            // skill may set off that ground's natural disaster in a fight (Disasters/DisasterService).
+            // Rare (danger High, P4-75 user decision 2026-10-04: at Medium sand goblins took 17 dens on a
+            // desert-heavy map and squeezed the goblins out); they borrow a related kind's art, tinted,
+            // until they get their own.
+            MonsterDefinition Elemental(MonsterDefinition m, string art, Color tint, string skill, CombatTier tier, MonsterPickupMode pickup)
+            {
+                m.artKey = art;
+                m.artTint = tint;
+                m.skillIds.Add(skill);
+                m.combatTier = tier;
+                m.pickupMode = pickup;
+                m.territoryRadius = 4.5f;
+                return m;
+            }
+            var fireSlime = Elemental(Mon("fire_slime", "불꽃 슬라임", MonsterShape.Slime, new Color(1f, 0.5f, 0.25f), new Color(1f, 0.85f, 0.4f), 0.8f,
+                    26, 6, 1, 1.0f, 1.2f, 1.8f, 5, DangerLevel.High, true, 6, 0.2f, 3, 14, Biome.Forest, Biome.Plains),
+                "slime", new Color(1f, 0.55f, 0.35f), "ember", CombatTier.Instinct, MonsterPickupMode.Absorb);
+            fireSlime.regions.Add(Region.Grassland);
+            fireSlime.habitatBiomes.Add(Biome.Forest); // wherever there are woods to burn
+            Loot(fireSlime, jelly, 0.8f, 1, 2);
+
+            var bogSlime = Elemental(Mon("bog_slime", "독늪 슬라임", MonsterShape.Slime, new Color(0.6f, 0.4f, 0.8f), new Color(0.85f, 0.7f, 1f), 0.85f,
+                    30, 6, 2, 1.0f, 1.3f, 1.6f, 5, DangerLevel.High, true, 6, 0.18f, 3, 15, Biome.Shore, Biome.Plains),
+                "slime", new Color(0.7f, 0.5f, 0.95f), "toxic_spit", CombatTier.Instinct, MonsterPickupMode.Absorb);
+            bogSlime.regions.Add(Region.Swamp);
+            Loot(bogSlime, denseJelly, 0.7f, 1, 2);
+
+            var frostSkull = Elemental(Mon("frost_skull", "서리 해골", MonsterShape.Humanoid, new Color(0.75f, 0.85f, 1f), new Color(0.35f, 0.45f, 0.6f), 0.85f,
+                    28, 7, 2, 1.1f, 1.1f, 3.0f, 7, DangerLevel.High, true, 6, 0.15f, 3, 16, Biome.Mountain, Biome.Plains),
+                "skull", new Color(0.65f, 0.85f, 1f), "frost_roar", CombatTier.Novice, MonsterPickupMode.Equip);
+            frostSkull.regions.Add(Region.Snow);
+            Loot(frostSkull, boneShard, 0.7f);
+
+            var sandGoblin = Elemental(Mon("sand_goblin", "모래 고블린", MonsterShape.Humanoid, new Color(0.85f, 0.7f, 0.4f), new Color(0.6f, 0.45f, 0.25f), 0.85f,
+                    28, 6.5f, 2, 1.1f, 1.1f, 3.1f, 7, DangerLevel.High, true, 8, 0.15f, 3, 15, Biome.Plains),
+                "goblin", new Color(1f, 0.85f, 0.55f), "sand_whirl", CombatTier.Novice, MonsterPickupMode.Equip);
+            sandGoblin.regions.Add(Region.Desert);
+            Loot(sandGoblin, goblinEar, 0.7f);
+
+            var ashSkull = Elemental(Mon("ash_skull", "잿빛 해골 전사", MonsterShape.Humanoid, new Color(0.5f, 0.45f, 0.45f), new Color(0.3f, 0.25f, 0.25f), 0.95f,
+                    34, 7.5f, 3, 1.2f, 1.2f, 2.8f, 7, DangerLevel.High, true, 6, 0.12f, 2, 17, Biome.Mountain, Biome.Plains),
+                "skull", new Color(0.55f, 0.5f, 0.5f), "quake_stomp", CombatTier.Novice, MonsterPickupMode.Equip);
+            ashSkull.regions.Add(Region.Wasteland);
+            Loot(ashSkull, boneShard, 0.6f);
+            Loot(ashSkull, ironOre, 0.3f);
+
+            // Their pack bosses (P4-57) draw the kind's own art, bigger.
+            fireSlime.bossName = "화염 슬라임 군주";
+            bogSlime.bossName = "늪의 독 군주";
+            frostSkull.bossName = "서리 해골 왕";
+            sandGoblin.bossName = "사막 고블린 족장";
+            ashSkull.bossName = "잿빛 해골 장군";
+
+            // ---------- Minimal EnemyMonster kinds (P4-110, user decisions 2026-10-30: about 13 new kinds, each with a
+            // material of its own that only the merchant buys) ----------
+            // Drawn by their rigs (Visuals/CharacterRig); the shape and colours are the generated picture where the pack is
+            // not imported. Base stats and EXP stay within about ±30% of the goblin's like the rest (P4-58: the level is the
+            // strength). The map has 96 dens instead of 64 (user decision); each new kind is sure of two of them and draws for
+            // the rest at 0.15 weight (on top of Medium rarity for the hunters and brutes), so the old kinds hold about as many
+            // dens as before and the new ones share the 32 added (about 37 on eight seeds). Prey (rabbit, larva, horse) run from
+            // their hunters and never start a fight. No new rivalries: a kind of two dens beside a feuding neighbour was gone
+            // in two days (measured, orcs against goblin warriors).
+            const float NewKindNestWeight = 0.15f;
+            MonsterDefinition Kind(MonsterDefinition m, string rig, string bossRig, string bossName, CombatTier tier,
+                float territory, params Region[] regions)
+            {
+                m.nestWeight = NewKindNestWeight;
+                m.minNests = 2; // a kind on one den of two or three dies out in a day or two
+                m.rigKey = rig;
+                m.bossRigKey = bossRig;
+                m.bossName = bossName;
+                m.combatTier = tier;
+                m.territoryRadius = territory;
+                m.regions.AddRange(regions);
+                return m;
+            }
+            ItemDefinition NewMaterial(string id, string name, int value, Color color) => Item(id, name, ItemCategory.Material, value, color);
+
+            // The town's grassland holds only three or four of the 64 dens, so these live farther afield too: a hare of the
+            // grass and the snow, a swarm of the grass and the swamp, a keeper of any wood (like the goblins), a herd of the grass
+            // and the desert.
+            var hornRabbit = Kind(Mon("horn_rabbit", "뿔토끼", MonsterShape.Beast, new Color(0.95f, 0.85f, 0.95f), new Color(0.6f, 0.85f, 0.95f), 0.9f,
+                    24, 5, 0, 1.0f, 1.1f, 3.4f, 6, DangerLevel.Low, false, 8, 0.28f, 5, 10, Biome.Plains),
+                "hornrabbit_jelly", "hornrabbit_crystal", "수정뿔 토끼", CombatTier.Instinct, 3.5f, Region.Grassland, Region.Snow);
+            hornRabbit.fleesFromPredators = true;
+            Loot(hornRabbit, NewMaterial("rabbit_horn", "토끼 뿔", 5, new Color(0.75f, 0.9f, 1f)), 0.8f);
+
+            var bee = Kind(Mon("great_bee", "왕벌", MonsterShape.Beast, new Color(1f, 0.8f, 0.2f), new Color(0.25f, 0.2f, 0.1f), 0.8f,
+                    22, 5.5f, 0, 1.0f, 0.9f, 3.6f, 7, DangerLevel.Medium, true, 10, 0.1f, 5, 12, Biome.Forest, Biome.Plains),
+                "wingdemon_bee", "wingdemon_apple", "여왕벌", CombatTier.Instinct, 4.5f, Region.Grassland, Region.Swamp);
+            bee.packHunter = true;
+            bee.skillIds.Add("howl");
+            Loot(bee, NewMaterial("bee_stinger", "벌침", 7, new Color(0.95f, 0.8f, 0.3f)), 0.75f);
+
+            var fungus = Kind(Mon("forest_fungus", "숲 버섯", MonsterShape.Brute, new Color(0.95f, 0.6f, 0.45f), new Color(0.95f, 0.9f, 0.8f), 0.8f,
+                    34, 6, 3, 1.2f, 1.5f, 1.6f, 5, DangerLevel.Medium, false, 6, 0.12f, 3, 13, Biome.Forest),
+                "fungus_horn", "fungus_rock", "바위 버섯 장로", CombatTier.Instinct, 4f, Region.Grassland);
+            fungus.skillIds.Add("slam");
+            fungus.habitatBiomes.Add(Biome.Forest); // any wood, like the goblins
+            fungus.wanderRadius = 3f;
+            Loot(fungus, NewMaterial("mushroom_cap", "버섯 갓", 6, new Color(0.95f, 0.55f, 0.4f)), 0.8f, 1, 2);
+
+            var horse = Kind(Mon("wild_horse", "야생마", MonsterShape.Beast, new Color(0.7f, 0.45f, 0.25f), new Color(0.35f, 0.2f, 0.1f), 0.85f,
+                    28, 5, 1, 1.1f, 1.2f, 3.8f, 8, DangerLevel.Medium, false, 10, 0.12f, 4, 12, Biome.Plains),
+                "horse_bronco", "horse_nightmare", "나이트메어", CombatTier.Instinct, 5.5f, Region.Grassland, Region.Desert);
+            horse.fleesFromPredators = true;
+            horse.skillIds.Add("charge");
+            Loot(horse, NewMaterial("horse_mane", "말갈기", 6, new Color(0.45f, 0.3f, 0.2f)), 0.8f);
+
+            // Swamp: a crawling prey that swallows what it finds, a heavy toad, a pack of raptors (also on the wasteland).
+            var larva = Kind(Mon("leech_larva", "거머리 애벌레", MonsterShape.Slime, new Color(0.55f, 0.35f, 0.6f), new Color(0.85f, 0.6f, 0.75f), 0.9f,
+                    24, 5, 1, 1.0f, 1.2f, 1.8f, 5, DangerLevel.Low, false, 8, 0.25f, 5, 10, Biome.Shore, Biome.Plains),
+                "larva_leech", "larva_knight", "기사 애벌레", CombatTier.Instinct, 3.5f, Region.Swamp);
+            larva.fleesFromPredators = true;
+            larva.pickupMode = MonsterPickupMode.Absorb;
+            Loot(larva, NewMaterial("leech_sac", "점액 주머니", 5, new Color(0.7f, 0.45f, 0.7f)), 0.8f, 1, 2);
+
+            var toad = Kind(Mon("swamp_toad", "늪 두꺼비", MonsterShape.Brute, new Color(0.75f, 0.55f, 0.3f), new Color(0.95f, 0.85f, 0.6f), 1.15f,
+                    36, 7, 2, 1.3f, 1.5f, 2.0f, 6, DangerLevel.Medium, true, 6, 0.06f, 3, 15, Biome.Shore, Biome.Plains),
+                "toad_giant", "toad_horn", "뿔 두꺼비 대장", CombatTier.Novice, 5f, Region.Swamp);
+            toad.skillIds.Add("slam");
+            toad.pickupMode = MonsterPickupMode.Absorb;
+            Loot(toad, NewMaterial("toad_gland", "두꺼비 독샘", 12, new Color(0.6f, 0.75f, 0.3f)), 0.7f);
+
+            var raptor = Kind(Mon("raptor", "랩터", MonsterShape.Beast, new Color(0.35f, 0.5f, 0.4f), new Color(0.2f, 0.3f, 0.35f), 0.95f,
+                    26, 7, 1, 1.1f, 1.0f, 3.6f, 8, DangerLevel.Medium, true, 8, 0.07f, 3, 15, Biome.Forest, Biome.Shore),
+                "raptor_swamp", "raptor_mechanic", "강철 랩터", CombatTier.Novice, 6f, Region.Swamp, Region.Wasteland);
+            raptor.packHunter = true;
+            raptor.skillIds.Add("howl");
+            Loot(raptor, NewMaterial("raptor_claw", "랩터 발톱", 10, new Color(0.85f, 0.85f, 0.75f)), 0.7f);
+
+            // Desert: a serpent that spits from afar, a charging rhino (also on the wasteland).
+            var serpent = Kind(Mon("sand_serpent", "모래 뱀", MonsterShape.Beast, new Color(0.95f, 0.8f, 0.4f), new Color(0.6f, 0.4f, 0.2f), 0.7f,
+                    24, 6, 1, 4.5f, 1.5f, 2.4f, 8, DangerLevel.Medium, true, 6, 0.07f, 3, 14, Biome.Plains),
+                "worm_lightning", "worm_poison", "독사 우두머리", CombatTier.Novice, 5f, Region.Desert);
+            Loot(serpent, NewMaterial("serpent_scale", "뱀 비늘", 9, new Color(0.95f, 0.85f, 0.45f)), 0.75f);
+
+            var rhino = Kind(Mon("rhino", "코뿔소", MonsterShape.Brute, new Color(0.5f, 0.6f, 0.75f), new Color(0.9f, 0.9f, 0.85f), 1.1f,
+                    36, 7.5f, 4, 1.3f, 1.5f, 2.6f, 6, DangerLevel.Medium, true, 5, 0.05f, 3, 17, Biome.Plains, Biome.Mountain),
+                "rhino_huge", "rhino_armor", "철갑 코뿔소", CombatTier.Novice, 6f, Region.Desert, Region.Wasteland);
+            rhino.skillIds.Add("charge");
+            Loot(rhino, NewMaterial("rhino_horn", "코뿔소 뿔", 14, new Color(0.9f, 0.88f, 0.8f)), 0.65f);
+
+            // Snow: a yeti, a swarm of vampire bats, an ogre that wears what it finds.
+            var yeti = Kind(Mon("yeti", "설인", MonsterShape.Brute, new Color(0.95f, 0.97f, 1f), new Color(0.6f, 0.75f, 0.9f), 1.0f,
+                    36, 7.5f, 3, 1.3f, 1.5f, 2.4f, 6, DangerLevel.Medium, true, 6, 0.06f, 3, 16, Biome.Plains, Biome.Mountain),
+                "winter_snow", "winter_ice", "얼음 거인", CombatTier.Novice, 5.5f, Region.Snow);
+            yeti.skillIds.Add("slam");
+            Loot(yeti, NewMaterial("yeti_fur", "설인 털", 12, new Color(0.95f, 0.97f, 1f)), 0.7f);
+
+            var bat = Kind(Mon("vampire_bat", "흡혈 박쥐", MonsterShape.Beast, new Color(0.5f, 0.4f, 0.45f), new Color(0.85f, 0.3f, 0.35f), 0.9f,
+                    20, 6, 0, 1.0f, 0.9f, 3.8f, 8, DangerLevel.Medium, true, 10, 0.1f, 4, 13, Biome.Forest, Biome.Mountain),
+                "wingdemon_vampire", "wingdemon_eye", "외눈 박쥐 대장", CombatTier.Instinct, 5f, Region.Snow);
+            bat.packHunter = true;
+            bat.skillIds.Add("howl");
+            Loot(bat, NewMaterial("bat_wing", "박쥐 날개", 7, new Color(0.45f, 0.35f, 0.4f)), 0.75f);
+
+            var ogre = Kind(Mon("snow_ogre", "설원 오우거", MonsterShape.Brute, new Color(0.6f, 0.62f, 0.68f), new Color(0.9f, 0.5f, 0.55f), 1.0f,
+                    36, 8, 3, 1.3f, 1.6f, 2.4f, 6, DangerLevel.Medium, true, 5, 0.04f, 3, 18, Biome.Mountain, Biome.Plains),
+                "evilmass_angry", "evilmass_knight", "오우거 기사", CombatTier.Novice, 6f, Region.Snow);
+            ogre.skillIds.Add("slam");
+            ogre.pickupMode = MonsterPickupMode.Equip;
+            Loot(ogre, NewMaterial("ogre_tusk", "오우거 송곳니", 15, new Color(0.95f, 0.92f, 0.8f)), 0.65f);
+
+            // Wasteland: orcs, a raiding band that wears what it finds (the late raiders beside the goblin warriors).
+            var orc = Kind(Mon("orc", "오크", MonsterShape.Humanoid, new Color(0.45f, 0.65f, 0.3f), new Color(0.5f, 0.35f, 0.25f), 0.95f,
+                    32, 7, 3, 1.2f, 1.2f, 2.8f, 7, DangerLevel.Medium, true, 12, 0.03f, 3, 16, Biome.Plains, Biome.Mountain),
+                "orcsword_rookie", "orcsmasher_warlord", "오크 전쟁군주", CombatTier.Novice, 6f, Region.Wasteland);
+            orc.packHunter = true;
+            orc.canRaid = true;
+            orc.raidThreshold = 9; orc.raidStep = 3; // 9 / 12 / 15, like the goblin warriors
+            orc.pickupMode = MonsterPickupMode.Equip;
+            orc.startingGear.Add(new LootEntry { item = rustyDagger, chance = 0.3f, min = 1, max = 1 });
+            Loot(orc, NewMaterial("orc_tusk", "오크 엄니", 10, new Color(0.95f, 0.9f, 0.75f)), 0.75f);
+
+            // Their place in the food web: the prey run from these hunters.
+            goblin.prey.Add(hornRabbit);
+            bee.prey.Add(hornRabbit);
+            toad.prey.Add(larva);
+            raptor.prey.AddRange(new[] { larva, stoneSlime });
+            serpent.prey.Add(horse);
+            ogre.prey.Add(skull);
+            orc.prey.Add(stoneSlime);
+
+            // Region lords (P4-83, user decisions 2026-10-17): one final boss of its own kind deep in each outer
+            // region, guarded by that region's disaster kind (Monsters/RegionLords: level 35, health x15). They
+            // are drawn by their own Minimal EnemyMonster rig (P4-110), or borrow a pack boss's art, tinted, when it is
+            // not imported. Their trophy always drops; monsters leave it alone (unique, no slot), so the guild can
+            // carry it home.
+            MonsterDefinition Lord(string id, string name, MonsterShape shape, Color body, Color accent, float scale,
+                float hp, float atk, float def, float range, float cd, float speed, Region region, MonsterDefinition escort,
+                string art, Color tint, string rig, string strike, string trophyId, string trophyName, Color trophyColor)
+            {
+                var m = Mon(id, name, shape, body, accent, scale, hp, atk, def, range, cd, speed, 8, DangerLevel.High, true, 1, 0f, 0, 20);
+                m.isRegionLord = true;
+                m.bossName = name; // it leads its lair under its own name
+                m.lordRegion = region;
+                m.lairEscort = escort;
+                m.bossArtKey = art;
+                m.artKey = art;
+                m.artTint = tint;
+                m.rigKey = rig;
+                m.combatTier = CombatTier.Veteran;
+                m.wanderRadius = 3f;
+                m.leashRadius = Monsters.RegionLords.LeashRadius;
+                m.territoryRadius = 7f;
+                m.minNests = 0;
+                m.skillIds.Add(strike);
+                m.skillIds.Add("lord_call");
+                var trophy = Item(trophyId, trophyName, ItemCategory.Material, 400, trophyColor);
+                trophy.uniqueEffect = "lord_trophy";
+                Loot(m, trophy, 1f);
+                Loot(m, crownShard, 0.5f);
+                return m;
+            }
+            Lord("lord_desert", "모래 폭군 카르샤", MonsterShape.Humanoid, new Color(0.85f, 0.7f, 0.4f), new Color(0.55f, 0.35f, 0.2f), 1.5f,
+                34, 7.5f, 3, 1.3f, 1.2f, 3.4f, Region.Desert, sandGoblin, "boss_goblin", new Color(1f, 0.85f, 0.55f), "evilmass_boxer",
+                "lord_sand_whirl", "lord_heart_desert", "모래 폭군의 심장", new Color(0.95f, 0.75f, 0.35f));
+            Lord("lord_snow", "서리 리치 이스벨", MonsterShape.Humanoid, new Color(0.75f, 0.85f, 1f), new Color(0.3f, 0.4f, 0.6f), 1.4f,
+                28, 7f, 2, 4.5f, 1.4f, 3.0f, Region.Snow, frostSkull, "boss_skull", new Color(0.7f, 0.88f, 1f), "reaper_death",
+                "lord_frost_roar", "lord_heart_snow", "서리 리치의 성물함", new Color(0.7f, 0.9f, 1f));
+            Lord("lord_swamp", "독늪 여왕 무르가", MonsterShape.Brute, new Color(0.6f, 0.4f, 0.8f), new Color(0.9f, 0.75f, 0.3f), 1.6f,
+                38, 8f, 3, 1.5f, 1.6f, 3.2f, Region.Swamp, bogSlime, "boss_slime_king", new Color(0.78f, 0.55f, 1f), "toad_king",
+                "lord_toxic_spit", "lord_heart_swamp", "독늪 여왕의 왕관", new Color(0.7f, 0.45f, 0.95f));
+            Lord("lord_wasteland", "잿불 거인 바흐람", MonsterShape.Brute, new Color(0.5f, 0.4f, 0.38f), new Color(0.95f, 0.45f, 0.2f), 1.7f,
+                40, 8f, 4, 1.4f, 1.6f, 3.2f, Region.Wasteland, ashSkull, "boss_stone_slime", new Color(0.8f, 0.5f, 0.42f), "carapace_iron",
+                "lord_quake_stomp", "lord_heart_wasteland", "잿불 거인의 핵", new Color(0.95f, 0.45f, 0.2f));
+
+            // The dragon (P4-93, user decisions 2026-10-20): one, no habitat (never in a den, never a newcomer), asleep at
+            // its own lair or on the wing (Monsters/Dragon: level 40, health x20). Drawn by Visuals/DragonArt. Its heart
+            // always drops; its hoard at the lair is farmed (Dragon/DragonService).
+            var dragon = Mon("dragon", "화염룡 이그니스", MonsterShape.Brute, new Color(0.8f, 0.2f, 0.2f), new Color(0.95f, 0.75f, 0.35f), 1f,
+                40, 8f, 4, 1.8f, 1.6f, 3.4f, 10, DangerLevel.High, true, 1, 0f, 0, 30);
+            dragon.isDragon = true;
+            dragon.bossName = dragon.displayName; // it leads nobody, but answers to its own name like a lord
+            dragon.combatTier = CombatTier.Heroic;
+            dragon.leashRadius = 30f;
+            dragon.minNests = 0;
+            dragon.pickupMode = MonsterPickupMode.None;
+            dragon.skillIds.Add("dragon_breath");
+            // P4-95: appended (cooldowns are saved by position); on the ground the engagement tries them in this order.
+            dragon.skillIds.AddRange(new[] { "dragon_tail", "dragon_roar", "dragon_rain", "dragon_bomb" });
+            var dragonHeart = Item("dragon_heart", "화염룡의 심장", ItemCategory.Material, 800, new Color(1f, 0.35f, 0.2f));
+            dragonHeart.uniqueEffect = "dragon_trophy";
+            Loot(dragon, dragonHeart, 1f);
+            Loot(dragon, Item("dragon_scale", "용의 비늘", ItemCategory.Material, 120, new Color(0.85f, 0.25f, 0.25f)), 1f, 3, 5);
+            // Its hoard is carried off in sacks of gold (Monsters/Dragon.SackValue) besides whatever it piled up.
+            Item("dragon_gold", "용의 금화 자루", ItemCategory.Material, Monsters.Dragon.SackValue, new Color(1f, 0.85f, 0.3f));
+
             AddTraits(db);
             AddBuildings(db);
             AddRecipes(db);
@@ -246,13 +504,15 @@ namespace GuildMaster.Data
                 return b;
             }
 
-            // P4-69: level 1 is what the game actually starts with (P5-1 set 5 EXP an hour, 90G tax); the old
-            // 8 / 60 here never applied, so the town hall's level 2 (90G) was an upgrade that paid nothing.
-            // Levels 2 and 3 keep their old steps (user decision 2026-09-27).
+            // P4-69: level 1 is what the game actually starts with (P5-1 set 90G tax); the old 60 here never
+            // applied, so the town hall's level 2 (90G) was an upgrade that paid nothing. Levels 2 and 3 keep
+            // their old steps (user decision 2026-09-27). P4-82 (user decision 2026-10-17): the guild hall no
+            // longer makes EXP — quest EXP comes from the clients. P4-92 (user decision 2026-10-19): no roster limit, so
+            // the levels only bring stronger visitors (costs as before).
             B(Town.BuildingType.GuildHall,
-                new BuildingLevel { expPerHour = 5, rosterCapacity = 6, visitorLevelBonus = 0, effectText = "EXP 시간당 5 · 정원 6명" },
-                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, expPerHour = 11, rosterCapacity = 9, visitorLevelBonus = 1, effectText = "EXP 시간당 11 · 정원 9명 · 방문자 레벨 +1" },
-                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, expPerHour = 19, rosterCapacity = 12, visitorLevelBonus = 2, effectText = "EXP 시간당 19 · 정원 12명 · 방문자 레벨 +2" });
+                new BuildingLevel { visitorLevelBonus = 0, effectText = "방문자 레벨 +0" },
+                new BuildingLevel { goldCost = 300, itemCosts = { I("bone_shard", 5), I("goblin_ear", 5) }, visitorLevelBonus = 1, effectText = "방문자 레벨 +1" },
+                new BuildingLevel { goldCost = 800, itemCosts = { I("goblin_helm", 4), I("iron_ore", 6) }, visitorLevelBonus = 2, effectText = "방문자 레벨 +2" });
 
             B(Town.BuildingType.Blacksmith,
                 new BuildingLevel { craftTier = 1, effectText = "1등급 장비 제작" },
@@ -265,9 +525,10 @@ namespace GuildMaster.Data
                 new BuildingLevel { goldCost = 450, itemCosts = { I("royal_jelly", 2), I("slime_jelly", 20) }, craftTier = 1, craftSpeed = 2f, effectText = "물약 제작 속도 ×2" });
 
             B(Town.BuildingType.TrainingGround,
-                new BuildingLevel { idleExpPerHour = 0, effectText = "훈련 없음" },
-                new BuildingLevel { goldCost = 200, itemCosts = { I("stone_shard", 6), I("old_arrowhead", 4) }, idleExpPerHour = 3, effectText = "대기 중인 모험가 EXP 시간당 3" },
-                new BuildingLevel { goldCost = 550, itemCosts = { I("bone_shard", 12), I("stone_shard", 10) }, idleExpPerHour = 6, effectText = "대기 중인 모험가 EXP 시간당 6" });
+                new BuildingLevel { idleExpPerHour = 0, effectText = "훈련 없음 (신입은 가까운 약한 몬스터만 사냥)" },
+                // P4-99: the base grows each day and with how far a member is behind the guild's best; newcomers train here.
+                new BuildingLevel { goldCost = 200, itemCosts = { I("stone_shard", 6), I("old_arrowhead", 4) }, idleExpPerHour = 3, effectText = "대기 중 EXP 시간당 3+ (날마다·뒤처진 만큼 더), 신입 훈련" },
+                new BuildingLevel { goldCost = 550, itemCosts = { I("bone_shard", 12), I("stone_shard", 10) }, idleExpPerHour = 6, effectText = "대기 중 EXP 시간당 6+ (날마다·뒤처진 만큼 더), 신입 훈련" });
 
             // P5-1: the hall fell in seconds to the first raid, so it is much sturdier now and
             // raiders only land a fraction of their attack on it (GameBalance.monsterBuildingDamageMul).
@@ -288,6 +549,65 @@ namespace GuildMaster.Data
                     footprint = 2,
                     effectText = "주변 14칸을 성벽 너머까지 감시",
                 });
+
+            // The arrow tower (P4-113, H10): placed outside the walls like a watchtower, raised by clicking it; what each level
+            // shoots is Town.DefenceRules.
+            BuildingLevel T(int level, int gold, int hp, params ItemCost[] items)
+            {
+                var lv = new BuildingLevel { goldCost = gold, maxHp = hp, footprint = 2, sightRadius = Town.DefenceRules.TowerSight(level),
+                                             effectText = $"{Town.DefenceRules.TowerEffect(level)} · 내구도 {hp}" };
+                lv.itemCosts.AddRange(items);
+                return lv;
+            }
+            B(Town.BuildingType.ArrowTower,
+                T(1, 200, 260, I("stone_shard", 6), I("iron_ore", 4)),
+                T(2, 450, 360, I("stone_shard", 6), I("iron_ore", 10)),
+                T(3, 900, 480, I("stone_shard", 10), I("iron_ore", 16)));
+
+            // The guild's facilities (P4-87, user decision 2026-10-19: 400 / 1000 / 2000G a level plus materials, the
+            // dormitory 1500G). Placed inside the walls like a tower; the second and third of a kind cost more (FacilityRules).
+            BuildingLevel F(Town.BuildingType type, int level, int gold, int hp, params ItemCost[] items)
+            {
+                var lv = new BuildingLevel { goldCost = gold, maxHp = hp, footprint = 3, effectText = Town.FacilityRules.EffectText(type, level) };
+                lv.itemCosts.AddRange(items);
+                return lv;
+            }
+            void Facility(Town.BuildingType type, ItemCost[] one, ItemCost[] two, ItemCost[] three)
+                => B(type, F(type, 1, 400, 300, one), F(type, 2, 1000, 400, two), F(type, 3, 2000, 500, three));
+
+            Facility(Town.BuildingType.Armory,
+                new[] { I("iron_ore", 6), I("rusty_dagger", 4) },
+                new[] { I("iron_ore", 12), I("goblin_helm", 3) },
+                new[] { I("iron_ore", 20), I("crown_shard", 1) });
+            Facility(Town.BuildingType.ArmorWorkshop,
+                new[] { I("stone_shard", 10), I("bone_shard", 6) },
+                new[] { I("goblin_helm", 4), I("iron_ore", 8) },
+                new[] { I("goblin_helm", 8), I("crown_shard", 1) });
+            Facility(Town.BuildingType.DiningHall,
+                new[] { I("slime_jelly", 15), I("goblin_ear", 6) },
+                new[] { I("dense_jelly", 12), I("bone_shard", 8) },
+                new[] { I("royal_jelly", 3), I("dense_jelly", 15) });
+            Facility(Town.BuildingType.PoisonLab,
+                new[] { I("slime_jelly", 12), I("goblin_ear", 8) },
+                new[] { I("dense_jelly", 10), I("old_arrowhead", 10) },
+                new[] { I("royal_jelly", 3), I("crown_shard", 1) });
+            Facility(Town.BuildingType.RuneForge,
+                new[] { I("bone_shard", 8), I("stone_shard", 8) },
+                new[] { I("bone_shard", 15), I("iron_ore", 8) },
+                new[] { I("crown_shard", 2), I("bone_shard", 15) });
+            Facility(Town.BuildingType.FrostAltar,
+                new[] { I("stone_shard", 12), I("bone_shard", 4) },
+                new[] { I("bone_shard", 12), I("dense_jelly", 10) },
+                new[] { I("crown_shard", 1), I("royal_jelly", 2) });
+            // P4-92 (user decision 2026-10-19): stress relief in town at three levels, dearer than the other facilities.
+            var dorm = new[]
+            {
+                F(Town.BuildingType.Dormitory, 1, 800, 450, I("iron_ore", 10), I("stone_shard", 10), I("goblin_ear", 6)),
+                F(Town.BuildingType.Dormitory, 2, 1500, 550, I("iron_ore", 15), I("stone_shard", 15), I("bone_shard", 10)),
+                F(Town.BuildingType.Dormitory, 3, 2500, 650, I("iron_ore", 20), I("dense_jelly", 12), I("crown_shard", 1)),
+            };
+            foreach (var lv in dorm) lv.footprint = 4;
+            B(Town.BuildingType.Dormitory, dorm);
         }
 
         /// <summary>Crafting recipes (P4-2). Agreed with the user 2026-09-19; tune in P5-1.</summary>
@@ -308,6 +628,10 @@ namespace GuildMaster.Data
             }
 
             R("potion", Potion, Town.BuildingType.Apothecary, 1, 2f, 5, I("slime_jelly", 2));
+            // P4-105b: the same potion from the herb patches' herbs.
+            R("herb_potion", Potion, Town.BuildingType.Apothecary, 1, 2f, 5, I(Places.PlaceRules.HerbId, 3));
+            // P4-94 (user decision: made at the apothecary): from the near ring's drops, as cheap as a potion to make.
+            R("flare", Flares.FlareRules.ItemId, Town.BuildingType.Apothecary, 1, 2f, 5, I("slime_jelly", 1), I("stone_shard", 1));
             // P5-1: tier 1 used to need a rusty dagger, which only 20% of goblins carry — a new guild
             // could not make its first gear for days. It now comes from the near ring's own drops.
             R("gear_t1", "gear_t1", Town.BuildingType.Blacksmith, 1, 4f, 0, I("stone_shard", 3), I("dense_jelly", 2));

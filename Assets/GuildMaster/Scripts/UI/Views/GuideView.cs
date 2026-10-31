@@ -21,7 +21,7 @@ namespace GuildMaster.UI
     /// "다음 할 일" (F-19, user request 2026-10-11): a small panel on the left under the side menu. The checklist of first
     /// things to try (<see cref="GuideRules.Order"/>, done ones ticked off) and clickable hints about what needs the
     /// guild master right now — a worn-out member (opens the care window), a keen visitor (jumps to them), an empty
-    /// quest board, a waiting event card. J or the header button folds it.
+    /// quest board, a waiting event card. Y or the header button folds it (J went to decision cards at the 2026-10-31 merge).
     /// </summary>
     public class GuideView : MonoBehaviour
     {
@@ -44,11 +44,11 @@ namespace GuildMaster.UI
             var bg = UIBuilder.Panel(canvas, "Guide", new Color(0.08f, 0.07f, 0.11f, 0.9f));
             _root = bg.rectTransform;
             // Under the side menu (which ends about 470px down; 10 buttons since the relationship graph).
-            _root.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -526), new Vector2(Width, OpenHeight));
+            _root.Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-8, -340), new Vector2(Width, OpenHeight)); // under the minimap (2026-10-31 merge)
 
             var headerRow = UIBuilder.Rect(_root, "Header");
             headerRow.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -4), new Vector2(-12, 26));
-            _header = UIBuilder.Label(headerRow, "다음 할 일 (J)", 16, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold);
+            _header = UIBuilder.Label(headerRow, "다음 할 일 (Y)", 16, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold);
             _header.rectTransform.Stretch(6, 34, 0, 0);
             _fold = UIBuilder.Button(headerRow, "-", Toggle, 26, 24);
             ((RectTransform)_fold.transform).Anchor(new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), Vector2.zero, new Vector2(26, 24));
@@ -84,7 +84,7 @@ namespace GuildMaster.UI
         {
             if (_root == null) return;
             var kb = Keyboard.current;
-            if (kb != null && kb.jKey.wasPressedThisFrame && !IsTyping() && !MenuState.IsOpen) Toggle();
+            if (kb != null && kb.yKey.wasPressedThisFrame && !IsTyping() && !MenuState.IsOpen) Toggle();
             _timer -= Time.unscaledDeltaTime;
             if (_timer > 0f) return;
             _timer = RefreshInterval;
@@ -98,7 +98,7 @@ namespace GuildMaster.UI
             if (tracker != null)
             {
                 int done = GuideRules.Order.Count(tracker.IsDone);
-                _header.text = $"다음 할 일 (J)  {UIBuilder.Colored($"{done}/{GuideRules.Order.Length}", UITheme.TextMuted)}";
+                _header.text = $"다음 할 일 (Y)  {UIBuilder.Colored($"{done}/{GuideRules.Order.Length}", UITheme.TextMuted)}";
             }
             if (_folded) return;
 
@@ -146,7 +146,7 @@ namespace GuildMaster.UI
             Services.TryGet<GuildWelfare>(out var welfare);
             if (Services.TryGet<GuildRoster>(out var roster))
             {
-                s.RosterFull = roster.IsFull;
+                s.RosterFull = false; // main has no member cap any more (2026-10-31 merge)
                 foreach (var m in roster.Members)
                 {
                     if (m == null || !m.IsAlive || m.Data == null || m.IsVisitor) continue;

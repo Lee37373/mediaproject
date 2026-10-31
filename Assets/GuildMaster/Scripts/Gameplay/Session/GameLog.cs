@@ -24,7 +24,7 @@ namespace GuildMaster.Session
     /// Turns gameplay events into a readable, bounded history (shown in the UI and usable as
     /// recent-events context for LLM prompts).
     /// </summary>
-    public class GameLog
+    public class GameLog : ISaveable
     {
         const int MaxEntries = 200;
 
@@ -34,20 +34,58 @@ namespace GuildMaster.Session
 
         public IReadOnlyList<LogEntry> Entries => _entries;
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public List<string> times = new();
+            public List<string> texts = new();
+            public List<LogCategory> categories = new();
+        }
+
+        public string SaveKey => "log";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var e in _entries)
+            {
+                s.times.Add(e.Time);
+                s.texts.Add(e.Text);
+                s.categories.Add(e.Category);
+            }
+            return UnityEngine.JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = UnityEngine.JsonUtility.FromJson<SaveData>(json);
+            _entries.Clear();
+            for (int i = 0; i < s.texts.Count && i < s.times.Count && i < s.categories.Count; i++)
+                _entries.Add(new LogEntry { Time = s.times[i], Text = s.texts[i], Category = s.categories[i] });
+        }
+
         public GameLog(GameClock clock, GameDatabase db)
         {
             _clock = clock;
             _db = db;
-            EventBus.Subscribe<QuestPostedEvent>(e => Add($"의뢰 등록: {e.Quest.Title} (보상 {e.Quest.RewardGold}G / {e.Quest.RewardExp}EXP)", LogCategory.Quest));
+            // P4-82: a client's quest says who posted it and the guild's fee; only the guild's own escrow is refunded.
+            EventBus.Subscribe<QuestPostedEvent>(e => Add(e.Quest.FundedByClient
+                ? $"의뢰 등록({e.Quest.ClientLabel}): {e.Quest.Title} (보상 {e.Quest.RewardGold}G / {e.Quest.RewardExp}EXP · 수수료 {e.Quest.FeeGold}G)"
+                : $"의뢰 등록: {e.Quest.Title} (보상 {e.Quest.RewardGold}G 예치)", LogCategory.Quest));
             EventBus.Subscribe<QuestAcceptedEvent>(e => Add($"{e.Taker.TakerName}이(가) '{e.Quest.Title}' 의뢰를 수락했습니다.", LogCategory.Quest));
             EventBus.Subscribe<QuestAbandonedEvent>(e => Add($"{e.Taker.TakerName}이(가) '{e.Quest.Title}' 의뢰를 포기했습니다.", LogCategory.Quest));
-            EventBus.Subscribe<QuestCompletedEvent>(e => Add($"의뢰 달성: {e.Quest.Title}", LogCategory.Quest));
+            EventBus.Subscribe<QuestCompletedEvent>(e => Add(e.Quest.FundedByClient && e.Quest.FeeGold > 0
+                ? $"의뢰 달성: {e.Quest.Title} (수수료 {e.Quest.FeeGold}G 받음)"
+                : $"의뢰 달성: {e.Quest.Title}", LogCategory.Quest));
             EventBus.Subscribe<QuestRewardPaidEvent>(e => Add($"{e.Taker.TakerName}에게 보상 지급: {e.Gold}G, {e.Exp}EXP", LogCategory.Quest));
             EventBus.Subscribe<QuestClosedEvent>(e =>
             {
-                if (e.Status == QuestStatus.Cancelled && e.Reason != null) Add($"의뢰 철회: {e.Quest.Title} — {e.Reason} (보상 환불)", LogCategory.Quest);
-                else if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
-                else if (e.Status == QuestStatus.Failed) Add($"의뢰 실패: {e.Quest.Title} (보상 환불)", LogCategory.Quest);
+                string refund = e.Quest.FundedByClient ? "" : " (보상 환불)";
+                if (e.Status == QuestStatus.Cancelled && e.Reason != null) Add($"의뢰 철회: {e.Quest.Title} — {e.Reason}{refund}", LogCategory.Quest);
+                else if (e.Status == QuestStatus.Cancelled) Add($"의뢰 취소: {e.Quest.Title}{refund}", LogCategory.Quest);
+                else if (e.Status == QuestStatus.Failed) Add($"의뢰 실패: {e.Quest.Title}{refund}", LogCategory.Quest);
             });
             // Camps out in the wild (P4-66). Guild members are always in the guild's sight.
             EventBus.Subscribe<CampPitchedEvent>(e =>
@@ -62,6 +100,8 @@ namespace GuildMaster.Session
                 (!e.Warned ? "자다가 기습당했습니다." : e.Camp.Watcher != null ? "불침번이 먼저 알아챘습니다." : "불가에 깨어 있다가 알아챘습니다."), LogCategory.Danger));
             EventBus.Subscribe<PartyInviteAnsweredEvent>(e => Add(
                 $"{e.Invitee.Data.name}이(가) {e.Leader.Data.name}의 파티 제안을 {(e.Accepted ? "수락" : "거절")}했습니다.", LogCategory.Quest));
+            EventBus.Subscribe<PartyRecruitingEvent>(e => Add(
+                $"[모집] {e.Leader.Data.name}이(가) '{e.Quest.Title}'에 함께 갈 동료를 모읍니다 ({e.Count}/{e.Quest.MaxParty}명, 최대 {PartyService.RecruitHours:0}시간).", LogCategory.Quest));
             EventBus.Subscribe<PartyFormedEvent>(e => Add(
                 $"파티 출발: {e.Leader.Data.name}, {string.Join(", ", e.Members.Select(m => m.Data.name))} → '{e.Quest.Title}'", LogCategory.Quest));
             // Standing parties (P4-50): who joins or leaves, and how the leader split the pay.
@@ -78,7 +118,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<PartySettledEvent>(e =>
             {
                 if (e.Pool <= 0) return;
-                Add($"{e.Party.Name} 정산 {e.Pool}G{(e.FromLlm ? "" : " (규칙 분배)")}: {string.Join(", ", e.Shares.Select(s => $"{s.member.Data.name} {s.share}G"))}", LogCategory.Economy);
+                Add($"{e.Party.Name} 정산 {e.Pool}G: {string.Join(", ", e.Shares.Select(s => $"{s.member.Data.name} {s.share}G"))}", LogCategory.Economy);
             });
             EventBus.Subscribe<LivingCostsDayEvent>(e =>
             {
@@ -103,7 +143,62 @@ namespace GuildMaster.Session
                 if (e.Outcome == Recruitment.RecruitOutcome.Left) Add($"{e.Visitor.Data.name}이(가) 영입 제안을 거절했습니다.", LogCategory.Info);
             });
             EventBus.Subscribe<AdventurerDiedEvent>(e => Add($"{e.Adventurer.Data.name}이(가) {(e.Killer != null ? e.Killer.DisplayName + "에게 " : "")}목숨을 잃었습니다...", LogCategory.Danger));
+            // Mental breaks and inspirations (P4-104d).
+            EventBus.Subscribe<MentalBreakEvent>(e =>
+            {
+                if (e.Adventurer == null) return;
+                string name = e.Adventurer.Data.name;
+                if (e.Stage == MentalBreakEvent.Phase.Began)
+                    Add($"[붕괴] {name}이(가) 무너졌습니다: {BreakRules.Label(e.Severity)} 붕괴 — {BreakRules.Label(e.Kind)}"
+                        + (e.Other != null ? $" (상대 {e.Other.Data.name})" : ""), LogCategory.Danger);
+                else if (e.Stage == MentalBreakEvent.Phase.Acted && e.Kind == BreakKind.Spree)
+                    Add($"[붕괴] {name}이(가) {e.Gold}G를 탕진했습니다.", LogCategory.Economy);
+                else if (e.Stage == MentalBreakEvent.Phase.Over && e.Kind == BreakKind.Berserk)
+                    Add($"[붕괴] {name}이(가) 광폭에서 깨어났습니다.", LogCategory.Info);
+                else if (e.Stage == MentalBreakEvent.Phase.Over && e.Kind == BreakKind.Brawl && e.Other != null)
+                    Add($"[붕괴] {name}와(과) {e.Other.Data.name}의 주먹다짐이 끝났습니다.", LogCategory.Info);
+            });
+            EventBus.Subscribe<InspirationEvent>(e =>
+            {
+                if (e.Adventurer == null) return;
+                Add(e.Ended ? $"[영감] {e.Adventurer.Data.name}의 {BreakRules.Label(e.Kind)}이 지나갔습니다."
+                            : $"[영감] {e.Adventurer.Data.name}에게 {BreakRules.Label(e.Kind)}이 떠올랐습니다 ({BreakRules.Effect(e.Kind)}).", LogCategory.Info);
+            });
+            // Quirks picked up (P4-104e).
+            EventBus.Subscribe<QuirkGainedEvent>(e =>
+            {
+                if (e.Adventurer != null) Add($"[버릇] {e.Adventurer.Data.name}에게 '{e.Label}' 버릇이 생겼습니다.", LogCategory.Info);
+            });
+            // The thoughts that tell a story (P4-104c): a close friend lost, a last stand, a great kill, being let down.
+            EventBus.Subscribe<ThoughtAddedEvent>(e =>
+            {
+                if (!e.IsNew || e.Def == null || !e.Def.Log || e.Adventurer == null) return;
+                float w = ThoughtRules.Weight(e.Thought);
+                Add($"[기분] {e.Adventurer.Data.name}: {e.Thought.label} ({(w > 0f ? "+" : "")}{w:0})", w < 0f ? LogCategory.Danger : LogCategory.Info);
+            });
             EventBus.Subscribe<Town.RaidSightedEvent>(e => Add($"[침공] {e.Direction}쪽에서 적 무리가 관측되었습니다! 길드원들이 방어에 나섭니다.", LogCategory.Danger));
+            // Natural disasters (P4-72): only the ones the guild has seen.
+            EventBus.Subscribe<Disasters.DisasterSightedEvent>(e => Add(
+                $"[재해] {Quests.QuestBoard.DescribeArea(e.Disaster.WorldOrigin)}에서 {e.Disaster.NameI} 관측되었습니다. 마을이 {Disasters.DisasterRules.WorkName(e.Disaster.Kind)} 의뢰를 냈습니다.", LogCategory.Danger));
+            EventBus.Subscribe<Disasters.DisasterReachedTownEvent>(e => Add(
+                $"[재해] {e.Disaster.NameI} 마을에 닿았습니다! 성문과 건물이 피해를 입고 오늘 세금이 줄어듭니다.", LogCategory.Danger));
+            EventBus.Subscribe<Disasters.DisasterEndedEvent>(e =>
+            {
+                if (!e.Known) return;
+                Add(e.DealtWith ? $"[재해] {e.Disaster.NameEul} 수습했습니다." : $"[재해] {e.Disaster.NameI} 저절로 사그라들었습니다.", LogCategory.Ecosystem);
+            });
+            // Sudden incidents (P4-85): heard by rumour; the end only when the guild knew of it.
+            EventBus.Subscribe<Incidents.IncidentRumouredEvent>(e => Add(
+                $"{(e.Incident.Kind == Incidents.IncidentKind.Nemesis ? Incidents.IncidentRules.Tag(e.Incident.Kind) : "[소문]")} {Incidents.IncidentRules.RumourText(e.Incident)}", LogCategory.Danger));
+            EventBus.Subscribe<Incidents.IncidentRumourUpdatedEvent>(e => Add($"[소문] {Incidents.IncidentRules.RumourUpdateText(e.Incident)}", LogCategory.Danger));
+            EventBus.Subscribe<Incidents.IncidentSightedEvent>(e => Add($"{Incidents.IncidentRules.Tag(e.Incident.Kind)} {Incidents.IncidentRules.SightedText(e.Incident)}", LogCategory.Danger));
+            EventBus.Subscribe<Incidents.IncidentEndedEvent>(e =>
+            {
+                if (e.Known && Incidents.IncidentRules.EndedText(e.Incident) is { } text) Add($"{Incidents.IncidentRules.Tag(e.Incident.Kind)} {text}", LogCategory.Ecosystem);
+            });
+            // Nemeses (P4-109): what the guild saw a monster do to it, and its fall.
+            EventBus.Subscribe<Nemeses.NemesisDeedEvent>(e => Add($"[원수] {Nemeses.NemesisService.DeedText(e)}", LogCategory.Danger));
+            EventBus.Subscribe<Nemeses.NemesisFellEvent>(e => Add($"[원수] {Nemeses.NemesisService.FellText(e)}", LogCategory.Combat));
             // A raid the guild never saw stays unknown.
             EventBus.Subscribe<Town.RaidEndedEvent>(e => { if (e.Sighted) Add(e.Withdrawn > 0
                 ? $"[침공] 남은 적 {e.Withdrawn}마리가 물러갔습니다. (처치 {e.Killed})"
@@ -128,7 +223,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<NestClearedEvent>(e =>
             {
                 if (Witnessed(e.Nest) || e.Killer is Adventurer)
-                    Add($"[생태계] {e.Nest.DisplayName}이(가) 비었습니다.", LogCategory.Ecosystem);
+                    Add($"[생태계] {KnownName(e.Nest)}이(가) 비었습니다.", LogCategory.Ecosystem);
             });
             EventBus.Subscribe<NestRecolonizedEvent>(e =>
             {
@@ -136,13 +231,18 @@ namespace GuildMaster.Session
                     Add($"[생태계] 먼 곳에서 온 {e.Nest.Species.displayName} 무리가 {e.Nest.DisplayName}에 자리잡았습니다.", LogCategory.Ecosystem);
             });
             // Territorial routs, only when the guild saw them (GuildIntel rule).
-            EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 {e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다{(e.To == null ? ". 갈 곳 없이 떠돌기 시작합니다" : "")}.", LogCategory.Ecosystem); });
+            EventBus.Subscribe<NestAbandonedEvent>(e => { if (e.Observed) Add($"{(e.DrivenBy == null ? $"{e.Cause}{Adventurers.MemoryRecorder.Josa(e.Cause ?? "", "을", "를")} 피해 " : $"{(e.DrivenBy == e.Species ? "다른 " : "")}{e.DrivenBy.displayName} 무리에게 밀린 ")}{e.Species.displayName} 무리가 {e.From.DisplayName}을(를) 버리고 떠났습니다{(e.To == null ? ". 갈 곳 없이 떠돌기 시작합니다" : "")}.", LogCategory.Ecosystem); });
             // Roaming packs (P4-58): seen for the first time, and settling where the guild could see it.
-            EventBus.Subscribe<RoamingPackSightedEvent>(e => Add($"둥지 없이 떠도는 {e.Pack.Species.displayName} 무리({e.Pack.Members.Count}마리)를 발견했습니다.", LogCategory.Ecosystem));
+            EventBus.Subscribe<RoamingPackSightedEvent>(e => Add(e.Pack.Bound != null
+                ? $"먼 곳에서 온 {e.Pack.Species.displayName} 무리({e.Pack.Members.Count}마리)가 다른 무리의 땅으로 향하는 것을 보았습니다."
+                : $"둥지 없이 떠도는 {e.Pack.Species.displayName} 무리({e.Pack.Members.Count}마리)를 발견했습니다.", LogCategory.Ecosystem));
+            // The wilds grow wilder (P4-44): a rumour, no names — distance and time are no secret.
+            EventBus.Subscribe<WildsStirredEvent>(e => Add("[생태계] 바깥 땅이 더 거칠어졌다는 소문이 돕니다. 먼 곳의 몬스터가 전보다 강하게 태어나고, 그곳 무리들이 안쪽으로 밀려들고 있습니다.", LogCategory.Ecosystem));
             EventBus.Subscribe<RoamingPackSettledEvent>(e => { if (e.Observed) Add($"떠돌던 {e.Pack.Species.displayName} 무리가 {e.Nest.DisplayName}에 자리 잡았습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<IntrudersRoutedEvent>(e => { if (e.Observed) Add($"{e.IntruderHome.Species.displayName} 무리가 {e.Territory.DisplayName}의 기세에 눌려 물러났습니다.", LogCategory.Ecosystem); });
             EventBus.Subscribe<BandSettledEvent>(e => { if (e.Observed) Add($"{e.Species.displayName} 무리 {e.Count}마리가 옮겨 와 {e.To.DisplayName}에 자리 잡았습니다.", LogCategory.Ecosystem); });
-            EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {e.Nest.DisplayName}", LogCategory.Ecosystem));
+            // Found by seeing the den, not who lives in it (P4-76: the log named the real owners).
+            EventBus.Subscribe<NestDiscoveredEvent>(e => Add($"새 둥지 발견: {KnownName(e.Nest)}", LogCategory.Ecosystem));
             // Monsters using ground items (P4-21), only when the guild sees it happen.
             EventBus.Subscribe<Monsters.MonsterItemUsedEvent>(e =>
             {
@@ -151,14 +251,140 @@ namespace GuildMaster.Session
                                : $"{e.Monster.DisplayName}이(가) {e.Item.displayName}을(를) 주워 착용했습니다.", LogCategory.Ecosystem);
             });
             // Pack bosses (P4-57): seen for the first time, and killed where the guild could see it.
-            EventBus.Subscribe<BossSightedEvent>(e => Add($"[보스] {e.Boss.DisplayName}(Lv.{e.Boss.Level})이(가) 이끄는 {e.Boss.Def.displayName} 무리를 발견했습니다!", LogCategory.Danger));
+            EventBus.Subscribe<BossSightedEvent>(e => Add(e.Boss.IsRegionLord
+                ? $"[지대 군주] {Monsters.RegionLords.RegionName(e.Boss.Def.lordRegion)}의 군주 {e.Boss.DisplayName}(Lv.{e.Boss.Level})을(를) 발견했습니다! 거처를 {e.Boss.Def.lairEscort?.displayName} 무리가 지키고 있습니다."
+                : $"[보스] {e.Boss.DisplayName}(Lv.{e.Boss.Level})이(가) 이끄는 {e.Boss.Def.displayName} 무리를 발견했습니다!", LogCategory.Danger));
+            // Region lords (P4-83): a fall the guild learned of, and the four of them down.
+            EventBus.Subscribe<RegionCleansedEvent>(e =>
+            {
+                string who = e.Participants != null && e.Participants.Count > 0 ? $" (함께한 길드원: {string.Join(", ", e.Participants)})" : "";
+                Add($"[지대 정화] {e.Lord.displayName}이(가) 쓰러졌습니다 — {Monsters.RegionLords.RegionName(e.Region)} 바깥 땅에 더는 새 몬스터가 나타나지 않습니다. ({e.Fallen}/{e.Total}){who}", LogCategory.Quest);
+            });
+            // The dragon (P4-93): what the guild saw of it, its lair, its fall, its hoard.
+            EventBus.Subscribe<Dragons.DragonSightedEvent>(e =>
+            {
+                if (e.Dragon == null) return;
+                string name = e.Dragon.DisplayName;
+                Add(e.First
+                    ? $"[드래곤] {name}(Lv.{e.Dragon.Level}){Adventurers.MemoryRecorder.Josa(name, "을", "를")} 처음 보았습니다! ({QuestBoard.DescribeArea(e.Position)})"
+                    : $"[드래곤] {name}{Adventurers.MemoryRecorder.Josa(name, "이", "가")} {(e.Flying ? "하늘을 날고 있습니다" : "보입니다")}! ({QuestBoard.DescribeArea(e.Position)})", LogCategory.Danger);
+            });
+            EventBus.Subscribe<Dragons.DragonLairFoundEvent>(e => Add(e.DragonAtHome
+                ? $"[드래곤] 금화 더미 위에 잠든 드래곤을 찾았습니다. ({QuestBoard.DescribeArea(e.Position)})"
+                : $"[드래곤] 드래곤이 잠드는 금화 더미를 찾았습니다. ({QuestBoard.DescribeArea(e.Position)})", LogCategory.Danger));
+            EventBus.Subscribe<Dragons.DragonSlainEvent>(e =>
+            {
+                string who = e.Participants != null && e.Participants.Count > 0 ? $" (함께한 길드원: {string.Join(", ", e.Participants)})" : "";
+                Add($"[드래곤 처치] {e.Def.displayName}{Adventurers.MemoryRecorder.Josa(e.Def.displayName, "이", "가")} 쓰러졌습니다!{who}", LogCategory.Quest);
+            });
+            EventBus.Subscribe<Dragons.DragonHoardRaidedEvent>(e =>
+            {
+                string name = e.By?.Data?.name ?? "길드원";
+                Add($"[드래곤 둥지] {name}{Adventurers.MemoryRecorder.Josa(name, "이", "가")} 보물 {e.Value}G어치를 챙겼습니다.{(e.Woke ? " 드래곤이 깨어났습니다!" : "")}", e.Woke ? LogCategory.Danger : LogCategory.Economy);
+            });
+            EventBus.Subscribe<Dragons.DragonEnragedEvent>(e =>
+            {
+                if (e.Seen && e.Thief?.Data != null)
+                    Add($"[드래곤] 보물을 도둑맞은 드래곤이 {e.Thief.Data.name}{Adventurers.MemoryRecorder.Josa(e.Thief.Data.name, "을", "를")} 쫓습니다!", LogCategory.Danger);
+            });
+            EventBus.Subscribe<Dragons.DragonPlunderedEvent>(e => Add($"[드래곤] 불길 속에 금고에서 {e.Gold}G를 빼앗겼습니다.", LogCategory.Danger));
+            EventBus.Subscribe<AllLordsSlainEvent>(e => Add($"[승리] 지대 군주 {e.Lords}을 모두 쓰러뜨렸습니다! ({e.Day}일차)", LogCategory.Quest));
             EventBus.Subscribe<Units.UnitDiedEvent>(e =>
             {
                 if (e.Victim is not Monsters.Monster { IsBoss: true } boss || !Services.TryGet<Fog.FogOfWar>(out var fog) || !fog.IsVisibleRaw(boss.Position)) return;
                 Add(e.Killer != null ? $"[보스] {e.Killer.DisplayName}이(가) {boss.DisplayName}을(를) 쓰러뜨렸습니다!" : $"[보스] {boss.DisplayName}이(가) 쓰러졌습니다.", LogCategory.Ecosystem);
             });
+            // Zones (P4-102): a stretch of land the guild now knows by name.
+            EventBus.Subscribe<World.ZoneDiscoveredEvent>(e => Add(
+                $"[지역] 새 지역 발견: {e.Zone.Name} ({World.ZoneDiscovery.Describe(e.Zone)}, {Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(e.Zone.Heart))})", LogCategory.Info));
+            // Places worth going to (P4-105): found.
+            EventBus.Subscribe<Places.PlaceDiscoveredEvent>(e => Add(
+                $"[장소] 새 장소 발견: {e.Place.Name()} ({Quests.QuestBoard.DescribeArea(e.Place.WorldPosition)})", LogCategory.Info));
+            // The bestiary (P4-107).
+            EventBus.Subscribe<Bestiary.ResearchLevelEvent>(e => Add(
+                $"[도감] {e.Species.displayName} 연구 {e.Level}단계: {Bestiary.BestiaryText.LevelNews(e.Species, e.Level)}", LogCategory.Info));
+            // The seasons (P4-111b): every season's name ends on a consonant ("봄이", "겨울이").
+            EventBus.Subscribe<Seasons.SeasonComingEvent>(e => Add(
+                $"[계절] 내일부터 {Seasons.SeasonRules.Name(e.Season)}: {Seasons.SeasonRules.Changes(e.Season)}.", LogCategory.Info));
+            EventBus.Subscribe<Seasons.SeasonChangedEvent>(e => Add(
+                $"[계절] {Seasons.SeasonRules.Name(e.Season)}이 왔습니다{(e.Season == Seasons.Season.Spring ? $" ({e.Year}년째)" : "")}.", LogCategory.Info));
+            EventBus.Subscribe<Seasons.FestivalEvent>(e => Add(
+                $"[계절] 오늘은 수확 축제입니다. 마을에 있으면 스트레스가 {Seasons.SeasonRules.FestivalStressRelief:0}배로 풀립니다.", LogCategory.Info));
+            // Decision cards (P4-111c).
+            EventBus.Subscribe<Dilemmas.DilemmaDealtEvent>(e => Add($"[결정] {e.Card.Title}: {e.Card.Text}", LogCategory.Info));
+            EventBus.Subscribe<Dilemmas.DilemmaResolvedEvent>(e => Add(
+                $"[결정] {e.Card.Title} → {e.Card.Label(e.Choice)}{(e.ByDeadline ? " (기한이 지나 기본 선택)" : "")}. {e.Result}", LogCategory.Info));
+            // The guild's rules (P4-112).
+            EventBus.Subscribe<Guild.GuildLawChangedEvent>(e => Add(
+                $"[규칙] {Guild.GuildLawRules.Def(e.Law).Name}: {Guild.GuildLawRules.Def(e.Law).Options[e.From].Label} → {Guild.GuildLawRules.Def(e.Law).Options[e.To].Label}"
+                + (e.Pleased + e.Displeased > 0 ? $" (반김 {e.Pleased}명 · 못마땅 {e.Displeased}명)" : ""), LogCategory.Info));
+            EventBus.Subscribe<Guild.GuildHolidayEvent>(e => Add(
+                $"[휴일] 오늘은 길드 휴일입니다. 아무도 새 일을 나가지 않고, 마을에 있으면 스트레스가 {Guild.GuildLawRules.HolidayRelief:0.#}배로 풀립니다.", LogCategory.Info));
+            // The town's outer defences (P4-113): what the guild saw them do.
+            EventBus.Subscribe<Town.DefenceTrapSprungEvent>(e =>
+            {
+                if (!e.Seen || e.Victim == null) return;
+                string name = e.Victim.DisplayName;
+                Add($"[방어] 함정이 {name}{Adventurers.MemoryRecorder.Josa(name, "을", "를")} 붙잡았습니다"
+                    + (e.ChargesLeft > 0 ? $" (남은 횟수 {e.ChargesLeft})." : " (다 썼습니다 — 건설 창에서 다시 놓기)."), LogCategory.Combat);
+            });
+            EventBus.Subscribe<Town.ArrowTowerKillEvent>(e =>
+            {
+                if (e.Victim == null) return;
+                string name = e.Victim.DisplayName;
+                Add($"[방어] 화살탑이 {name}{Adventurers.MemoryRecorder.Josa(name, "을", "를")} 쓰러뜨렸습니다.", LogCategory.Combat);
+            });
+            // The guild's rank (P4-106).
+            EventBus.Subscribe<Guild.GuildRankChangedEvent>(e => Add(
+                $"[등급] 길드가 {Guild.GuildRankRules.Name(e.Rank)}이 되었습니다! {Guild.GuildRankRules.Rewards(e.Rank)}", LogCategory.Quest));
+            EventBus.Subscribe<Places.PlaceVisitedEvent>(e => Add(e.Place.Kind switch
+            {
+                World.PlaceKind.HotSpring => $"[장소] {e.Member.Data.name}: 온천에서 몸을 녹였다 (스트레스·피로 풀림)",
+                World.PlaceKind.Shrine => $"[장소] {e.Member.Data.name}: 신전에서 가호를 받았다 ({Places.PlaceRules.BlessingHours:0}시간 최대 체력 +{(Places.PlaceRules.BlessingHp - 1f) * 100f:0}%)",
+                World.PlaceKind.WatchRuin => $"[장소] {e.Member.Data.name}: 폐허 감시탑에 올라 둘레 {Places.PlaceRules.TowerSightRadius:0}칸을 살폈다",
+                World.PlaceKind.OldCamp => $"[장소] {e.Member.Data.name}의 일행: 버려진 야영지에 불을 피웠다",
+                _ => $"[장소] {e.Member.Data.name}: {e.Place.Name()}에서 {Places.PlaceRules.GatherItemName(e.Place.Kind)} {e.Gathered}개를 챙겼다",
+            }, LogCategory.Info));
+            // The deep woods (P4-103): first seen, and a trap sprung where the guild could see it.
+            EventBus.Subscribe<World.DeepWoodsSightedEvent>(e => Add(
+                $"[숲] 깊은 숲을 발견했습니다({Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(e.Cell))}). 독 안개와 숨은 덫, 매복하는 둥지가 있는 위험한 숲입니다. 길이 난 숲길로 지나는 것이 안전합니다.", LogCategory.Danger));
+            EventBus.Subscribe<World.TrapSprungEvent>(e =>
+            {
+                if (e.Seen && e.Victim != null) Add($"[숲] {e.Victim.DisplayName}이(가) 깊은 숲에서 덫에 걸렸습니다!", LogCategory.Danger);
+            });
+            // Other villages (P4-84): what the guild saw of them, and the rumour of a new one.
+            EventBus.Subscribe<Villages.VillageDiscoveredEvent>(e => Add(
+                $"[마을] 새 마을 발견: {e.Village.DisplayName} ({Monsters.RegionLords.RegionName(e.Village.Region)}, {Quests.QuestBoard.DescribeArea(e.Village.WorldPosition)}). 길드 마스터가 직접 가면 영입 후보를 만날 수 있습니다.", LogCategory.Info));
+            EventBus.Subscribe<Villages.VillageRaidSightedEvent>(e => Add(
+                $"[마을] {e.Village.DisplayName}이(가) {e.Species?.displayName} {e.Raiders}마리에게 습격받고 있습니다! 마을이 방어 의뢰를 냈습니다.", LogCategory.Danger));
+            EventBus.Subscribe<Villages.VillageRaidEndedEvent>(e =>
+            {
+                if (e.Sighted && !e.Fell) Add($"[마을] {e.Village.DisplayName} 습격이 끝났습니다. (처치 {e.Killed}, 물러남 {e.Withdrawn})", LogCategory.Danger);
+            });
+            EventBus.Subscribe<Villages.VillageRuinsSeenEvent>(e => Add(e.SawItFall
+                ? $"[마을] {e.Village.DisplayName}이(가) 무너졌습니다! 다시 세워지지 않습니다."
+                : $"[마을] {e.Village.DisplayName}이(가) 무너져 폐허만 남은 것을 확인했습니다.", LogCategory.Danger));
+            EventBus.Subscribe<Villages.VillageFoundedEvent>(e => Add(
+                $"[마을] {Monsters.RegionLords.RegionName(e.Village.Region)} 어딘가에 새 마을이 생겼다는 소문이 들립니다.", LogCategory.Info));
+            EventBus.Subscribe<Villages.VillagerJoinedEvent>(e => Add(
+                $"{e.Adventurer.Data.name}이(가) {e.Village.DisplayName}에서 길드에 들어와 혼자 우리 마을로 향합니다.", LogCategory.Info));
+            EventBus.Subscribe<Villages.VillageRefugeesFledEvent>(e =>
+            {
+                if (e.Seen) Add($"[마을] {e.Village.DisplayName} 사람 {e.Count}명이 우리 마을로 피난을 떠납니다.", LogCategory.Danger);
+            });
+            EventBus.Subscribe<RefugeeArrivedEvent>(e => Add(
+                $"피난민 {e.Visitor.Data.name}({AdventurerData.ClassLabel(e.Visitor.Data.cls)} Lv.{e.Visitor.Data.level})이(가) {e.From}에서 우리 마을에 왔습니다. 말을 걸어 영입해 보세요.", LogCategory.Info));
+            EventBus.Subscribe<Units.UnitDiedEvent>(e =>
+            {
+                if (e.Victim is not Adventurer { IsVisitor: true } refugee || !Services.TryGet<Fog.FogOfWar>(out var fog) || !fog.IsVisibleRaw(refugee.Position)) return;
+                Add($"피난 가던 {refugee.Data.name}이(가) {(e.Killer != null ? e.Killer.DisplayName + "에게 " : "")}쓰러졌습니다.", LogCategory.Danger);
+            });
             EventBus.Subscribe<DayPassedEvent>(e => Add($"{e.Day}일차가 밝았습니다.", LogCategory.Info));
         }
+
+        /// <summary>The den as the guild knows it: named after the owners last seen there, "정체불명" before that.</summary>
+        static string KnownName(Nest nest)
+            => Services.TryGet<GuildIntel>(out var intel) ? intel.NameOf(nest) : nest.NameFor(null);
 
         static bool Witnessed(Nest nest)
             => nest.Discovered && Services.TryGet<Fog.FogOfWar>(out var fog) && fog.IsVisibleRaw(nest.Cell);

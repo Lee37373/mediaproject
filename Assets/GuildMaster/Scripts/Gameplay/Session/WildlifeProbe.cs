@@ -32,11 +32,12 @@ namespace GuildMaster.Session
 
         const float InnerRing = 45f;   // = WaveManager.RaidRadius
         const float MiddleRing = 100f;
+        const float OuterRing = EcosystemManager.InnerEdge; // beyond it the 512 map's far land (P4-81)
 
         public bool Running { get; private set; }
         int _days, _startDay;
         float _startHour;
-        int _settled, _newcomers, _monsterKills, _cleared, _routs;
+        int _settled, _newcomers, _monsterKills, _cleared, _routs, _pushedOut;
         int _raidsAtStart;
         int _maxEmptyHours;
         readonly List<string> _rows = new();
@@ -48,7 +49,7 @@ namespace GuildMaster.Session
             _days = days;
             _startDay = clock.Day;
             _startHour = clock.TotalHours;
-            _settled = _newcomers = _monsterKills = _cleared = _routs = _maxEmptyHours = 0;
+            _settled = _newcomers = _monsterKills = _cleared = _routs = _pushedOut = _maxEmptyHours = 0;
             _raidsAtStart = Services.Get<WaveManager>().RaidCount;
             _rows.Clear();
             _first = null;
@@ -65,6 +66,7 @@ namespace GuildMaster.Session
             EventBus.Subscribe<UnitDiedEvent>(OnDied);
             EventBus.Subscribe<NestClearedEvent>(OnCleared);
             EventBus.Subscribe<IntrudersRoutedEvent>(OnRouted);
+            EventBus.Subscribe<NestAbandonedEvent>(OnPushedOut);
             Running = true;
             _first = Snapshot("start");
         }
@@ -81,8 +83,10 @@ namespace GuildMaster.Session
             EventBus.Unsubscribe<UnitDiedEvent>(OnDied);
             EventBus.Unsubscribe<NestClearedEvent>(OnCleared);
             EventBus.Unsubscribe<IntrudersRoutedEvent>(OnRouted);
+            EventBus.Unsubscribe<NestAbandonedEvent>(OnPushedOut);
         }
 
+        void OnPushedOut(NestAbandonedEvent e) => _pushedOut++;
         void OnSettled(BandSettledEvent e) => _settled++;
         void OnNewcomers(NestRecolonizedEvent e) => _newcomers++;
         void OnCleared(NestClearedEvent e) => _cleared++;
@@ -109,7 +113,7 @@ namespace GuildMaster.Session
             var eco = Services.Get<EcosystemManager>();
             var town = Services.Get<World.WorldService>().TownCenterWorld;
             var sb = new StringBuilder(label.PadRight(7));
-            (string name, float lo, float hi)[] rings = { ("in", 0f, InnerRing), ("mid", InnerRing, MiddleRing), ("out", MiddleRing, 999f) };
+            (string name, float lo, float hi)[] rings = { ("in", 0f, InnerRing), ("mid", InnerRing, MiddleRing), ("out", MiddleRing, OuterRing), ("far", OuterRing, 999f) };
             foreach (var (name, lo, hi) in rings)
             {
                 var nests = eco.Nests.Where(n => { float d = Vector2.Distance(n.WorldPosition, town); return d > lo && d <= hi; }).ToList();
@@ -122,7 +126,8 @@ namespace GuildMaster.Session
                 sb.Append($" | {name} {held.Count}/{nests.Count} pop{alive.Count} lv{level:0.0} dng{danger:0.00} sk{skilled} [{kinds}]");
             }
             int total = eco.Nests.Sum(n => n.Members.Count(m => m != null && m.IsAlive));
-            sb.Append($" | total{total} empty{eco.Nests.Count(n => n.IsEmpty)}");
+            var roaming = Services.Get<RoamingPackService>().Packs;
+            sb.Append($" | total{total} empty{eco.Nests.Count(n => n.IsEmpty)} roam{roaming.Count}(bound{roaming.Count(p => p.Bound != null)},{roaming.Sum(p => p.Members.Count)})");
             return sb.ToString();
         }
 
@@ -137,7 +142,7 @@ namespace GuildMaster.Session
             var eco = Services.Get<EcosystemManager>();
             var sb = new StringBuilder($"[wildlife] day {_startDay}..{clock.Day} running={Running}\n");
             sb.AppendLine($"  migrations settled={_settled} newcomers settled={_newcomers} raids={Services.Get<WaveManager>().RaidCount - _raidsAtStart} "
-                          + $"monster-on-monster kills={_monsterKills} nests cleared={_cleared} routs={_routs} longest empty={_maxEmptyHours}h");
+                          + $"monster-on-monster kills={_monsterKills} nests cleared={_cleared} routs={_routs} pushed out={_pushedOut} longest empty={_maxEmptyHours}h");
             var levels = eco.Nests.SelectMany(n => n.Members).Where(m => m != null && m.IsAlive).GroupBy(m => m.Level).OrderBy(g => g.Key);
             sb.AppendLine("  levels now: " + string.Join(" ", levels.Select(g => $"Lv{g.Key}:{g.Count()}")));
             sb.AppendLine("  species now: " + string.Join(" ", eco.Species.Select(s => $"{s.id}={eco.GetPopulation(s)}/{eco.Nests.Count(n => n.Species == s && !n.IsEmpty)}n")));

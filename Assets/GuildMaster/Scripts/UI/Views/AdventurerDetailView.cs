@@ -19,14 +19,14 @@ namespace GuildMaster.UI
     /// </summary>
     public class AdventurerDetailView : UIPanel
     {
-        const int DialoguePreview = 6;
-        const int MemoryPreview = 6;
+        const int DialoguePreview = 4;
+        const int MemoryPreview = 5;
 
         public override string Title => "모험가 상세";
         protected override float RefreshInterval => 0.25f;
 
         Adventurer _who;
-        Text _header, _stats, _gear, _record, _thought, _memories, _relations, _dialogue;
+        Text _header, _stats, _gear, _record, _thought, _mood, _memories, _relations, _dialogue;
         RectTransform _traitRow, _skillRow;
         readonly List<Text> _skillLabels = new();
 
@@ -57,13 +57,17 @@ namespace GuildMaster.UI
             Section(right, "스킬  " + UIBuilder.Colored("(마우스를 올리면 설명)", UITheme.TextMuted));
             _skillRow = UIBuilder.Row(right, 30, 6);
             Section(right, "최근 생각");
-            _thought = Block(right, 44);
+            // Two lines more for what the decision weighed (P4-104a).
+            _thought = Block(right, 62);
+            // Its mood and what is on its mind (P4-104c): room taken from the memories and the talk (both have their full windows).
+            Section(right, "기분");
+            _mood = Block(right, 74);
             Section(right, "기억");
-            _memories = Block(right, 118);
+            _memories = Block(right, 84);
             Section(right, "관계");
             _relations = Block(right, 44);
             Section(right, "최근 대화");
-            _dialogue = Block(right, 128);
+            _dialogue = Block(right, 72);
         }
 
         static void Section(Transform parent, string title)
@@ -100,6 +104,14 @@ namespace GuildMaster.UI
                 var trait = t;
                 Chip(_traitRow, trait.displayName, trait.isPositive ? new Color(0.2f, 0.36f, 0.22f) : new Color(0.42f, 0.18f, 0.17f),
                     () => TraitTooltip(trait));
+            }
+            // Quirks picked up along the way (P4-104e), after the traits it was born with.
+            foreach (var q in _who.Data.quirks)
+            {
+                var quirk = q;
+                Chip(_traitRow, QuirkRules.Label(quirk, ThoughtRecorder.SpeciesName), new Color(0.34f, 0.22f, 0.44f),
+                    () => UIBuilder.Colored(QuirkRules.Label(quirk, ThoughtRecorder.SpeciesName), UITheme.Accent) + UIBuilder.Colored("  버릇", UITheme.TextMuted)
+                          + "\n" + QuirkRules.Describe(quirk, ThoughtRecorder.SpeciesName));
             }
 
             if (_who.Skills.Count == 0) Chip(_skillRow, UIBuilder.Colored("없음", UITheme.TextMuted), UITheme.RowBg, null);
@@ -144,6 +156,15 @@ namespace GuildMaster.UI
 
         // ---------------- Live text ----------------
 
+        /// <summary>What the guild's facilities make of its stats (P4-87; 100% = the three stat buildings at level 3).</summary>
+        static string FacilityScaleText(Adventurer a)
+        {
+            if (!Services.TryGet<Town.FacilityService>(out var f)) return "";
+            var k = f.ScaleFor(a);
+            string who = a.IsGuildMember && !a.IsVisitor ? "내실" : "내실(길드원만)";
+            return $"{who} 공격 {k.Attack * 100f:0}%·방어 {k.Defense * 100f:0}%·체력 {k.MaxHp * 100f:0}%";
+        }
+
         protected override void Refresh()
         {
             if (_who == null || _who.Data == null) { _header.text = "대상이 없습니다."; return; }
@@ -162,7 +183,7 @@ namespace GuildMaster.UI
                 $"사거리 {s.AttackRange:0.#}   공격 간격 {s.AttackCooldown:0.##}초   이동 {s.MoveSpeed:0.#}   시야 {s.SightRadius:0.#}\n" +
                 $"피로      {Bar(d.fatigue)}\n" +
                 $"스트레스 {Bar(d.stress)}\n" +
-                UIBuilder.Colored($"후퇴 기준 체력 {a.RetreatThreshold * 100f:0}%", UITheme.TextMuted);
+                UIBuilder.Colored($"후퇴 기준 체력 {a.RetreatThreshold * 100f:0}% · {FacilityScaleText(a)}", UITheme.TextMuted);
 
             var db = Services.Get<GameDatabase>();
             var next = GearShopping.NextGear(d, db);
@@ -171,7 +192,7 @@ namespace GuildMaster.UI
             string loot = d.loot.Count == 0 ? "없음" : string.Join(", ", d.loot.Select(l => $"{db.Item(l.itemId)?.displayName ?? l.itemId} x{l.count}"));
             _gear.text =
                 $"장비 {(d.gearTier == 0 ? "없음" : $"{d.gearTier}등급")} {UIBuilder.Colored($"(공격 +{3 * d.gearTier}, 방어 +{2 * d.gearTier}) · {nextText}", UITheme.TextMuted)}\n" +
-                $"{LivingCostRules.Purse(d.gold, d.debt)} · 물약 {d.potions}\n" +
+                $"{LivingCostRules.Purse(d.gold, d.debt)} · 물약 {d.potions} · 조명탄 {d.flares}\n" +
                 UIBuilder.Colored("전리품: " + loot, UITheme.TextMuted);
 
             _record.text =
@@ -186,7 +207,12 @@ namespace GuildMaster.UI
             }
 
             _thought.text = string.IsNullOrEmpty(a.LastThought) ? UIBuilder.Colored("아직 판단한 적이 없습니다.", UITheme.TextMuted)
-                : $"{a.LastThought} {UIBuilder.Colored(a.LastThoughtFromLlm ? "(AI 판단)" : "(규칙 판단)", UITheme.TextMuted)}";
+                : a.LastThinking?.Choice != null
+                    ? $"{a.LastThought}\n{UIBuilder.Colored("고려한 것: " + a.LastThinking.Describe(), UITheme.TextMuted)}"
+                    : a.LastThought;
+
+            float now = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : 0f;
+            _mood.text = $"기분 {MoodFormat.Mood(a)}{MoodFormat.Inspiration(a, now)} {UIBuilder.Colored($"· 스트레스 {d.stress:0}", UITheme.TextMuted)}\n{MoodFormat.Lines(a, now, 3)}";
 
             _memories.text = d.memories.Count == 0 ? UIBuilder.Colored("아직 기억이 없습니다.", UITheme.TextMuted)
                 : string.Join("\n", d.memories.Skip(Mathf.Max(0, d.memories.Count - MemoryPreview)).Select(m => m.Format()));

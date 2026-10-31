@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using GuildMaster.Adventurers;
-using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Units;
 using NUnit.Framework;
 
@@ -69,31 +68,20 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void Interpret_TakesOnlyWhatWasOffered()
+        public void RuleChoice_SwapsOnlyForABetterFit_SoItNeverFlipFlops()
         {
-            var candidates = new List<string> { "charge", "slam" };
-            var known = new List<string> { "taunt", "whirlwind" };
+            // P4-73 (long run): a full mage dropped blink for slam, then slam for blink, every level.
+            var mage = new List<string> { "fireball", "warp", "blink" };
+            var pick = SkillCatalog.RuleChoice(AdventurerClass.Mage, mage, SkillCatalog.Candidates(AdventurerClass.Mage, mage));
+            Assert.That(pick.learn, Is.Null, "slam fits a mage no better than blink: nothing changes");
 
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "charge" }, candidates, known),
-                        Is.EqualTo(("charge", (string)null)), "under the cap, nothing is given up");
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "fireball" }, candidates, known).learn,
-                        Is.Null, "a skill that was not offered is refused");
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "" }, candidates, known).learn, Is.Null);
-            Assert.That(SkillPrompt.Interpret(null, candidates, known).learn, Is.Null);
-        }
+            var odd = new List<string> { "fireball", "slam", "charge" };
+            pick = SkillCatalog.RuleChoice(AdventurerClass.Mage, odd, SkillCatalog.Candidates(AdventurerClass.Mage, odd));
+            Assert.That(pick, Is.EqualTo(("warp", "charge")), "a better fit replaces the worst one");
 
-        [Test]
-        public void Interpret_AtTheCap_NeedsAValidSkillToGiveUp()
-        {
-            var candidates = new List<string> { "slam" };
-            var full = new List<string> { "taunt", "whirlwind", "charge" };
-
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "slam", forget = "charge" }, candidates, full),
-                        Is.EqualTo(("slam", "charge")));
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "slam", forget = "" }, candidates, full).learn,
-                        Is.Null, "at the cap something has to go");
-            Assert.That(SkillPrompt.Interpret(new SkillPrompt.ResponseDto { learn = "slam", forget = "fireball" }, candidates, full).learn,
-                        Is.Null, "cannot give up a skill it does not have");
+            var room = new List<string> { "fireball", "blink" };
+            Assert.That(SkillCatalog.RuleChoice(AdventurerClass.Mage, room, SkillCatalog.Candidates(AdventurerClass.Mage, room)),
+                        Is.EqualTo(("warp", (string)null)), "below the cap nothing has to go");
         }
     }
 }

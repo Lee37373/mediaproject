@@ -747,3 +747,154 @@ MonoBehaviour:
     prefab: {fileID: 1938309193147952539, guid: fa5d72cbefae24283a9bf6d3cbe51e96, type: 3}
   - key: Whirlwind1
     prefab: {fileID: 1391955418827769562, guid: 29ebdbc97fe8e465d8ec044447c49ec5, type: 3}
+  rigs:
+  - key: carapace_angler
+    prefab: {fileID: 8527549477059201729, guid: 692a04c0a7aa9fb479beaee1ed6ca1f4, type: 3}
+    portrait: {fileID: 21300000, guid: 1a114599fe0e12092b032bfa6d5d1476, type: 3}
+  - key: carapace_castle
+    prefab: {fileID: 2606254990536191759, guid: 950b2c72e81844640b3af4b36e2ebd92, type: 3}
+    portrait: {fileID: 21300000, guid: b28433c5f23d1bfef2f6ba87d8670319, type: 3}
+  - key: carapace_green
+    prefab: {fileID: 3460806789041697531, guid: 7a7a43266fdb2a34e8ae5d8844f46fd9, type: 3}
+    portrait: {fileID: 21300000, guid: 21363742bc41b340fc422a7ff82022c3, type: 3}
+  - key: carapace_iron
+    prefab: {fileID: 4912797340206139017, guid: 4912dd6fd3346904bb86c38250462d58, type: 3}
+    portrait: {fileID: 21300000, guid: b11375de755bcee4d0626aac360e3e8f, type: 3}
+  - key: evilmass_angry
+    prefab: {fileID: 3188559098930816219, guid: c3ffa4330280ea24b81724a042188d2a, type: 3}
+    portrait: {fileID: 21300000, guid: 225fbe04bf4df6718d9a13fbc4c9bee9, type: 3}
+  - key: evilmass_boxer
+    prefab: {fileID: 1207719871225994441, guid: 8a09522bb8c684b4f91bd0957fb1431b, type: 3}
+    portrait: {fileID: 21300000, guid: b07d250aad85e1d49f6b53772870a33b, type: 3}
+  - key: evilmass_knight
+    prefab: {fileID: 3700369161492988733, guid: bcde0fe15a2dfea458fb858ef58bb371, type: 3}
+    portrait: {fileID: 21300000, guid: 2e1ea5d761266bb5c8aa0f501a3e326f, type: 3}
+  - key: flower_berry
+    prefab: {fileID: 6704891170366490086, guid: 10f2b24efc67ccd4294fed249b9e1958, type: 3}
+    portrait: {fileID: 21300000, guid: 29e079ca6d0d4a4345371ed955e2944f, type: 3}
+  - key: flower_candy
+    prefab: {fileID: 1386001437385783234, guid: 1df320a2b94a2c449bafaf8977099b62, type: 3}
+    portrait: {fileID: 21300000, guid: 45b8fd23d5079c4ed98891a346e1b986, type: 3}
+  - key: flower_daisy
+    prefab: {fileID: 1060650869020702437, guid: 5016351d1a37fd7429715a3b1f98c277, type: 3}
+    portrait: {fileID: 21300000, guid: cb6522ee0ef3c98ee0591db178830cf0, type: 3}
+  - key: flower_dandelion
+    prefab: {fileID: 6992684098939132647, guid: f61fbadd5dcd28244a988a9a46949a01, type: 3}
+    portrait: {fileID: 21300000, guid: bec66e688c729659bcc1000d43ad5b36, type: 3}
+  - key: flower_tulip
+    prefab: {fileID: 8061163330510681751, guid: acba8637cb3abc5488639db36a565a98, type: 3}
+    portrait: {fileID: 21300000, guid: 15f8eef6f4f50c02685d2b6944e0f161, type: 3}
+  - key: fungus_horn
+    prefab: {fileID: 5397484705115492990, guid: 4e7e48a48e5080448ad53588039ed96c, type: 3}
+    portrait: {fileID: 21300000, guid: 549b84a1a7fa36c858820dbf8339b527, type: 3}
+  - key: fungus_rock
+    prefab: {fileID: 3828463058809858245, guid: 0f2b6ffec898ca64ca04b5fed54573ed, type: 3}
+    portrait: {fileID: 21300000, guid: 6d9b30b635cbcebcf4924247e8527315, type: 3}
+  - key: hornrabbit_crystal
+    prefab: {fileID: 233981966275687191, guid: a797b53bebeabc347ad539ae054f49cd, type: 3}
+    portrait: {fileID: 21300000, guid: d76da76ee0a6544796438ef0163add6a, type: 3}
+  - key: hornrabbit_demon
+    prefab: {fileID: 5541517715765028423, guid: c037afacedb64ce4dbb2d7596ff1b000, type: 3}
+    portrait: {fileID: 21300000, guid: fdfa03662a2655c92380d3560b22fd97, type: 3}
+  - key: hornrabbit_jelly
+    prefab: {fileID: 5943698189465745761, guid: d94515488619159489d4bd76d26db7d1, type: 3}
+    portrait: {fileID: 21300000, guid: ceea3c298196a3022ba7abbe92457b7c, type: 3}
+  - key: horse_bronco
+    prefab: {fileID: 566383440368221573, guid: bfc878a1236404c4da6966b5181041fe, type: 3}
+    portrait: {fileID: 21300000, guid: b48c015ab85bc241d2ce881d339db8c0, type: 3}
+  - key: horse_nightmare
+    prefab: {fileID: 6980287066165378022, guid: 868ed934b6be6df4eb4ddca84d2e544c, type: 3}
+    portrait: {fileID: 21300000, guid: fb1979f5413796afd404634d6f702458, type: 3}
+  - key: horse_unicorn
+    prefab: {fileID: 1021517972933576576, guid: d6471d9b38c007044beba00a963ba913, type: 3}
+    portrait: {fileID: 21300000, guid: 1efaa720024c3ac3967f66bde4601b5d, type: 3}
+  - key: larva_green
+    prefab: {fileID: 4663786228789853407, guid: 311de263b3f39b543a66c7b18a03a189, type: 3}
+    portrait: {fileID: 21300000, guid: 3cbc7bbab7b6a7f211ca6838d83bfb3b, type: 3}
+  - key: larva_knight
+    prefab: {fileID: 461707152992850470, guid: eeaecbc31c3352c44b5dec2edfbc006b, type: 3}
+    portrait: {fileID: 21300000, guid: 0a744cedf901383cfa4936c58f4f1720, type: 3}
+  - key: larva_leech
+    prefab: {fileID: 3335806726628791854, guid: b686c9ff1ab491b4a9217c6efaee3e42, type: 3}
+    portrait: {fileID: 21300000, guid: e42baa64608eb1c0db8e352c150ca420, type: 3}
+  - key: orcsmasher_berserker
+    prefab: {fileID: 4967194338356258946, guid: 4e814f8dd7e388f48ae223c8bf4bb29a, type: 3}
+    portrait: {fileID: 21300000, guid: 74c2b51a7c8ee5092dfbd54194ae1ec6, type: 3}
+  - key: orcsmasher_red
+    prefab: {fileID: 321148190656382646, guid: f90f4deebeb97d448a1dea5148d623a2, type: 3}
+    portrait: {fileID: 21300000, guid: 1f50be54ad2333e571b1dc9d4fda1bb2, type: 3}
+  - key: orcsmasher_warlord
+    prefab: {fileID: 7660357424509712821, guid: f1fadc2983c445741b4e699135e3f336, type: 3}
+    portrait: {fileID: 21300000, guid: 4e5dcabdefa934e85945ad29c39e8f7c, type: 3}
+  - key: orcsword_butcher
+    prefab: {fileID: 2883797357489596875, guid: f0060e834db29f34caa8a4eb0b13b98b, type: 3}
+    portrait: {fileID: 21300000, guid: c52080bf67c8bf507d3be795672a5476, type: 3}
+  - key: orcsword_rookie
+    prefab: {fileID: 2405873665616901002, guid: 6e1a5feba2b0e864d9d0066d96687434, type: 3}
+    portrait: {fileID: 21300000, guid: a5ca49c8d26c0cd012e97037b8a4b523, type: 3}
+  - key: orcsword_veteran
+    prefab: {fileID: 7250883160249215915, guid: 2938e265351afa043a06ffe0d1449558, type: 3}
+    portrait: {fileID: 21300000, guid: bd12d5cafeab5b44d2321b8c07b29ef9, type: 3}
+  - key: pumpkin_orange
+    prefab: {fileID: 3729658352417999788, guid: 626371b1c35ae2747b688cfd9af57f88, type: 3}
+    portrait: {fileID: 21300000, guid: d359b166cd4904e13d0ccc5c0f775274, type: 3}
+  - key: pumpkin_steel
+    prefab: {fileID: 4728992267505195676, guid: a90c4cffff2b46449bf8d9a46b6292c6, type: 3}
+    portrait: {fileID: 21300000, guid: e9827faced0cd3981de9f619cb64e446, type: 3}
+  - key: raptor_mechanic
+    prefab: {fileID: 9129733954920976706, guid: 195655fee1753c045b6c6cdfcf4b7e6d, type: 3}
+    portrait: {fileID: 21300000, guid: bdfa4654281b0a642a5b7f7163db6c05, type: 3}
+  - key: raptor_swamp
+    prefab: {fileID: 368029869444583430, guid: c86d9b9f69110cf419286b94d172e2a7, type: 3}
+    portrait: {fileID: 21300000, guid: b19a4c8aab457fd8471c1b3a8291c56a, type: 3}
+  - key: reaper_blood
+    prefab: {fileID: 3208926498931023098, guid: f874188f823225c48ad7c4bbc7752aa1, type: 3}
+    portrait: {fileID: 21300000, guid: 38817511e00e4ba0b57b4e7064d31993, type: 3}
+  - key: reaper_death
+    prefab: {fileID: 2873144788705328026, guid: 4688205b65728004595b9e3d2de65981, type: 3}
+    portrait: {fileID: 21300000, guid: 51a65ce61c50d320d2071f0f384aac2c, type: 3}
+  - key: rhino_armor
+    prefab: {fileID: 4793798848292431668, guid: 400606ae14a237444a24d46ab9bc1ab0, type: 3}
+    portrait: {fileID: 21300000, guid: c7263700806ae6a5bfc620ed908b29a7, type: 3}
+  - key: rhino_huge
+    prefab: {fileID: 3197895584226717572, guid: 405be6bc6425aa840b19ee584ea7a185, type: 3}
+    portrait: {fileID: 21300000, guid: 92d3d67a062d632244f8db0e693fd00f, type: 3}
+  - key: toad_giant
+    prefab: {fileID: 5906303733079292090, guid: f6c97900d5bac9e4f9f1b71a048bbb53, type: 3}
+    portrait: {fileID: 21300000, guid: a9859b256b9595026d3143bbfb128c5d, type: 3}
+  - key: toad_horn
+    prefab: {fileID: 3149360243385120265, guid: d21933132d23d1e4b940535e68aaec1c, type: 3}
+    portrait: {fileID: 21300000, guid: 83be924d71fbd127a9332199bcb33e2f, type: 3}
+  - key: toad_king
+    prefab: {fileID: 2083144978030448405, guid: 75a96b7d6bccf8d48a7d5cc9bae7aeaf, type: 3}
+    portrait: {fileID: 21300000, guid: 2a6f2f25d8a81fcbd0b7f5850847f8c6, type: 3}
+  - key: wingdemon_apple
+    prefab: {fileID: 9038144467268015776, guid: d323ddf10b127a245810c9d3e811482e, type: 3}
+    portrait: {fileID: 21300000, guid: 53e7275d55b6ebc02991e08a02537c28, type: 3}
+  - key: wingdemon_bee
+    prefab: {fileID: 7062136644081450245, guid: 6b28979581528f949a5c0d901086c5b6, type: 3}
+    portrait: {fileID: 21300000, guid: 7b36ec39ddafb9c54d0711bead092630, type: 3}
+  - key: wingdemon_bomb
+    prefab: {fileID: 6448394044156096905, guid: 9c748f60e0f327046a0e8e86c8a2dc36, type: 3}
+    portrait: {fileID: 21300000, guid: e0bdc13d606d259f6cf2f13c274d0b3a, type: 3}
+  - key: wingdemon_eye
+    prefab: {fileID: 7823343687599548238, guid: 1d236c648502bea49bfd27b046f83252, type: 3}
+    portrait: {fileID: 21300000, guid: c2ab8933b52138a25e0b6aac8853a4b6, type: 3}
+  - key: wingdemon_vampire
+    prefab: {fileID: 2579565562735976179, guid: 9a07aafed2795484c86320152f6b48c7, type: 3}
+    portrait: {fileID: 21300000, guid: f2e9a7ba0881c574be0b47ed9357df1b, type: 3}
+  - key: winter_ice
+    prefab: {fileID: 8519722135226346737, guid: 9abf98300dd54f24db4f79a506dbda0e, type: 3}
+    portrait: {fileID: 21300000, guid: 2aca2a85907892d2470e390e58cf7e5d, type: 3}
+  - key: winter_iron
+    prefab: {fileID: 8607663034493826889, guid: 716482de76e7dba45b0e8622685cf13c, type: 3}
+    portrait: {fileID: 21300000, guid: 66463765ffbe845af0d30393216e3e53, type: 3}
+  - key: winter_snow
+    prefab: {fileID: 1690063429587652769, guid: 3b7a0ceb67ae3094fb8bc5d9f3173226, type: 3}
+    portrait: {fileID: 21300000, guid: 5121443f59af81859fa1811cb361119d, type: 3}
+  - key: worm_lightning
+    prefab: {fileID: 1412169031239699133, guid: f65ec49ea2496414e824a7e82ef0643d, type: 3}
+    portrait: {fileID: 21300000, guid: 3656266ac4d8587f5f2d37ffc7264608, type: 3}
+  - key: worm_poison
+    prefab: {fileID: 8961185178918721222, guid: c3cc120e5ebec5241a6ff84c5b82f4f1, type: 3}
+    portrait: {fileID: 21300000, guid: 772ad22919011fdc360dde546e06f614, type: 3}

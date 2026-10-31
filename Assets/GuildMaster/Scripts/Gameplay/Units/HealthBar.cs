@@ -24,9 +24,9 @@ namespace GuildMaster.Units
             {
                 _root = new GameObject("HealthBar").transform;
                 _root.SetParent(transform, false);
-                _bgSr = CreateBar("Bg", new Color(0f, 0f, 0f, 0.7f), 2950);
+                _bgSr = CreateBar("Bg", new Color(0f, 0f, 0f, 0.7f), Fog.FogOfWar.SortingOrder - 50);
                 _bgSr.transform.localScale = new Vector3(Width + 0.06f, Height + 0.06f, 1f);
-                _fillSr = CreateBar("Fill", fillColor, 2951);
+                _fillSr = CreateBar("Fill", fillColor, Fog.FogOfWar.SortingOrder - 49);
                 _fill = _fillSr.transform;
             }
             _fillSr.color = fillColor;

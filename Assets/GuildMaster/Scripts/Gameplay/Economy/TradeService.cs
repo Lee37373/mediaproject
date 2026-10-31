@@ -27,10 +27,29 @@ namespace GuildMaster.Economy
     /// - buys adventurers' loot with guild gold (player-set buy rate),
     /// - sells goods (potions, gear) from the guild stockpile to adventurers.
     /// </summary>
-    public class TradeService
+    public class TradeService : ISaveable
     {
         readonly GuildTreasury _treasury;
         readonly GameDatabase _db;
+
+        // ---------------- Save ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public float loot_buy_rate;
+        }
+
+        public string SaveKey => "trade";
+
+        /// <summary>The loot buy rate the guild master set in the stock window (the goods rate is the balance's).</summary>
+        public string Capture() => JsonUtility.ToJson(new SaveData { loot_buy_rate = LootBuyRate });
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            if (s.loot_buy_rate > 0f) LootBuyRate = s.loot_buy_rate;
+        }
 
         /// <summary>Multiplier on base value the guild pays for loot (player-controlled).</summary>
         public float LootBuyRate { get; set; } = 1f;
@@ -44,7 +63,10 @@ namespace GuildMaster.Economy
         }
 
         public int LootPrice(ItemDefinition item) => Mathf.Max(1, Mathf.RoundToInt(item.baseValue * LootBuyRate));
-        public int GoodsPrice(ItemDefinition item) => Mathf.Max(1, Mathf.RoundToInt(item.baseValue * GoodsSellRate));
+        /// <summary>What the guild pays for one: its price, or the finder's fee when the guild's rule makes loot the guild's (P4-112).</summary>
+        public int LootPay(ItemDefinition item) => Mathf.Max(1, Mathf.RoundToInt(LootPrice(item) * Guild.GuildLaws.LootShare));
+        /// <summary>The guild shop's price, after the shop rule (P4-112).</summary>
+        public int GoodsPrice(ItemDefinition item) => Mathf.Max(1, Mathf.RoundToInt(item.baseValue * GoodsSellRate * Guild.GuildLaws.ShopFactor));
 
         /// <summary>Buys as much carried loot as the guild can afford. Returns gold paid.</summary>
         public int BuyLoot(ITrader seller)
@@ -56,7 +78,7 @@ namespace GuildMaster.Economy
                 var stack = loot[i];
                 var item = _db.Item(stack.itemId);
                 if (item == null) { loot.RemoveAt(i); continue; }
-                int price = LootPrice(item);
+                int price = LootPay(item);
                 int affordable = Mathf.Min(stack.count, _treasury.Gold / price);
                 if (affordable <= 0) continue;
                 int total = affordable * price;

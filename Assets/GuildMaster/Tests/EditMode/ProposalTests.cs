@@ -24,12 +24,12 @@ namespace GuildMaster.Tests
         static ProposalPlan Plan(string key, ProposalStyle style, float distance) => new()
         {
             Target = Hunt(key, DangerLevel.Low, distance), Style = style, Danger = DangerLevel.Low, Count = 3, Party = 1,
-            RewardGold = 40, BaseRewardGold = 40, RewardExp = 25, Risk = QuestRisk.Easy,
+            RewardGold = 40, RewardExp = 25, Risk = QuestRisk.Easy,
         };
 
         /// <summary>Strong enough that low and medium dangers are comfortable (power 4, four members).</summary>
         static List<ProposalPlan> Pool(params ProposalTarget[] targets)
-            => ProposalRules.BuildPool(targets, 4f, 4, 5000, 5000);
+            => ProposalRules.BuildPool(targets, 4f, 4);
 
         // ---------------- Numbers ----------------
 
@@ -106,7 +106,7 @@ namespace GuildMaster.Tests
         [Test]
         public void BuildPool_NeverProposesARecklessQuest()
         {
-            var pool = ProposalRules.BuildPool(new[] { Hunt("boss", DangerLevel.High), Hunt("rat", DangerLevel.Low) }, 1f, 4, 5000, 5000);
+            var pool = ProposalRules.BuildPool(new[] { Hunt("boss", DangerLevel.High), Hunt("rat", DangerLevel.Low) }, 1f, 4);
             Assert.That(pool, Is.Not.Empty);
             Assert.That(pool.All(p => p.Risk != QuestRisk.Reckless));
             Assert.That(pool.Any(p => p.Target.Key == "hunt:boss"), Is.False);
@@ -114,23 +114,24 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void BuildPool_DropsWhatTheTreasuryCannotPayInAdvance()
+        public void BuildPool_IsNotLimitedByTheTreasury_TheClientPays()
         {
-            var pool = ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low) }, 4f, 4, 40, 5000);
-            Assert.That(pool, Is.Not.Empty);
-            Assert.That(pool.All(p => p.RewardGold <= 40));
-            Assert.That(pool.Any(p => p.Style == ProposalStyle.Bold), Is.False);
-
-            Assert.That(ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low) }, 4f, 4, 0, 0), Is.Empty);
-            Assert.That(ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low) }, 4f, 4, 5000, 0), Is.Empty, "EXP is escrowed too");
+            // P4-82: every style of a target the guild can handle is on offer, however poor the guild is.
+            var pool = Pool(Hunt("rat", DangerLevel.Low));
+            Assert.That(pool.Select(p => p.Style), Is.EquivalentTo(new[] { ProposalStyle.Safe, ProposalStyle.Balanced, ProposalStyle.Bold }));
+            foreach (var p in pool)
+            {
+                Assert.That(p.MemberGold + p.FeeGold, Is.EqualTo(p.RewardGold), "the members' share and the fee make up the client's gold");
+                Assert.That(p.FeeGold, Is.EqualTo(QuestPricing.Split(p.RewardGold).fee));
+            }
         }
 
         [Test]
         public void BuildPool_IsEmptyWithoutMembersOrTargets()
         {
-            Assert.That(ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low) }, 4f, 0, 5000, 5000), Is.Empty);
-            Assert.That(ProposalRules.BuildPool(new List<ProposalTarget>(), 4f, 4, 5000, 5000), Is.Empty);
-            Assert.That(ProposalRules.BuildPool(null, 4f, 4, 5000, 5000), Is.Empty);
+            Assert.That(ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low) }, 4f, 0), Is.Empty);
+            Assert.That(ProposalRules.BuildPool(new List<ProposalTarget>(), 4f, 4), Is.Empty);
+            Assert.That(ProposalRules.BuildPool(null, 4f, 4), Is.Empty);
         }
 
         [Test]
@@ -146,16 +147,16 @@ namespace GuildMaster.Tests
         [Test]
         public void BuildPool_HuntsNeverAskForMoreThanWasSeen()
         {
-            var pool = ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low, 20f, observed: 4) }, 4f, 4, 5000, 5000);
+            var pool = ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low, 20f, observed: 4) }, 4f, 4);
             Assert.That(pool.All(p => p.Count <= 4));
-            var unknown = ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low, 20f, observed: 0) }, 4f, 4, 5000, 5000);
+            var unknown = ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low, 20f, observed: 0) }, 4f, 4);
             Assert.That(unknown.Any(p => p.Style == ProposalStyle.Bold && p.Count == 8));
         }
 
         [Test]
         public void BuildPool_BigHuntsCountAsMoreDangerous()
         {
-            var pool = ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low, 20f, observed: 20) }, 4f, 4, 5000, 5000);
+            var pool = ProposalRules.BuildPool(new[] { Hunt("rat", DangerLevel.Low, 20f, observed: 20) }, 4f, 4);
             var bold = pool.First(p => p.Style == ProposalStyle.Bold);
             Assert.That(bold.Count, Is.EqualTo(8));
             Assert.That(bold.Danger, Is.EqualTo(DangerLevel.Medium));
@@ -224,24 +225,12 @@ namespace GuildMaster.Tests
             Assert.That(first, Has.Count.LessThanOrEqualTo(ProposalRules.MaxCandidates));
         }
 
-        // ---------------- Adjusting the reward ----------------
-
         [Test]
-        public void AdjustReward_MovesInStepsAndStaysInRange()
+        public void Rewards_AreTheTownsPrice_ForTheBalancedStyle()
         {
-            var plan = Plan("a", ProposalStyle.Balanced, 10f);
-            plan.RewardGold = plan.BaseRewardGold = 100;
-            Assert.That(plan.MinRewardGold, Is.EqualTo(50));
-            Assert.That(plan.MaxRewardGold, Is.EqualTo(200));
-
-            Assert.That(plan.AdjustReward(1), Is.True);
-            Assert.That(plan.RewardGold, Is.EqualTo(100 + ProposalRules.RewardStep));
-            for (int i = 0; i < 50; i++) plan.AdjustReward(1);
-            Assert.That(plan.RewardGold, Is.EqualTo(200));
-            Assert.That(plan.AdjustReward(1), Is.False, "already at the top");
-            for (int i = 0; i < 50; i++) plan.AdjustReward(-1);
-            Assert.That(plan.RewardGold, Is.EqualTo(50));
-            Assert.That(plan.AdjustReward(-1), Is.False);
+            // A card and the town's own posting price the same hunt the same (P4-82).
+            Assert.That(ProposalRules.RewardGold(QuestType.Hunt, DangerLevel.Medium, 5, 90f, ProposalStyle.Balanced),
+                        Is.EqualTo(QuestPricing.HuntReward(DangerLevel.Medium, 5, 90f)));
         }
 
         [Test]

@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace GuildMaster.Data
 {
-    public enum ItemCategory { Material, Potion, Gear }
+    /// <summary>Tool added in P4-94 (flares; appended so existing values keep their meaning).</summary>
+    public enum ItemCategory { Material, Potion, Gear, Tool }
 
     /// <summary>Where a monster wears an item (P4-21). None = not wearable (absorbable only).</summary>
     public enum EquipSlot { None, Weapon, Armor, Trinket }

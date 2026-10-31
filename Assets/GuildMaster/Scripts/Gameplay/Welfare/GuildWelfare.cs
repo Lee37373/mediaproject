@@ -38,7 +38,7 @@ namespace GuildMaster.Welfare
     /// tools: interview, leave, bonus and dismissal. The rules live in <see cref="StressRules"/> and
     /// <see cref="CareRules"/>; this class is the glue to the game world.
     /// </summary>
-    public class GuildWelfare : IDisposable
+    public class GuildWelfare : IDisposable, ISaveable
     {
         readonly GameClock _clock;
         readonly GuildRoster _roster;
@@ -72,6 +72,29 @@ namespace GuildMaster.Welfare
             _care.Clear();
         }
 
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SaveData { public List<MemberCare.CareSave> care = new(); }
+
+        public string SaveKey => "welfare";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            var ids = new List<string>(_care.Keys);
+            ids.Sort(StringComparer.Ordinal);
+            foreach (var id in ids) s.care.Add(_care[id].Capture(id));
+            return UnityEngine.JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = UnityEngine.JsonUtility.FromJson<SaveData>(json);
+            _care.Clear();
+            foreach (var c in s.care) _care[c.member] = MemberCare.Restore(c);
+        }
+
         static string DemandKey(string id) => "demand:" + id;
         static string ResignKey(string id) => "resign:" + id;
 
@@ -96,6 +119,8 @@ namespace GuildMaster.Welfare
             // A badly wounded member (F-6) takes no quest until the wound heals or is treated.
             if (Legacy.GuildLegacy.WoundedRefusal(a) is { } wounded) return wounded;
             if (StressRules.LevelOf(a.Data.stress) == StressLevel.Breaking) return "지쳐서 의뢰를 맡을 기분이 아니다";
+            // The guild's holiday (P4-112): nobody sets out on new work today.
+            if (Guild.GuildLaws.IsHoliday) return Guild.GuildLawRules.HolidayRefusal;
             return null;
         }
 
@@ -153,6 +178,7 @@ namespace GuildMaster.Welfare
             string reply = CareTexts.InterviewReply(d.values, GameRandom.Shared);
             a.Say(reply);
             Remember(a, 2, CareTexts.MemoryTalked, "care-talk");
+            ThoughtRecorder.Give(a, ThoughtRules.Talked);
             SettleDemand(a, c);
             return CareResult.Success(CareTexts.Relieved("면담", relief, before, Mathf.RoundToInt(d.stress)), reply);
         }
@@ -222,6 +248,7 @@ namespace GuildMaster.Welfare
             string reply = CareTexts.BonusReply(d.values);
             a.Say(reply);
             Remember(a, 2, CareTexts.MemoryBonus(cost), "care-bonus");
+            ThoughtRecorder.Give(a, ThoughtRules.Bonus);
             SettleDemand(a, c);
             return CareResult.Success(CareTexts.BonusResult(cost, relief, before, Mathf.RoundToInt(d.stress)), reply);
         }
@@ -271,6 +298,7 @@ namespace GuildMaster.Welfare
                 if (Relationships.Get(m, gone) < StressRules.FriendRelation) continue;
                 AddStress(m, StressRules.FriendLeftStress);
                 Remember(m, 2, CareTexts.MemoryFriendLeft(gone.Data.name), "friend-left:" + gone.Data.id);
+                ThoughtRecorder.Give(m, ThoughtRules.FriendLeft, gone.Data.id, gone.Data.name);
             }
         }
 
@@ -332,6 +360,7 @@ namespace GuildMaster.Welfare
                     Values = d.values,
                     OnQuest = q != null && q.IsActive,
                     InTownFree = q == null && a.IsAtLeisureInTown,
+                    InFight = a.InTheThickOfIt,
                 }, _roll);
                 if (step != CareStep.None) Apply(a, c, step, asked);
             }
@@ -358,6 +387,7 @@ namespace GuildMaster.Welfare
                 _center?.Resolve(DemandKey(id));
                 AddStress(a, StressRules.IgnoredDemandStress);
                 Remember(a, 2, CareTexts.MemoryIgnored(asked), "care-ignored");
+                ThoughtRecorder.Give(a, ThoughtRules.Ignored);
                 _center?.Post(c.Grudges >= CareRules.QuitGrudges ? NotificationKind.Danger : NotificationKind.Warning, "요구 무시됨",
                     CareTexts.DemandIgnored(name, c.Grudges), "ignored:" + id, NotificationLink.Management(id));
             }
@@ -372,19 +402,29 @@ namespace GuildMaster.Welfare
             if (step.HasFlag(CareStep.Quit)) QuitGuild(a, c.Cause);
         }
 
-        /// <summary>The member gives up the quest they are on and heads back to town.</summary>
+        /// <summary>
+        /// The member gives up the quest they are on: no share of its pay, and — out with a party — it does not go home alone but
+        /// trails behind the others until they go home (user decision 2026-10-21, P4-104d). On its own it heads back to town.
+        /// </summary>
         void WalkAwayFromQuest(Adventurer a, MemberCare c)
         {
             var q = a.CurrentQuest;
             if (q == null) return;
-            _board.Abandon(q, a);
-            a.CurrentQuest = null;
             a.Data.stress = Mathf.Max(0f, a.Data.stress - StressRules.SabotageRelief);
             c.ResetBreaking();
             a.Say(CareTexts.SabotageLine);
-            a.ChangeState(a.ReturnState);
+            MentalBreaks.WalkOff(a, followParty: true);
             _center?.Post(NotificationKind.Warning, "의뢰 포기", CareTexts.Sabotage(a.Data.name, q.Title),
                 "sabotage:" + a.Data.id, NotificationLink.Management(a.Data.id));
+        }
+
+        /// <summary>The member leaves the guild on its own for another reason (P4-104d: an extreme break): told, and taken hard by its friends.</summary>
+        public void Release(Adventurer a, string notice)
+        {
+            if (NotAMember(a) != null) return;
+            AfterDeparture(a);
+            _center?.Post(NotificationKind.Danger, "길드원 이탈", notice, "quit:" + a.Data.id, NotificationLink.Roster());
+            _roster.Dismiss(a);
         }
 
         void QuitGuild(Adventurer a, QuitCause cause)

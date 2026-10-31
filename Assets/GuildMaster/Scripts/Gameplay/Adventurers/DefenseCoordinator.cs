@@ -58,7 +58,8 @@ namespace GuildMaster.Adventurers
             var center = _world.TownCenterWorld;
             foreach (var a in _roster.Members)
             {
-                if (!CanDefend(a) || Vector2.Distance(a.Position, center) > _radius) continue;
+                // Down in a ruin (P4-85), as far as its way down: the dungeon's coordinates are no measure of the walk.
+                if (!CanDefend(a) || Vector2.Distance(_world.OnTheSurface(a.Position), center) > _radius) continue;
                 a.ChangeState(a.DefendState);
             }
             AssignFronts();
@@ -106,6 +107,8 @@ namespace GuildMaster.Adventurers
             if (a == null || !a.IsAlive || a.IsVisitor) return false;
             var s = a.Fsm.Current;
             if (s == a.DefendState || s == a.DeadState) return false;
+            // Acting out a break (P4-104d): a berserker or two at blows answer nobody's call (it ended the berserk unseen).
+            if (s == a.BreakState) return false;
             // Resting out of weariness in town is no reason to sit out a raid on the town (user
             // report 2026-09-22: only one member fought while the others slept it off).
             if (s == a.RestState && !_world.Grid.IsInTown(a.Position)) return false;
@@ -125,8 +128,14 @@ namespace GuildMaster.Adventurers
                 if (a.HpRatio < MinHpToDefend) a.ChangeState(a.RestState);
                 else if (q != null && q.Status == QuestStatus.Completed) a.ChangeState(a.VisitState);
                 else if (q != null && q.IsActive && q.IsAssigned(a)) a.ChangeState(a.TravelState);
+                // Called in from the field (P4-76): report at the guild first — sell the loot, join
+                // the party's split. Straight to idling, an outing never counted them back.
+                else if (a.Data.LootCount > 0 || BackFromAnOuting(a)) a.ChangeState(a.VisitState);
                 else a.ChangeState(a.IdleState);
             }
         }
+
+        static bool BackFromAnOuting(Adventurer a)
+            => Services.TryGet<GuildParties>(out var parties) && parties.PartyOf(a) is { } p && p.WentOut(a) && !p.Arrived.Contains(a);
     }
 }

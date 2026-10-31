@@ -4,8 +4,8 @@ using GuildMaster.Core;
 namespace GuildMaster.Adventurers
 {
     /// <summary>
-    /// Party formation (P3-4): the leader and members who already joined mill about the plaza
-    /// until every invitation is answered, then all switch to travelling at the same time.
+    /// Party formation (P3-4): the leader and members who already joined gather round the big table in the guild hall
+    /// (P4-115; they milled about the plaza) until every invitation is answered, then all switch to travelling at the same time.
     /// </summary>
     public class PartyGatherState : State<Adventurer>
     {
@@ -26,7 +26,7 @@ namespace GuildMaster.Adventurers
                 a.ChangeState(a.TravelState);
                 return;
             }
-            AdvCtx.Wander(a, ref _wanderTimer, dt);
+            AdvCtx.Wander(a, ref _wanderTimer, dt, Town.HallUse.Table);   // round the big table in the guild hall (P4-115)
         }
     }
 }

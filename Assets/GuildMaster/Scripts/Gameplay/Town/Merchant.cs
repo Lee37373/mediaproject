@@ -82,6 +82,21 @@ namespace GuildMaster.Town
             _phaseTime = 0f;
         }
 
+        /// <summary>Save (P5-4): back at the stall trading, or on the way out, without the arrival callback.</summary>
+        public void RestorePhase(Phase p)
+        {
+            switch (p)
+            {
+                case Phase.Trading:
+                    Mover.Stop();
+                    SetPhase(Phase.Trading);
+                    break;
+                case Phase.Leaving:
+                    Leave();
+                    break;
+            }
+        }
+
         /// <summary>Closes the stall and heads for the nearest gate.</summary>
         public void Leave()
         {

@@ -38,6 +38,31 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void On512Map_ALongWoodlandRouteIsNotCutShort()
+        {
+            // P4-81: a forest-loving band coming in from the edge (seed 20260920) needed 20,554 nodes for
+            // 137 cells of swamp; the old flat cap of 20,000 failed it 1045 times in one run.
+            var balance = ScriptableObject.CreateInstance<Session.GameBalance>();
+            try
+            {
+                var map = MapGenerator.Generate(new MapGenSettings
+                {
+                    Width = balance.mapWidth, Height = balance.mapHeight, Seed = 20260920, TownHalfSize = balance.townHalfSize,
+                    NestCount = balance.nestCount, MinNestDistanceFromTown = balance.minNestDistanceFromTown,
+                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount,
+                });
+                var finder = new Pathfinder(new GridMap(map));
+                var path = new List<Vector2Int>();
+                Assert.That(finder.FindPath(new Vector2Int(508, 300), new Vector2Int(371, 299), path, false, null, RouteChoice.FromCover), Is.True);
+                Assert.That(finder.LastExpanded, Is.GreaterThan(finder.MaxExpandedNodes), "the case the flat cap cut short");
+            }
+            finally
+            {
+                Object.DestroyImmediate(balance);
+            }
+        }
+
+        [Test]
         public void RiskIsTheViewLost_ForestAndWeather()
         {
             var map = ForestBelt();

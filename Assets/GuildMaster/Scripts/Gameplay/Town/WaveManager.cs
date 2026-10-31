@@ -44,7 +44,7 @@ namespace GuildMaster.Town
     /// when they give up. Nothing is announced until a raider is seen (information hiding;
     /// watchtowers will extend that sight, P4-13). Several nests may raid at once.
     /// </summary>
-    public class WaveManager : MonoBehaviour
+    public class WaveManager : MonoBehaviour, ISaveable, ISaveLink
     {
         const float SightCheckInterval = 0.25f;
 
@@ -54,6 +54,8 @@ namespace GuildMaster.Town
             public Nest Nest;
             public readonly List<Monster> Members = new();
             public float StartedAtHour;
+            /// <summary>Hours of march allowed on top of <see cref="RaidSettings.MaxHours"/> (a far den's raid, P4-111).</summary>
+            public float MarchHours;
             public bool Sighted;
             public int Killed;
             public Vector2Int FrontGate;
@@ -86,6 +88,81 @@ namespace GuildMaster.Town
         readonly List<RaidFront> _fronts = new();
         /// <summary>A new gate must be this much closer to the vanguard before a front moves (no flicker).</summary>
         const float FrontSwitchRatio = 0.8f;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedRaid
+        {
+            public int id;
+            public int nest = -1;
+            public List<string> members = new();
+            public float started;
+            public float march;
+            public bool sighted;
+            public int killed;
+            public Vector2Int front_gate;
+            public Vector2 front;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int raid_count;
+            public List<SavedRaid> raids = new();
+            public List<string> seen = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "raids";
+
+        /// <summary>The fronts are worked out again every check, so only the raids and who was seen are saved.</summary>
+        public string Capture()
+        {
+            var s = new SaveData { raid_count = RaidCount };
+            foreach (var r in _raids)
+            {
+                var sr = new SavedRaid
+                {
+                    id = r.Id, nest = r.Nest != null ? _eco.Nests.IndexOf(r.Nest) : -1, started = r.StartedAtHour, march = r.MarchHours, sighted = r.Sighted,
+                    killed = r.Killed, front_gate = r.FrontGate, front = r.Front,
+                };
+                foreach (var m in r.Members) if (m != null && m.IsAlive) sr.members.Add(m.UnitId);
+                s.raids.Add(sr);
+            }
+            foreach (var m in _seenRaiders) if (m != null && m.IsAlive) s.seen.Add(m.UnitId);
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            RaidCount = _restoring.raid_count;
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            foreach (var sr in _restoring.raids)
+            {
+                var r = new Raid
+                {
+                    Id = sr.id, Nest = sr.nest >= 0 && sr.nest < _eco.Nests.Count ? _eco.Nests[sr.nest] : null, StartedAtHour = sr.started, MarchHours = sr.march,
+                    Sighted = sr.sighted, Killed = sr.killed, FrontGate = sr.front_gate, Front = sr.front,
+                };
+                foreach (var id in sr.members)
+                {
+                    if (ctx.Find<Monster>(id) is not { } m) continue;
+                    r.Members.Add(m);
+                    // As Launch: a raider's death counts, and the last one's ends the raid (without
+                    // this a loaded raid stayed "on" until MaxHours, the defenders held at the gate).
+                    m.Died += OnRaiderDied;
+                }
+                _raids.Add(r);
+            }
+            foreach (var id in _restoring.seen) if (ctx.Find<Monster>(id) is { } m) _seenRaiders.Add(m);
+            _restoring = null;
+        }
 
         public void Init(RaidSettings cfg, GameClock clock, EcosystemManager eco, WorldService world)
         {
@@ -139,6 +216,9 @@ namespace GuildMaster.Town
 
         public int LevelOf(Nest n) => n.Species.canRaid ? DangerLevel(HomeMembers(n).Count(), n.Species.raidThreshold, n.Species.raidStep) : 0;
 
+        /// <summary>Members of the den at home, free to march (the storyteller's town raid sizes itself by them, P4-111).</summary>
+        public int AtHome(Nest n) => HomeMembers(n).Count();
+
         public bool IsRaiding(Nest n) => _raids.Any(r => r.Nest == n);
 
         // ---------------- Hourly roll ----------------
@@ -146,35 +226,78 @@ namespace GuildMaster.Town
         void OnHour(HourPassedEvent e)
         {
             foreach (var raid in _raids.ToList())
-                if (_clock.TotalHours - raid.StartedAtHour >= _cfg.MaxHours) GiveUp(raid);
+                if (_clock.TotalHours - raid.StartedAtHour >= _cfg.MaxHours + raid.MarchHours) GiveUp(raid);
 
             Services.TryGet<MigrationService>(out var migration);
+            Services.TryGet<Villages.VillageRaids>(out var villageRaids);
             foreach (var nest in _eco.Nests)
             {
-                if (!nest.Species.canRaid || nest.IsEmpty || IsRaiding(nest)) continue;
+                if (!nest.Species.canRaid || nest.IsEmpty || nest.IsLair || IsRaiding(nest)) continue;
                 if (migration != null && migration.IsMigrating(nest)) continue;
+                if (villageRaids != null && villageRaids.IsRaiding(nest)) continue;
                 int level = LevelOf(nest);
-                if (level <= 0 || GameRandom.Shared.Value >= level * _cfg.ChancePerLevelPerHour) continue;
-                // Only a nest by the town sends its band against the walls; the others move their
-                // home a step closer instead (P4-56, user decision 2026-09-22).
+                // The storyteller's breather quiets the dens too, winter's hunger stirs them (P4-111); the same draw either way.
+                float chance = level * _cfg.ChancePerLevelPerHour * Storytelling.StorytellerService.EcoFactor * Seasons.SeasonService.Raid;
+                if (level <= 0 || GameRandom.Shared.Value >= chance) continue;
+                // Only a nest by the town sends its band against the walls; one by another village raids
+                // that (P4-84); the others move their home a step closer instead (P4-56, user decision 2026-09-22).
                 if (migration == null || IsByTheTown(nest)) Launch(nest);
+                else if (villageRaids != null && villageRaids.TryLaunch(nest)) { }
                 else migration.TryLaunch(nest); // the whole nest moves (user decision 2026-09-22)
             }
         }
 
         /// <summary>Nests this close to the town (cells) raid it; further out they migrate inwards.</summary>
         public const float RaidRadius = 45f;
+        /// <summary>A march's path against the straight line (roads, rivers, woods), for a far den's time allowance.</summary>
+        const float MarchDetour = 1.5f;
 
         public bool IsByTheTown(Nest n) => Vector2.Distance(n.WorldPosition, _world.TownCenterWorld) <= RaidRadius;
 
         /// <summary>Sends part of the nest against the town now (also used by debug tools). Returns raiders sent.</summary>
         public int Launch(Nest nest)
         {
+            int home = AtHome(nest);
+            return home == 0 ? 0 : Launch(nest, PartySize(home, _cfg.SendFraction, _cfg.MinParty));
+        }
+
+        /// <summary>
+        /// Sends <paramref name="count"/> of the den's members at home against the town now (the storyteller's raid, P4-111).
+        /// A den beyond <see cref="RaidRadius"/> gets the hours of its march on top of the usual time before they give up.
+        /// </summary>
+        public int Launch(Nest nest, int count)
+        {
             var home = HomeMembers(nest).ToList();
-            if (home.Count == 0) return 0;
-            int n = PartySize(home.Count, _cfg.SendFraction, _cfg.MinParty);
-            var raid = new Raid { Id = ++RaidCount, Nest = nest, StartedAtHour = _clock.TotalHours };
+            if (home.Count == 0 || count <= 0) return 0;
+            int n = Mathf.Min(count, home.Count);
+            float beyond = Mathf.Max(0f, Vector2.Distance(nest.WorldPosition, _world.TownCenterWorld) - RaidRadius);
+            float cellsAnHour = Mathf.Max(0.5f, nest.Species.moveSpeed) * _clock.RealSecondsPerGameHour;
+            var raid = new Raid
+            {
+                Id = ++RaidCount, Nest = nest, StartedAtHour = _clock.TotalHours, MarchHours = beyond * MarchDetour / cellsAnHour,
+            };
             foreach (var m in home.OrderBy(_ => GameRandom.Shared.Value).Take(n))
+            {
+                m.DefaultStateOverride = m.RaidState;
+                m.GoToDefaultState();
+                m.Died += OnRaiderDied;
+                raid.Members.Add(m);
+            }
+            _raids.Add(raid);
+            return raid.Members.Count;
+        }
+
+        /// <summary>
+        /// A pack with no home left comes at the town as one (P4-44, user decision 2026-10-19: the pushed in the end
+        /// attack the town), whatever its kind. It has no nest to go back to: survivors who give up take to the road
+        /// again (<see cref="Monster.EndMarch"/>). Returns raiders sent.
+        /// </summary>
+        public int LaunchHomeless(IEnumerable<Monster> pack)
+        {
+            var members = pack.Where(m => m != null && m.IsAlive && (m.DefaultStateOverride == null || m.DefaultStateOverride == m.RoamState)).ToList();
+            if (members.Count == 0) return 0;
+            var raid = new Raid { Id = ++RaidCount, Nest = null, StartedAtHour = _clock.TotalHours };
+            foreach (var m in members)
             {
                 m.DefaultStateOverride = m.RaidState;
                 m.GoToDefaultState();

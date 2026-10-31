@@ -198,9 +198,12 @@ namespace GuildMaster.Recruitment
             // Resume an earlier talk with this visitor: same affinity, turn count and transcript.
             var data = visitor.Data;
             Resumed = data.recruitTurns > 0;
-            int initial = InitialAffinity(visitor.Traits);
+            int initial = InitialAffinity(visitor.Traits, LevelsAboveGuild(visitor));
             Affinity = data.recruitAffinity >= 0 ? data.recruitAffinity : initial;
-            HeardOfGuild = !Resumed && data.recruitAffinity > initial;
+            // What its chats with members warmed it up (P4-104e, user decision 2026-10-21): counted once, here.
+            Affinity = Mathf.Clamp(Affinity + data.banterWarmth, 0, 100);
+            data.banterWarmth = 0;
+            HeardOfGuild = !Resumed && Affinity > initial;
             PlayerTurns = Mathf.Max(0, data.recruitTurns);
             Stages = RecruitPersuasion.StagesFor(visitor.Traits?.RecruitDifficulty ?? 0f);
             foreach (var line in DialogueLog.Recruit(data))
@@ -213,9 +216,29 @@ namespace GuildMaster.Recruitment
             RefreshChoices();
         }
 
-        /// <summary>40 adjusted by traits' recruit difficulty (loyal +15, arrogant −15, ...).</summary>
-        public static int InitialAffinity(TraitSet traits)
-            => Mathf.Clamp(StartAffinity - Mathf.RoundToInt((traits?.RecruitDifficulty ?? 0f) * 50f), HardestStart, 70);
+        /// <summary>Start affinity lost per level a visitor stands above the guild's best member (P4-88)...</summary>
+        public const int AffinityPerLevelAbove = 2;
+        /// <summary>...up to this much: hard to win, never out of reach.</summary>
+        public const int MaxLevelPenalty = 24;
+
+        /// <summary>
+        /// 40 adjusted by traits' recruit difficulty (loyal +15, arrogant −15, ...), and lowered for a visitor stronger than
+        /// anyone in the guild (P4-88, user decision 2026-10-18: an outer village's Lv17 does not sign up with a Lv5 guild
+        /// for the asking).
+        /// </summary>
+        /// Traits alone never start below <see cref="HardestStart"/> (KMS 2026-09-30); the level gap can push it lower, to 10.
+        public static int InitialAffinity(TraitSet traits, int levelsAboveGuild = 0)
+            => Mathf.Clamp(Mathf.Clamp(StartAffinity - Mathf.RoundToInt((traits?.RecruitDifficulty ?? 0f) * 50f), HardestStart, 70)
+                           - Mathf.Clamp(levelsAboveGuild * AffinityPerLevelAbove, 0, MaxLevelPenalty), 10, 70);
+
+        /// <summary>How many levels the visitor stands above the guild's best member (0 when not above).</summary>
+        public static int LevelsAboveGuild(Adventurer visitor)
+        {
+            if (visitor?.Data == null || !Services.TryGet<GuildRoster>(out var roster)) return 0;
+            int best = 0;
+            foreach (var m in roster.Members) if (m != null && m.IsAlive) best = Mathf.Max(best, m.Data.level);
+            return best > 0 ? Mathf.Max(0, visitor.Data.level - best) : 0;
+        }
 
         /// <summary>
         /// The lowest a visitor starts at, however many "hard to recruit" traits they have (was 10: arrogant
@@ -230,9 +253,9 @@ namespace GuildMaster.Recruitment
         /// without ever opening a formal talk). Seeds from traits on first contact (current &lt; 0) exactly
         /// like a freshly opened recruit dialogue would, so it makes no difference which happens first.
         /// </summary>
-        public static int NextRecruitAffinity(int current, TraitSet traits, int delta)
+        public static int NextRecruitAffinity(int current, TraitSet traits, int delta, int levelsAboveGuild = 0)
         {
-            int start = current < 0 ? InitialAffinity(traits) : current;
+            int start = current < 0 ? InitialAffinity(traits, levelsAboveGuild) : current;
             return Mathf.Clamp(start + delta, 0, 100);
         }
 

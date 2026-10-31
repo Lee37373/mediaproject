@@ -22,8 +22,89 @@ namespace GuildMaster.Ecosystem
     /// inwards over the days, and only a nest close to the town sends its band against the town
     /// itself (the raid).
     /// </summary>
-    public class MigrationService : MonoBehaviour
+    public class MigrationService : MonoBehaviour, ISaveable, ISaveLink
     {
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedBand
+        {
+            public int id;
+            public int from = -1;
+            public int target = -1;
+            public List<string> members = new();
+            public List<int> refused = new();
+            public float started_at;
+            public bool resting;
+            public string species;
+            public bool arrival;
+            public bool horde;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int count;
+            public List<SavedBand> bands = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "migration";
+
+        int NestIndex(Nest n) => n != null ? _eco.Nests.IndexOf(n) : -1;
+        Nest NestAt(int i) => i >= 0 && i < _eco.Nests.Count ? _eco.Nests[i] : null;
+
+        public string Capture()
+        {
+            var s = new SaveData { count = _count };
+            foreach (var b in _bands)
+            {
+                var sb = new SavedBand
+                {
+                    id = b.Id, from = NestIndex(b.From), target = NestIndex(b.Target), started_at = b.StartedAtHour, resting = b.Resting,
+                    species = b.Species != null ? b.Species.id : null, arrival = b.Arrival, horde = b.Horde,
+                };
+                foreach (var m in b.Members) if (m != null && m.IsAlive) sb.members.Add(m.UnitId);
+                foreach (var n in b.Refused) sb.refused.Add(NestIndex(n));
+                sb.refused.Sort();
+                s.bands.Add(sb);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            _count = _restoring.count;
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            var db = Services.Get<GameDatabase>();
+            foreach (var sb in _restoring.bands)
+            {
+                var band = new Band
+                {
+                    Id = sb.id, From = NestAt(sb.from), Target = NestAt(sb.target), StartedAtHour = sb.started_at, Resting = sb.resting,
+                    Species = db.Monster(sb.species), Arrival = sb.arrival, Horde = sb.horde,
+                };
+                foreach (var i in sb.refused) if (NestAt(i) is { } n) band.Refused.Add(n);
+                foreach (var id in sb.members)
+                {
+                    if (ctx.Find<Monster>(id) is not { } m) continue;
+                    band.Members.Add(m);
+                    _of[m] = band;
+                    m.InHorde = band.Horde;
+                    // As Enlist: a member that falls leaves the band (the pooled body is reused as
+                    // another monster, which must not be found in this band afterwards).
+                    m.Died += OnMemberDied;
+                }
+                _bands.Add(band);
+            }
+            _restoring = null;
+        }
+
         /// <summary>A target site must be at least this much nearer the town than the band's nest.</summary>
         public const float MinStep = 15f;
         /// <summary>How far (cells) a band looks for its next home.</summary>
@@ -44,7 +125,7 @@ namespace GuildMaster.Ecosystem
         public const float ArrivalChancePerHour = 0.6f; // 0.3 left 17 of 64 sites empty after five days (user: more)
         /// <summary>At most this many newcomer bands on their way in at once.</summary>
         public const int MaxArrivals = 3;
-        /// <summary>Sites at least this far out (0 innermost .. 1 outermost) count as outer: newcomers settle there.</summary>
+        /// <summary>Sites at least this deep (<see cref="EcosystemManager.Depth"/>: 0 innermost .. 1 inner edge .. 2 outermost) count as outer: newcomers settle there.</summary>
         public const float OuterSites = 0.5f;
         const float TickInterval = 0.5f;
 
@@ -60,6 +141,8 @@ namespace GuildMaster.Ecosystem
             public MonsterDefinition Species;
             /// <summary>Newcomers from beyond the edge heading for an empty outer site (their home already).</summary>
             public bool Arrival;
+            /// <summary>A sudden incident's horde (P4-85): newcomers far more than a den holds, heading for a site by the town.</summary>
+            public bool Horde;
         }
 
         EcosystemManager _eco;
@@ -71,6 +154,12 @@ namespace GuildMaster.Ecosystem
         int _count;
 
         public IReadOnlyList<Band> Bands => _bands;
+
+        /// <summary>Tests: no newcomers from the map edge (they would take an empty site a test is about).</summary>
+        public static bool NoNewcomers;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => NoNewcomers = false;
 
         public void Init(EcosystemManager eco, WorldService world, GameClock clock)
         {
@@ -125,7 +214,8 @@ namespace GuildMaster.Ecosystem
         /// </summary>
         public bool TryLaunch(Nest nest)
         {
-            if (_bands.Count >= MaxBands || IsMigrating(nest)) return false;
+            // A lord never leaves its lair, nor do its guards (P4-83).
+            if (_bands.Count >= MaxBands || IsMigrating(nest) || nest.IsLair) return false;
             var home = nest.Members.Where(m => m != null && m.IsAlive).ToList();
             if (home.Any(m => m.DefaultStateOverride != null)) return false;
             if (home.Count == 0) return false;
@@ -161,18 +251,16 @@ namespace GuildMaster.Ecosystem
             if (_bands.Count(b => b.Arrival) >= MaxArrivals || _world.Map.EdgeSpawnCells.Count == 0) return false;
             if (target == null)
             {
-                var free = _eco.Nests.Where(n => n.IsEmpty && _eco.Distance01(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)).ToList();
+                // Not a lair, nor cleansed land (P4-83: nothing new comes there), nor a site other newcomers are fighting for (P4-44).
+                Services.TryGet<RoamingPackService>(out var roaming);
+                var free = _eco.Nests.Where(n => n.IsEmpty && !n.IsLair && !n.Sealed && _eco.Depth(n.WorldPosition) >= OuterSites && !_bands.Any(b => b.Target == n)
+                                                 && (roaming == null || !roaming.Packs.Any(p => p.Bound == n))).ToList();
                 if (free.Count == 0) return false;
                 target = free[GameRandom.Shared.Range(0, free.Count)];
             }
             if (!target.IsEmpty) return false;
-            if (species == null)
-            {
-                // A kind that lives there (P4-58: habitat by terrain).
-                var kinds = _eco.AllSpecies.Where(target.Suits).ToList();
-                if (kinds.Count == 0) return false;
-                species = kinds[GameRandom.Shared.Range(0, kinds.Count)];
-            }
+            species ??= PickKind(target);
+            if (species == null) return false;
             target.ChangeSpecies(species);
             var edge = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).First();
             var band = new Band { Id = ++_count, From = target, Target = target, StartedAtHour = _clock.TotalHours, Species = species, Arrival = true };
@@ -183,6 +271,127 @@ namespace GuildMaster.Ecosystem
             Debug.Log($"[Migration] newcomers #{band.Id}: {size} {species.displayName} from the edge {edge} → {target.DisplayName}");
             return true;
         }
+
+        /// <summary>
+        /// A kind that lives at the site (P4-58: habitat by terrain), drawn by the same weights as the map's first dens —
+        /// rarity included (P4-75: an even draw let the rare sand goblins, one of two desert kinds, take half the desert's
+        /// new packs). Null when nothing lives there.
+        /// </summary>
+        MonsterDefinition PickKind(Nest site)
+        {
+            var kinds = _eco.AllSpecies.Where(site.Suits).ToList();
+            if (kinds.Count == 0) return null;
+            float total = kinds.Sum(k => EcosystemManager.Fit(k, site.Region, site.Biome));
+            float roll = GameRandom.Shared.Range(0f, total);
+            foreach (var k in kinds)
+            {
+                roll -= EcosystemManager.Fit(k, site.Region, site.Biome);
+                if (roll <= 0f) return k;
+            }
+            return kinds[^1];
+        }
+
+        // ---------------- Newcomers crowding in (P4-44) ----------------
+
+        /// <summary>Share of a den's room a pack that comes for a held site brings.</summary>
+        public const float InvaderShare = 0.6f;
+
+        public static int InvaderCount(MonsterDefinition species) => Mathf.Max(4, Mathf.RoundToInt(species.nestCapacity * InvaderShare));
+
+        /// <summary>A fresh pack's fighting weight (as <see cref="TerritoryService.Strength"/>: HP × attack).</summary>
+        public static float FreshStrength(MonsterDefinition species, int count, int level)
+        {
+            var s = MonsterLevel.Grow(new Units.CombatStats { MaxHp = Units.Combat.ScaledHp(species.maxHp), Attack = species.attack }, level);
+            return count * s.MaxHp * Mathf.Max(1f, s.Attack);
+        }
+
+        static float ResidentStrength(Nest n) => n.Members.Where(m => m != null && m.IsAlive && m.IsDefendingTerritory).Sum(TerritoryService.Strength);
+
+        /// <summary>
+        /// Newcomers come for a held outer site (P4-44, user decisions 2026-10-19): a pack from beyond the map edge, born at
+        /// the site's level of the day, picks the outer site whose residents it would match best — if it would at least match
+        /// them (<see cref="WildsPressure.InvadeAtOdds"/>) — and walks at it (<see cref="RoamingPackService.SendNewcomers"/>).
+        /// Residents born in quieter days are the weaker the longer it goes; they give way inwards or fight it out, and
+        /// newcomers who fail roam and in the end come at the town. Null when no site is worth it.
+        /// </summary>
+        public RoamingPack TryInvade(Nest target = null, MonsterDefinition species = null)
+        {
+            if (!Services.TryGet<RoamingPackService>(out var roaming) || _world.Map.EdgeSpawnCells.Count == 0) return null;
+            if (target == null && roaming.Packs.Count(p => p.Bound != null) >= MaxArrivals) return null;
+            if (target == null)
+            {
+                float bestOdds = 0f;
+                var only = species;
+                foreach (var n in _eco.Nests)
+                {
+                    if (n.IsEmpty || n.IsLair || n.Sealed || _eco.Depth(n.WorldPosition) < OuterSites) continue;
+                    if (IsMigrating(n) || IsTarget(n) || roaming.Packs.Any(p => p.Bound == n)) continue;
+                    var kind = only ?? PickKind(n);
+                    if (kind == null || !n.Suits(kind)) continue;
+                    float odds = FreshStrength(kind, InvaderCount(kind), n.BirthLevel) / Mathf.Max(1f, ResidentStrength(n));
+                    if (odds > bestOdds) { bestOdds = odds; target = n; species = kind; }
+                }
+                if (target == null || bestOdds < WildsPressure.InvadeAtOdds) return null;
+            }
+            species ??= PickKind(target);
+            if (species == null || target.IsEmpty || !target.Suits(species)) return null;
+            var edge = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).First();
+            bool boss = GameRandom.Shared.Chance(MonsterBoss.Chance);
+            return roaming.SendNewcomers(species, InvaderCount(species), target.BirthLevel, GridMap.CellToWorld(edge), target, boss);
+        }
+
+        /// <summary>
+        /// A horde (P4-85, user decision 2026-10-18): a newcomer band of <paramref name="size"/> — far more than a den holds —
+        /// walks in from one of the map edges nearest <paramref name="target"/> (an empty site near the town), born at the
+        /// site's level + <paramref name="levelBonus"/>. Like any newcomers the site is theirs from the start; whoever stops
+        /// them on the way decides whether they get there. Null when the site cannot be had.
+        /// </summary>
+        public Band TryHorde(Nest target, MonsterDefinition species, int size, int levelBonus, GameRandom rng, float walk = 90f)
+        {
+            if (target == null || species == null || !target.IsEmpty || target.IsLair || target.Sealed || IsTarget(target)
+                || _world.Map.EdgeSpawnCells.Count == 0) return null;
+            // From the side of one of the nearer edges (a quarter of them, so it comes from a different side now and then),
+            // but only <paramref name="walk"/> cells out from its site, out of the guild's sight: from the map's edge it had
+            // the outer land to cross, and the first horde measured (Lv3) died to the dens there within hours.
+            var edges = _world.Map.EdgeSpawnCells.OrderBy(c => (c - target.Cell).sqrMagnitude).ToList();
+            var edge = edges[rng.Range(0, Mathf.Max(1, edges.Count / 4))];
+            var start = HordeStart(target, edge, walk);
+            target.ChangeSpecies(species);
+            var band = new Band
+            {
+                Id = ++_count, From = target, Target = target, StartedAtHour = _clock.TotalHours, Species = species, Arrival = true, Horde = true,
+            };
+            bool boss = rng.Chance(MonsterBoss.Chance);
+            for (int i = 0; i < size; i++)
+            {
+                var m = _eco.Spawn(target, GridMap.CellToWorld(start), boss && i == 0);
+                if (levelBonus > 0) m.SetLevel(m.Level + levelBonus);
+                m.InHorde = true;
+                Enlist(band, m);
+            }
+            _bands.Add(band);
+            Debug.Log($"[Migration] horde #{band.Id}: {size} {species.displayName} from {start} (towards the edge {edge}) → {target.DisplayName}");
+            return band;
+        }
+
+        /// <summary>Walkable ground <paramref name="walk"/> cells from the site towards the edge — farther while the guild can see it — at most the edge itself.</summary>
+        Vector2Int HordeStart(Nest target, Vector2Int edge, float walk)
+        {
+            var from = target.WorldPosition;
+            var dir = (GridMap.CellToWorld(edge) - from).normalized;
+            float far = Vector2.Distance(from, GridMap.CellToWorld(edge));
+            Services.TryGet<FogOfWar>(out var fog);
+            for (float d = Mathf.Min(walk, far); d < far; d += 15f)
+            {
+                var cell = GridMap.WorldToCell(from + dir * d);
+                if (!_world.Grid.TryFindNearestWalkable(cell, 6, out cell) || _world.Grid.IsInTown(cell)) continue;
+                if (fog != null && fog.IsVisibleRaw(GridMap.CellToWorld(cell))) continue;
+                return cell;
+            }
+            return edge;
+        }
+
+        public Band BandById(int id) => _bands.FirstOrDefault(b => b.Id == id);
 
         void OnMemberDied(Units.Unit u)
         {
@@ -196,7 +405,9 @@ namespace GuildMaster.Ecosystem
         {
             foreach (var band in _bands.ToList())
                 if (_clock.TotalHours - band.StartedAtHour >= MaxHours) GoHome(band);
-            if (GameRandom.Shared.Value < ArrivalChancePerHour) TryArrive();
+            if (!NoNewcomers && GameRandom.Shared.Value < ArrivalChancePerHour) TryArrive();
+            if (!NoNewcomers && GameRandom.Shared.Value < WildsPressure.InvasionChancePerHour(EcosystemManager.Days) * Storytelling.StorytellerService.EcoFactor)
+                TryInvade();
         }
 
         /// <summary>Beaten back on the way or at the target: rest, then try elsewhere (or go home).</summary>
@@ -263,6 +474,7 @@ namespace GuildMaster.Ecosystem
                 m.Died -= OnMemberDied;
                 _of.Remove(m);
                 m.DefaultStateOverride = null;
+                m.InHorde = false;
                 m.Home?.TransferMember(m, to);
             }
             _bands.Remove(band);
@@ -279,6 +491,7 @@ namespace GuildMaster.Ecosystem
                 if (m == null) continue;
                 m.Died -= OnMemberDied;
                 _of.Remove(m);
+                m.InHorde = false;
                 if (!m.IsAlive) continue;
                 m.EndMarch();
             }

@@ -118,7 +118,7 @@ namespace GuildMaster.Incidents
                 Gold = _treasury != null ? _treasury.Gold : 0,
                 Day = _clock != null ? _clock.Day : 1,
                 HasResidents = Services.TryGet<ResidentService>(out var residents) && residents.Residents.Count > 0,
-                HasVisitorRoom = Services.TryGet<VisitorService>(out _) && _roster != null && !_roster.IsFull,
+                HasVisitorRoom = Services.TryGet<VisitorService>(out _), // main has no member cap any more (2026-10-31 merge)
                 Recent = _recent,
             };
             if (_roster != null)

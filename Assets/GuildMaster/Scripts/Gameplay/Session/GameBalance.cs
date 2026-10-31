@@ -15,17 +15,39 @@ namespace GuildMaster.Session
         public int startHour = 8;
 
         [Header("Map")]
-        /// <summary>P4-53 (user decision 2026-09-22): 256×256, was 128. Nests keep their density (nestCount ×4).</summary>
-        public int mapWidth = 256;
-        public int mapHeight = 256;
+        /// <summary>
+        /// P4-53 (user decision 2026-09-22): 256×256, was 128. P4-81 (user decision 2026-10-16): 512×512 for
+        /// the other towns and the region bosses. The old 256 map stays in the middle as it was tuned
+        /// (grassland, levels 1→15 out to <see cref="Ecosystem.EcosystemManager.InnerEdge"/>); the land
+        /// beyond is new late-game ground.
+        /// </summary>
+        public int mapWidth = 512;
+        public int mapHeight = 512;
         public int townHalfSize = 11;
-        public int nestCount = 64;
+        /// <summary>
+        /// P4-81 (user decision): the whole map keeps 64 nests — fewer near the town than on the 256 map. P4-110 (user
+        /// decision 2026-10-30): 96, so the thirteen new kinds come on top of the old ones instead of halving them (two dens
+        /// each for sure, the rest drawn at <see cref="Data.MonsterDefinition.nestWeight"/> 0.15 — about 37 dens in all).
+        /// </summary>
+        public int nestCount = 96;
+        /// <summary>
+        /// P4-81: nests placed within this many cells of the town along x and y (the old 256 map's
+        /// square) before the rest go further out — spread evenly, 64 nests would leave a quarter of
+        /// them near the town. Half of them still (P4-110: 48 of 96).
+        /// </summary>
+        public int innerHalfSize = 128;
+        public int innerNestCount = 48;
         /// <summary>
         /// P5-1: was 24, which left no nest inside the first day's walk. Species are placed by
         /// distance now, so the closest ring is the weakest one and it should be findable early.
         /// P4-41: 20 so the nearest nest stays outside the town's sight (18) and still has to be found.
         /// </summary>
         public int minNestDistanceFromTown = 20;
+        /// <summary>
+        /// The full world (P4-101 ridges and rivers on the region borders with 2–3 passes, dens holding some; P4-102 the zones'
+        /// lie of the land, landmarks, the road network, danger by zone, village sites, dens in packs). See <see cref="World.ZoneMap"/>.
+        /// </summary>
+        public bool landforms = true;
 
         [Header("Fog of War")]
         public float fogTickInterval = 0.1f;
@@ -53,10 +75,8 @@ namespace GuildMaster.Session
         /// and gear sales, so the guild needs a float to work with before that loop spins up.
         /// </summary>
         public int startingGold = 800;
-        public int startingExp = 120;
-        // The hourly EXP and the daily tax are the guild hall's and the town hall's level 1 (building data,
-        // P4-69): kept here too they drifted apart and a town hall upgrade paid nothing. P5-1's values
-        // (5 EXP, 90G) live there now.
+        // The daily tax is the town hall's level 1 (building data, P4-69): kept here too it drifted apart and
+        // a town hall upgrade paid nothing. P5-1's 90G lives there now. There is no guild EXP (P4-82).
         public int startingPotions = 6;
         [Range(0.3f, 2f)] public float lootBuyRate = 1f;
         [Range(1f, 2f)] public float goodsSellRate = 1.2f;
@@ -73,7 +93,8 @@ namespace GuildMaster.Session
         [Header("Guild")]
         /// <summary>P4-38 (was 3): one full party from the start, one of each class (see StartingLineup).</summary>
         public int startingAdventurers = 4;
-        public int rosterCapacity = 6;
+        /// <summary>Most members in one hunting band (P4-37). It was the roster limit's start value until P4-92 dropped the limit.</summary>
+        public int huntBandSize = 6;
 
         [Header("Raids (P3-6): swollen nests raid the town")]
         /// <summary>Hourly raid chance per danger level of a nest (level = steps above its threshold).</summary>
@@ -88,7 +109,7 @@ namespace GuildMaster.Session
         /// <summary>Game hours after which surviving raiders give up and go home.</summary>
         public int raidMaxHours = 10;
         /// <summary>Guild members within this many cells of the town rush to defend.</summary>
-        public float raidDefendRadius = 180f; // P4-53: the whole 256 map (half its diagonal), was 80 for 128
+        public float raidDefendRadius = 362f; // the whole map (half its diagonal): P4-53 180 for 256 (was 80 for 128), P4-81 362 for 512
         /// <summary>
         /// Share of a monster's attack that lands on a building (P5-1). Walls are not people: without
         /// this a dozen raiders flattened the town hall before anyone could walk back.
@@ -103,6 +124,8 @@ namespace GuildMaster.Session
         public float gateMaxHp = 300f;
         /// <summary>Gold per point of damage to repair a gate (a broken one: 150G at 300 HP).</summary>
         public float gateRepairGoldPerHp = 0.5f;
+        /// <summary>Gold per point of damage to repair a building (P4-74, as for gates; a fallen 500-HP hall: 250G).</summary>
+        public float buildingRepairGoldPerHp = 0.5f;
 
         public static GameBalance Load()
         {

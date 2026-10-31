@@ -18,13 +18,16 @@ namespace GuildMaster.Proposals
     public struct QuestProposalsChangedEvent { }
 
     /// <summary>
-    /// LLM quest proposals (F-8): a few ready-made quests for the guild master to choose from instead of filling in
-    /// the posting form. The rules build valid, affordable plans from what the guild knows (<see cref="ProposalRules"/>);
+    /// LLM quest proposals (F-8): a few ready-made quests for the guild master to choose from. P4-82 (user decision
+    /// 2026-10-17): each card is another client's request for a den the guild has seen occupied that is not on the
+    /// board yet (the town posts the rest itself, <see cref="TownQuestPoster"/>; a den the guild master took down
+    /// comes back only this way). The rules build valid plans from what the guild knows (<see cref="ProposalRules"/>);
     /// the LLM picks and words them (<see cref="ProposalPrompt"/>), and any failure falls back to the rules' own pick.
-    /// Choosing one posts it through the normal <see cref="QuestBoard.TryPost"/>, so escrow, negotiation and
-    /// persuasion work as for any quest. A new list is made every game day, and on request after a cool-down.
+    /// Taking one posts it as the client's quest (<see cref="QuestBoard.TryPostRequest"/>): the client pays and the
+    /// guild keeps its fee; negotiation and persuasion work as for any quest. A new list is made every game day,
+    /// and on request after a cool-down.
     /// </summary>
-    public class QuestProposalService : IDisposable
+    public class QuestProposalService : IDisposable, ISaveable
     {
         readonly QuestBoard _board;
         readonly GuildIntel _intel;
@@ -51,6 +54,90 @@ namespace GuildMaster.Proposals
 
         public void Dispose() => EventBus.Unsubscribe<DayPassedEvent>(OnDayPassed);
 
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SavedPlan
+        {
+            public string id;
+            public string target_key;
+            public QuestType target_type;
+            public DangerLevel target_danger;
+            public string target_label, target_area;
+            public float target_distance;
+            public int target_observed;
+            public Vector2 target_point;
+            public string species;
+            public int target_nest = -1;
+            public bool target_lord;
+            public ProposalStyle style;
+            public DangerLevel danger;
+            public int count, party, reward_gold, reward_exp;
+            public string risk, title, pitch;
+            public bool from_llm;
+        }
+
+        [Serializable]
+        class SaveData
+        {
+            public List<SavedPlan> plans = new();
+            public string source;
+            public string empty_reason;
+            public float generated_at;
+            public int generation;
+            public float reroll_ready_at;
+        }
+
+        public string SaveKey => "proposals";
+
+        /// <summary>The cards on the table; a list still being made is not saved (it is made again on demand).</summary>
+        public string Capture()
+        {
+            var s = new SaveData
+            {
+                source = Source, empty_reason = EmptyReason, generated_at = GeneratedAtHour, generation = Generation, reroll_ready_at = _rerollReadyAt,
+            };
+            var nests = Nests;
+            foreach (var p in _current)
+                s.plans.Add(new SavedPlan
+                {
+                    id = p.Id, target_key = p.Target.Key, target_type = p.Target.Type, target_danger = p.Target.Danger, target_label = p.Target.Label,
+                    target_area = p.Target.Area, target_distance = p.Target.Distance, target_observed = p.Target.Observed, target_point = p.Target.Point,
+                    species = (p.Target.Source as MonsterDefinition)?.id, target_nest = p.Target.Den is Nest n ? nests.IndexOf(n) : -1, target_lord = p.Target.IsLord,
+                    style = p.Style, danger = p.Danger, count = p.Count, party = p.Party,
+                    reward_gold = p.RewardGold, reward_exp = p.RewardExp, risk = p.Risk, title = p.Title, pitch = p.Pitch, from_llm = p.FromLlm,
+                });
+            return JsonUtility.ToJson(s);
+        }
+
+        static ListView<Nest> Nests => Services.Get<EcosystemManager>().Nests;
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            var db = Services.Get<GameDatabase>();
+            var nests = Nests;
+            Source = s.source;
+            EmptyReason = s.empty_reason;
+            GeneratedAtHour = s.generated_at;
+            Generation = s.generation;
+            _rerollReadyAt = s.reroll_ready_at;
+            _current = new List<ProposalPlan>();
+            foreach (var p in s.plans)
+                _current.Add(new ProposalPlan
+                {
+                    Id = p.id,
+                    Target = new ProposalTarget
+                    {
+                        Key = p.target_key, Type = p.target_type, Danger = p.target_danger, Label = p.target_label, Area = p.target_area,
+                        Distance = p.target_distance, Observed = p.target_observed, Point = p.target_point, Source = db.Monster(p.species),
+                        Den = p.target_nest >= 0 && p.target_nest < nests.Count ? nests[p.target_nest] : null, IsLord = p.target_lord,
+                    },
+                    Style = p.style, Danger = p.danger, Count = p.count, Party = p.party, RewardGold = p.reward_gold, RewardExp = p.reward_exp,
+                    Risk = p.risk, Title = p.title, Pitch = p.pitch, FromLlm = p.from_llm,
+                });
+        }
+
         public IReadOnlyList<ProposalPlan> Current => _current;
         public bool Generating => _generating;
         /// <summary>"LLM" or "규칙" for the current list; empty before the first one.</summary>
@@ -64,7 +151,8 @@ namespace GuildMaster.Proposals
 
         void OnDayPassed(DayPassedEvent e)
         {
-            if (_board.Quests.Count(q => q.IsActive) >= ProposalRules.MaxOpenQuests) return;
+            // The town's own postings do not count (P4-82): they fill the board by themselves.
+            if (_board.Quests.Count(q => q.IsActive && q.Client == QuestClient.Patron) >= ProposalRules.MaxOpenQuests) return;
             _ = GenerateAsync(auto: true);
         }
 
@@ -93,25 +181,30 @@ namespace GuildMaster.Proposals
             return true;
         }
 
-        /// <summary>What the guild could go after: hunting grounds of species it has seen.</summary>
+        /// <summary>
+        /// What other clients could ask for (P4-82): the dens the guild has seen occupied that have no hunt on the
+        /// board — the ones the guild master took down, or whose last hunt just ended.
+        /// </summary>
         List<ProposalTarget> BuildTargets()
         {
             var list = new List<ProposalTarget>();
             var center = Services.TryGet<World.WorldService>(out var world) ? world.TownCenterWorld : Vector2.zero;
 
-            foreach (var species in _intel.KnownSpecies)
+            foreach (var nest in _intel.KnownNests)
             {
-                if (species == null) continue;
-                if (_board.Quests.Any(q => q.IsActive && q.Type == QuestType.Hunt && q.Species == species)) continue;
-                var nest = _intel.FindNearestKnownNest(center, species);
-                if (nest == null) continue;
+                var species = _intel.SpeciesOf(nest);
+                var seen = _intel.Get(nest);
+                if (species == null || !seen.Observed || seen.LastCount <= 0 || _board.HasActiveHuntOn(nest)) continue;
                 var point = nest.WorldPosition;
                 if (QuestBoard.HuntPointError(point) != null) continue;
-                var seen = _intel.Get(nest);
+                // A lair whose lord the guild has seen is asked for as the lord itself (P4-83).
+                var lord = _intel.KnownLordAt(nest);
+                if (lord != null) species = lord.Def;
                 list.Add(new ProposalTarget
                 {
-                    Key = "hunt:" + species.id,
+                    Key = $"nest:{nest.Cell.x},{nest.Cell.y}",
                     Type = QuestType.Hunt,
+                    IsLord = lord != null,
                     // Rated as the board rates the posted hunt (P4-58: the level the spot breeds, plus
                     // seen gear), not by the species' old danger field, which now only sets how rare
                     // it is when nests are handed out — a slime den far out read "낮음" (P4-69).
@@ -123,6 +216,7 @@ namespace GuildMaster.Proposals
                     Observed = seen.Observed ? seen.LastCount : 0,
                     Point = point,
                     Source = species,
+                    Den = nest,
                 });
             }
             return list;
@@ -149,8 +243,8 @@ namespace GuildMaster.Proposals
                     {
                         var strongest = members.OrderByDescending(a => AdventurerStats.Power(a.Data)).First();
                         float power = AdventurerStats.Power(strongest.Data);
-                        var pool = ProposalRules.BuildPool(targets, power, members.Count, _treasury.Gold, _treasury.Exp, GameRandom.Shared);
-                        if (pool.Count == 0) emptyReason = ProposalTexts.NoAffordable;
+                        var pool = ProposalRules.BuildPool(targets, power, members.Count, GameRandom.Shared);
+                        if (pool.Count == 0) emptyReason = ProposalTexts.NoSuitable;
                         else
                         {
                             chosen = await ChooseAsync(pool, members.Count, strongest.Data.level);
@@ -215,23 +309,23 @@ namespace GuildMaster.Proposals
 
         // ---------------- Choosing ----------------
 
-        /// <summary>Why the plan cannot be posted right now (funds, the target is gone...), or null.</summary>
+        /// <summary>Why the plan cannot be taken right now (its den is on the board already, the spot is gone...), or null.</summary>
         public string Check(ProposalPlan plan)
         {
             if (plan == null) return "제안이 없습니다.";
-            if (plan.RewardGold > _treasury.Gold || plan.RewardExp > _treasury.Exp) return "길드 자금이 부족합니다.";
-            return _board.Validate(ProposalRules.ToDraft(plan));
+            if (plan.Target.Den is Nest den && _board.HasActiveHuntOn(den)) return "이미 게시판에 있는 둥지입니다.";
+            return _board.Validate(ProposalRules.ToDraft(plan), QuestClient.Patron);
         }
 
-        /// <summary>Posts the plan as a quest. On success it leaves the list.</summary>
+        /// <summary>Takes the request: it goes on the board as the client's quest. On success it, and the other cards on its den, leave the list.</summary>
         public bool Choose(ProposalPlan plan, out string message)
         {
             message = Check(plan);
             if (message != null) return false;
-            if (!_board.TryPost(ProposalRules.ToDraft(plan), out var quest, out message)) return false;
-            _current.Remove(plan);
+            if (!_board.TryPostRequest(ProposalRules.ToDraft(plan), QuestClient.Patron, out var quest, out message, plan.Target.Den as Nest)) return false;
+            _current.RemoveAll(p => p == plan || p.Target.Key == plan.Target.Key);
             if (_current.Count == 0) EmptyReason = "제안한 의뢰를 모두 처리했습니다. 다시 뽑으면 새 제안을 받을 수 있습니다.";
-            message = $"'{quest.Title}' 의뢰가 등록되었습니다. (보상 {quest.RewardGold}G 예치)";
+            message = $"'{quest.Title}' 의뢰를 받았습니다. (보상 {quest.RewardGold + quest.FeeGold}G 중 길드 수수료 {quest.FeeGold}G)";
             EventBus.Publish(new QuestProposalsChangedEvent());
             return true;
         }
@@ -241,14 +335,6 @@ namespace GuildMaster.Proposals
             if (plan == null || !_current.Remove(plan)) return;
             if (_current.Count == 0) EmptyReason = "제안을 모두 넘겼습니다. 다시 뽑으면 새 제안을 받을 수 있습니다.";
             EventBus.Publish(new QuestProposalsChangedEvent());
-        }
-
-        /// <summary>Moves the plan's gold reward up or down a step (within its allowed range).</summary>
-        public bool AdjustReward(ProposalPlan plan, int steps)
-        {
-            if (plan == null || !plan.AdjustReward(steps)) return false;
-            EventBus.Publish(new QuestProposalsChangedEvent());
-            return true;
         }
     }
 }

@@ -17,6 +17,8 @@ namespace GuildMaster.Units
         public float TreeBlockChance;
         /// <summary>Custom impact (point, unit hit or null when blocked). Default: single-target hit.</summary>
         public Action<Vector2, Unit> OnImpact;
+        /// <summary>Cells the shot leaves from without being stopped by them (a tower shooting off its own roof, P4-113); none by default.</summary>
+        public RectInt Launcher;
 
         public static ProjectileSpec Arrow(Color c) => new() { Speed = 11f, Size = 0.35f, Color = c, TreeBlockChance = 0.45f };
     }
@@ -27,7 +29,7 @@ namespace GuildMaster.Units
     /// </summary>
     public class ProjectileService : MonoBehaviour
     {
-        const string PoolKey = "fx.projectile";
+        public const string PoolKey = "fx.projectile";
 
         PoolService _pool;
 
@@ -39,7 +41,7 @@ namespace GuildMaster.Units
                 var go = new GameObject("Projectile");
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = SpriteFactory.Circle(6, Color.white, new Color(0f, 0f, 0f, 0.6f));
-                sr.sortingOrder = 2900;
+                sr.sortingOrder = Fog.FogOfWar.SortingOrder - 100;
                 go.AddComponent<Projectile>();
                 return go;
             }, prewarm: 16);
@@ -55,6 +57,13 @@ namespace GuildMaster.Units
         {
             var p = _pool.Spawn<Projectile>(PoolKey, attacker.Position + new Vector2(0f, 0.15f));
             p.Fire(attacker, target, spec, _pool);
+        }
+
+        /// <summary>A shot with nobody behind it (an arrow tower, P4-113): from a point, its harm all in <see cref="ProjectileSpec.OnImpact"/>.</summary>
+        public void LaunchFrom(Vector2 from, Unit target, ProjectileSpec spec)
+        {
+            var p = _pool.Spawn<Projectile>(PoolKey, from);
+            p.Fire(null, target, spec, _pool);
         }
     }
 
@@ -111,7 +120,7 @@ namespace GuildMaster.Units
             {
                 _lastCell = cell;
                 var targetCell = _target != null ? GridMap.WorldToCell(_target.Position) : cell;
-                if (cell != _startCell && cell != targetCell)
+                if (cell != _startCell && cell != targetCell && !_spec.Launcher.Contains(cell))
                 {
                     bool blocked = _world.Grid.IsHardCover(cell.x, cell.y)
                                    || (_world.Grid.HasTree(cell.x, cell.y) && GameRandom.Shared.Chance(_spec.TreeBlockChance));

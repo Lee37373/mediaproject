@@ -10,7 +10,8 @@ using UnityEngine;
 namespace GuildMaster.Ecosystem
 {
     /// <summary>Residents were outmatched and moved to another nest. Observed = the guild saw the old nest then.</summary>
-    public struct NestAbandonedEvent { public Nest From; public Nest To; public MonsterDefinition Species; public MonsterDefinition DrivenBy; public int Count; public bool Observed; }
+    /// <summary>A pack left its den: driven out by <see cref="DrivenBy"/>, or fleeing a disaster (<see cref="Cause"/>, P4-72; DrivenBy null).</summary>
+    public struct NestAbandonedEvent { public Nest From; public Nest To; public MonsterDefinition Species; public MonsterDefinition DrivenBy; public string Cause; public int Count; public bool Observed; }
     /// <summary>Intruding monsters from <see cref="IntruderHome"/> were outmatched by a nest's residents and turn back.</summary>
     public struct IntrudersRoutedEvent { public Nest Territory; public Nest IntruderHome; public int Count; public bool Observed; }
 
@@ -21,7 +22,7 @@ namespace GuildMaster.Ecosystem
     /// outmatched residents abandon the nest and resettle elsewhere, outmatched intruders turn back
     /// (raids give up). The guild is never routed by this rule.
     /// </summary>
-    public class TerritoryService : MonoBehaviour
+    public class TerritoryService : MonoBehaviour, ISaveable
     {
         public const float RoutRatio = 2.5f;
         const float CheckInterval = 0.5f;
@@ -36,8 +37,41 @@ namespace GuildMaster.Ecosystem
         readonly Dictionary<Nest, float> _cooldown = new();
         /// <summary>Intruders per pack: keyed by their nest, or by species for nest-less strays.</summary>
         readonly Dictionary<object, List<Monster>> _groups = new();
+        readonly List<Unit> _inside = new();
 
         public void Init(EcosystemManager eco) => _eco = eco;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            /// <summary>Nests (map order) still cooling down after a rout, and the seconds left.</summary>
+            public List<int> nests = new();
+            public List<float> until = new();
+        }
+
+        public string SaveKey => "territory";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            for (int i = 0; i < _eco.Nests.Count; i++)
+            {
+                if (!_cooldown.TryGetValue(_eco.Nests[i], out var until) || until <= Time.time) continue;
+                s.nests.Add(i);
+                s.until.Add(SaveTime.Rel(until));
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _cooldown.Clear();
+            for (int i = 0; i < s.nests.Count && i < s.until.Count; i++)
+                if (s.nests[i] >= 0 && s.nests[i] < _eco.Nests.Count) _cooldown[_eco.Nests[s.nests[i]]] = SaveTime.Abs(s.until[i]);
+        }
 
         /// <summary>Fighting weight of a unit: current HP × attack.</summary>
         public static float Strength(Unit u) => u == null || !u.IsAlive ? 0f : u.Hp * Mathf.Max(1f, u.Stats.Attack);
@@ -62,7 +96,9 @@ namespace GuildMaster.Ecosystem
 
         void Update()
         {
-            if (_eco == null) return;
+            // Not while paused: the first frame of a loaded, paused game used to look at every nest once (the timer starts at
+            // 0) and start a rout's cool-down the game had not had, so the save taken a second later differed (2026-10-31).
+            if (_eco == null || Time.deltaTime <= 0f) return;
             _timer -= Time.deltaTime;
             if (_timer > 0f) return;
             _timer = CheckInterval;
@@ -89,9 +125,13 @@ namespace GuildMaster.Ecosystem
         {
             foreach (var list in _groups.Values) list.Clear();
             bool any = false;
-            foreach (var u in UnitRegistry.All)
+            float radius = nest.TerritoryRadius;
+            if (radius <= 0f) return;
+            // Only the units inside the territory (P5-2: every nest used to scan the whole map).
+            UnitRegistry.Collect(nest.WorldPosition, radius, _inside);
+            foreach (var u in _inside)
             {
-                if (u is not Monster m || !m.IsAlive || m.Home == nest || !nest.InTerritory(m.Position)) continue;
+                if (u is not Monster m || m.Home == nest) continue;
                 object pack = m.Home != null ? m.Home : m.Roaming != null ? m.Roaming : m.Def;
                 if (!_groups.TryGetValue(pack, out var list)) _groups[pack] = list = new List<Monster>();
                 list.Add(m);
@@ -136,9 +176,21 @@ namespace GuildMaster.Ecosystem
         /// the pack takes to the road (<see cref="RoamingPackService"/>); it never moves in with
         /// another pack, of its own kind or not.
         /// </summary>
-        void Abandon(Nest nest, List<Monster> residents, MonsterDefinition drivenBy, Vector2 threat, Nest drivenFrom)
+        /// <summary>
+        /// A natural disaster is upon the den (P4-72): the whole pack leaves, like one driven out by
+        /// a stronger pack — to an empty den of its habitat away from it, or onto the road.
+        /// </summary>
+        public void FleeDisaster(Nest nest, Vector2 threat, string cause)
         {
-            if (residents.Count == 0) return;
+            if (nest == null || nest.IsEmpty) return;
+            var residents = nest.Members.Where(m => m != null && m.IsAlive).ToList();
+            Abandon(nest, residents, null, threat, null, cause);
+        }
+
+        void Abandon(Nest nest, List<Monster> residents, MonsterDefinition drivenBy, Vector2 threat, Nest drivenFrom, string cause = null)
+        {
+            // A lord never leaves its lair (P4-83): it and its guards stand, whatever comes.
+            if (residents.Count == 0 || nest.IsLair) return;
             Services.TryGet<MigrationService>(out var migration);
             if (migration != null && migration.IsMigrating(nest)) return; // the pack is already on its way elsewhere
             var pack = nest.Members.Where(m => m != null && m.IsAlive).ToList();
@@ -149,12 +201,12 @@ namespace GuildMaster.Ecosystem
             {
                 if (dest.Species != species) dest.ChangeSpecies(species);
                 foreach (var m in pack) nest.TransferMember(m, dest);
-                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy.displayName} → {dest.DisplayName}");
+                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy?.displayName ?? cause} → {dest.DisplayName}");
             }
             else if (Services.TryGet<RoamingPackService>(out var roaming))
             {
                 roaming.SendOnTheRoad(nest, threat);
-                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy.displayName} → roaming");
+                Debug.Log($"[Territory] {nest.DisplayName}: {pack.Count} {species.displayName} driven out by {drivenBy?.displayName ?? cause} → roaming");
             }
             else
             {
@@ -163,19 +215,23 @@ namespace GuildMaster.Ecosystem
             }
             EventBus.Publish(new NestAbandonedEvent
             {
-                From = nest, To = dest, Species = species, DrivenBy = drivenBy, Count = pack.Count, Observed = observed,
+                From = nest, To = dest, Species = species, DrivenBy = drivenBy, Cause = cause, Count = pack.Count, Observed = observed,
             });
         }
 
         /// <summary>
         /// Nearest empty nest of the species' habitat at a safe distance, that no migrating band is
-        /// heading for (preferring its biomes); null when there is none.
+        /// heading for (preferring its biomes); null when there is none. One nearer the town comes first
+        /// (P4-44: the pushed give way inwards).
         /// </summary>
         Nest FindNewHome(Nest from, MonsterDefinition species, Vector2 threat, Nest avoid, MigrationService migration)
         {
             bool Safe(Nest n) => n != from && n != avoid && Vector2.Distance(n.WorldPosition, threat) >= MinResettleDistance;
+            var town = Services.TryGet<World.WorldService>(out var world) ? world.TownCenterWorld : from.WorldPosition;
+            float home = Vector2.Distance(from.WorldPosition, town);
             return _eco.Nests.Where(n => n.IsEmpty && n.Suits(species) && Safe(n) && (migration == null || !migration.IsTarget(n)))
-                .OrderBy(n => species.biomes.Contains(n.Biome) ? 0 : 1)
+                .OrderBy(n => Vector2.Distance(n.WorldPosition, town) < home ? 0 : 1)
+                .ThenBy(n => species.biomes.Contains(n.Biome) ? 0 : 1)
                 .ThenBy(n => Vector2.Distance(n.WorldPosition, from.WorldPosition))
                 .FirstOrDefault();
         }

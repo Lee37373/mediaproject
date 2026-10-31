@@ -22,10 +22,11 @@ namespace GuildMaster.Quests
     public struct QuestRewardRaisedEvent { public Quest Quest; public int Gold; }
 
     /// <summary>
-    /// The quest board: posts quests with escrowed rewards, lets adventurers accept/abandon them,
+    /// The quest board: posts quests — a client's (P4-82: the town, a patron; the client pays and the guild
+    /// keeps a fee) or the guild's own escort (gold escrowed) — lets adventurers accept/abandon them,
     /// tracks progress from game events, and pays out contribution-weighted rewards on turn-in.
     /// </summary>
-    public class QuestBoard : MonoBehaviour
+    public class QuestBoard : MonoBehaviour, ISaveable, ISaveLink
     {
         const float TurnInDeadlineHours = 36f;
 
@@ -39,6 +40,80 @@ namespace GuildMaster.Quests
         public IReadOnlyList<Quest> Quests => _quests;
         public IReadOnlyList<Quest> History => _history;
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedEscortShare
+        {
+            public string quest;
+            public string taker;
+            public float hours;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public List<Quest.QuestSave> quests = new();
+            public List<Quest.QuestSave> history = new();
+            /// <summary>Hours each escort has been on duty so far (the pay is split by them at the end).</summary>
+            public List<SavedEscortShare> escort_shares = new();
+        }
+
+        SaveData _restoring;
+        readonly List<(Quest quest, Quest.QuestSave saved)> _restoredQuests = new();
+
+        public string SaveKey => "board";
+
+        public string Capture()
+        {
+            var nests = new List<Nest>(_eco.Nests);
+            var s = new SaveData { next_id = _nextId };
+            foreach (var q in _quests) s.quests.Add(q.CaptureSave(nests));
+            foreach (var q in _history) s.history.Add(q.CaptureSave(nests));
+            foreach (var kv in _escortShares)
+                foreach (var share in kv.Value)
+                    if (kv.Key.IsAssigned(share.Key)) // the dead and the departed are paid nothing anyway
+                        s.escort_shares.Add(new SavedEscortShare { quest = kv.Key.Id, taker = share.Key.TakerId, hours = share.Value });
+            s.escort_shares.Sort((a, b) => a.quest != b.quest ? string.CompareOrdinal(a.quest, b.quest) : string.CompareOrdinal(a.taker, b.taker));
+            return JsonUtility.ToJson(s);
+        }
+
+        /// <summary>Quests are registered under their own ids (members and disasters point at them).</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            _nextId = _restoring.next_id;
+            var db = Services.Get<GameDatabase>();
+            var nests = new List<Nest>(_eco.Nests);
+            _restoredQuests.Clear();
+            foreach (var qs in _restoring.quests) _quests.Add(RestoreQuest(qs, db, nests, ctx));
+            foreach (var qs in _restoring.history) _history.Add(RestoreQuest(qs, db, nests, ctx));
+        }
+
+        Quest RestoreQuest(Quest.QuestSave qs, GameDatabase db, List<Nest> nests, SaveContext ctx)
+        {
+            var q = new Quest(qs, db, nests);
+            ctx.Register(q.Id, q);
+            _restoredQuests.Add((q, qs));
+            return q;
+        }
+
+        public void Link(SaveContext ctx)
+        {
+            foreach (var (q, qs) in _restoredQuests) q.LinkSave(qs, ctx);
+            _restoredQuests.Clear();
+            // Escort time already served still counts in the split (P4-76: it restarted from zero).
+            _escortShares.Clear();
+            foreach (var es in _restoring.escort_shares)
+            {
+                if (FindById(es.quest) is not { } q || ctx.Find<IQuestTaker>(es.taker) is not { } taker) continue;
+                if (!_escortShares.TryGetValue(q, out var shares)) _escortShares[q] = shares = new Dictionary<IQuestTaker, float>();
+                shares[taker] = es.hours;
+            }
+            _restoring = null;
+        }
+
         public void Init(GuildTreasury treasury, EcosystemManager eco, GameClock clock)
         {
             _treasury = treasury;
@@ -47,6 +122,7 @@ namespace GuildMaster.Quests
             EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Subscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
+            EventBus.Subscribe<RegionCleansedEvent>(OnRegionCleansed);
         }
 
         void OnDestroy()
@@ -54,15 +130,47 @@ namespace GuildMaster.Quests
             EventBus.Unsubscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Unsubscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
+            EventBus.Unsubscribe<RegionCleansedEvent>(OnRegionCleansed);
+        }
+
+        /// <summary>Why the board took a lord's quest down: someone else, or something else, got there first.</summary>
+        public const string LordFellReason = "군주가 쓰러졌습니다";
+
+        /// <summary>
+        /// The guild learned a region lord fell (P4-83): its quest is done if a group was on it (they were there or on
+        /// the way), else it comes down — there is nothing left to do.
+        /// </summary>
+        void OnRegionCleansed(RegionCleansedEvent e)
+        {
+            foreach (var q in _quests.ToList())
+            {
+                if (!q.IsActive || q.Type != QuestType.Hunt || q.Species != e.Lord) continue;
+                if (q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, LordFellReason);
+                else Complete(q);
+            }
         }
 
         // ---------------- Posting ----------------
 
-        public string Validate(QuestDraft d)
+        /// <summary>Why the guild cannot post this itself (escrowing the gold), or null.</summary>
+        public string Validate(QuestDraft d) => Validate(d, QuestClient.Guild);
+
+        /// <summary>
+        /// Why this quest cannot be posted for that client, or null. P4-82 (user decision 2026-10-17): the guild
+        /// itself only hires escorts and pays them in gold — it has no EXP to give; every other quest is a
+        /// client's, who pays the whole reward, so the treasury is not asked.
+        /// </summary>
+        public string Validate(QuestDraft d, QuestClient client)
         {
             if (d.RewardGold < 0 || d.RewardExp < 0) return "보상은 0 이상이어야 합니다.";
-            if (d.RewardGold == 0 && d.RewardExp == 0) return "골드 또는 EXP 보상을 설정하세요.";
-            if (!_treasury.CanAfford(d.RewardGold, d.RewardExp)) return "길드 자금(골드/EXP)이 부족합니다.";
+            if (client == QuestClient.Guild)
+            {
+                if (d.Type != QuestType.Escort) return "길드가 직접 올리는 의뢰는 호위뿐입니다.";
+                if (d.RewardGold <= 0) return "호위 보상(골드)을 정하세요.";
+                if (d.RewardExp > 0) return "길드는 골드로만 보상합니다.";
+                if (!_treasury.CanAfford(d.RewardGold)) return "길드 자금이 부족합니다.";
+            }
+            else if (d.RewardGold == 0 && d.RewardExp == 0) return "골드 또는 EXP 보상을 설정하세요.";
             switch (d.Type)
             {
                 case QuestType.Hunt:
@@ -103,26 +211,129 @@ namespace GuildMaster.Quests
             if (dist < 3) return "마을 근처";
             string[] dirs = { "동쪽", "북동쪽", "북쪽", "북서쪽", "서쪽", "남서쪽", "남쪽", "남동쪽" };
             int i = Mathf.RoundToInt(Mathf.Atan2(d.y, d.x) / (Mathf.PI / 4f));
-            return $"마을 {dirs[(i + 8) % 8]} {dist}칸";
+            // P4-102: a known zone goes by its name first (not the town's own fields).
+            var zone = Services.TryGet<World.ZoneDiscovery>(out var zones) ? zones.KnownAt(point) : null;
+            string name = zone != null && zone.Index != World.ZoneMap.Home ? zone.Name + " · " : "";
+            return $"{name}마을 {dirs[(i + 8) % 8]} {dist}칸";
         }
 
+        /// <summary>The guild posts a quest of its own (an escort): the gold reward leaves the treasury now, held until it is paid or refunded.</summary>
         public bool TryPost(QuestDraft draft, out Quest quest, out string error)
         {
             quest = null;
             error = Validate(draft);
             if (error != null) return false;
-            if (!_treasury.TrySpend(draft.RewardGold, draft.RewardExp)) { error = "길드 자금이 부족합니다."; return false; }
-            quest = new Quest($"Q_{_nextId++}", draft, _clock.TotalHours);
+            if (!_treasury.TrySpendGold(draft.RewardGold)) { error = "길드 자금이 부족합니다."; return false; }
+            quest = Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours));
+            return true;
+        }
+
+        /// <summary>
+        /// A client's quest (P4-82): <see cref="QuestDraft.RewardGold"/> is everything the client pays; the guild's
+        /// fee (<see cref="QuestPricing.Split"/>) comes off it and the members share the rest. Nothing leaves the
+        /// treasury. <paramref name="target"/> is the den a hunt is for (else the one the guild saw in its area).
+        /// </summary>
+        public bool TryPostRequest(QuestDraft draft, QuestClient client, out Quest quest, out string error, Nest target = null,
+                                   Villages.Village village = null, bool villageDefence = false)
+        {
+            quest = null;
+            error = client == QuestClient.Guild ? "의뢰처가 없습니다."
+                  : client == QuestClient.Village && (village == null || village.IsDestroyed) ? "의뢰처 마을이 없습니다."
+                  : Validate(draft, client);
+            if (error != null) return false;
+            quest = PostRequest(draft, client, target, null, village, villageDefence);
+            return true;
+        }
+
+        /// <summary>Why the board took a village's quest down: the village is gone (P4-84).</summary>
+        public const string VillageFellReason = "의뢰처 마을이 무너졌습니다";
+
+        /// <summary>
+        /// A village fell (P4-84): its quests nobody took come down — there is nobody left to pay. The ones under way
+        /// go on (the gold was put up when they were posted); a defence is settled with its raid.
+        /// </summary>
+        public void WithdrawFromVillage(Villages.Village v)
+        {
+            foreach (var q in _quests.ToList())
+                if (q.IsActive && q.Village == v && q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, VillageFellReason);
+        }
+
+        /// <summary>
+        /// The town posts a quest to deal with a natural disaster the guild has seen (P4-72, user
+        /// decision 2026-10-03): the town pays, so nothing leaves the treasury.
+        /// </summary>
+        public Quest PostTownQuest(QuestDraft draft, Disasters.Disaster disaster)
+            => PostRequest(draft, QuestClient.Town, null, disaster);
+
+        /// <summary>
+        /// The town posts a raid on the dragon's hoard the guild has seen (P4-93, user decision 2026-10-20): the town pays,
+        /// and whatever the raider carries home is theirs to sell besides. Done once someone on it reaches into the hoard.
+        /// </summary>
+        public Quest PostTreasureQuest(QuestDraft draft) => PostRequest(draft, QuestClient.Town, null);
+
+        /// <summary>
+        /// A sudden incident's quest, posted when its rumour reaches the town (P4-85, user decision 2026-10-18): its
+        /// client pays (the guild keeps its fee), and it is about the incident, not a den — so the species need not be
+        /// known yet (the rumour names it) and the area is the rumour's rough circle.
+        /// </summary>
+        public Quest PostIncidentQuest(QuestDraft draft, Incidents.Incident incident, QuestClient client = QuestClient.Incident)
+            => PostRequest(draft, client, null, null, null, false, incident);
+
+        /// <summary>
+        /// The incident is over without its quest done (P4-85: the rare one slipped away, the traveller died...): nobody is
+        /// paid. Claimed, it failed; unclaimed, it simply comes down.
+        /// </summary>
+        public void FailIncidentQuest(Quest q, string reason)
+        {
+            if (q == null || !q.IsActive) return;
+            Close(q, q.Assignees.Count > 0 ? QuestStatus.Failed : QuestStatus.Cancelled, refund: true, reason);
+        }
+
+        Quest PostRequest(QuestDraft draft, QuestClient client, Nest target, Disasters.Disaster disaster = null,
+                          Villages.Village village = null, bool villageDefence = false, Incidents.Incident incident = null)
+        {
+            var (members, fee) = QuestPricing.Split(draft.RewardGold);
+            draft.RewardGold = members;
+            return Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours)
+            {
+                Client = client, FeeGold = fee, Disaster = disaster, Village = village, IsVillageDefence = villageDefence, Incident = incident,
+            }, target);
+        }
+
+        Quest Add(Quest quest, Nest target = null)
+        {
             quest.Danger = EvaluateDanger(quest);
-            if (quest.Type == QuestType.Hunt) quest.TargetNest = OccupiedNestInArea(quest);
+            // A village's defence is about its raiders, wherever their den is (P4-84); an incident is about itself (P4-85).
+            if (quest.Type == QuestType.Hunt && !quest.IsVillageDefence && quest.Incident == null) quest.TargetNest = target ?? OccupiedNestInArea(quest);
             _quests.Add(quest);
             EventBus.Publish(new QuestPostedEvent { Quest = quest });
-            return true;
+            return quest;
+        }
+
+        /// <summary>An active hunt is already out on this den (the town and the proposals post one per den).</summary>
+        public bool HasActiveHuntOn(Nest n)
+        {
+            foreach (var q in _quests)
+                if (q.IsActive && q.Type == QuestType.Hunt && q.TargetNest == n) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// The disaster is over: claimed, the quest is done (dealt with, or died down while they were
+        /// on it, as with a den that is gone); unclaimed, the town takes it down.
+        /// </summary>
+        public void SettleTownQuest(Quest q, string reasonIfUnclaimed)
+        {
+            if (q == null || !q.IsActive) return;
+            if (q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, reasonIfUnclaimed ?? "재해가 수습되었습니다");
+            else Complete(q);
         }
 
         public DangerLevel EvaluateDanger(Quest q)
         {
             DangerLevel d = DangerLevel.Low;
+            // An incident rates itself (the rumour says what it is, P4-85).
+            if (q.Incident != null) return Incidents.IncidentRules.Danger(q.Incident);
             switch (q.Type)
             {
                 case QuestType.Hunt:
@@ -133,6 +344,12 @@ namespace GuildMaster.Quests
                     break;
                 case QuestType.Defend:
                     d = DangerLevel.Medium;
+                    break;
+                case QuestType.Disaster:
+                    d = q.Disaster != null ? Disasters.DisasterRules.DangerOf(q.Disaster.Kind) : DangerLevel.Medium;
+                    break;
+                case QuestType.Treasure:
+                    d = DangerLevel.High; // a dragon's lair, asleep or not
                     break;
             }
             return d;
@@ -150,15 +367,35 @@ namespace GuildMaster.Quests
             return true;
         }
 
+        /// <summary>Why the board says a quest was taken down by the guild master (P4-82).</summary>
+        public const string RemovedReason = "길드가 게시판에서 내렸습니다";
+
         /// <summary>
-        /// Takes a quest off the board. Nobody on it yet: the escrow comes back. Someone already
+        /// Whether the guild master may take this quest down now. A client's quest only while nobody has
+        /// taken it (P4-82: once taken the work is the members' and the client's), and never a disaster
+        /// (the town's emergency, P4-72), a raid on the dragon's hoard or the dragon's hunt (P4-98, user decision
+        /// 2026-10-21: the town put the hunt back up within the hour). The guild's own (an escort) at any time.
+        /// </summary>
+        public static bool CanTakeDown(Quest q)
+            => q != null && q.IsActive && (!q.FundedByClient || (q.Assignees.Count == 0 && q.Type != QuestType.Disaster && q.Type != QuestType.Treasure
+                                                                 && !(q.Species != null && q.Species.isDragon)));
+
+        /// <summary>
+        /// Takes a quest off the board. A client's quest nobody took simply comes down (the town will not post
+        /// that den again, <see cref="TownQuestPoster"/>; user decision 2026-10-17: no cap and no expiry, the
+        /// player clears the board). The guild's own, nobody on it yet: the escrow comes back. Someone already
         /// took it: they are paid as if they had finished it, so the player cannot let adventurers
         /// do the work and pull the reward back at the last moment (2026-09-20 user report).
         /// Escorts pay for the hours actually escorted, which is what they were posted to pay.
         /// </summary>
         public bool Cancel(Quest q)
         {
-            if (!q.IsActive) return false;
+            if (!CanTakeDown(q)) return false;
+            if (q.FundedByClient)
+            {
+                Close(q, QuestStatus.Cancelled, refund: true, RemovedReason);
+                return true;
+            }
             if (q.Assignees.Count == 0)
             {
                 Close(q, QuestStatus.Cancelled, refund: true);
@@ -232,7 +469,8 @@ namespace GuildMaster.Quests
             foreach (var q in _quests)
             {
                 if (q.Status != QuestStatus.InProgress || !q.IsAssigned(taker)) continue;
-                if (q.Type == QuestType.Hunt && q.Species == m.Def)
+                // A hunt for particular monsters (a rare variant, a horde, P4-85) counts only those.
+                if (q.Type == QuestType.Hunt && q.Counts(m))
                 {
                     q.Progress++;
                     q.AddContribution(taker, 1);
@@ -251,7 +489,7 @@ namespace GuildMaster.Quests
             // What lived there is no longer a guess once it has been wiped out, so this goes by the
             // real owners, not by GuildIntel: the quest is settled by what happened, not by hearsay.
             foreach (var q in _quests.ToList())
-                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && IsInArea(q, e.Nest, e.Nest?.Species)) Complete(q);
+                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && q.Incident == null && IsInArea(q, e.Nest, e.Nest?.Species)) Complete(q);
         }
 
         /// <summary>
@@ -260,7 +498,7 @@ namespace GuildMaster.Quests
         /// </summary>
         public static Nest NestInArea(Quest q)
         {
-            if (q == null || q.Type != QuestType.Hunt || !Services.TryGet<GuildIntel>(out var intel)) return null;
+            if (q == null || q.Type != QuestType.Hunt || q.Incident != null || !Services.TryGet<GuildIntel>(out var intel)) return null;
             foreach (var n in intel.KnownNests)
                 if (IsInArea(q, n, intel.SpeciesOf(n))) return n;
             return null;
@@ -317,7 +555,6 @@ namespace GuildMaster.Quests
             var (gold, exp) = EscortPay(q.RewardGold, q.RewardExp, q.EscortHours, q.MaxHours);
             q.SetPayout(gold, exp);
             _treasury.AddGold(q.RewardGold - q.PayGold);
-            _treasury.AddExp(q.RewardExp - q.PayExp);
             foreach (var kv in shares) q.AddContribution(kv.Key, Mathf.RoundToInt(kv.Value * 10f));
             Complete(q);
         }
@@ -368,6 +605,8 @@ namespace GuildMaster.Quests
         /// <summary>Seen since the posting with nobody of the quest's kind living there.</summary>
         public static bool SeenGone(Quest q, GuildIntel intel)
         {
+            // A lord's quest is settled by its fall (OnRegionCleansed): its lair is its guards' kind (P4-83).
+            if (q.Species != null && q.Species.isRegionLord) return false;
             var seen = intel.Get(q.TargetNest);
             if (!seen.Observed || seen.LastSeenHour <= q.PostedAtHour) return false;
             return seen.LastCount <= 0 || intel.SpeciesOf(q.TargetNest) != q.Species;
@@ -450,7 +689,8 @@ namespace GuildMaster.Quests
                 if (q.Status == QuestStatus.Completed)
                 {
                     q.RemoveAssignee(t);
-                    if (q.TryTakePayout(t, out var g, out var x)) { _treasury.AddGold(g); _treasury.AddExp(x); }
+                    // A share nobody will collect goes back to whoever paid it (a client keeps its own).
+                    if (q.TryTakePayout(t, out var g, out _) && !q.FundedByClient) _treasury.AddGold(g);
                     if (q.PendingPayouts == 0) Close(q, QuestStatus.TurnedIn, refund: false);
                 }
                 else Abandon(q, t);
@@ -463,24 +703,24 @@ namespace GuildMaster.Quests
             q.Status = QuestStatus.Completed;
             q.CompletedAtHour = _clock.TotalHours;
             q.ComputePayouts();
+            // The client pays the guild its fee once the work is done (P4-82), whoever turns in afterwards.
+            if (q.FundedByClient && q.FeeGold > 0) _treasury.AddGold(q.FeeGold, GoldReason.Commission);
             EventBus.Publish(new QuestCompletedEvent { Quest = q });
         }
 
         void Close(Quest q, QuestStatus status, bool refund, string reason = null)
         {
-            if (refund)
+            if (refund && q.FundedByClient)
             {
-                if (q.Status == QuestStatus.Completed)
-                {
-                    var (g, x) = q.DrainRemainingPayouts();
-                    _treasury.AddGold(g);
-                    _treasury.AddExp(x);
-                }
-                else
-                {
-                    _treasury.AddGold(q.RewardGold);
-                    _treasury.AddExp(q.RewardExp);
-                }
+                // Only what the guild itself added (negotiation) was guild gold.
+                int left = q.RewardGold;
+                if (q.Status == QuestStatus.Completed) (left, _) = q.DrainRemainingPayouts();
+                _treasury.AddGold(Mathf.Min(left, q.BonusGold));
+            }
+            else if (refund)
+            {
+                // The guild's own quest: its escrowed gold comes back (it never paid in EXP).
+                _treasury.AddGold(q.Status == QuestStatus.Completed ? q.DrainRemainingPayouts().gold : q.RewardGold);
             }
             q.Status = status;
             _quests.Remove(q);

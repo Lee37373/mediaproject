@@ -31,6 +31,19 @@ namespace GuildMaster.Adventurers
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetCounter() => s_counter = 0;
 
+        /// <summary>
+        /// The last number handed out (saved with the roster, P5-4). A load sets it back to the
+        /// save's: the title boot behind it had already numbered founders of its own, and a new
+        /// visitor must never get the id of a member who came back with the save.
+        /// </summary>
+        internal static int Counter { get => s_counter; set => s_counter = value; }
+
+        /// <summary>Keeps the counter past an id that exists again after a load (saves older than the counter).</summary>
+        internal static void NoteId(string id)
+        {
+            if (id != null && id.StartsWith("NPC_") && int.TryParse(id.Substring(4), out int n)) s_counter = Mathf.Max(s_counter, n);
+        }
+
         /// <summary>A name no current guild member has (falls back to any name when all are taken).</summary>
         static string PickUnusedName(GameRandom rng)
         {

@@ -1,8 +1,5 @@
 using System.Collections.Generic;
-using System.Threading.Tasks;
-using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Core;
-using GuildMaster.LLM;
 using GuildMaster.Recruitment;
 using GuildMaster.World;
 using UnityEngine;
@@ -10,48 +7,50 @@ using UnityEngine;
 namespace GuildMaster.Adventurers
 {
     /// <summary>
-    /// Idle small talk (P3-5): every few game hours two members idling close together in town
-    /// exchange a couple of lines (LLM, or a fixed pair). Only asks the LLM when the gateway is
-    /// completely idle, so it never delays decisions, invitations or recruitment talks.
-    /// A visitor waiting on the plaza can be paired with a member too (user request 2026-09-23):
-    /// the town itself can win someone over, not just the guild master's formal dialogue. See
-    /// <see cref="ApplyVisitorAffinity"/>.
+    /// Idle small talk (P3-5): every few game hours two members idling close together in town exchange a couple of
+    /// lines (<see cref="BanterLines"/>). A visitor waiting on the plaza can be paired with a member too (user request
+    /// 2026-09-23). The model used to write the lines and nudge feelings with them; since P4-91 (user decision
+    /// 2026-10-19) the talk is fixed lines only and changes no feelings.
     /// </summary>
-    public class BanterService : MonoBehaviour
+    public class BanterService : MonoBehaviour, ISaveable
     {
-        // Rebalanced (user report 2026-09-23: "너무 대화나 상호작용이 적은 느낌"), then rebalanced
-        // again the same day ("애들이 마을 밖에 탐험 안나감 + 대화도 잘 안함"). The local LLM backend
-        // serves one generation at a time (llama.cpp, single slot) and often cannot truly interrupt
-        // a generation already in progress (see LlmGateway's stale-generation handling) — so every
-        // banter attempt that gets preempted by a real quest decision can stall the WHOLE queue for
-        // several seconds, which both delays adventurers leaving on quests and makes the banter that
-        // triggered it fail anyway ("preempted"). The first pass (Chance 0.6→0.85) tripled how often
-        // that collision could happen. Landing between the two: still checked hourly and with a much
-        // wider pairing radius (fixes the original "nobody nearby" problem, which is not a source of
-        // LLM contention by itself), but at a chance that roughly halves the collision risk versus
-        // the first pass while still beating the original rate.
         public const int IntervalHours = 1;
         public const float Chance = 0.5f;
         public const float MaxPairDistance = 6f;
         /// <summary>Real seconds between A's line and B's answer.</summary>
         public const float ReplyDelay = 2.5f;
 
-        LlmGateway _gateway;
         GuildRoster _roster;
         WorldService _world;
         VisitorService _visitors;
         int _hoursSinceTry;
-        bool _inFlight;
 
         readonly List<(Adventurer speaker, string line, float at)> _scheduled = new();
 
         public int Attempts { get; private set; }
-        public int LlmBanters { get; private set; }
-        public int FixedBanters { get; private set; }
+        /// <summary>Talks that were actually held (both still there).</summary>
+        public int Talks { get; private set; }
 
-        public void Init(LlmGateway gateway, GuildRoster roster, WorldService world)
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData { public int hours_since_try, attempts, talks; }
+
+        public string SaveKey => "banter";
+
+        /// <summary>A talk under way (lines not yet said) is not saved.</summary>
+        public string Capture() => JsonUtility.ToJson(new SaveData { hours_since_try = _hoursSinceTry, attempts = Attempts, talks = Talks });
+
+        public void Restore(string json, SaveContext ctx)
         {
-            _gateway = gateway;
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _hoursSinceTry = s.hours_since_try;
+            Attempts = s.attempts;
+            Talks = s.talks;
+        }
+
+        public void Init(GuildRoster roster, WorldService world)
+        {
             _roster = roster;
             _world = world;
             EventBus.Subscribe<HourPassedEvent>(OnHour);
@@ -75,96 +74,77 @@ namespace GuildMaster.Adventurers
         /// <summary>Starts a banter now if a suitable pair exists. Returns false if nothing started.</summary>
         public bool TryStart()
         {
-            if (_inFlight) return false;
             var pair = PickPair();
             if (pair == null) return false;
             var (a, b) = pair.Value;
-            bool llmReady = _gateway != null && _gateway.Enabled && _gateway.IsReady;
-            if (llmReady && (_gateway.IsBusy || _gateway.QueueCount > 0)) return false; // never queue behind real work
             Attempts++;
-            if (!llmReady) return Play(a, b, FixedPair(), false);
-            _ = RunAsync(a, b);
+            // Between two who do not get on, or with an abrasive one, a talk may turn into a quarrel (P4-104e).
+            bool quarrel = GameRandom.Shared.Value < QuarrelChance(a, b);
+            if (!Play(a, b, Pick(quarrel ? BanterLines.Quarrel : BanterLines.Town))) return false;
+            Settle(a, b, quarrel, byTheFire: false);
             return true;
+        }
+
+        static bool Abrasive(Adventurer x) => x.Data.traitIds.Contains("arrogant") || x.Data.traitIds.Contains("loner");
+
+        /// <summary>In a social inspiration (P4-104e).</summary>
+        static bool Sociable(Adventurer x) => x.Data.inspiration == InspirationKind.Social;
+
+        static float QuarrelChance(Adventurer a, Adventurer b)
+        {
+            // A visitor is on its best behaviour, and nobody has feelings about it yet; one in a sociable mood (P4-104e) does not quarrel.
+            if (a.IsVisitor || b.IsVisitor || Sociable(a) || Sociable(b)) return 0f;
+            int feel = Mathf.Min(Relationships.Get(a, b), Relationships.Get(b, a));
+            return BanterRules.QuarrelChance(feel, a.Data.values == b.Data.values, Abrasive(a) || Abrasive(b));
         }
 
         /// <summary>
-        /// A talk somewhere other than town (P4-66: round a campfire). It happens once per camp, so a
-        /// busy model does not skip it: the fixed lines stand in. <paramref name="stillThere"/> says
-        /// whether a speaker is still at the scene when the lines come back.
+        /// What the talk did (P4-104e, user decision 2026-10-21): feelings each way +1~2 for a friendly one, −2~3 for a quarrel, and a
+        /// thought each; with a visitor, its warmth to the guild (counted into the next recruitment talk).
         /// </summary>
-        public bool TryStartAt(Adventurer a, Adventurer b, string scene, System.Func<Adventurer, bool> stillThere)
+        static void Settle(Adventurer a, Adventurer b, bool quarrel, bool byTheFire)
         {
-            if (_inFlight || a == null || b == null || a == b) return false;
-            bool llmReady = _gateway != null && _gateway.Enabled && _gateway.IsReady;
-            Attempts++;
-            if (!llmReady || _gateway.IsBusy || _gateway.QueueCount > 0) return Play(a, b, FixedCampPair(), false, stillThere);
-            _ = RunAsync(a, b, scene, stillThere);
-            return true;
-        }
-
-        async Task RunAsync(Adventurer a, Adventurer b, string scene = null, System.Func<Adventurer, bool> stillThere = null)
-        {
-            _inFlight = true;
-            try
+            if (a.IsVisitor || b.IsVisitor)
             {
-                var result = await _gateway.RequestAsync(BanterPrompt.BuildRequest(a, b, scene));
-                if (this == null) return;
-                if (result.Ok && LlmJson.TryParse<BanterPrompt.ResponseDto>(result.Text, out var dto)
-                    && BanterPrompt.TryInterpret(dto, out var lineA, out var lineB, a.Data.name, b.Data.name))
-                {
-                    if (result.Exchange != null) result.Exchange.Note = "채택";
-                    Debug.Log($"[LLM-BANTER] {a.Data.name}: \"{lineA}\" / {b.Data.name}: \"{lineB}\" ({dto.a_to_b:+0;-0;0}/{dto.b_to_a:+0;-0;0}, {result.Seconds:0.0}s)");
-                    if (Play(a, b, (lineA, lineB), true, stillThere))
-                    {
-                        Relationships.Add(a, b, BanterPrompt.ClampDelta(dto.a_to_b), "잡담");
-                        Relationships.Add(b, a, BanterPrompt.ClampDelta(dto.b_to_a), "잡담");
-                        ApplyVisitorAffinity(a, b, dto.a_to_b, dto.b_to_a);
-                    }
-                }
-                else if (result.Error == "preempted")
-                {
-                    // Yielded to real work; stay quiet rather than filling in a canned line.
-                    if (result.Exchange != null) result.Exchange.Note = "양보: 더 중요한 요청 처리";
-                }
-                else
-                {
-                    if (result.Exchange != null) result.Exchange.Note = "고정 대사로 대체: " + (result.Ok ? "parse" : result.Error);
-                    Play(a, b, scene != null ? FixedCampPair() : FixedPair(), false, stillThere);
-                }
+                var visitor = a.IsVisitor ? a : b;
+                visitor.Data.banterWarmth += quarrel ? BanterRules.VisitorChill : BanterRules.VisitorWarmth;
+                return;
             }
-            finally
+            int change = quarrel ? BanterRules.QuarrelChange(Abrasive(a) || Abrasive(b)) : BanterRules.FriendlyChange(a.Data.values == b.Data.values, byTheFire);
+            if (!quarrel && (Sociable(a) || Sociable(b))) change *= BreakRules.SocialTalkFactor;
+            Relationships.Add(a, b, change, quarrel ? "말다툼" : "잡담");
+            Relationships.Add(b, a, change, quarrel ? "말다툼" : "잡담");
+            if (quarrel)
             {
-                _inFlight = false;
+                ThoughtRecorder.Give(a, ThoughtRules.Quarrel, b.Data.id, b.Data.name);
+                ThoughtRecorder.Give(b, ThoughtRules.Quarrel, a.Data.id, a.Data.name);
+            }
+            else
+            {
+                ThoughtRecorder.Give(a, ThoughtRules.Chat);
+                ThoughtRecorder.Give(b, ThoughtRules.Chat);
             }
         }
 
         /// <summary>
-        /// When one side of the chat is a visitor, their reaction to the guild member also nudges the
-        /// same persistent affinity the formal recruit dialogue reads and writes
-        /// (<see cref="Adventurers.AdventurerData.recruitAffinity"/> via <see cref="RecruitmentSession"/>),
-        /// so a visitor can warm to the guild through the town itself. First contact seeds it exactly as
-        /// opening a formal talk would; reaching <see cref="RecruitmentSession.AutoJoinAffinity"/> joins
-        /// them on the spot, with no proposal needed.
+        /// A talk somewhere other than town (P4-66: round a campfire). <paramref name="stillThere"/> says whether a
+        /// speaker is still at the scene.
         /// </summary>
-        void ApplyVisitorAffinity(Adventurer a, Adventurer b, int aToB, int bToA)
+        public bool TryStartAt(Adventurer a, Adventurer b, System.Func<Adventurer, bool> stillThere)
         {
-            var visitor = a.IsVisitor ? a : b.IsVisitor ? b : null;
-            if (visitor == null || !visitor.IsVisitor) return; // may have joined/left meanwhile
-            int delta = BanterPrompt.ClampDelta(visitor == a ? aToB : bToA);
-            var data = visitor.Data;
-            data.recruitAffinity = RecruitmentSession.NextRecruitAffinity(data.recruitAffinity, visitor.Traits, delta);
-            if (data.recruitAffinity < RecruitmentSession.AutoJoinAffinity) return;
-            if (!Services.TryGet<GuildRoster>(out var roster) || !roster.AddExisting(visitor)) return; // roster full
-            EventBus.Publish(new RecruitmentEndedEvent { Visitor = visitor, Outcome = RecruitOutcome.Joined, Turns = data.recruitTurns });
+            if (a == null || b == null || a == b) return false;
+            Attempts++;
+            if (!Play(a, b, Pick(BanterLines.Camp), stillThere)) return false;
+            Settle(a, b, quarrel: false, byTheFire: true);
+            return true;
         }
 
-        /// <summary>Shows the two lines; false when either left before the model finished.</summary>
-        bool Play(Adventurer a, Adventurer b, (string first, string second) lines, bool fromLlm, System.Func<Adventurer, bool> stillThere = null)
+        /// <summary>Shows the two lines; false when either is no longer there.</summary>
+        bool Play(Adventurer a, Adventurer b, (string first, string second) lines, System.Func<Adventurer, bool> stillThere = null)
         {
-            // They may have left for a quest while the model was writing.
             stillThere ??= StillChatting;
             if (!stillThere(a) || !stillThere(b)) return false;
-            if (fromLlm) LlmBanters++; else FixedBanters++;
+            Talks++;
             float hour = Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : 0f;
             DialogueLog.AddBanter(a.Data, b.Data, hour, lines.first, lines.second);
             a.Say(lines.first);
@@ -191,14 +171,12 @@ namespace GuildMaster.Adventurers
                && x.Fsm.Current == x.IdleState && _world.Grid.IsInTown(x.Position)
                && !(Services.TryGet<PartyService>(out var party) && party.IsInvited(x));
 
-        /// <summary>A visitor free to chat: wandering the plaza, not already mid-talk with the guild master
-        /// (that talk owns the same affinity field; the two never run at once).</summary>
+        /// <summary>A visitor free to chat: wandering the plaza, not already mid-talk with the guild master.</summary>
         bool AvailableVisitor(Adventurer x)
             => x != null && x.IsAlive && x.IsVisitor && !x.InConversation
                && x.Fsm.Current == x.VisitorWanderState && _world.Grid.IsInTown(x.Position);
 
-        /// <summary>A random pair of idle members within talking distance, or a member and a visitor.
-        /// Never two visitors: there is no guild feeling to nudge there.</summary>
+        /// <summary>A random pair of idle members within talking distance, or a member and a visitor. Never two visitors.</summary>
         (Adventurer, Adventurer)? PickPair()
         {
             var idle = new List<Adventurer>();
@@ -222,7 +200,6 @@ namespace GuildMaster.Adventurers
             return GameRandom.Shared.Value < 0.5f ? p : (p.Item2, p.Item1);
         }
 
-        static (string, string) FixedPair() => BanterPrompt.FixedPairs[GameRandom.Shared.Range(0, BanterPrompt.FixedPairs.Length)];
-        static (string, string) FixedCampPair() => BanterPrompt.FixedCampPairs[GameRandom.Shared.Range(0, BanterPrompt.FixedCampPairs.Length)];
+        static (string, string) Pick((string a, string b)[] lines) => lines[GameRandom.Shared.Range(0, lines.Length)];
     }
 }

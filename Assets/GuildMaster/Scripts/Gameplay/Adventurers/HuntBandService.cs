@@ -30,6 +30,16 @@ namespace GuildMaster.Adventurers
         /// too instead of carrying on short-handed (P4-38, user report: members ending up alone).
         /// </summary>
         public bool GoingHome { get; internal set; }
+
+        /// <summary>
+        /// The band stopped to mend a hurt member (P4-71): it pulled back and/or made camp, and goes
+        /// on hunting afterwards. Members leaving the hunt meanwhile do not break the band up.
+        /// </summary>
+        public bool Paused { get; internal set; }
+
+        /// <summary>Game hour the band set out from the guild (its time out counts from here, camps included).</summary>
+        public float SetOutHour { get; internal set; }
+
         public bool Has(Adventurer a) => Members.Contains(a);
     }
 
@@ -38,7 +48,7 @@ namespace GuildMaster.Adventurers
     /// A member that decides to hunt joins a band still mustering at the guild; when none is, it
     /// starts one and invites others in town (P4-51, <see cref="PartyService.InviteToHunt"/>).
     /// </summary>
-    public class HuntBandService : MonoBehaviour
+    public class HuntBandService : MonoBehaviour, ISaveable, ISaveLink
     {
         /// <summary>
         /// Game hours the band waits at the guild before setting off, beyond the time its invitations
@@ -58,6 +68,62 @@ namespace GuildMaster.Adventurers
         }
 
         public IReadOnlyList<HuntBand> Bands => _bands;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedBand
+        {
+            public List<string> members = new();
+            public Vector2 spot;
+            public bool has_spot;
+            public float muster_until;
+            public bool mustering;
+            public bool going_home;
+            public bool paused;
+            public float set_out;
+        }
+
+        [System.Serializable]
+        class SaveData { public List<SavedBand> bands = new(); }
+
+        SaveData _restoring;
+
+        public string SaveKey => "bands";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            foreach (var b in _bands)
+            {
+                var sb = new SavedBand
+                {
+                    spot = b.Spot, has_spot = b.HasSpot, muster_until = b.MusterUntilHour, mustering = b.Mustering,
+                    going_home = b.GoingHome, paused = b.Paused, set_out = b.SetOutHour,
+                };
+                foreach (var m in b.Members) if (m != null) sb.members.Add(m.Data.id);
+                s.bands.Add(sb);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx) => _restoring = JsonUtility.FromJson<SaveData>(json);
+
+        /// <summary>Bands are their members (the free hunters find theirs again when they resume).</summary>
+        public void Link(SaveContext ctx)
+        {
+            foreach (var sb in _restoring.bands)
+            {
+                var b = new HuntBand
+                {
+                    Spot = sb.spot, HasSpot = sb.has_spot, MusterUntilHour = sb.muster_until, Mustering = sb.mustering,
+                    GoingHome = sb.going_home, Paused = sb.paused, SetOutHour = sb.set_out,
+                };
+                foreach (var id in sb.members) if (ctx.Find<Adventurer>(id) is { } a) b.Members.Add(a);
+                if (b.Members.Count > 0) _bands.Add(b);
+            }
+            _restoring = null;
+        }
 
         public HuntBand BandOf(Adventurer a)
         {
@@ -81,7 +147,7 @@ namespace GuildMaster.Adventurers
             {
                 foreach (var b in _bands)
                 {
-                    if (!b.Mustering || b.Members.Count >= _capacity) continue;
+                    if (!b.Mustering || b.Members.Count >= _capacity || !SameFooting(a, b.Leader)) continue;
                     b.Members.Add(a);
                     return b;
                 }
@@ -95,6 +161,7 @@ namespace GuildMaster.Adventurers
                 {
                     if (m == a || band.Members.Count >= _capacity || !m.IsAlive || m.CurrentQuest != null) continue;
                     if (!m.IsIdleInTown || !Welfare.GuildWelfare.MayGoOut(m)) continue; // on leave, wounded or breaking: stays home
+                    if (!SameFooting(m, a)) continue; // a newcomer trains or hunts close in on its own (P4-99)
                     band.Members.Add(m); // before the state change, so its Enter finds this band
                     m.Say("같이 가자!");
                     m.ChangeState(m.FreeHuntState);
@@ -105,6 +172,13 @@ namespace GuildMaster.Adventurers
                 invites.InviteToHunt(a, band, _capacity - band.Members.Count);
             return band;
         }
+
+        /// <summary>
+        /// Both newcomers or neither (P4-99, user decision 2026-10-21): a newcomer does not go out with a stronger band — a
+        /// band's reach and prey go by its strength, and newcomers who tagged along died out there — and a band of newcomers,
+        /// which keeps close in, is no place for one who has outgrown it.
+        /// </summary>
+        public static bool SameFooting(Adventurer a, Adventurer leader) => leader == null || a.IsNewcomer == leader.IsNewcomer;
 
         public void Leave(Adventurer a)
         {
@@ -123,16 +197,35 @@ namespace GuildMaster.Adventurers
             {
                 var b = _bands[i];
                 b.Members.RemoveAll(m => m == null || !m.IsAlive || !m.IsGuildMember);
+                // A paused band keeps those pulling back or at the fire; one that got home is out of it.
+                if (b.Paused) b.Members.RemoveAll(m => m.Fsm.Current != m.FreeHuntState && m.Fsm.Current != m.ReturnState && m.Fsm.Current != m.CampState);
+                else b.Members.RemoveAll(m => m.Fsm.Current == m.ReturnState || m.Fsm.Current == m.CampState); // hunting again: whoever went home is out
                 if (b.Members.Count == 0) { _bands.RemoveAt(i); continue; }
                 // Waits while hunt invitations are being answered (P4-51), then leaves together.
                 bool answering = Services.TryGet<PartyService>(out var invites) && invites.IsGathering(b);
                 if (b.Mustering && !answering && (hour >= b.MusterUntilHour || b.Members.Count >= _capacity))
                 {
                     b.Mustering = false;
-                    // Setting out together: a standing party forms or goes on an outing (P4-50).
-                    if (b.Members.Count >= 2 && Services.TryGet<GuildParties>(out var parties)) parties.SetOut(b.Members);
+                    b.SetOutHour = hour;
+                    // Setting out together: a standing party forms or goes on an outing (P4-50). Not newcomers hunting close in
+                    // (P4-99): a standing party's newcomers, left at home by their leader's hunts, set its outing going without
+                    // it, and the leader back in town waited half a day for an outing it was never on.
+                    if (b.Members.Count >= 2 && !b.Leader.IsNewcomer && Services.TryGet<GuildParties>(out var parties))
+                        parties.SetOut(WithTheirLeaders(b, parties));
                 }
             }
+        }
+
+        /// <summary>
+        /// The band's members with no standing party, or whose party's leader is out with them: one whose leader stays
+        /// home — it outgrew a newcomer leader (P4-99) — goes along on its own account and leaves its party at home.
+        /// </summary>
+        static List<Adventurer> WithTheirLeaders(HuntBand b, GuildParties parties)
+        {
+            var goers = new List<Adventurer>();
+            foreach (var m in b.Members)
+                if (parties.PartyOf(m) is not { } p || b.Has(p.Leader)) goers.Add(m);
+            return goers;
         }
     }
 }

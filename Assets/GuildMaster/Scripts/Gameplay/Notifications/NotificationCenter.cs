@@ -10,7 +10,7 @@ namespace GuildMaster.Notifications
     public enum NotificationKind { Info, Success, Quest, Warning, Danger }
 
     /// <summary>Where clicking a notification leads. The UI layer decides how to open each target.</summary>
-    public enum NotificationTarget { None, QuestBoard, Negotiation, Roster, Adventurer, Location, Report, Management, Proposals, Memorial }
+    public enum NotificationTarget { None, QuestBoard, Negotiation, Roster, Adventurer, Location, Report, Management, Proposals, Memorial, GuildRank, Bestiary, Dilemmas }
 
     /// <summary>A pointer from a notification to something in the game (data only, so Gameplay needs no UI types).</summary>
     public readonly struct NotificationLink
@@ -28,6 +28,9 @@ namespace GuildMaster.Notifications
             Position = position;
         }
 
+        /// <summary>Save (P5-4): a link as it was stored.</summary>
+        internal static NotificationLink Restore(NotificationTarget target, string id, Vector2 position) => new(target, id, position);
+
         public bool IsNone => Target == NotificationTarget.None;
 
         public static NotificationLink None => default;
@@ -41,6 +44,12 @@ namespace GuildMaster.Notifications
         public static NotificationLink Management(string adventurerId) => new(NotificationTarget.Management, adventurerId, default);
         /// <summary>The quest proposal list (F-8).</summary>
         public static NotificationLink Proposals() => new(NotificationTarget.Proposals, null, default);
+        /// <summary>The guild's rank window (P4-106).</summary>
+        public static NotificationLink GuildRank() => new(NotificationTarget.GuildRank, null, default);
+        /// <summary>The bestiary window (P4-107).</summary>
+        public static NotificationLink Bestiary() => new(NotificationTarget.Bestiary, null, default);
+        /// <summary>The decision cards window (P4-111c).</summary>
+        public static NotificationLink Dilemmas() => new(NotificationTarget.Dilemmas, null, default);
         /// <summary>The wall of the fallen, on this record (F-6).</summary>
         public static NotificationLink Memorial(int recordId) => new(NotificationTarget.Memorial, recordId.ToString(CultureInfo.InvariantCulture), default);
     }
@@ -77,7 +86,7 @@ namespace GuildMaster.Notifications
     /// Pure logic with no Unity objects, so it is covered by EditMode tests. Sources post to it
     /// (see <see cref="NotificationSources"/>); the UI shows toasts and the list.
     /// </summary>
-    public class NotificationCenter
+    public class NotificationCenter : ISaveable
     {
         /// <summary>Oldest entries are dropped beyond this many.</summary>
         public const int MaxEntries = 60;
@@ -98,6 +107,68 @@ namespace GuildMaster.Notifications
 
         /// <summary>Oldest first.</summary>
         public IReadOnlyList<Notification> Entries => _entries;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SavedEntry
+        {
+            public int id;
+            public NotificationKind kind;
+            public string title;
+            public string text;
+            public string key;
+            public NotificationTarget target;
+            public string link_id;
+            public Vector2 link_position;
+            public string time_label;
+            public float hour;
+            public int count;
+            public bool read;
+            public bool toast;
+        }
+
+        [Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public List<SavedEntry> entries = new();
+            public List<string> once = new();
+        }
+
+        public string SaveKey => "notifications";
+
+        public string Capture()
+        {
+            var s = new SaveData { next_id = _nextId };
+            foreach (var e in _entries)
+                s.entries.Add(new SavedEntry
+                {
+                    id = e.Id, kind = e.Kind, title = e.Title, text = e.Text, key = e.Key, target = e.Link.Target, link_id = e.Link.Id,
+                    link_position = e.Link.Position, time_label = e.TimeLabel, hour = e.Hour, count = e.Count, read = e.Read, toast = e.Toast,
+                });
+            s.once.AddRange(_onceKeys);
+            s.once.Sort(StringComparer.Ordinal);
+            return JsonUtility.ToJson(s);
+        }
+
+        /// <summary>The list as it was (no toasts pop up for old news).</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _nextId = s.next_id;
+            _entries.Clear();
+            foreach (var e in s.entries)
+                _entries.Add(new Notification
+                {
+                    Id = e.id, Kind = e.kind, Title = e.title, Text = e.text, Key = e.key,
+                    Link = NotificationLink.Restore(e.target, e.link_id, e.link_position), TimeLabel = e.time_label, Hour = e.hour,
+                    Count = e.count, Read = e.read, Toast = e.toast,
+                });
+            _onceKeys.Clear();
+            foreach (var k in s.once) _onceKeys.Add(k);
+            EventBus.Publish(new NotificationsChangedEvent());
+        }
 
         public int Unread
         {

@@ -58,6 +58,9 @@ namespace GuildMaster.Economy
 
         public float Sold(string itemId) => itemId != null && _sold.TryGetValue(itemId, out var s) ? s : 0f;
 
+        /// <summary>Save (P5-4): what the merchants have bought lately, item by item.</summary>
+        internal Dictionary<string, float> SoldTable => _sold;
+
         /// <summary>Scarcity part of demand: 1 for goods, <see cref="RareDemand"/>..<see cref="CommonDemand"/> for loot.</summary>
         public float Scarcity(ItemDefinition item)
         {
@@ -77,8 +80,9 @@ namespace GuildMaster.Economy
 
         public bool CanSell(ItemDefinition item) => item != null && item.baseValue > 0;
 
+        // Autumn's buyers pay more (P4-111b).
         int UnitPrice(ItemDefinition item, float sold)
-            => Mathf.Max(1, Mathf.RoundToInt(item.baseValue * SaleRate * Scarcity(item) * SaturationFor(sold)));
+            => Mathf.Max(1, Mathf.RoundToInt(item.baseValue * SaleRate * Scarcity(item) * SaturationFor(sold) * Seasons.SeasonService.MerchantPrice));
 
         /// <summary>Current price for one unit.</summary>
         public int Price(ItemDefinition item) => item == null ? 0 : UnitPrice(item, Sold(item.id));

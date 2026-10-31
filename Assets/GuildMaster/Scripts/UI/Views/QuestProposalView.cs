@@ -10,8 +10,9 @@ namespace GuildMaster.UI
 {
     /// <summary>
     /// The quest proposal list (F-8): a few ready-made quests to choose from, with the LLM's names and pitches when
-    /// it is on. Choosing one posts it to the quest board, where it is escrowed, negotiated and taken like any other.
-    /// Opened from the quest board and from the "새 의뢰 제안" notification.
+    /// it is on. P4-82: each is another client's request for a den not on the board; taking it posts it to the board
+    /// as that client's quest (the client pays, the guild keeps its fee), where it is negotiated and taken like any
+    /// other. Opened from the quest board and from the "새 의뢰 요청" notification.
     /// </summary>
     public class QuestProposalView : UIPanel
     {
@@ -31,8 +32,8 @@ namespace GuildMaster.UI
             _status = UIBuilder.Label(head, "", 15, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 30, 1);
             _reroll = UIBuilder.Button(head, "다시 뽑기", Reroll, 130, 32, UITheme.Header, 15);
             _reroll.Tooltip(() => _rerollReason);
-            UIBuilder.Button(head, "직접 등록", OpenBoard, 110, 32, null, 15)
-                .Tooltip(() => "의뢰 게시판에서 종류, 위치, 보상을 직접 정해 등록합니다.");
+            UIBuilder.Button(head, "게시판", OpenBoard, 110, 32, null, 15)
+                .Tooltip(() => "의뢰 게시판을 엽니다. 마을이 올린 의뢰를 보고, 원하지 않는 의뢰를 내리거나 호위를 고용합니다.");
 
             _listContent = UIBuilder.ScrollList(body, out var scroll);
             scroll.GetComponent<RectTransform>().Size(-1, -1, -1, 1);
@@ -74,7 +75,7 @@ namespace GuildMaster.UI
                 float h = service.GeneratedAtHour;
                 int day = Mathf.FloorToInt(h / 24f) + 1;
                 int hour = Mathf.FloorToInt(h % 24f);
-                _status.text = $"제안 {plans.Count}건 · 만든 방식 {(service.Source.Length > 0 ? service.Source : "-")} · {day}일 {hour:00}시 · 하루에 한 번 새로 도착합니다.";
+                _status.text = $"요청 {plans.Count}건 · 만든 방식 {(service.Source.Length > 0 ? service.Source : "-")} · {day}일 {hour:00}시 · 하루에 한 번 새로 도착합니다.";
             }
             else _status.text = "";
 
@@ -112,19 +113,12 @@ namespace GuildMaster.UI
             Refresh();
         }
 
-        void Adjust(ProposalPlan plan, int steps)
-        {
-            if (!Services.TryGet<QuestProposalService>(out var service)) return;
-            service.AdjustReward(plan, steps);
-            Refresh();
-        }
-
         /// <summary>One proposed quest.</summary>
         class ProposalCard : MonoBehaviour
         {
             Image _bg;
             Text _title, _pitch, _detail;
-            Button _choose, _less, _more;
+            Button _choose;
             ProposalPlan _plan;
             QuestProposalView _owner;
 
@@ -148,14 +142,12 @@ namespace GuildMaster.UI
                 card._detail.horizontalOverflow = HorizontalWrapMode.Wrap;
                 card._detail.verticalOverflow = VerticalWrapMode.Truncate;
 
-                var side = UIBuilder.Rect(bg.transform, "Side").Size(216, -1);
+                var side = UIBuilder.Rect(bg.transform, "Side").Size(160, -1, 0);
                 UIBuilder.VLayout(side, 8, 0);
-                var adjust = UIBuilder.Row(side, 30, 4);
-                card._less = UIBuilder.Button(adjust, $"-{ProposalRules.RewardStep}G", () => card._owner.Adjust(card._plan, -1), 64, 30, null, 14);
-                card._more = UIBuilder.Button(adjust, $"+{ProposalRules.RewardStep}G", () => card._owner.Adjust(card._plan, 1), 64, 30, null, 14);
-                UIBuilder.Button(adjust, "넘기기", () => card._owner.Skip(card._plan), 72, 30, UITheme.ButtonDanger, 14)
-                    .Tooltip(() => "이 제안을 목록에서 치웁니다.");
-                card._choose = UIBuilder.Button(side, "등록 (보상 예치)", () => card._owner.Choose(card._plan), -1, 44, new Color(0.25f, 0.45f, 0.3f), 16);
+                UIBuilder.Button(side, "넘기기", () => card._owner.Skip(card._plan), -1, 30, UITheme.ButtonDanger, 14)
+                    .Tooltip(() => "이 요청을 목록에서 치웁니다.");
+                card._choose = UIBuilder.Button(side, "의뢰 받기", () => card._owner.Choose(card._plan), -1, 44, new Color(0.25f, 0.45f, 0.3f), 16)
+                    .Tooltip(() => "게시판에 올립니다. 보상은 의뢰인이 내고, 길드는 끝나면 수수료를 받습니다.");
                 return card;
             }
 
@@ -180,11 +172,9 @@ namespace GuildMaster.UI
                     ? $"{p.Target.Label} x{p.Count} 토벌 · {p.Target.Area}"
                     : $"{p.Target.Label} 소탕 · {p.Target.Area}";
                 string check = service.Check(p);
-                _detail.text = $"{what}\n길드 기준 {UIBuilder.Colored(p.Risk, riskColor)} · 추천 {p.Party}명 · 보상 {p.RewardGold}G / {p.RewardExp}EXP" +
+                _detail.text = $"{what}\n길드 기준 {UIBuilder.Colored(p.Risk, riskColor)} · 추천 {p.Party}명 · 보상 {p.RewardGold}G(길드원 {p.MemberGold}G · " +
+                               $"{UIBuilder.Colored($"수수료 {p.FeeGold}G", UITheme.Accent)}) / {p.RewardExp}EXP" +
                                (check != null ? "  " + UIBuilder.Colored(check, UITheme.Bad) : "");
-
-                _less.interactable = p.RewardGold > p.MinRewardGold;
-                _more.interactable = p.RewardGold < p.MaxRewardGold;
                 _choose.interactable = check == null;
             }
         }

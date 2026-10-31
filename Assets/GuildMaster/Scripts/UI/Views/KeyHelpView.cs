@@ -80,7 +80,7 @@ namespace GuildMaster.UI
             Line(sb, $"Space · 1~{GameClock.SpeedScales.Length - 1}", "일시정지 · 속도",
                  clock.SpeedIndex == 0 ? "정지" : $"x{GameClock.SpeedScales[clock.SpeedIndex]:0}", false, null);
             // Keep this in step with the AddWindow hotkeys in UIRoot.
-            sb.Append(UIBuilder.Colored("Q 의뢰 · R 길드원 · I 창고 · E 생태계 · T 행상인 · B 건설 · L 정산 · H 추모 · G 관계도 · N 알림 · J 할 일 · ESC 창 닫기", UITheme.TextMuted));
+            sb.Append(UIBuilder.Colored("Q 의뢰 · R 길드원 · I 창고 · U 살림 · E 생태계 · T 행상인 · B 건설 · L 정산 · H 추모 · G 등급 · K 도감 · J 결정 · P 규칙 · V 관계도 · N 알림 · Y 할 일 · ESC 창 닫기", UITheme.TextMuted));
             return sb.ToString();
         }
 

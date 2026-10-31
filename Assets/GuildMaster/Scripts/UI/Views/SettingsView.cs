@@ -15,7 +15,7 @@ namespace GuildMaster.UI
     public class SettingsView : MonoBehaviour
     {
         RectTransform _root;
-        Button _llm, _fullscreen;
+        Button _llm, _fullscreen, _rewardFx;
         Dropdown _resolution;
         Text _note;
         readonly List<Vector2Int> _resolutions = new();
@@ -28,7 +28,7 @@ namespace GuildMaster.UI
             _root = dim.rectTransform;
             _root.Stretch();
             var box = UIBuilder.Panel(_root, "Box", UITheme.PanelBg);
-            box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 440));
+            box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 486));
             UIBuilder.VLayout(box, 10, 24);
             UIBuilder.Label(box.transform, "설정", 26, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 40);
 
@@ -42,6 +42,8 @@ namespace GuildMaster.UI
             UIBuilder.Slider(sfxRow, 0f, 1f, GameSettings.SfxVolume, v => GameSettings.SfxVolume = v, 200);
             var musicRow = Row(box.transform, "배경 음악");
             UIBuilder.Slider(musicRow, 0f, 1f, GameSettings.MusicVolume, v => GameSettings.MusicVolume = v, 200);
+            var fxRow = Row(box.transform, "보상 연출");
+            _rewardFx = UIBuilder.Button(fxRow, "", ToggleRewardFx, 200, 34, null, 15);
 
             _note = UIBuilder.Label(box.transform, "", 14, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 56);
             _note.verticalOverflow = VerticalWrapMode.Overflow;
@@ -87,8 +89,9 @@ namespace GuildMaster.UI
 
         void Refresh()
         {
-            _llm.SetLabel(GameSettings.LlmEnabled ? "켬 (LLM 판단·대화)" : "끔 (규칙 기반)");
+            _llm.SetLabel(GameSettings.LlmEnabled ? "켬 (LLM 대화·제안)" : "끔 (규칙 기반)");
             _fullscreen.SetLabel(GameSettings.Fullscreen ? "켬" : "끔");
+            _rewardFx.SetLabel(GameSettings.RewardEffects ? "켬" : "끔");
             _note.text = Application.isEditor
                 ? "에디터에서는 화면 설정이 저장만 되고 적용되지 않습니다(빌드에서 적용)."
                 : "";
@@ -98,6 +101,12 @@ namespace GuildMaster.UI
         {
             GameSettings.LlmEnabled = !GameSettings.LlmEnabled;
             if (Services.TryGet<LlmGateway>(out var llm)) llm.Enabled = GameSettings.LlmEnabled;
+            Refresh();
+        }
+
+        void ToggleRewardFx()
+        {
+            GameSettings.RewardEffects = !GameSettings.RewardEffects;
             Refresh();
         }
 

@@ -1,39 +1,40 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using GuildMaster.Core;
 using GuildMaster.Data;
-using GuildMaster.Economy;
 using GuildMaster.Quests;
 using GuildMaster.Traits;
 using UnityEngine;
 
 namespace GuildMaster.Adventurers
 {
-    public enum AdventurerAction { AcceptQuest, Rest, Shop, Idle, Hunt }
+    /// <summary>Visit (P4-105b): to a place worth going to (a hot spring, a shrine, a gathering spot).</summary>
+    public enum AdventurerAction { AcceptQuest, Rest, Shop, Idle, Hunt, Train, Visit }
 
     public struct AdventurerDecision
     {
         public AdventurerAction Action;
         public string QuestId;
+        /// <summary>Where a <see cref="AdventurerAction.Visit"/> goes.</summary>
+        public World.PlaceSite Place;
         public string Reason;
         public string Say;
-        public bool FromLLM;
 
         public static AdventurerDecision Idle(string reason = null) => new() { Action = AdventurerAction.Idle, Reason = reason };
     }
 
     /// <summary>
-    /// High-level cognitive decision source for adventurers. The rule-based implementation is
-    /// the always-available fallback; the LLM implementation (Phase 3) plugs in via Services.
+    /// High-level decision source for adventurers, resolved through Services. Since P4-91 (user decision 2026-10-19)
+    /// every NPC behaviour is decided by the rules (<see cref="RuleBasedDecisionMaker"/>); the model only talks
+    /// (recruitment, persuasion) and words the proposal cards.
     /// </summary>
     public interface IAdventurerDecisionMaker
     {
         Task<AdventurerDecision> DecideAsync(Adventurer adventurer, IReadOnlyList<Quest> available, CancellationToken ct);
     }
 
-    /// <summary>Deterministic utility-based decisions (no LLM).</summary>
+    /// <summary>Rule-based decisions (no LLM): the standard think tree (P4-104a) and the quest utility it weighs.</summary>
     public class RuleBasedDecisionMaker : IAdventurerDecisionMaker
     {
         public Task<AdventurerDecision> DecideAsync(Adventurer a, IReadOnlyList<Quest> available, CancellationToken ct)
@@ -41,55 +42,19 @@ namespace GuildMaster.Adventurers
 
         public static float DangerRequirement(DangerLevel d) => d switch
         {
-            DangerLevel.Low => 1f,
+            // A fresh member alone, even with no stat building (P4-87: power is scaled by the facilities, and at 1 a Lv1
+            // read every 낮음 quest — a single slime — as 무모, so nobody took the first quests).
+            DangerLevel.Low => Town.FacilityRules.BaseStatFactor,
             DangerLevel.Medium => 5f, // P4-58: levels now run 1..15 across the map (were 1..5)
             _ => 9f,
         };
 
+        /// <summary>
+        /// The decision of the standard think tree (P4-104a, <see cref="ThinkTree"/>): body and supplies, then reasons to stay
+        /// in, then the quests (drawn among the best few), a newcomer's training, a hunt, and the plaza.
+        /// </summary>
         public static AdventurerDecision Decide(Adventurer a, IReadOnlyList<Quest> available)
-        {
-            var d = a.Data;
-            if (a.HpRatio < 0.6f || d.fatigue > 70f)
-                return new AdventurerDecision { Action = AdventurerAction.Rest, Reason = "몸 상태가 좋지 않다", Say = "좀 쉬어야겠어..." };
-
-            if (d.potions == 0 && Services.TryGet<GuildTreasury>(out var t) && t.GetStock(DefaultContent.Potion) > 0
-                && Services.TryGet<TradeService>(out var trade) && Services.TryGet<GameDatabase>(out var db)
-                && d.gold >= trade.GoodsPrice(db.Item(DefaultContent.Potion)))
-                return new AdventurerDecision { Action = AdventurerAction.Shop, Reason = "물약이 없다", Say = "물약부터 챙기자." };
-
-            if (GearShopping.CanBuy(a))
-                return new AdventurerDecision { Action = AdventurerAction.Shop, Reason = "더 좋은 장비를 살 수 있다", Say = "모은 돈으로 장비를 바꿔야겠어." };
-
-            // F-2: on leave, badly wounded or at the breaking point nobody takes a quest, however good
-            // it looks — and nobody goes out hunting either (P4-69: with an empty board this check was
-            // skipped and the member walked out to hunt on its leave, or with its wound).
-            string tired = Welfare.GuildWelfare.AnyQuestRefusal(a);
-            if (tired != null)
-                return new AdventurerDecision
-                {
-                    Action = AdventurerAction.Idle,
-                    Reason = tired,
-                    Say = Welfare.StressRules.LevelOf(d.stress) == Welfare.StressLevel.Breaking ? "지금은... 아무것도 하고 싶지 않아." : null,
-                };
-
-            Quest best = null;
-            float bestScore = 0f;
-            foreach (var q in available)
-            {
-                float score = Score(a, q);
-                if (score > bestScore) { bestScore = score; best = q; }
-            }
-            if (best != null)
-                return new AdventurerDecision { Action = AdventurerAction.AcceptQuest, QuestId = best.Id, Reason = "보상 대비 위험이 적당하다", Say = $"{best.Title}, 내가 맡지!" };
-
-            // No quest worth taking: go out and hunt rather than stand in the plaza (P4-37). Timid
-            // members and those who value safety stay in more often — the LLM path gives this its
-            // own personality, this is the fallback's version of it.
-            if (!WaitsInTown(a))
-                return new AdventurerDecision { Action = AdventurerAction.Hunt, Reason = "의뢰가 없으니 직접 사냥하자", Say = "의뢰가 없으면 직접 나가야지." };
-
-            return AdventurerDecision.Idle("마땅한 의뢰가 없다");
-        }
+            => ThinkTree.Standard.Decide(a, available);
 
         /// <summary>Rule-based reasons to sit an empty board out instead of hunting (P4-37).</summary>
         public static bool WaitsInTown(Adventurer a) => GameRandom.Shared.Chance(StayChance(a.Data, a.Traits));
@@ -115,10 +80,23 @@ namespace GuildMaster.Adventurers
             var d = a.Data;
             // F-2: stress (and leave) decide whether a quest is considered at all; a tense member is less keen.
             if (Welfare.GuildWelfare.QuestRefusal(a, q.Danger) != null) return 0f;
-            int partySize = q.Assignees.Count + 1;
-            // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused.
-            float margin = QuestRisk.Margin(AdventurerStats.Power(d), partySize, q.Danger);
-            if (QuestRisk.Label(margin) == QuestRisk.Reckless) return 0f;
+            // Party work gathered for lately in vain (P4-97): not taken up again at once, to stand in the plaza for nothing.
+            if (Services.TryGet<PartyService>(out var parties) && parties.RestingAfterFailure(q)) return 0f;
+            // A big hunt it put down lately for want of company (P4-100): not taken up again at once to ask the same people.
+            if (parties != null && parties.PutDownLately(a, q)) return 0f;
+            // Party work (a rare monster P4-85, a region lord P4-90) counts the party that could go along —
+            // everyone the guild could gather for it, not only those idle in town this moment (P4-97).
+            int partySize = QuestRisk.ExpectedParty(q, a);
+            // High-danger work the guild's rule sends only in company, with nobody to ask (P4-112): not taken to be put down.
+            if (QuestRisk.AloneAgainstTheRule(q, partySize)) return 0f;
+            // Same margin as risk_for_me and the quest board warning (QuestRisk); "무모" is refused. A kind the guild has
+            // researched (P4-107): its weakness or strength against this member's class counts in the member's own judgment.
+            float power = AdventurerStats.Power(d) * Bestiary.BestiaryService.KnownAttackFactor(q.Species, d.cls, withMastery: false);
+            float margin = QuestRisk.Margin(power, partySize, q);
+            string risk = QuestRisk.Label(margin);
+            if (risk == QuestRisk.Reckless) return 0f;
+            // Far under the quest's level, a 위험 one is not for it (P4-88): the rules never dare (the model may, rarely).
+            if (QuestRisk.TooGreen(d, q, risk)) return 0f;
 
             float value = q.RewardGold / (float)partySize + q.RewardExp * 1.2f / partySize;
             // Personality flavour for the rule-based fallback.
@@ -127,6 +105,8 @@ namespace GuildMaster.Adventurers
             if (d.values == "명예" && q.Danger == DangerLevel.High) value *= 1.5f;
             if (d.values == "동료" && q.Assignees.Count > 0) value *= 1.3f;
             if (a.Traits != null) value = a.Traits.AdjustQuestValue(q, value);
+            // A grudge (P4-109): the bounty on the monster that killed a friend or drove it off is worth more to it.
+            if (Nemeses.NemesisService.Avenges(a, q)) value *= Nemeses.NemesisRules.RevengeValue;
 
             float distance = Vector2.Distance(a.Position, q.Point);
             return value / (1f + (int)q.Danger * 0.5f) / (1f + distance / 80f) * Mathf.Min(margin, 2f) * Welfare.StressRules.QuestScoreFactor(d.stress);

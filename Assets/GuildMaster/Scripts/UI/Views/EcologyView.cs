@@ -16,6 +16,7 @@ namespace GuildMaster.UI
 
         RectTransform _species;
         RectTransform _nests;
+        Text _lords;
         readonly List<Text> _speciesRows = new();
         readonly List<Button> _nestRows = new();
 
@@ -24,6 +25,10 @@ namespace GuildMaster.UI
             UIBuilder.HLayout(body, 12).childForceExpandHeight = true;
             var left = UIBuilder.Rect(body, "Species").Size(-1, -1, 1);
             UIBuilder.VLayout(left, 6, 0);
+            // The four region lords (P4-83): the long goal, as far as the guild knows them.
+            UIBuilder.Label(left, "지대 군주", 16, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 24);
+            _lords = UIBuilder.Label(left, "", 14, TextAnchor.UpperLeft).Size(-1, 92);
+            _lords.verticalOverflow = VerticalWrapMode.Overflow;
             UIBuilder.Label(left, "확인한 종 (관측 기준)", 16, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 24);
             _species = UIBuilder.ScrollList(left, out var s1);
             s1.GetComponent<RectTransform>().Size(-1, -1, -1, 1);
@@ -39,6 +44,7 @@ namespace GuildMaster.UI
         {
             // Only what the guild has seen (GuildIntel), never the real simulation numbers.
             var intel = Services.Get<GuildIntel>();
+            _lords.text = LordsText(intel);
             var species = intel.KnownSpecies.ToList();
             EnsureRows(_species, _speciesRows, Mathf.Max(1, species.Count), p => UIBuilder.Label(p, "", 15).Size(-1, 44));
             if (species.Count == 0)
@@ -77,6 +83,28 @@ namespace GuildMaster.UI
                 btn.onClick.RemoveAllListeners();
                 btn.onClick.AddListener(() => Services.Get<CameraController>().JumpTo(n.WorldPosition));
             }
+        }
+
+        /// <summary>
+        /// One line per region lord (P4-83): its name once the guild has seen it, else only that its region has one;
+        /// fallen (and its land cleansed) once the guild knows it.
+        /// </summary>
+        static string LordsText(GuildIntel intel)
+        {
+            if (!Services.TryGet<RegionLordService>(out var lords) || lords.Lords.Count == 0)
+                return UIBuilder.Colored("이 지도에는 지대 군주가 없습니다.", UITheme.TextMuted);
+            var lines = new List<string>();
+            foreach (var l in lords.Lords)
+            {
+                string region = Monsters.RegionLords.RegionName(l.Region);
+                if (l.Known)
+                    lines.Add($"{region} · {l.Def.displayName} " + UIBuilder.Colored("쓰러뜨림 · 바깥 땅 정화됨", UITheme.Good));
+                else if (intel.IsKnown(l.Def))
+                    lines.Add($"{region} · {l.Def.displayName} " + UIBuilder.Colored($"Lv.{Monsters.RegionLords.Level} · {intel.NameOf(l.Lair)}", UITheme.Bad));
+                else
+                    lines.Add($"{region} · " + UIBuilder.Colored("아직 보지 못함 (지대 깊은 곳 어딘가)", UITheme.TextMuted));
+            }
+            return string.Join("\n", lines) + $"\n{UIBuilder.Colored($"쓰러뜨린 군주 {lords.KnownFallen}/{lords.Lords.Count}", UITheme.Accent)}";
         }
 
         /// <summary>One-line tag for observed gear (P4-22); the full list lives in the inspector.</summary>

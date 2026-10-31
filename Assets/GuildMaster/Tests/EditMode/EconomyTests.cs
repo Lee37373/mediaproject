@@ -53,12 +53,11 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void Treasury_GeneratesExpPerHour_AndTaxPerDay()
+        public void Treasury_CollectsTaxPerDay_AndMakesNoExp()
         {
-            var t = new GuildTreasury(100, 0, 2.5f, 50);
+            var t = new GuildTreasury(100, 50);
             EventBus.Publish(new HourPassedEvent { Day = 1, Hour = 9 });
-            EventBus.Publish(new HourPassedEvent { Day = 1, Hour = 10 });
-            Assert.AreEqual(5, t.Exp);
+            Assert.AreEqual(100, t.Gold, "an hour brings nothing (P4-82: no guild EXP, and gold comes by the day)");
             EventBus.Publish(new DayPassedEvent { Day = 2 });
             Assert.AreEqual(150, t.Gold);
         }
@@ -66,17 +65,16 @@ namespace GuildMaster.Tests
         [Test]
         public void Treasury_CannotOverspend()
         {
-            var t = new GuildTreasury(10, 5, 0, 0);
-            Assert.IsFalse(t.TrySpend(11, 0));
-            Assert.IsFalse(t.TrySpend(0, 6));
-            Assert.IsTrue(t.TrySpend(10, 5));
+            var t = new GuildTreasury(10, 0);
+            Assert.IsFalse(t.TrySpendGold(11));
+            Assert.IsTrue(t.TrySpendGold(10));
             Assert.AreEqual(0, t.Gold);
         }
 
         [Test]
         public void BuyLoot_PaysSellerAndStocksGuild_LimitedByGuildGold()
         {
-            var t = new GuildTreasury(20, 0, 0, 0);
+            var t = new GuildTreasury(20, 0);
             var trade = new TradeService(t, _db) { LootBuyRate = 1f };
             var seller = new FakeTrader();
             seller.CarriedLoot.Add(new ItemStack("bone_shard", 3)); // base 10 each
@@ -93,7 +91,7 @@ namespace GuildMaster.Tests
         [Test]
         public void SellGoods_RequiresStockAndBuyerGold()
         {
-            var t = new GuildTreasury(0, 0, 0, 0);
+            var t = new GuildTreasury(0, 0);
             var trade = new TradeService(t, _db) { GoodsSellRate = 1.5f };
             var buyer = new FakeTrader { Gold = 100 };
             Assert.IsFalse(trade.SellGoods(buyer, DefaultContent.Potion), "no stock");

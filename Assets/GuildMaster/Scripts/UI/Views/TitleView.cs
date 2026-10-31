@@ -7,7 +7,7 @@ namespace GuildMaster.UI
 {
     /// <summary>
     /// Title screen (P4-10), shown over the freshly generated world while the clock is held.
-    /// "새 게임" starts this world, or reloads with the typed seed; "계속하기" waits for save/load
+    /// "새 게임" starts this world, or reloads with the typed seed; "불러오기" opens the saved games
     /// (P5-4); settings; quit. Skipped when the scene was loaded to start a game directly.
     /// </summary>
     public class TitleView : MonoBehaviour
@@ -16,13 +16,16 @@ namespace GuildMaster.UI
         InputField _seed;
         Text _message;
         SettingsView _settings;
+        SaveLoadView _saves;
+        Button _load;
         bool _holding;
 
         public bool IsOpen => _root != null && _root.gameObject.activeSelf;
 
-        public void Build(RectTransform canvas, SettingsView settings)
+        public void Build(RectTransform canvas, SettingsView settings, SaveLoadView saves)
         {
             _settings = settings;
+            _saves = saves;
             var dim = UIBuilder.Panel(canvas, "Title", new Color(0.05f, 0.04f, 0.08f, 0.82f));
             _root = dim.rectTransform;
             _root.Stretch();
@@ -40,9 +43,8 @@ namespace GuildMaster.UI
             _seed.GetComponent<RectTransform>().Size(-1, 36, 1);
 
             UIBuilder.Button(box, "새 게임", NewGame, -1, 50, new Color(0.25f, 0.45f, 0.3f), 20);
-            var cont = UIBuilder.Button(box, "계속하기", () => { }, -1, 50, null, 20);
-            cont.interactable = false;
-            cont.GetComponent<RectTransform>().Tooltip(() => "세이브/로드(P5-4)가 추가되면 사용할 수 있습니다.");
+            _load = UIBuilder.Button(box, "불러오기", () => _saves.Show(canSave: false), -1, 50, null, 20);
+            _load.GetComponent<RectTransform>().Tooltip(() => _load.interactable ? "저장한 게임을 이어서 합니다." : "저장된 게임이 없습니다.");
             UIBuilder.Button(box, "설정", () => _settings.Show(), -1, 50, null, 20);
             UIBuilder.Button(box, "종료", GameSettings.Quit, -1, 50, UITheme.ButtonDanger, 20);
             _message = UIBuilder.Label(box, "", 14, TextAnchor.MiddleCenter, UITheme.TextMuted).Size(-1, 40);
@@ -57,6 +59,7 @@ namespace GuildMaster.UI
             if (Services.TryGet<GameClock>(out var clock)) { clock.Hold(); _holding = true; }
             int seed = Services.TryGet<GameBootstrap>(out var boot) ? boot.Seed : 0;
             _message.text = $"지금 월드의 시드: {seed}";
+            _load.interactable = SaveLoadView.AnyLoadable();
             _root.SetAsLastSibling();
             _root.gameObject.SetActive(true);
         }

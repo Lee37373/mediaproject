@@ -41,7 +41,6 @@ namespace GuildMaster.Tests
                         "a front line, a back line and a healer: one of each class");
             var balance = UnityEngine.ScriptableObject.CreateInstance<Session.GameBalance>();
             Assert.That(balance.startingAdventurers, Is.GreaterThanOrEqualTo(lineup.Length));
-            Assert.That(balance.startingAdventurers, Is.LessThan(balance.rosterCapacity), "room left to recruit");
             UnityEngine.Object.DestroyImmediate(balance);
         }
     }

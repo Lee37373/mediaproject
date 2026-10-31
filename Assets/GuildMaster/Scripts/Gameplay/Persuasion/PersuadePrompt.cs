@@ -50,7 +50,7 @@ namespace GuildMaster.Persuasion
             sb.Append("너는 모험가 길드 소속이다. 게시판에 올라온 의뢰 하나가 너무 위험해 보여 아무도 맡지 않았고, ");
             sb.Append("길드 마스터가 직접 찾아와 네가 그 의뢰를 맡아 주도록 설득하고 있다.\n");
             sb.Append($"의뢰: {q.Title}. 보상은 {q.RewardGold}G와 경험치 {q.RewardExp}, 위험도는 {Quest.DangerLabel(q.Danger)}이고 ");
-            sb.Append($"네게는 '{DecisionPrompt.RiskLabel(a, q)}' 수준이다. 최대 {q.MaxParty}명이 함께 갈 수 있다.\n");
+            sb.Append($"네게는 '{QuestRisk.RiskLabel(a, q)}' 수준이다. 최대 {q.MaxParty}명이 함께 갈 수 있다.\n");
             if (offeredGold > 0) sb.Append($"길드 마스터는 보상을 {offeredGold}G 더 얹어 주겠다고 약속했다(네가 의뢰를 맡으면 지급된다).\n");
             sb.Append("지금 네 상태: ").Append(NpcVoice.Condition(a)).Append('\n');
             var memories = AdventurerMemory.SelectForPrompt(d.memories).Select(m => m.Format()).ToList();

@@ -17,9 +17,45 @@ namespace GuildMaster.Player
     /// escort and protect it. Reaching 0 HP ends the game.
     /// </summary>
     [RequireComponent(typeof(PathFollower))]
-    public class PlayerAvatar : Unit
+    public class PlayerAvatar : Unit, ISaveable, ISaveLink, ISaveResume
     {
         const float TownRegenPerHour = 0.10f;
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public UnitSave unit;
+            public bool moving;
+            public Vector2 destination;
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "master";
+
+        /// <summary>Where the master stands and walks to; what it meant to do on arrival (talk to someone) is dropped.</summary>
+        public string Capture() => JsonUtility.ToJson(new SaveData
+        {
+            unit = CaptureUnit(), moving = Mover.IsMoving, destination = Mover.IsMoving ? Mover.Destination : Vector2.zero,
+        });
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            Mover.Stop();
+            RestoreUnit(_restoring.unit);
+            ctx.Register(UnitId, this);
+        }
+
+        public void Link(SaveContext ctx) => LinkUnit(_restoring.unit, ctx);
+
+        public void Resume(SaveContext ctx)
+        {
+            if (_restoring.moving) Mover.SetDestination(_restoring.destination);
+            _restoring = null;
+        }
 
         System.Action _onArrive;
         GameClock _clock;

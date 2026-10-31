@@ -29,6 +29,12 @@ namespace GuildMaster.Monsters
         public const string PoolKey = "unit.monster";
         const float SenseInterval = 0.4f;
         const float CorpseTime = 1.2f;
+        /// <summary>
+        /// A rig plays its death clip (1.5 s), which fades the body itself and leaves a puff of dust; the last
+        /// <see cref="RigCorpseFade"/> fades whatever is left (P4-110).
+        /// </summary>
+        const float RigCorpseTime = 1.5f;
+        const float RigCorpseFade = 0.3f;
 
         public MonsterDefinition Def { get; private set; }
         public Nest Home { get; private set; }
@@ -43,6 +49,8 @@ namespace GuildMaster.Monsters
         internal float NextLureTime;
         internal MonsterReturnState ReturnState;
         internal RaidState RaidState;
+        /// <summary>On a raid against another village (P4-84).</summary>
+        internal VillageRaidState VillageRaidState;
         internal MigrateState MigrateState;
         internal RoamState RoamState;
         /// <summary>The roaming pack it walks with when its pack has no nest (P4-58), else null.</summary>
@@ -50,6 +58,10 @@ namespace GuildMaster.Monsters
         internal MonsterPickupState PickupState;
         internal MonsterRegroupState RegroupState;
         internal MonsterGateBreakState GateBreakState;
+        /// <summary>The dragon's life (P4-93): asleep on its hoard, on the wing, down on the ground to fight.</summary>
+        internal DragonSleepState DragonSleep;
+        internal DragonFlightState DragonFlight;
+        internal DragonLandedState DragonLanded;
         /// <summary>Earliest time the next fall-back-and-regroup may start (skilled+ monsters, P4-28).</summary>
         internal float NextRegroupTime;
 
@@ -73,11 +85,15 @@ namespace GuildMaster.Monsters
             LureState = new MonsterLureState();
             ReturnState = new MonsterReturnState();
             RaidState = new RaidState();
+            VillageRaidState = new VillageRaidState();
             MigrateState = new MigrateState();
             RoamState = new RoamState();
             PickupState = new MonsterPickupState();
             RegroupState = new MonsterRegroupState();
             GateBreakState = new MonsterGateBreakState();
+            DragonSleep = new DragonSleepState();
+            DragonFlight = new DragonFlightState();
+            DragonLanded = new DragonLandedState();
             Engage.ApproachSpot = EncircleSpot;
             // Town gates stay shut to monsters until broken (P4-39).
             if (Mover)
@@ -100,19 +116,64 @@ namespace GuildMaster.Monsters
 
         public void Setup(MonsterDefinition def, Nest home, bool boss = false)
         {
+            // The random draws stay in this order (seeded worlds must come out the same).
+            bool ranged = !boss && def.rangedVariantChance > 0f && GameRandom.Shared.Chance(def.rangedVariantChance);
+            Prepare(def, home, boss, ranged, $"M_{++s_counter:0000}");
+            _pickupTimer = GameRandom.Shared.Range(0f, PickupCheckInterval);
+            foreach (var g in def.startingGear)
+                if (g.item != null && GameRandom.Shared.Chance(g.chance)) Equipment.Equip(g.item);
+            Finish(home);
+            _senseTimer = GameRandom.Shared.Range(0f, SenseInterval);
+            Fsm.ChangeState(WanderState);
+        }
+
+        /// <summary>
+        /// A rare variant (P4-85, <see cref="RareMonster"/>): alone, with no nest, at <paramref name="level"/>. The caller picks
+        /// the spot, the kind and the variant; nothing here draws a random number.
+        /// </summary>
+        public void SetupRare(MonsterDefinition def, int variant, int level)
+        {
+            Prepare(def, null, false, false, $"M_{++s_counter:0000}", variant);
+            Level = Mathf.Clamp(level, 1, MonsterLevel.MaxLevel);
+            ApplyLevel();
+            Finish(null);
+            _senseTimer = SenseInterval;
+            Fsm.ChangeState(WanderState);
+        }
+
+        /// <summary>
+        /// The dragon (P4-93, <see cref="Dragon"/>): alone, with no nest — where it is set up is its lair — asleep. Only its
+        /// skill's first cooldown is drawn at random (<c>DragonService</c> sets it up on a stream of its own).
+        /// </summary>
+        public void SetupDragon(MonsterDefinition def)
+        {
+            Prepare(def, null, false, false, $"M_{++s_counter:0000}");
+            Finish(null);
+            _senseTimer = SenseInterval;
+            Fsm.ChangeState(DragonSleep);
+        }
+
+        /// <summary>Who it is and its base numbers, at its nest's birth level, wearing nothing (no random draws).</summary>
+        void Prepare(MonsterDefinition def, Nest home, bool boss, bool ranged, string id, int rare = -1)
+        {
             Def = def;
             Home = home;
             Roaming = null;
-            UnitId =$"M_{++s_counter:0000}";
-            IsBoss = boss;
-            DisplayName = boss ? MonsterBoss.Name(def.displayName, def.bossName) : def.displayName;
+            UnitId = id;
+            RareVariant = rare;
+            InHorde = false;
+            IsNemesis = false;
+            // A region lord (P4-83) is always its lair's boss, under its own name.
+            IsBoss = boss || def.isRegionLord;
+            DisplayName = def.isRegionLord || def.isDragon ? def.displayName : boss ? MonsterBoss.Name(def.displayName, def.bossName)
+                        : rare >= 0 ? RareMonster.Name(rare, def.displayName) : def.displayName;
             name = $"{def.displayName}[{UnitId}]";
             Stats = new CombatStats
             {
                 MaxHp = Combat.ScaledHp(def.maxHp), Attack = def.attack, Defense = def.defense, AttackRange = def.attackRange,
                 AttackCooldown = def.attackCooldown, MoveSpeed = def.moveSpeed, SightRadius = def.sightRadius,
             };
-            IsRangedVariant = !boss && def.rangedVariantChance > 0f && GameRandom.Shared.Chance(def.rangedVariantChance);
+            IsRangedVariant = ranged;
             if (IsRangedVariant)
             {
                 Stats.AttackRange = def.rangedVariantRange;
@@ -121,11 +182,29 @@ namespace GuildMaster.Monsters
                 Stats.AttackCooldown *= 1.2f;
                 if (!string.IsNullOrEmpty(def.rangedVariantName)) DisplayName = def.rangedVariantName;
             }
-            if (boss)
+            if (def.isDragon)
+            {
+                Stats.MaxHp *= Dragon.HpMultiplier;
+                Stats.Attack *= Dragon.AttackMultiplier;
+                Stats.Defense += Dragon.DefenseBonus;
+            }
+            else if (def.isRegionLord)
+            {
+                Stats.MaxHp *= RegionLords.HpMultiplier;
+                Stats.Attack *= RegionLords.AttackMultiplier;
+                Stats.Defense += RegionLords.DefenseBonus;
+            }
+            else if (boss)
             {
                 Stats.MaxHp *= MonsterBoss.HpMultiplier;
                 Stats.Attack *= MonsterBoss.AttackMultiplier;
                 Stats.Defense += MonsterBoss.DefenseBonus;
+            }
+            else if (rare >= 0)
+            {
+                Stats.MaxHp *= RareMonster.HpMultiplier;
+                Stats.Attack *= RareMonster.AttackMultiplier;
+                Stats.Defense += RareMonster.DefenseBonus;
             }
             Radius = 0.28f * Scale;
             Mass = Scale * Scale;
@@ -134,7 +213,9 @@ namespace GuildMaster.Monsters
             // P4-21: base stats kept apart from gear; some spawn already wearing something.
             // Own level (user decision 2026-09-22): born higher the farther out the nest lies.
             _unlevelledStats = Stats;
-            Level = Mathf.Min(MonsterLevel.MaxLevel, (home != null ? home.BirthLevel : 1) + (boss ? MonsterBoss.LevelBonus : 0));
+            // A lord is born beyond the ordinary cap (P4-83), and never grows (it is already past the cap).
+            Level = def.isRegionLord ? RegionLords.Level : def.isDragon ? Dragon.Level
+                : Mathf.Min(MonsterLevel.MaxLevel, (home != null ? home.BirthLevel : 1) + (boss ? MonsterBoss.LevelBonus : 0));
             _lastFightTime = float.NegativeInfinity;
             Exp = 0;
             TierExp = 0;
@@ -143,29 +224,67 @@ namespace GuildMaster.Monsters
             _crownAura = false;
             NextLureTime = 0f;
             NextRegroupTime = 0f;
-            _pickupTimer = GameRandom.Shared.Range(0f, PickupCheckInterval);
-            foreach (var g in def.startingGear)
-                if (g.item != null && GameRandom.Shared.Chance(g.chance)) Equipment.Equip(g.item);
+        }
+
+        /// <summary>Stats with its gear, looks, bars and fighting settings; full health, at home doing nothing.</summary>
+        void Finish(Nest home)
+        {
+            var def = Def;
             RefreshStats(fullHeal: true);
-            // Imported Casual Monsters art when available (archer variants and bosses have their own image).
-            var art = boss && !string.IsNullOrEmpty(def.bossArtKey) ? ArtLibrary.Monster(def.bossArtKey) : null;
-            if (art == null) art = ArtLibrary.Monster(IsRangedVariant && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
-            Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
+            var rig = RigFor(def, IsBoss, IsRangedVariant);
+            var art = ImportedArt(def, IsBoss, IsRangedVariant);
+            if (def.isDragon) ShowPose(DragonPose.Sleeping, force: true);
+            else if (rig != null) Visual.InitRig(rig, Scale);
+            else Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
             // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
             var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
-            Visual.SetTint(baseTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
-            GetComponent<HealthBar>().Init(this, 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
+            // A rig is the kind's own picture: the tint of borrowed art does not apply (P4-110).
+            var artTint = rig != null ? Color.white : def.artTint;
+            // A rare variant shines in its own colour instead of the land's (P4-85).
+            // The dragon keeps its own colours wherever it is (P4-93).
+            Visual.SetTint(def.isDragon ? Color.white
+                : IsRare ? RareMonster.Tint(RareVariant) : baseTint * artTint * TerrainRegions.MonsterTint(RegionOfHome(home)));
+            if (!def.isDragon)
+            {
+                var bar = GetComponent<HealthBar>();
+                // A rig's height varies by kind: just over the top of its still (the body stands 0.3 below the unit).
+                bar.Init(this, rig != null ? rig.portrait.bounds.max.y * Scale - 0.15f : 0.75f * Scale, new Color(0.9f, 0.25f, 0.2f));
+                bar.AlwaysVisible = false; // a pooled body may have been the dragon's
+                _poseShown = false;
+            }
             GetComponent<FogHideable>().Refresh();
             Engage.Clear();
             Engage.GiveUpDistance = def.leashRadius;
             Engage.SearchRadius = def.sightRadius;
-            Engage.CandidateFilter = IsTargetCandidate;
+            Engage.CandidateFilter = _isTargetCandidate ??= IsTargetCandidate;
             DefaultStateOverride = null;
             _spawnPosition = transform.position;
             _corpseTimer = 0f;
-            _senseTimer = GameRandom.Shared.Range(0f, SenseInterval);
-            Fsm.ChangeState(WanderState);
         }
+
+        /// <summary>The imported rig (P4-110; archer variants and bosses may have their own), else null.</summary>
+        public static CharacterArtCatalog.MonsterRig RigFor(MonsterDefinition def, bool boss, bool ranged)
+        {
+            var rig = boss && !string.IsNullOrEmpty(def.bossRigKey) ? ArtLibrary.MonsterRig(def.bossRigKey)
+                    : ranged && !string.IsNullOrEmpty(def.rangedRigKey) ? ArtLibrary.MonsterRig(def.rangedRigKey) : null;
+            return rig ?? ArtLibrary.MonsterRig(def.rigKey);
+        }
+
+        /// <summary>
+        /// One still of how it is drawn when imported: the rig's (P4-110), else Casual Monsters art (archer variants and
+        /// bosses have their own image), else null.
+        /// </summary>
+        public static Sprite ImportedArt(MonsterDefinition def, bool boss, bool ranged)
+        {
+            if (RigFor(def, boss, ranged) is { } rig) return rig.portrait;
+            var art = boss && !string.IsNullOrEmpty(def.bossArtKey) ? ArtLibrary.Monster(def.bossArtKey) : null;
+            return art != null ? art : ArtLibrary.Monster(ranged && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
+        }
+
+        /// <summary>How this kind is drawn (imported art, or the generated picture; the dragon standing, P4-93).</summary>
+        public static Sprite ArtFor(MonsterDefinition def, bool boss, bool ranged)
+            => def != null && def.isDragon ? DragonArt.Anim(DragonPose.Standing).Idle[0]
+             : ImportedArt(def, boss, ranged) is { } art ? art : PixelArt.Monster(def);
 
         /// <summary>The terrain region of its nest (or of where it appeared, when it has none).</summary>
         Region RegionOfHome(Nest home)
@@ -178,14 +297,67 @@ namespace GuildMaster.Monsters
         public bool IsRangedVariant { get; private set; }
         /// <summary>The pack's boss (P4-57, <see cref="MonsterBoss"/>): bigger, tougher, leads the pack.</summary>
         public bool IsBoss { get; private set; }
-        /// <summary>Drawn size: the species' scale, bigger for a boss.</summary>
-        public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : 1f);
+        /// <summary>One of the four region lords (P4-83, <see cref="RegionLords"/>); always also its lair's boss.</summary>
+        public bool IsRegionLord => Def != null && Def.isRegionLord;
+        /// <summary>The dragon (P4-93, <see cref="Dragon"/>).</summary>
+        public bool IsDragon => Def != null && Def.isDragon;
+        /// <summary>On the wing (P4-93): only shots reach it.</summary>
+        public override bool IsAirborne => IsDragon && IsAlive && Fsm != null && Fsm.Current == DragonFlight;
+        /// <summary>Damage shots have done it since it last took off (P4-93: enough brings it down, <see cref="Dragon.ShouldLand"/>).</summary>
+        internal float AirDamage;
+        /// <summary>How the dragon is drawn now (P4-93).</summary>
+        public DragonPose Pose { get; private set; }
+        bool _poseShown;
+
+        /// <summary>Draws the dragon as it is now: on the wing above everything on the ground, its health bar over its head.</summary>
+        internal void ShowPose(DragonPose pose, bool force = false)
+        {
+            if (!force && _poseShown && Pose == pose) return;
+            Pose = pose;
+            _poseShown = true;
+            Visual.InitAnimated(DragonArt.Anim(pose), Scale);
+            Visual.SortingBoost = pose == DragonPose.Flying ? FlyingSortingBoost : 0;
+            var bar = GetComponent<HealthBar>();
+            bar.Init(this, DragonArt.Top(pose) * Scale + 0.2f, new Color(0.9f, 0.25f, 0.2f));
+            bar.AlwaysVisible = pose != DragonPose.Sleeping;
+        }
+
+        /// <summary>Above anything standing in the rows south of it (a row is 8 orders), still under the fog.</summary>
+        const int FlyingSortingBoost = 1200;
+
+        /// <summary>Where its fire leaves its mouth now (the way it faces, the pose it is in).</summary>
+        public Vector2 MouthPosition
+        {
+            get
+            {
+                var m = DragonArt.Mouth(Pose) * Scale;
+                if (Visual != null && Visual.Body != null && Visual.Body.flipX) m.x = -m.x;
+                return Position + m;
+            }
+        }
+        /// <summary>Marching with a sudden incident's horde (P4-85, set and cleared by <see cref="MigrationService"/>).</summary>
+        internal bool InHorde;
+        /// <summary>Which rare variant it is (P4-85, <see cref="RareMonster"/>), or -1 for an ordinary member of its kind.</summary>
+        public int RareVariant { get; private set; } = -1;
+        public bool IsRare => RareVariant >= 0;
+
+        /// <summary>A nemesis (P4-109, <see cref="Nemeses.NemesisService"/>): it killed or drove off a member, and is named for it.</summary>
+        public bool IsNemesis { get; private set; }
+
+        /// <summary>Takes the name its deeds gave it (P4-109); the nemesis service keeps its story.</summary>
+        internal void MarkNemesis(string name)
+        {
+            IsNemesis = true;
+            DisplayName = name;
+        }
+        /// <summary>Drawn size: the species' scale, bigger for a boss or a rare variant.</summary>
+        public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : IsRare ? RareMonster.SizeMultiplier : 1f);
         public Color ProjectileColor => new(0.8f, 0.7f, 0.45f);
 
         public Vector2 HomePosition => Home != null ? Home.WorldPosition : Roaming != null ? Roaming.Center : _spawnPosition;
 
         /// <summary>Its pack: the nest's members, or the roaming pack's (P4-58); null when alone.</summary>
-        public System.Collections.Generic.IReadOnlyList<Monster> PackMembers => Home != null ? Home.Members : Roaming?.Members;
+        internal System.Collections.Generic.List<Monster> PackMembers => Home != null ? Home.MemberList : Roaming?.Members;
         Vector2 _spawnPosition;
 
         /// <summary>Pack leader = first living member of the nest (packs flock around it).</summary>
@@ -211,7 +383,7 @@ namespace GuildMaster.Monsters
         /// nobody cleared (<see cref="TierExp"/>).
         /// </summary>
         public override CombatTier Tier => Def == null ? CombatTier.Novice
-            : MonsterLevel.TierAt(MonsterBoss.SpeciesTier(Def.combatTier, IsBoss), Level, TierExp);
+            : MonsterLevel.TierAt(IsRare ? RareMonster.SpeciesTier(Def.combatTier) : MonsterBoss.SpeciesTier(Def.combatTier, IsBoss), Level, TierExp);
 
         // ---------------- Level and EXP (user decision 2026-09-22) ----------------
 
@@ -235,7 +407,9 @@ namespace GuildMaster.Monsters
         }
         public int ExpToNext => MonsterLevel.ExpToNext(Level);
         /// <summary>What killing this one is worth.</summary>
-        public int ExpWorth => Def == null ? 0 : MonsterLevel.ExpWorth(Def.expValue, Level) * (IsBoss ? MonsterBoss.ExpMultiplier : 1);
+        public int ExpWorth => Def == null ? 0
+            : MonsterLevel.ExpWorth(Def.expValue, Level)
+              * (IsDragon ? Dragon.ExpMultiplier : IsRegionLord ? RegionLords.ExpMultiplier : IsBoss ? MonsterBoss.ExpMultiplier : IsRare ? RareMonster.ExpMultiplier : 1);
         CombatStats _unlevelledStats;
 
         /// <summary>Base stats = the species (and ranged variant) scaled by level; gear goes on top.</summary>
@@ -253,8 +427,8 @@ namespace GuildMaster.Monsters
             RefreshStats(fullHeal: true);
         }
 
-        /// <summary>Danger shown to the guild (P4-58): by level, one step more for a boss.</summary>
-        public DangerLevel Danger => (DangerLevel)Mathf.Min((int)DangerLevel.High, (int)MonsterLevel.DangerAt(Level) + (IsBoss ? 1 : 0));
+        /// <summary>Danger shown to the guild (P4-58): by level, one step more for a boss or a rare variant.</summary>
+        public DangerLevel Danger => (DangerLevel)Mathf.Min((int)DangerLevel.High, (int)MonsterLevel.DangerAt(Level) + (IsBoss || IsRare ? 1 : 0));
 
         /// <summary>EXP for a kill: this monster's own, and the same for pack mates fighting close by.</summary>
         public void GainKillExp(int amount)
@@ -265,6 +439,33 @@ namespace GuildMaster.Monsters
             foreach (var m in pack)
                 if (m != this && m.IsAlive && (m.Position - Position).sqrMagnitude <= MonsterLevel.ExpShareRadius * MonsterLevel.ExpShareRadius)
                     m.GainExp(amount);
+        }
+
+        /// <summary>
+        /// One level more from the land it lives on (P4-44: the far land grows wilder, and those living there with it), HP
+        /// share kept. The EXP towards the next level carries over.
+        /// </summary>
+        internal void GrowWithTheLand()
+        {
+            if (!IsAlive || Level >= MonsterLevel.MaxLevel || Def.isRegionLord || Def.isDragon) return;
+            Level++;
+            Exp = Mathf.Min(Exp, ExpToNext - 1);
+            ApplyLevel();
+            RefreshStats();
+        }
+
+        /// <summary>
+        /// Up to <paramref name="level"/> from a deed against the guild (P4-109), HP share kept; the EXP towards the next level
+        /// carries over.
+        /// </summary>
+        internal void GrowTo(int level)
+        {
+            level = Mathf.Min(level, MonsterLevel.MaxLevel);
+            if (!IsAlive || level <= Level || Def.isRegionLord || Def.isDragon) return;
+            Level = level;
+            Exp = Mathf.Min(Exp, ExpToNext - 1);
+            ApplyLevel();
+            RefreshStats();
         }
 
         public void GainExp(int amount)
@@ -346,7 +547,10 @@ namespace GuildMaster.Monsters
         }
 
         /// <summary>Best target by <see cref="TargetSelector"/> (tier-dependent), or null.</summary>
-        public Unit FindTarget() => TargetSelector.Pick(this, Stats.SightRadius, IsTargetCandidate, Engage);
+        public Unit FindTarget() => TargetSelector.Pick(this, Stats.SightRadius, _isTargetCandidate ??= IsTargetCandidate, Engage);
+
+        /// <summary>Created once: a method group passed as a delegate allocates a new one every call (P5-2).</summary>
+        System.Func<Unit, bool> _isTargetCandidate;
 
         /// <summary>
         /// What we want is on the other side of the town wall and no path leads there (P4-39): go
@@ -371,6 +575,11 @@ namespace GuildMaster.Monsters
         public override void ForceTarget(Unit target)
         {
             if (!IsAlive || target == null || !target.IsAlive || Fsm.Current == FleeState) return;
+            if (IsDragon)
+            {
+                DragonStates.Provoke(this, target);
+                return;
+            }
             // Taunts and pack calls hold for a few seconds before normal retargeting resumes.
             Engage.Force(target, 4f);
             if (Fsm.Current != EngageState) Fsm.ChangeState(EngageState);
@@ -403,14 +612,19 @@ namespace GuildMaster.Monsters
         public override bool IsHostileTo(Unit other)
         {
             if (other == null || other == this || !other.IsAlive) return false;
+            // The dragon asleep threatens nobody (P4-93): raiders creep past it to the hoard; only a blow or a hunt wakes it.
+            if (IsDragon && Fsm.Current == DragonSleep) return false;
             // Residents at home drive intruders (other species, guild units) out of their territory.
             if (IsDefendingTerritory && Home.IsIntruder(other)) return true;
             // Every other species is an enemy (P4-45, user decision 2026-09-22: goblins and skulls
             // walked past each other). Same-species packs only clash over territory (above).
             // Raiders on the march do not start fights on the way; hit, they still hit back. A band
             // on the move to a new home fights whatever it meets (P4-56, user decision 2026-09-22).
-            if (other is Monster m) return m.Def != Def && (DefaultStateOverride == null || DefaultStateOverride == MigrateState || DefaultStateOverride == RoamState);
-            return other.Faction == Faction.Guild && Def.aggressiveToHumans;
+            // A region lord and its guards share a lair (P4-83): one pack, though of two kinds.
+            // A horde on its march (P4-85) does not start fights either: it came to settle by the town, not to clear the way.
+            if (other is Monster m) return m.Def != Def && !(Home != null && m.Home == Home)
+                                           && (DefaultStateOverride == null || DefaultStateOverride == MigrateState && !InHorde || DefaultStateOverride == RoamState);
+            return (other.Faction == Faction.Guild || other.ExposedToMonsters) && Def.aggressiveToHumans;
         }
 
         /// <summary>Lives in a nest and is not away raiding (raiders do not guard their home).</summary>
@@ -448,8 +662,8 @@ namespace GuildMaster.Monsters
         public Monster FindPredator()
         {
             if (!Def.fleesFromPredators) return null;
-            return UnitRegistry.FindNearest(Position, Stats.SightRadius,
-                u => u is Monster m && m.Def.IsPredatorOf(Def) && CanSee(m)) as Monster;
+            return UnitRegistry.FindNearest(Position, Stats.SightRadius, this,
+                static (u, self) => u is Monster m && m.Def.IsPredatorOf(self.Def) && self.CanSee(m)) as Monster;
         }
 
         // ---------------- Pack tactics (skilled+, P4-28) ----------------
@@ -458,7 +672,9 @@ namespace GuildMaster.Monsters
         static readonly System.Collections.Generic.List<float> s_bearings = new();
 
         /// <summary>Another living member of the same pack: same species and nest (or both nest-less).</summary>
-        public bool IsPackMate(Monster o) => o != null && o != this && o.IsAlive && o.Def == Def && o.Home == Home && o.Roaming == Roaming;
+        public bool IsPackMate(Monster o) => o != null && o != this && o.IsAlive && o.Home == Home && o.Roaming == Roaming
+                                             && (o.Def == Def || Home != null && (IsRegionLord || o.IsRegionLord)) // a lord and its guards (P4-83)
+                                             && o.IsRare == IsRare; // a rare variant is nobody's pack mate (P4-85)
 
         /// <summary>Who calls the pack's target: the crown holder / pack leader, else the first member of the nest.</summary>
         Monster CallingLeader
@@ -540,14 +756,20 @@ namespace GuildMaster.Monsters
                 {
                     bool busy = o.Fsm.Current == o.FleeState || o.Fsm.Current == o.RegroupState;
                     if (d <= near) { if (!busy) allies++; }
-                    else if (!busy && d < rallyDist) { rallyDist = d; rally = o; }
+                    else if (!busy && d < rallyDist && d <= MonsterRegroupState.MaxDistance) { rallyDist = d; rally = o; }
                 }
                 else if ((IsHostileTo(u) || u.IsHostileTo(this)) && (u.CurrentTarget == this || d <= 2.5f)) enemies++;
             }
             // Not needed (or nowhere to go): look again in a moment rather than every frame.
             NextRegroupTime = Time.time + 0.5f;
             if (!PackTactics.ShouldRegroup(HpRatio, enemies, allies)) return false;
-            if (rally == null && (Home == null || Vector2.Distance(Position, HomePosition) <= near)) return false;
+            if (rally == null)
+            {
+                // No mate in reach: the nest, if it is near enough to fall back to (P4-81).
+                if (Home == null) return false;
+                float home = Vector2.Distance(Position, HomePosition);
+                if (home <= near || home > MonsterRegroupState.MaxDistance) return false;
+            }
             NextRegroupTime = Time.time + 20f;
             RegroupState.RallyMate = rally;
             RegroupState.Point = rally != null ? rally.Position : HomePosition;
@@ -558,12 +780,16 @@ namespace GuildMaster.Monsters
 
         void Update()
         {
+            // Paused: nothing acts (P4-80, see Adventurer.Update).
+            if (Time.deltaTime <= 0f) return;
             if (!IsAlive)
             {
                 _corpseTimer += Time.deltaTime;
+                float corpseTime = Visual.HasRig ? RigCorpseTime : CorpseTime;
+                float fade = Visual.HasRig ? RigCorpseFade : CorpseTime;
                 var c = Visual.Body.color;
-                Visual.SetTint(new Color(c.r, c.g, c.b, Mathf.Clamp01(1f - _corpseTimer / CorpseTime)));
-                if (_corpseTimer >= CorpseTime && Services.TryGet<PoolService>(out var pool)) pool.Despawn(gameObject);
+                Visual.SetTint(new Color(c.r, c.g, c.b, Mathf.Clamp01((corpseTime - _corpseTimer) / fade)));
+                if (_corpseTimer >= corpseTime && Services.TryGet<PoolService>(out var pool)) pool.Despawn(gameObject);
                 return;
             }
 
@@ -575,11 +801,16 @@ namespace GuildMaster.Monsters
             if (_senseTimer <= 0f)
             {
                 _senseTimer = SenseInterval;
-                LookAtGates();
-                Sense();
+                using (s_senseMarker.Auto())
+                {
+                    LookAtGates();
+                    Sense();
+                }
             }
             Fsm.Tick(Time.deltaTime);
         }
+
+        static readonly Unity.Profiling.ProfilerMarker s_senseMarker = new("Monster.Sense");
 
         // ---------------- What it knows of the town gates (user report 2026-09-22) ----------------
 
@@ -617,6 +848,8 @@ namespace GuildMaster.Monsters
 
         void Sense()
         {
+            // The dragon looks round in its own states (P4-93: asleep it sees nothing, on the wing it sees from the sky).
+            if (IsDragon) return;
             if (Fsm.Current == FleeState || Fsm.Current == LureState || Fsm.Current == RegroupState) return;
             // Raiders march together; they do not scatter from predators in their own wave.
             var predator = DefaultStateOverride == null || DefaultStateOverride == RoamState ? FindPredator() : null;
@@ -693,12 +926,25 @@ namespace GuildMaster.Monsters
             if (_pickupTimer > 0f) return;
             _pickupTimer = PickupCheckInterval;
             if (!Services.TryGet<Items.GroundItemService>(out var ground) || ground.Items.Count == 0) return;
+            var item = FindSpoils(ground, goingHome);
+            if (item == null || !item.Reserve(this)) return;
+            PickupState.Begin(item);
+            Fsm.ChangeState(PickupState);
+        }
+
+        /// <summary>
+        /// Split from <see cref="TryStartPickup"/> so that its lambda's captures are allocated only
+        /// when there is something to look for (P5-2: captured parameters are allocated on entry,
+        /// before the early returns, which was garbage on every sense of every monster).
+        /// </summary>
+        Items.GroundItem FindSpoils(Items.GroundItemService ground, bool goingHome)
+        {
             var home = HomePosition;
             float range = Def.wanderRadius + 3f;
             var here = Position;
             bool afterFight = Time.time - _lastFightTime <= PostFightPickupSeconds;
             var leader = PackLeader;
-            var item = ground.FindNearest(Position, Stats.SightRadius, g =>
+            return ground.FindNearest(Position, Stats.SightRadius, g =>
             {
                 if (!g.IsFreeFor(this) || !WantsItem(g.Item) || !CanSee(g.Position)) return false;
                 // The spoils of its own fight are its to take; the leader's first pick is for drops at home.
@@ -707,13 +953,15 @@ namespace GuildMaster.Monsters
                 return (g.Position - home).sqrMagnitude <= range * range
                        && (leader == null || leader == this || g.Age >= LeaderFirstSeconds || !leader.WantsItem(g.Item));
             });
-            if (item == null || !item.Reserve(this)) return;
-            PickupState.Begin(item);
-            Fsm.ChangeState(PickupState);
         }
 
         protected override void OnDamaged(float amount, Unit source)
         {
+            if (IsDragon)
+            {
+                DragonStates.OnHit(this, amount, source);
+                return;
+            }
             AlarmPack(source);
             // Retaliate immediately unless already fighting something.
             if (source != null && source.IsAlive && source.IsTargetableBy(this) && Fsm.Current != EngageState && Fsm.Current != FleeState
@@ -728,14 +976,24 @@ namespace GuildMaster.Monsters
         {
             // P4-21: everything falls to the ground (worn gear always, the loot table when killed);
             // a killing adventurer still gets the kill and its EXP, but must pick the loot up.
-            if (killer != null) MonsterEquipment.BuildDrops(Def, Equipment.Worn, GameRandom.Shared, s_loot, IsBoss ? MonsterBoss.LootRolls : 1);
+            // A lord's table is rolled once: its trophy is certain, and one of it is the point (P4-83).
+            if (killer != null) MonsterEquipment.BuildDrops(Def, Equipment.Worn, GameRandom.Shared, s_loot, IsBoss && !IsRegionLord ? MonsterBoss.LootRolls : 1);
             else MonsterEquipment.BuildDrops(null, Equipment.Worn, GameRandom.Shared, s_loot);
+            // A rare variant's spoils are certain (P4-85); one that slips away leaves nothing.
+            if (killer != null && IsRare) RareMonster.AddSpoils(Level, s_loot);
             if (s_loot.Count > 0 && Services.TryGet<Items.GroundItemService>(out var ground)) ground.Drop(Position, s_loot);
             Equipment.Clear();
             if (killer is ILootReceiver receiver) receiver.ReceiveKillRewards(Def, ExpWorth, s_noLoot);
             else if (killer is Monster rival) rival.GainKillExp(ExpWorth);
             Home?.OnMemberDied(this, killer);
             Roaming?.OnMemberDied(this);
+            // The dragon falls out of the sky and lies where it fell while it fades (P4-93).
+            if (IsDragon)
+            {
+                Visual.Init(DragonArt.Corpse(), Scale);
+                _poseShown = false;
+            }
+            else Visual.PlayDeath(); // a rig's death (P4-110); a single picture just fades
         }
 
         static readonly System.Collections.Generic.List<ItemStack> s_noLoot = new();
@@ -852,6 +1110,132 @@ namespace GuildMaster.Monsters
             _gearIcon.transform.localScale = new Vector3(s, s, 1f);
             _gearIcon.transform.localPosition = shown.IsUnique ? new Vector3(0f, 0.95f * Scale, 0f) : new Vector3(0.28f * Scale, 0.55f * Scale, 0f);
             _gearIcon.sortingOrder = CharacterVisual.BaseSortingOrder + 900;
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        public class MonsterSave
+        {
+            public string id;
+            public string species;
+            public bool boss;
+            public bool ranged;
+            /// <summary>Rare variant (P4-85), -1 for none.</summary>
+            public int rare = -1;
+            public int level;
+            public int exp;
+            public int tier_exp;
+            public System.Collections.Generic.List<string> worn = new();
+            public float absorbed;
+            public Vector2 spawn;
+            public string default_state;
+            public System.Collections.Generic.List<Vector2Int> known_gates = new();
+            public float next_lure;
+            public float next_regroup;
+            public float last_fight;
+            /// <summary>Seconds (scaled) until the next look round and the next look for spoils.</summary>
+            public float sense_timer;
+            public float pickup_timer;
+            public UnitSave unit;
+            public Engagement.EngageSave engage;
+            public string state;
+            public float state_time;
+            public string state_data;
+        }
+
+        /// <summary>The next id handed out (saved, so a loaded world never reuses one).</summary>
+        public static int IdCounter { get => s_counter; set => s_counter = value; }
+
+        State<Monster>[] _allStates;
+
+        State<Monster>[] AllStates => _allStates ??= new State<Monster>[]
+        {
+            WanderState, EngageState, FleeState, LureState, ReturnState, RaidState, MigrateState, RoamState,
+            PickupState, RegroupState, GateBreakState, VillageRaidState, DragonSleep, DragonFlight, DragonLanded,
+        };
+
+        internal State<Monster> StateNamed(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            foreach (var s in AllStates) if (s.GetType().Name == name) return s;
+            return null;
+        }
+
+        public MonsterSave CaptureSave()
+        {
+            var s = new MonsterSave
+            {
+                id = UnitId, species = Def.id, boss = IsBoss, ranged = IsRangedVariant, rare = RareVariant, level = Level, exp = Exp, tier_exp = TierExp,
+                absorbed = Equipment.AbsorbedHp, spawn = _spawnPosition, default_state = DefaultStateOverride?.GetType().Name,
+                next_lure = SaveTime.Rel(NextLureTime), next_regroup = SaveTime.Rel(NextRegroupTime),
+                last_fight = SaveTime.Rel(_lastFightTime), sense_timer = Round(_senseTimer), pickup_timer = Round(_pickupTimer),
+                unit = CaptureUnit(), engage = Engage.Capture(),
+            };
+            var worn = new System.Collections.Generic.List<ItemDefinition>(Equipment.Worn);
+            worn.Sort((a, b) => a.equipSlot.CompareTo(b.equipSlot)); // the same order every time
+            foreach (var item in worn) s.worn.Add(item.id);
+            var gates = new System.Collections.Generic.List<Vector2Int>(_ownKnownOpenGates);
+            gates.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
+            s.known_gates = gates;
+            var current = Fsm.Current;
+            s.state = current?.GetType().Name;
+            s.state_time = Mathf.Round((current?.Elapsed ?? 0f) * 100f) / 100f;
+            s.state_data = current?.SaveState();
+            return s;
+        }
+
+        /// <summary>
+        /// First pass: the monster comes back where it stood, with its level, gear and wounds
+        /// (no random draws, no events). Its nest or pack takes it in; what it was doing comes in <see cref="ResumeSave"/>.
+        /// </summary>
+        public static Monster RestoreSave(MonsterSave s, MonsterDefinition def, Nest home, SaveContext ctx)
+        {
+            var pool = Services.Get<PoolService>();
+            var m = pool.Spawn<Monster>(PoolKey, new Vector2(s.unit.x, s.unit.y));
+            m.Prepare(def, home, s.boss, s.ranged, s.id, s.rare);
+            m.Level = Mathf.Clamp(s.level, 1, def.isRegionLord ? RegionLords.Level : def.isDragon ? Dragon.Level : MonsterLevel.MaxLevel);
+            m.Exp = s.exp;
+            m.TierExp = s.tier_exp;
+            m.ApplyLevel();
+            var db = Services.Get<GameDatabase>();
+            foreach (var id in s.worn) if (db.Item(id) is { } item) m.Equipment.Equip(item);
+            m.Equipment.RestoreAbsorbed(s.absorbed);
+            m.Finish(home);
+            m._spawnPosition = s.spawn;
+            foreach (var g in s.known_gates) m._ownKnownOpenGates.Add(g);
+            m.NextLureTime = SaveTime.Abs(s.next_lure);
+            m.NextRegroupTime = SaveTime.Abs(s.next_regroup);
+            m._lastFightTime = SaveTime.Abs(s.last_fight);
+            m._senseTimer = s.sense_timer;
+            m._pickupTimer = s.pickup_timer;
+            m.Fsm.ChangeState(m.WanderState);
+            m.RestoreUnit(s.unit);
+            ctx.Register(m.UnitId, m);
+            return m;
+        }
+
+        public void LinkSave(MonsterSave s, SaveContext ctx) => LinkUnit(s.unit, ctx);
+
+        /// <summary>Third pass: its standing orders (a raid, a march, the road), then what it was doing and to whom.</summary>
+        public void ResumeSave(MonsterSave s, SaveContext ctx)
+        {
+            DefaultStateOverride = StateNamed(s.default_state);
+            var state = StateNamed(s.state);
+            if (state == null)
+            {
+                if (!string.IsNullOrEmpty(s.state)) ctx.Warnings.Add($"{UnitId}: unknown state {s.state}");
+                state = DefaultStateOverride ?? WanderState;
+            }
+            Fsm.Resume(state, s.state_time, s.state_data, ctx);
+            Engage.Restore(s.engage, ctx);
+        }
+
+        /// <summary>Joins a roaming pack while a save is put back (P5-4): no change of orders, no events.</summary>
+        internal void RestoreRoaming(RoamingPack pack)
+        {
+            Home = null;
+            Roaming = pack;
         }
 
         /// <summary>Removes the monster without a killer (starvation, despawn).</summary>

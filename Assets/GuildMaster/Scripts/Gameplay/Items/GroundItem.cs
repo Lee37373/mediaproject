@@ -21,6 +21,11 @@ namespace GuildMaster.Items
         public float Age => Time.time - _droppedAt;
         /// <summary>Unit walking to it right now; others leave it alone.</summary>
         public Unit ReservedBy { get; private set; }
+        /// <summary>
+        /// A fallen member's relic (F-6): it lies for its full time, however crowded the ground gets
+        /// (P4-77: the item cap swept away the oldest drop anywhere, relics included, long before they rotted).
+        /// </summary>
+        public bool Kept { get; internal set; }
         public Vector2 Position => transform.position;
 
         SpriteRenderer _body;
@@ -28,13 +33,16 @@ namespace GuildMaster.Items
         float _droppedAt;
         float _bobPhase;
 
+        /// <summary>The dot an item is drawn as (fog memories of items use it too).</summary>
+        public static Sprite DotSprite => SpriteFactory.Circle(12, Color.white, new Color(0.1f, 0.08f, 0.06f, 1f));
+
         void Awake()
         {
             // The dot lives on a child so its bobbing never moves the item itself.
             var body = new GameObject("Body");
             body.transform.SetParent(transform, false);
             _body = body.AddComponent<SpriteRenderer>();
-            _body.sprite = SpriteFactory.Circle(12, Color.white, new Color(0.1f, 0.08f, 0.06f, 1f));
+            _body.sprite = DotSprite;
             _fog = gameObject.AddComponent<FogHideable>();
         }
 
@@ -45,6 +53,7 @@ namespace GuildMaster.Items
             DroppedAtHour = hour;
             _droppedAt = Time.time;
             ReservedBy = null;
+            Kept = false;
             _bobPhase = Random.value * 6f;
             _body.color = item != null ? item.color : Color.white;
             // Bigger dot for wearable items so they read as "gear" at a glance.
@@ -54,6 +63,13 @@ namespace GuildMaster.Items
             _body.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f) - 3;
             _fog.Refresh();
         }
+
+        /// <summary>Save (P5-4): the drop moment as seconds from now (it decides who may take it first).</summary>
+        internal float DroppedAtRelative => SaveTime.Rel(_droppedAt);
+
+        internal void RestoreDroppedAt(float relative) => _droppedAt = SaveTime.Abs(relative);
+
+        internal void RestoreReservation(Unit who) => ReservedBy = who;
 
         // ---------------- Fog memory (P4-23) ----------------
 
@@ -83,6 +99,7 @@ namespace GuildMaster.Items
         {
             Item = null;
             ReservedBy = null;
+            Kept = false;
         }
 
         void Update()

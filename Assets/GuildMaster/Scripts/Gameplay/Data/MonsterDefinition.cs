@@ -73,12 +73,33 @@ namespace GuildMaster.Data
         [Header("Art (Resources/Art/Monsters)")]
         public string artKey;
         public string rangedArtKey;
+        [Tooltip("Tint over the art: a kind that borrows another's image until it has its own (P4-72 disaster monsters).")]
+        public Color artTint = Color.white;
+
+        [Header("Rigged art (P4-110, Minimal EnemyMonster)")]
+        [Tooltip("Animated prefab drawn instead of the art above when imported (prefab name in lower case, e.g. \"toad_king\"); its own picture, so no art tint.")]
+        public string rigKey;
+        public string rangedRigKey;
+        [Tooltip("Rig of the pack boss; the species' own rig (drawn bigger) when empty or missing.")]
+        public string bossRigKey;
 
         [Header("Boss (P4-57)")]
         [Tooltip("Name of the species' pack boss (Monsters/MonsterBoss).")]
         public string bossName;
         [Tooltip("Art of the boss; the species' own art (drawn bigger) when empty or missing.")]
         public string bossArtKey;
+
+        [Header("Region lord (P4-83)")]
+        [Tooltip("One of the four final bosses: lives only in its lair (no habitat), see Monsters/RegionLords.")]
+        public bool isRegionLord;
+        [Tooltip("The outer region whose lair it holds; killing it cleanses that region's outer land.")]
+        public Region lordRegion;
+        [Tooltip("The kind that guards its lair (and breeds there while the lord lives).")]
+        public MonsterDefinition lairEscort;
+
+        [Header("Dragon (P4-93)")]
+        [Tooltip("The dragon: one, nest-less, asleep at its lair or on the wing (no habitat), see Monsters/Dragon and Dragon/DragonService.")]
+        public bool isDragon;
 
         [Header("Ecosystem")]
         [Tooltip("Terrain regions this species lives in (P4-58, user decision: habitat by terrain only). " +
@@ -91,6 +112,9 @@ namespace GuildMaster.Data
         [Tooltip("Nests this species is guaranteed on a map (P5-1). The weak ring around town needs " +
                  "several, or the early economy runs dry: potions are made from slime jelly.")]
         public int minNests = 1;
+        [Tooltip("Weight in the draw for the dens beyond minNests, on top of its rarity (P4-110: the new kinds share the " +
+                 "added dens without crowding out the old ones).")]
+        public float nestWeight = 1f;
         public int nestCapacity = 6;
         [Tooltip("Logistic growth rate per game hour.")]
         public float growthPerHour = 0.05f;

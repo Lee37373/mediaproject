@@ -58,7 +58,13 @@ namespace GuildMaster.Player
             var cam = Services.Get<CameraController>();
             if (!cam.MapClickReleased) return;
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
-            var pos = cam.MouseWorldPosition();
+            PickAt(cam.MouseWorldPosition());
+        }
+
+        /// <summary>Takes this point as the click on the map (also how tests click).</summary>
+        public void PickAt(Vector2 pos)
+        {
+            if (!IsPicking) return;
             var cb = _onPicked;
             End();
             cb?.Invoke(pos);

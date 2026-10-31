@@ -1,6 +1,8 @@
 using GuildMaster.Core;
 using GuildMaster.World;
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Profiling;
 using UnityEngine;
 
 namespace GuildMaster.Fog
@@ -22,17 +24,74 @@ namespace GuildMaster.Fog
     public struct FogUpdatedEvent { public int NewlyExploredCells; }
 
     /// <summary>
+    /// The fog lifts for the first time somewhere in these cells (one <see cref="FogOfWar"/> block, or
+    /// the whole map when the debug fog is switched off). P4-81: the ground there gets painted — under
+    /// fog that never lifted nothing shows.
+    /// </summary>
+    public struct FogRevealedEvent { public RectInt Cells; }
+
+    /// <summary>
     /// Grid fog of war with three states (unexplored / explored / visible).
     /// Vision is recomputed per cell on a fixed tick and each cell's alpha fades smoothly. Rendering
     /// (P4-7) upsamples the cell alphas to <see cref="RenderScale"/> texels per cell after a small
     /// 1-2-1 blur, so edges are round instead of stair-stepped. Explored-but-unseen ground is covered
     /// with a cool grey-blue instead of black, which reads as faded (desaturated) memory.
+    ///
+    /// Only what changes is worked on (P5-2): a tick fades just the cells that came into or went
+    /// out of sight (or are still fading), and redraws just the <see cref="Block"/>-cell blocks
+    /// around them. It used to fade, blur and redraw the whole map ten times a second.
     /// </summary>
-    public class FogOfWar : MonoBehaviour
+    public class FogOfWar : MonoBehaviour, ISaveable
     {
-        public const int SortingOrder = 3000;
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public int width;
+            public int height;
+            /// <summary>Explored cells, one bit each (row-major), base64.</summary>
+            public string explored;
+        }
+
+        public string SaveKey => "fog";
+
+        public string Capture()
+        {
+            var bits = new byte[(_explored.Length + 7) / 8];
+            for (int i = 0; i < _explored.Length; i++)
+                if (_explored[i]) bits[i >> 3] |= (byte)(1 << (i & 7));
+            return JsonUtility.ToJson(new SaveData { width = _w, height = _h, explored = System.Convert.ToBase64String(bits) });
+        }
+
+        /// <summary>What was explored comes back explored; what is in sight is worked out on the next tick.</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            if (s.width != _w || s.height != _h) { ctx.Warnings.Add($"fog: saved {s.width}x{s.height}, map {_w}x{_h}"); return; }
+            var bits = System.Convert.FromBase64String(s.explored);
+            ExploredCount = 0;
+            for (int i = 0; i < _explored.Length; i++)
+            {
+                bool e = (bits[i >> 3] & (1 << (i & 7))) != 0;
+                _explored[i] = e;
+                if (e) { ExploredCount++; NoteExplored(i); }
+                // Cells the boot's first tick already sees stay clear: the next tick does not count
+                // them as newly in sight, so they would not fade back.
+                _alpha[i] = _visibleStamp[i] == _stamp ? 0f : e ? _exploredAlpha : 1f;
+            }
+            for (int b = 0; b < _blockDirty.Length; b++) MarkBlock(b);
+            Render();
+        }
+
+        /// <summary>Above every unit (<see cref="Visuals.CharacterVisual.BaseSortingOrder"/> at y = 0); bars, shots and effects sit just under it.</summary>
+        public const int SortingOrder = Visuals.CharacterVisual.BaseSortingOrder + 2000;
         /// <summary>Render texels per map cell (the simulation stays one value per cell).</summary>
         public const int RenderScale = 2;
+        /// <summary>Redraw granularity in cells.</summary>
+        const int Block = 16;
+        /// <summary>A cell's alpha reaches the texels of cells this far away (blur ±1, bilinear ±1).</summary>
+        const int Reach = 2;
 
         /// <summary>Tint over explored ground (faded look); unexplored ground is near black.</summary>
         static readonly Color ExploredTint = new(0.16f, 0.18f, 0.27f);
@@ -41,27 +100,60 @@ namespace GuildMaster.Fog
         static readonly List<IVisionSource> s_sources = new();
         static readonly List<IFogHideable> s_hideables = new();
 
+        static readonly ProfilerMarker s_visionMarker = new("Fog.Vision"), s_fadeMarker = new("Fog.Fade"), s_renderMarker = new("Fog.Render");
+
         int _w, _h;
         bool[] _explored;
         int[] _visibleStamp;
         int _stamp;
         float[] _alpha;
         float[] _blurred;
-        Color32[] _pixels;
         int _tw, _th;
         Texture2D _texture;
         Sprite _sprite;
         float _exploredAlpha = 0.55f;
         float _tickInterval = 0.1f;
         float _timer;
-        bool _dirty;
+
+        /// <summary>Cells whose alpha may not be at its target yet.</summary>
+        readonly List<int> _active = new();
+        bool[] _isActive;
+        /// <summary>Cells seen last tick: those not seen this tick start fading out.</summary>
+        List<int> _seen = new(), _seenBefore = new();
+        int _bw, _bh;
+        bool[] _blockDirty;
+        /// <summary>Blocks where some cell has been explored (each announced once, <see cref="FogRevealedEvent"/>).</summary>
+        bool[] _blockRevealed;
+        /// <summary>Times each block was redrawn (P4-81: the minimap repaints only blocks that changed).</summary>
+        int[] _blockVersion;
+
+        /// <summary>Cells per side of a redraw block.</summary>
+        public static int BlockSize => Block;
+        public int BlocksWide => _bw;
+        public int BlocksHigh => _bh;
+        /// <summary>Goes up whenever anything in the block (row-major, <see cref="BlockSize"/> cells) looks different.</summary>
+        public int BlockVersion(int block) => _blockVersion[block];
+        readonly List<int> _dirtyBlocks = new();
+        bool _refreshAll;
 
         public int ExploredCount { get; private set; }
         public int Width => _w;
         public int Height => _h;
 
+        bool _disabled;
+
         /// <summary>Debug: disables fog rendering and hiding.</summary>
-        public bool Disabled { get; set; }
+        public bool Disabled
+        {
+            get => _disabled;
+            set
+            {
+                if (_disabled == value) return;
+                _disabled = value;
+                _refreshAll = true;
+                if (value && _explored != null) Core.EventBus.Publish(new FogRevealedEvent { Cells = new RectInt(0, 0, _w, _h) });
+            }
+        }
 
         public static void Register(IVisionSource s) { if (!s_sources.Contains(s)) s_sources.Add(s); }
         public static void Unregister(IVisionSource s) => s_sources.Remove(s);
@@ -89,10 +181,17 @@ namespace GuildMaster.Fog
             _visibleStamp = new int[n];
             _alpha = new float[n];
             _blurred = new float[n];
+            _isActive = new bool[n];
+            // Stamps start above the arrays' zeros: nothing counts as seen before the first tick.
+            _stamp = 1;
             for (int i = 0; i < n; i++) _alpha[i] = 1f;
             _tw = width * RenderScale;
             _th = height * RenderScale;
-            _pixels = new Color32[_tw * _th];
+            _bw = (width + Block - 1) / Block;
+            _bh = (height + Block - 1) / Block;
+            _blockDirty = new bool[_bw * _bh];
+            _blockRevealed = new bool[_bw * _bh];
+            _blockVersion = new int[_bw * _bh];
 
             _texture = new Texture2D(_tw, _th, TextureFormat.RGBA32, false)
             {
@@ -100,6 +199,7 @@ namespace GuildMaster.Fog
                 wrapMode = TextureWrapMode.Clamp,
                 name = "FogTexture"
             };
+            for (int b = 0; b < _blockDirty.Length; b++) MarkBlock(b);
             Render();
 
             // RenderScale pixels per unit: the sprite still covers exactly the map.
@@ -133,9 +233,22 @@ namespace GuildMaster.Fog
         {
             ForEachCellInCircle(center, radius, i =>
             {
-                if (!_explored[i]) { _explored[i] = true; ExploredCount++; }
+                if (_explored[i]) return;
+                _explored[i] = true;
+                ExploredCount++;
+                NoteExplored(i);
+                Activate(i);
             });
-            _dirty = true;
+        }
+
+        /// <summary>A cell was just explored: the first in its block announces the block.</summary>
+        void NoteExplored(int i)
+        {
+            int bx = i % _w / Block, by = i / _w / Block, b = by * _bw + bx;
+            if (_blockRevealed[b]) return;
+            _blockRevealed[b] = true;
+            int x = bx * Block, y = by * Block;
+            Core.EventBus.Publish(new FogRevealedEvent { Cells = new RectInt(x, y, Mathf.Min(Block, _w - x), Mathf.Min(Block, _h - y)) });
         }
 
         void Update()
@@ -151,10 +264,43 @@ namespace GuildMaster.Fog
             }
         }
 
+        void Activate(int i)
+        {
+            if (_isActive[i]) return;
+            _isActive[i] = true;
+            _active.Add(i);
+        }
+
         void Tick(float elapsed)
         {
             _stamp++;
+            int newly;
+            using (s_visionMarker.Auto()) newly = UpdateVision();
+            ExploredCount += newly;
+
+            using (s_fadeMarker.Auto())
+            {
+                if (_refreshAll)
+                {
+                    _refreshAll = false;
+                    for (int i = 0; i < _alpha.Length; i++) Activate(i);
+                }
+                Fade(elapsed <= 0f ? 1f : Mathf.Clamp01(elapsed * 5f));
+            }
+            using (s_renderMarker.Auto()) Render();
+
+            foreach (var h in s_hideables) h.SetFogVisible(IsVisible(h.FogPosition));
+
+            if (newly > 0) Core.EventBus.Publish(new FogUpdatedEvent { NewlyExploredCells = newly });
+        }
+
+        /// <summary>Stamps this tick's visible cells; cells entering or leaving sight start fading. Returns newly explored cells.</summary>
+        int UpdateVision()
+        {
             int newly = 0;
+            (_seen, _seenBefore) = (_seenBefore, _seen);
+            _seen.Clear();
+            int lastTick = _stamp - 1;
             Services.TryGet<WorldService>(out var world);
             foreach (var src in s_sources)
             {
@@ -164,73 +310,124 @@ namespace GuildMaster.Fog
                 // block like a wall. Elevated eyes (town watch, watchtowers) ignore both.
                 float radius = occlude ? ForestSight.Radius(world, eye, src.SightRadius) : src.SightRadius;
                 bool forestBlocks = occlude && ForestSight.ForestBlocks(world, eye);
-                ForEachCellInCircle(eye, radius, i =>
+                int minX = Mathf.Max(0, Mathf.FloorToInt(eye.x - radius));
+                int maxX = Mathf.Min(_w - 1, Mathf.FloorToInt(eye.x + radius));
+                int minY = Mathf.Max(0, Mathf.FloorToInt(eye.y - radius));
+                int maxY = Mathf.Min(_h - 1, Mathf.FloorToInt(eye.y + radius));
+                float r2 = radius * radius;
+                for (int y = minY; y <= maxY; y++)
                 {
-                    if (_visibleStamp[i] == _stamp) return; // already seen this tick
-                    // Hard cover (mountain, wall, building) hides what lies behind it; the
-                    // blocking cell itself stays visible. Trees do not block the fog.
-                    if (occlude && world.Raycast(eye, new Vector2(i % _w + 0.5f, i / _w + 0.5f), out _, out _, forestBlocks)) return;
-                    _visibleStamp[i] = _stamp;
-                    if (!_explored[i]) { _explored[i] = true; newly++; }
-                });
+                    float dy = y + 0.5f - eye.y;
+                    for (int x = minX; x <= maxX; x++)
+                    {
+                        float dx = x + 0.5f - eye.x;
+                        if (dx * dx + dy * dy > r2) continue;
+                        int i = y * _w + x;
+                        int stamp = _visibleStamp[i];
+                        if (stamp == _stamp) continue; // already seen this tick
+                        // Hard cover (mountain, wall, building) hides what lies behind it; the
+                        // blocking cell itself stays visible. Trees do not block the fog.
+                        if (occlude && world.Raycast(eye, new Vector2(x + 0.5f, y + 0.5f), out _, out _, forestBlocks)) continue;
+                        _visibleStamp[i] = _stamp;
+                        _seen.Add(i);
+                        if (stamp != lastTick) Activate(i);
+                        if (!_explored[i]) { _explored[i] = true; newly++; NoteExplored(i); }
+                    }
+                }
             }
-            ExploredCount += newly;
+            foreach (int i in _seenBefore)
+                if (_visibleStamp[i] != _stamp) Activate(i);
+            return newly;
+        }
 
-            float fade = elapsed <= 0f ? 1f : Mathf.Clamp01(elapsed * 5f);
-            bool changed = _dirty;
-            for (int i = 0; i < _alpha.Length; i++)
+        /// <summary>Moves the active cells' alphas towards their targets; settled cells leave the list.</summary>
+        void Fade(float fade)
+        {
+            for (int k = _active.Count - 1; k >= 0; k--)
             {
+                int i = _active[k];
                 float target = Disabled || _visibleStamp[i] == _stamp ? 0f : _explored[i] ? _exploredAlpha : 1f;
                 float a = _alpha[i];
-                if (Mathf.Abs(a - target) < 0.004f) continue;
-                a = Mathf.Lerp(a, target, fade);
-                if (Mathf.Abs(a - target) < 0.01f) a = target;
-                _alpha[i] = a;
-                changed = true;
+                if (Mathf.Abs(a - target) >= 0.004f)
+                {
+                    a = Mathf.Lerp(a, target, fade);
+                    if (Mathf.Abs(a - target) < 0.01f) a = target;
+                    _alpha[i] = a;
+                    MarkCell(i);
+                    if (a != target) continue;
+                }
+                _isActive[i] = false;
+                _active[k] = _active[^1];
+                _active.RemoveAt(_active.Count - 1);
             }
-            if (changed)
+        }
+
+        /// <summary>The blocks whose texels this cell's alpha reaches need redrawing.</summary>
+        void MarkCell(int i)
+        {
+            int x = i % _w, y = i / _w;
+            int bx0 = Mathf.Max(0, x - Reach) / Block, bx1 = Mathf.Min(_w - 1, x + Reach) / Block;
+            int by0 = Mathf.Max(0, y - Reach) / Block, by1 = Mathf.Min(_h - 1, y + Reach) / Block;
+            for (int by = by0; by <= by1; by++)
+            for (int bx = bx0; bx <= bx1; bx++)
+                MarkBlock(by * _bw + bx);
+        }
+
+        void MarkBlock(int b)
+        {
+            if (_blockDirty[b]) return;
+            _blockDirty[b] = true;
+            _dirtyBlocks.Add(b);
+        }
+
+        /// <summary>Redraws the dirty blocks straight into the texture and uploads it.</summary>
+        void Render()
+        {
+            if (_dirtyBlocks.Count == 0) return;
+            if (_palette == null) BuildPalette();
+            if (_sx0 == null) BuildSampleTables();
+            var texels = _texture.GetRawTextureData<Color32>();
+            foreach (int b in _dirtyBlocks)
             {
-                Render();
-                _dirty = false;
+                RenderBlock(b % _bw, b / _bw, texels);
+                _blockDirty[b] = false;
+                _blockVersion[b]++;
             }
-
-            foreach (var h in s_hideables) h.SetFogVisible(IsVisible(h.FogPosition));
-
-            if (newly > 0) Core.EventBus.Publish(new FogUpdatedEvent { NewlyExploredCells = newly });
+            _dirtyBlocks.Clear();
+            _texture.Apply(false);
         }
 
         /// <summary>
-        /// Cell alphas → render texture: 1-2-1 blur per cell, then bilinear upsampling to
-        /// RenderScale texels per cell; colour goes from the explored tint to near black as alpha
-        /// rises from the explored level to fully unexplored.
+        /// One block: cell alphas → 1-2-1 blur (edges clamped) → bilinear upsampling to RenderScale
+        /// texels per cell; colour goes from the explored tint to near black as alpha rises from the
+        /// explored level to fully unexplored.
         /// </summary>
-        void Render()
+        void RenderBlock(int bx, int by, NativeArray<Color32> texels)
         {
-            BlurCells();
-            if (_palette == null) BuildPalette();
-            if (_sx0 == null) BuildSampleTables();
+            int cx0 = bx * Block, cy0 = by * Block;
+            int cx1 = Mathf.Min(_w, cx0 + Block) - 1, cy1 = Mathf.Min(_h, cy0 + Block) - 1;
+            // The texels of these cells sample the blurred values one cell further out.
+            BlurCells(Mathf.Max(0, cx0 - 1), Mathf.Max(0, cy0 - 1), Mathf.Min(_w - 1, cx1 + 1), Mathf.Min(_h - 1, cy1 + 1));
+
             var blurred = _blurred;
-            var pixels = _pixels;
             var palette = _palette;
-            var line = _line;
             int w = _w, tw = _tw;
-            for (int ty = 0; ty < _th; ty++)
+            int tx0 = cx0 * RenderScale, tx1 = (cx1 + 1) * RenderScale - 1;
+            for (int ty = cy0 * RenderScale, tyEnd = (cy1 + 1) * RenderScale; ty < tyEnd; ty++)
             {
-                // Vertical blend of the two cell rows for this texel row, then horizontal per texel.
                 int r0 = _sy0[ty] * w, r1 = _sy1[ty] * w;
                 float fy = _sfy[ty];
-                for (int x = 0; x < w; x++) line[x] = blurred[r0 + x] + (blurred[r1 + x] - blurred[r0 + x]) * fy;
                 int row = ty * tw;
-                for (int tx = 0; tx < tw; tx++)
+                for (int tx = tx0; tx <= tx1; tx++)
                 {
-                    float l = line[_sx0[tx]];
-                    float a = l + (line[_sx1[tx]] - l) * _sfx[tx];
+                    int x0 = _sx0[tx], x1 = _sx1[tx];
+                    float l = blurred[r0 + x0] + (blurred[r1 + x0] - blurred[r0 + x0]) * fy;
+                    float r = blurred[r0 + x1] + (blurred[r1 + x1] - blurred[r0 + x1]) * fy;
+                    float a = l + (r - l) * _sfx[tx];
                     int idx = (int)(a * 255f + 0.5f);
-                    pixels[row + tx] = palette[idx < 0 ? 0 : idx > 255 ? 255 : idx];
+                    texels[row + tx] = palette[idx < 0 ? 0 : idx > 255 ? 255 : idx];
                 }
             }
-            _texture.SetPixels32(pixels);
-            _texture.Apply(false);
         }
 
         /// <summary>
@@ -252,13 +449,12 @@ namespace GuildMaster.Fog
         Color32[] _palette;
         // Bilinear sample positions per texel column/row (cell indices and blend factor), fixed per map.
         int[] _sx0, _sx1, _sy0, _sy1;
-        float[] _sfx, _sfy, _line;
+        float[] _sfx, _sfy;
 
         void BuildSampleTables()
         {
             Axis(_tw, _w, out _sx0, out _sx1, out _sfx);
             Axis(_th, _h, out _sy0, out _sy1, out _sfy);
-            _line = new float[_w];
 
             static void Axis(int texels, int cells, out int[] i0, out int[] i1, out float[] f)
             {
@@ -277,36 +473,24 @@ namespace GuildMaster.Fog
             }
         }
 
-        /// <summary>Separable 1-2-1 blur of the cell alphas into <see cref="_blurred"/> (edges clamped).</summary>
-        void BlurCells()
+        /// <summary>1-2-1 blur in both directions (edges clamped) of the cell alphas in a rectangle into <see cref="_blurred"/>.</summary>
+        void BlurCells(int x0, int y0, int x1, int y1)
         {
-            // Horizontal pass into _blurred, then vertical pass back through a row buffer.
             var src = _alpha;
-            var dst = _blurred;
             int w = _w, h = _h;
-            for (int y = 0; y < h; y++)
+            for (int y = y0; y <= y1; y++)
             {
-                int row = y * w;
-                for (int x = 0; x < w; x++)
+                int rd = (y > 0 ? y - 1 : 0) * w, rc = y * w, ru = (y < h - 1 ? y + 1 : y) * w;
+                for (int x = x0; x <= x1; x++)
                 {
-                    float l = src[row + (x > 0 ? x - 1 : 0)], c = src[row + x], r = src[row + (x < w - 1 ? x + 1 : x)];
-                    dst[row + x] = (l + 2f * c + r) * 0.25f;
-                }
-            }
-            if (_column == null || _column.Length != h) _column = new float[h];
-            var col = _column;
-            for (int x = 0; x < w; x++)
-            {
-                for (int y = 0; y < h; y++) col[y] = dst[y * w + x];
-                for (int y = 0; y < h; y++)
-                {
-                    float d = col[y > 0 ? y - 1 : 0], c = col[y], u = col[y < h - 1 ? y + 1 : y];
-                    dst[y * w + x] = (d + 2f * c + u) * 0.25f;
+                    int l = x > 0 ? x - 1 : 0, r = x < w - 1 ? x + 1 : x;
+                    float down = src[rd + l] + 2f * src[rd + x] + src[rd + r];
+                    float mid = src[rc + l] + 2f * src[rc + x] + src[rc + r];
+                    float up = src[ru + l] + 2f * src[ru + x] + src[ru + r];
+                    _blurred[rc + x] = (down + 2f * mid + up) * 0.0625f;
                 }
             }
         }
-
-        float[] _column;
 
         void ForEachCellInCircle(Vector2 center, float radius, System.Action<int> action)
         {

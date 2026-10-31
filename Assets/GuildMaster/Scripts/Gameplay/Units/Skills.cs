@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using GuildMaster.CameraControl;
 using GuildMaster.Core;
 using GuildMaster.Fog;
@@ -11,6 +12,8 @@ namespace GuildMaster.Units
     public struct SkillUsedEvent { public Unit User; public string Name; public Color Color; }
     /// <summary>A support skill restored HP (P4-29): floating "+N" and effects.</summary>
     public struct UnitHealedEvent { public Unit Target; public Unit Healer; public float Amount; }
+    /// <summary>A disaster monster's skill struck the ground (P4-72): on the right ground it may start a natural disaster.</summary>
+    public struct HazardStrikeEvent { public Unit User; public Vector2 Point; public Disasters.DisasterKind Kind; }
 
     /// <summary>
     /// Active ability with its own trigger condition. Units try their ready skills before basic
@@ -45,6 +48,8 @@ namespace GuildMaster.Units
         public virtual float AreaRadius => 0f;
         /// <summary>True if the area is centred on the user rather than the target.</summary>
         public virtual bool AreaOnSelf => false;
+        /// <summary>A heroic user keeps this area skill for when several foes stand in it (a region lord's strike is never kept, P4-83).</summary>
+        public virtual bool SavedForGroups => true;
         /// <summary>Helps allies instead of hurting enemies; usable outside fights too (target may be null).</summary>
         public virtual bool IsSupport => false;
         public virtual void Tick(Unit self, float dt) { }
@@ -52,6 +57,7 @@ namespace GuildMaster.Units
         protected void Announce(Unit self)
         {
             StartCooldown();
+            if (!IsSupport) self.Visual?.PlayAttack(); // a rig swings (P4-110)
             EventBus.Publish(new SkillUsedEvent { User = self, Name = Name, Color = Color });
         }
 
@@ -66,8 +72,8 @@ namespace GuildMaster.Units
 
         protected static void Damage(Unit self, Unit target, float multiplier)
         {
-            if (target == null || !target.IsAlive) return;
-            float dmg = Combat.Mitigate(self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f), target.Stats.Defense);
+            if (target == null || !target.IsAlive || !Combat.CanReach(self, target)) return;
+            float dmg = Combat.Mitigate(self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f), target.EffectiveDefense);
             target.ReceiveDamage(Mathf.Round(dmg), self, false);
         }
 
@@ -256,7 +262,8 @@ namespace GuildMaster.Units
     public class HealSkill : Skill
     {
         const float Range = 6f;
-        const float Below = 0.6f;
+        /// <summary>It heals allies below this ratio (a member falling back rejoins no higher, P4-96).</summary>
+        public const float HealsBelow = 0.6f;
 
         public HealSkill() { Cooldown = 6f; }
         public override string Name => "치유";
@@ -266,7 +273,7 @@ namespace GuildMaster.Units
 
         public override bool TryUse(Unit self, Unit target)
         {
-            var patient = MostEndangeredAlly(self, Range, Below);
+            var patient = MostEndangeredAlly(self, Range, HealsBelow);
             if (patient == null) return false;
             if (patient != self) Fx?.Beam(self.Position, patient.Position, Color, 0.08f, 0.3f);
             HealUnit(self, patient, self.Stats.Attack * 3f);
@@ -406,7 +413,8 @@ namespace GuildMaster.Units
         public override bool TryUse(Unit self, Unit target)
         {
             if (target == null || self is not Monsters.Monster me) return false;
-            UnitRegistry.Collect(self.Position, 7f, u => u != self && u is Monsters.Monster m && m.Def == me.Def && m.Home == me.Home, Buffer); // own pack only
+            // Own pack only: a roaming pack has no nest, so "same nest" also matched every other roaming pack of the kind (P4-76).
+            UnitRegistry.Collect(self.Position, 7f, u => u is Monsters.Monster m && me.IsPackMate(m), Buffer);
             // A lone wolf has nobody to call: no howl, and no free haste either (it used to buff
             // itself on every failed try, i.e. permanently while fighting alone).
             if (Buffer.Count == 0) return false;
@@ -511,6 +519,414 @@ namespace GuildMaster.Units
             => target != null && WarpTowards(self, target.Position);
     }
 
+    /// <summary>
+    /// The disaster monsters' skill (P4-72): a strike of their element — sparks, poison, a frost
+    /// roar, a sand whirl, a stomp — that hurts what stands around the spot and may, on the right
+    /// ground, set off a natural disaster there (<c>Disasters.DisasterService</c> decides).
+    /// Spit and whirls land at the target, roars and stomps around the user.
+    /// </summary>
+    public class HazardStrikeSkill : Skill
+    {
+        const float Radius = 1.4f;
+        const float SpitRange = 4f;
+        readonly Disasters.DisasterKind _kind;
+
+        public HazardStrikeSkill(Disasters.DisasterKind kind)
+        {
+            _kind = kind;
+            Cooldown = 9f;
+        }
+
+        bool OnSelf => _kind is Disasters.DisasterKind.Avalanche or Disasters.DisasterKind.Quake;
+        public override float AreaRadius => Radius;
+        public override bool AreaOnSelf => OnSelf;
+
+        public override string Name => _kind switch
+        {
+            Disasters.DisasterKind.Wildfire => "불씨 뿜기",
+            Disasters.DisasterKind.PoisonFog => "독 뱉기",
+            Disasters.DisasterKind.Avalanche => "서리 포효",
+            Disasters.DisasterKind.Sandstorm => "모래 회오리",
+            _ => "땅 울리기",
+        };
+
+        public override string Description
+            => $"주변(반경 {Radius})에 공격력 120% 피해. 맞는 땅이면 낮은 확률로 {Disasters.DisasterRules.NameOf(_kind)}이(가) 일어납니다.";
+
+        public override Color Color => ColorOf(_kind);
+
+        /// <summary>The colour of an element's strike (the lords' strikes share it, P4-83).</summary>
+        public static Color ColorOf(Disasters.DisasterKind kind) => kind switch
+        {
+            Disasters.DisasterKind.Wildfire => new Color(1f, 0.45f, 0.15f),
+            Disasters.DisasterKind.PoisonFog => new Color(0.65f, 0.35f, 0.9f),
+            Disasters.DisasterKind.Avalanche => new Color(0.7f, 0.9f, 1f),
+            Disasters.DisasterKind.Sandstorm => new Color(0.95f, 0.8f, 0.45f),
+            _ => new Color(0.55f, 0.45f, 0.4f),
+        };
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (target == null || Combat.Distance(self, target) > (OnSelf ? 2f : SpitRange)) return false;
+            if (!OnSelf && !World.HasLineOfSight(self.Position, target.Position, 1)) return false;
+            var point = OnSelf ? self.Position : target.Position;
+            foreach (var u in HostilesAround(self, point, Radius).ToArray()) Damage(self, u, 1.2f);
+            Fx?.Ring(point, Radius, Color, 0.4f);
+            Fx?.Spark(point, Color, 1.2f, 0.3f);
+            if (OnSelf) ShakeIfVisible(point, 0.2f);
+            Announce(self);
+            EventBus.Publish(new HazardStrikeEvent { User = self, Point = point, Kind = _kind });
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// A region lord's strike (P4-83, user decision 2026-10-17: its region's skill, stronger): the same element as
+    /// the region's disaster monsters, telegraphed — a wide ring shows for a second before it lands — at twice the
+    /// attack over a much bigger area. It may start the region's disaster like theirs (<see cref="HazardStrikeEvent"/>).
+    /// </summary>
+    public class LordStrikeSkill : Skill
+    {
+        const float Radius = 3f;
+        const float Range = 6f;
+        const float Windup = 1f;
+        readonly Disasters.DisasterKind _kind;
+        float _channelUntil;
+
+        public LordStrikeSkill(Disasters.DisasterKind kind)
+        {
+            _kind = kind;
+            Cooldown = Monsters.RegionLords.StrikeCooldown;
+        }
+
+        bool OnSelf => _kind is Disasters.DisasterKind.Avalanche or Disasters.DisasterKind.Quake;
+        public override float AreaRadius => Radius;
+        public override bool AreaOnSelf => OnSelf;
+        // Its signature blow: swung as soon as it is ready, not saved for a crowd (a heroic unit would hold it).
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override string Name => _kind switch
+        {
+            Disasters.DisasterKind.PoisonFog => "독늪 범람",
+            Disasters.DisasterKind.Avalanche => "혹한의 포효",
+            Disasters.DisasterKind.Sandstorm => "모래 폭풍",
+            Disasters.DisasterKind.Quake => "대지 붕괴",
+            _ => "화염 폭발",
+        };
+
+        public override string Description
+            => $"1초 예고 뒤 넓은 범위(반경 {Radius})에 공격력 200% 피해. 맞는 땅이면 {Disasters.DisasterRules.NameOf(_kind)}이(가) 일어날 수 있습니다.";
+
+        public override Color Color => HazardStrikeSkill.ColorOf(_kind);
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (target == null || Combat.Distance(self, target) > (OnSelf ? Radius - 0.5f : Range)) return false;
+            if (!OnSelf && !World.HasLineOfSight(self.Position, target.Position, 1)) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            var point = OnSelf ? self.Position : target.Position;
+            self.Mover.Stop();
+            _channelUntil = Time.time + Windup;
+            telegraphs.Create(self, point, Radius, Windup, () =>
+            {
+                foreach (var u in HostilesAround(self, point, Radius).ToArray()) Damage(self, u, 2f);
+                Fx?.Ring(point, Radius, Color, 0.5f);
+                Fx?.Spark(point, Color, 1.6f, 0.4f);
+                ShakeIfVisible(point, 0.4f);
+                EventBus.Publish(new HazardStrikeEvent { User = self, Point = point, Kind = _kind });
+            });
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// A region lord calls its guards (P4-83): once, the first time its health falls below
+    /// <see cref="Monsters.RegionLords.CallBelowHp"/>, more of its lair's kind come out beside it and every guard
+    /// of the lair turns on its foe. The cooldown is the whole game (it is saved with the other cooldowns).
+    /// </summary>
+    public class LordCallSkill : Skill
+    {
+        public LordCallSkill() { Cooldown = 1e6f; }
+        public override string Name => "호위 부르기";
+        public override string Description => $"체력이 절반 아래로 처음 떨어지면 거처의 호위 {Monsters.RegionLords.CalledEscorts}마리를 더 불러내고 모든 호위가 함께 공격합니다(한 번만).";
+        public override Color Color => new(1f, 0.85f, 0.35f);
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (target == null || self is not Monsters.Monster lord || !lord.IsRegionLord || lord.Home == null) return false;
+            if (lord.HpRatio > Monsters.RegionLords.CallBelowHp || !Services.TryGet<Ecosystem.EcosystemManager>(out var eco)) return false;
+            for (int i = 0; i < Monsters.RegionLords.CalledEscorts; i++) eco.Spawn(lord.Home, lord.Position);
+            foreach (var m in lord.Home.MemberList.ToArray())
+                if (m != lord && m.IsAlive) m.ForceTarget(target);
+            Fx?.Ring(self.Position, 4f, Color, 0.8f);
+            ShakeIfVisible(self.Position, 0.3f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The dragon's fire (P4-93, <see cref="Monsters.Dragon"/>): after a short warning a blast round the spot it breathes at
+    /// burns everyone in it, sets buildings, town gates and villages alight (the town hall can fall: user decision, no
+    /// limit), and forest there catches (a wildfire, <see cref="Disasters.DisasterService.Kindle"/>). Breathed from the sky
+    /// at what it circles (<see cref="Monsters.DragonFlightState"/>) or on the ground at its foe.
+    /// </summary>
+    public class DragonBreathSkill : Skill
+    {
+        float _channelUntil;
+
+        public DragonBreathSkill() { Cooldown = Monsters.Dragon.BreathCooldown; }
+        public override string Name => "화염 숨결";
+        public override string Description
+            => $"{Monsters.Dragon.BreathWindup}초 예고 뒤 반경 {Monsters.Dragon.BreathRadius} 안을 불태워 공격력 {Monsters.Dragon.BreathDamage * 100f:0}% 피해. 건물·성문·마을도 타고, 숲에는 산불이 납니다.";
+        public override Color Color => new(1f, 0.5f, 0.15f);
+        public override float AreaRadius => Monsters.Dragon.BreathRadius;
+        // Its signature: breathed as soon as it can, never saved for a crowd.
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override bool TryUse(Unit self, Unit target) => target != null && TryBreatheAt(self, target.Position);
+
+        /// <summary>Breathes at a spot in range (a unit, or a building it circles); false when it cannot now.</summary>
+        public bool TryBreatheAt(Unit self, Vector2 point)
+        {
+            if (!IsReady || self.IsStunned || Vector2.Distance(self.Position, point) > Monsters.Dragon.BreathRange) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            if (!self.IsAirborne) self.Mover.Stop();
+            _channelUntil = Time.time + Monsters.Dragon.BreathWindup;
+            self.Visual?.FaceTowards(point);
+            telegraphs.Create(self, point, Monsters.Dragon.BreathRadius, Monsters.Dragon.BreathWindup, () => Burn(self, point));
+            Announce(self);
+            return true;
+        }
+
+        static void Burn(Unit self, Vector2 point)
+        {
+            if (Services.TryGet<DragonFireFx>(out var fire)) fire.Play(MouthOf(self), point);
+            var (town, village) = Scorch(self, point, Monsters.Dragon.BreathRadius, Monsters.Dragon.BreathDamage, Monsters.Dragon.StructureDamage);
+            Plunder(town, village, point);
+            ShakeIfVisible(point, 0.35f);
+        }
+
+        internal static Vector2 MouthOf(Unit self) => self is Monsters.Monster m ? m.MouthPosition : self.Position;
+
+        /// <summary>
+        /// Its fire on a spot (the breath, and since P4-95 each blast of a bombing run or a fire rain): everyone hostile in the
+        /// radius takes <paramref name="damage"/> × attack, buildings, gates and villages take <paramref name="structureDamage"/>,
+        /// forest there catches. Returns whether our town or a village burned (the caller plunders, <see cref="Plunder"/>).
+        /// </summary>
+        internal static (bool town, bool village) Scorch(Unit self, Vector2 point, float radius, float damage, float structureDamage)
+        {
+            foreach (var u in HostilesAround(self, point, radius).ToArray()) Damage(self, u, damage);
+            var hit = BurnStructures(self, point, radius, structureDamage);
+            if (Services.TryGet<Disasters.DisasterService>(out var disasters)) disasters.Kindle(point, radius);
+            return hit;
+        }
+
+        /// <summary>What burns is plundered for the hoard (P4-93).</summary>
+        internal static void Plunder(bool town, bool village, Vector2 point)
+        {
+            if ((town || village) && Services.TryGet<Dragons.DragonService>(out var dragon)) dragon.Plunder(town, village, point);
+        }
+
+        static (bool town, bool village) BurnStructures(Unit self, Vector2 point, float r, float dmg)
+        {
+            bool townHit = false, villageHit = false;
+            if (Services.TryGet<Town.TownService>(out var town))
+                foreach (var b in town.Buildings.ToList())
+                    if (b != null && !b.IsDestroyed && Vector2.Distance(b.ClosestPoint(point), point) <= r) { b.Damage(dmg); townHit = true; }
+            if (Services.TryGet<Town.GateService>(out var gates))
+                foreach (var g in gates.Gates.ToList())
+                    if (g != null && !g.IsBroken && Vector2.Distance(g.ClosestPoint(point), point) <= r) g.Damage(dmg, self);
+            if (Services.TryGet<Villages.VillageService>(out var villages) && Services.TryGet<GameClock>(out var clock))
+                foreach (var v in villages.Villages)
+                    if (v != null && !v.IsDestroyed && Vector2.Distance(v.WorldPosition, point) <= r + 1.5f) { v.Damage(dmg, self, clock.TotalHours); villageHit = true; }
+            return (townHit, villageHit);
+        }
+    }
+
+    /// <summary>
+    /// The blasts of one cast (a bombing run, a fire rain — P4-95): each burns its spot (<see cref="DragonBreathSkill.Scorch"/>),
+    /// and what they burned is plundered once, after the last (ten blasts over the town are one raid on the treasury).
+    /// </summary>
+    sealed class FireVolley
+    {
+        int _left;
+        bool _town, _village;
+        Vector2 _at;
+
+        public FireVolley(int blasts) { _left = blasts; }
+
+        public void Land(Unit self, Vector2 point, float radius, float damage)
+        {
+            var (town, village) = DragonBreathSkill.Scorch(self, point, radius, damage, Monsters.Dragon.VolleyStructureDamage);
+            if (town || village) { _town |= town; _village |= village; _at = point; }
+            if (--_left == 0) DragonBreathSkill.Plunder(_town, _village, _at);
+        }
+    }
+
+    /// <summary>
+    /// The dragon's bombing run (P4-95, user decision 2026-10-20: more skills, hard to dodge): on the wing it drops fire in a
+    /// line through what it circles — <see cref="Monsters.Dragon.BombCount"/> spots, each warned only briefly and one after
+    /// another, so stepping out of one can be stepping into the next.
+    /// </summary>
+    public class DragonBombingSkill : Skill
+    {
+        float _channelUntil;
+
+        public DragonBombingSkill() { Cooldown = Monsters.Dragon.BombCooldown; }
+        public override string Name => "화염 폭격";
+        public override string Description
+            => $"날면서 대상을 지나는 직선에 불 {Monsters.Dragon.BombCount}곳을 차례로 떨어뜨림(예고 {Monsters.Dragon.BombWindup}초부터, 반경 {Monsters.Dragon.BombRadius}, 공격력 {Monsters.Dragon.BombDamage * 100f:0}%).";
+        public override Color Color => new(1f, 0.38f, 0.1f);
+        public override float AreaRadius => Monsters.Dragon.BombRadius;
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override bool TryUse(Unit self, Unit target) => target != null && TryBombAt(self, target.Position);
+
+        public bool TryBombAt(Unit self, Vector2 aim)
+        {
+            if (!IsReady || !self.IsAirborne || self.IsStunned || Vector2.Distance(self.Position, aim) > Monsters.Dragon.BombRange) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            var spots = Monsters.Dragon.BombSpots(self.Position, aim);
+            var volley = new FireVolley(spots.Length);
+            for (int i = 0; i < spots.Length; i++)
+            {
+                var p = spots[i];
+                telegraphs.Create(self, p, Monsters.Dragon.BombRadius, Monsters.Dragon.BombWindup + i * Monsters.Dragon.BombStagger, () =>
+                {
+                    if (Services.TryGet<DragonFireFx>(out var fire)) fire.Play(DragonBreathSkill.MouthOf(self), p);
+                    volley.Land(self, p, Monsters.Dragon.BombRadius, Monsters.Dragon.BombDamage);
+                    ShakeIfVisible(p, 0.2f);
+                });
+            }
+            _channelUntil = Time.time + 0.3f;
+            self.Visual?.FaceTowards(aim);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Fire rain (P4-95): on the wing or on the ground, it calls fire down all over the ground round its foe —
+    /// <see cref="Monsters.Dragon.RainDrops"/> small blasts falling one after another, the first on the foe itself, so
+    /// wherever one steps out to there may be another coming.
+    /// </summary>
+    public class DragonFireRainSkill : Skill
+    {
+        float _channelUntil;
+
+        public DragonFireRainSkill() { Cooldown = Monsters.Dragon.RainCooldown; }
+        public override string Name => "화염 비";
+        public override string Description
+            => $"대상 둘레 {Monsters.Dragon.RainArea}칸에 작은 불({Monsters.Dragon.RainDrops}개, 반경 {Monsters.Dragon.RainRadius})이 차례로 떨어짐(예고 {Monsters.Dragon.RainWindup}초부터, 공격력 {Monsters.Dragon.RainDamage * 100f:0}%).";
+        public override Color Color => new(1f, 0.6f, 0.2f);
+        public override float AreaRadius => Monsters.Dragon.RainArea;
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override bool TryUse(Unit self, Unit target) => target != null && TryRainOn(self, target.Position);
+
+        public bool TryRainOn(Unit self, Vector2 centre)
+        {
+            if (!IsReady || self.IsStunned || Vector2.Distance(self.Position, centre) > Monsters.Dragon.RainRange) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            if (!self.IsAirborne) self.Mover.Stop();
+            var volley = new FireVolley(Monsters.Dragon.RainDrops);
+            var color = Color;
+            for (int i = 0; i < Monsters.Dragon.RainDrops; i++)
+            {
+                var p = i == 0 ? centre : centre + GameRandom.Shared.InsideUnitCircle() * Monsters.Dragon.RainArea;
+                telegraphs.Create(self, p, Monsters.Dragon.RainRadius, Monsters.Dragon.RainWindup + i * Monsters.Dragon.RainStagger, () =>
+                {
+                    Fx?.Beam(p + new Vector2(0.8f, 6f), p, color, 0.3f, 0.18f);
+                    Fx?.Spark(p, color, 1.4f, 0.3f);
+                    Fx?.Ring(p, Monsters.Dragon.RainRadius, color, 0.3f);
+                    volley.Land(self, p, Monsters.Dragon.RainRadius, Monsters.Dragon.RainDamage);
+                });
+            }
+            _channelUntil = Time.time + 0.6f;
+            self.Visual?.FaceTowards(centre);
+            ShakeIfVisible(centre, 0.15f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The dragon's roar (P4-95): no warning at all — everyone hostile within <see cref="Monsters.Dragon.RoarRadius"/> stands
+    /// frozen for <see cref="Monsters.Dragon.RoarStun"/> s, and a frozen member steps out of nothing; its fire comes next.
+    /// Kept for when <see cref="Monsters.Dragon.RoarMinFoes"/> or more are round it.
+    /// </summary>
+    public class DragonRoarSkill : Skill
+    {
+        public DragonRoarSkill() { Cooldown = Monsters.Dragon.RoarCooldown; }
+        public override string Name => "포효";
+        public override string Description => $"예고 없이 {Monsters.Dragon.RoarRadius}칸 안의 적을 {Monsters.Dragon.RoarStun}초 동안 얼어붙게 함(적 {Monsters.Dragon.RoarMinFoes}명 이상일 때).";
+        public override Color Color => new(1f, 0.85f, 0.45f);
+        public override float AreaRadius => Monsters.Dragon.RoarRadius;
+        public override bool AreaOnSelf => true;
+        public override bool SavedForGroups => false;
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (!IsReady || self.IsStunned) return false;
+            var foes = HostilesAround(self, self.Position, Monsters.Dragon.RoarRadius).Where(u => u.IsAlive).ToArray();
+            if (foes.Length < Monsters.Dragon.RoarMinFoes) return false;
+            foreach (var u in foes) u.Stun(Monsters.Dragon.RoarStun);
+            Fx?.Ring(self.Position, Monsters.Dragon.RoarRadius, Color, 0.7f);
+            Fx?.Ring(self.Position, Monsters.Dragon.RoarRadius * 0.55f, Color, 0.45f);
+            ShakeIfVisible(self.Position, 0.55f);
+            Announce(self);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The dragon's tail sweep (P4-95): on the ground, all round it at once — the warning is shorter than anyone can walk out
+    /// of — and whoever it hits is thrown back <see cref="Monsters.Dragon.TailKnockback"/> cells.
+    /// </summary>
+    public class DragonTailSkill : Skill
+    {
+        float _channelUntil;
+
+        public DragonTailSkill() { Cooldown = Monsters.Dragon.TailCooldown; }
+        public override string Name => "꼬리 휘두르기";
+        public override string Description
+            => $"땅에서 {Monsters.Dragon.TailWindup}초 예고 뒤 둘레 {Monsters.Dragon.TailRadius}칸을 휩쓸어 공격력 {Monsters.Dragon.TailDamage * 100f:0}% 피해, {Monsters.Dragon.TailKnockback}칸 밀쳐냄.";
+        public override Color Color => new(0.95f, 0.45f, 0.3f);
+        public override float AreaRadius => Monsters.Dragon.TailRadius;
+        public override bool AreaOnSelf => true;
+        public override bool SavedForGroups => false;
+        public override bool IsChanneling => Time.time < _channelUntil;
+
+        public override bool TryUse(Unit self, Unit target)
+        {
+            if (!IsReady || self.IsAirborne || self.IsStunned || target == null) return false;
+            if (Combat.Distance(self, target) > Monsters.Dragon.TailRadius - 0.4f) return false;
+            if (!Services.TryGet<TelegraphService>(out var telegraphs)) return false;
+            var centre = self.Position;
+            self.Mover.Stop();
+            _channelUntil = Time.time + Monsters.Dragon.TailWindup;
+            var color = Color;
+            telegraphs.Create(self, centre, Monsters.Dragon.TailRadius, Monsters.Dragon.TailWindup, () =>
+            {
+                foreach (var u in HostilesAround(self, centre, Monsters.Dragon.TailRadius).ToArray())
+                {
+                    Damage(self, u, Monsters.Dragon.TailDamage);
+                    if (u.IsAlive && !u.IsAirborne) u.Knockback(u.Position - centre, Monsters.Dragon.TailKnockback);
+                }
+                Fx?.Ring(centre, Monsters.Dragon.TailRadius, color, 0.4f);
+                ShakeIfVisible(centre, 0.35f);
+            });
+            Announce(self);
+            return true;
+        }
+    }
+
     public static class SkillFactory
     {
         public static Skill Create(string id) => id switch
@@ -527,6 +943,21 @@ namespace GuildMaster.Units
             "charge" => new ChargeSkill(),
             "slam" => new GroundSlamSkill(),
             "howl" => new PackHowlSkill(),
+            // Disaster monsters (P4-72): ember, toxic_spit, frost_roar, sand_whirl, quake_stomp.
+            _ when Disasters.DisasterRules.KindOfSkill(id) is { } hazard => new HazardStrikeSkill(hazard),
+            // Region lords (P4-83).
+            "lord_toxic_spit" => new LordStrikeSkill(Disasters.DisasterKind.PoisonFog),
+            "lord_frost_roar" => new LordStrikeSkill(Disasters.DisasterKind.Avalanche),
+            "lord_sand_whirl" => new LordStrikeSkill(Disasters.DisasterKind.Sandstorm),
+            "lord_quake_stomp" => new LordStrikeSkill(Disasters.DisasterKind.Quake),
+            "lord_call" => new LordCallSkill(),
+            // The dragon (P4-93).
+            "dragon_breath" => new DragonBreathSkill(),
+            // More of it (P4-95).
+            "dragon_tail" => new DragonTailSkill(),
+            "dragon_roar" => new DragonRoarSkill(),
+            "dragon_rain" => new DragonFireRainSkill(),
+            "dragon_bomb" => new DragonBombingSkill(),
             _ => null,
         };
 

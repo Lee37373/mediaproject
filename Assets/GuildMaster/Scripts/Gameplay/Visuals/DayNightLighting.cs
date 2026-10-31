@@ -32,7 +32,7 @@ namespace GuildMaster.Visuals
             if (_clock == null || _light == null) return;
             float d = _clock.Daylight; // 0 midnight .. 1 noon
             Color c = d < 0.5f ? Color.Lerp(Night, Dawn, d / 0.5f) : Color.Lerp(Dawn, Day, (d - 0.5f) / 0.5f);
-            _light.color = c;
+            _light.color = c * Seasons.SeasonService.Tint(_clock); // the season's tint (P4-111b)
             _light.intensity = Mathf.Lerp(0.55f, 1f, Mathf.SmoothStep(0f, 1f, d));
         }
     }

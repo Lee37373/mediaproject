@@ -109,7 +109,9 @@ namespace GuildMaster.Economy
 
         void OnPosted(QuestPostedEvent e)
         {
-            if (e.Quest != null) _byQuest[e.Quest.Id] = For(e.Quest);
+            // A quest its client already pays for (P4-82: the town, a village, an incident) pays the guild its fee
+            // through the board; only quests the guild funds itself get a commission here (2026-10-31 merge).
+            if (e.Quest != null && !e.Quest.FundedByClient) _byQuest[e.Quest.Id] = For(e.Quest);
         }
 
         void OnCompleted(QuestCompletedEvent e)
@@ -119,6 +121,7 @@ namespace GuildMaster.Economy
             _byQuest.Remove(q.Id);
             // Called off by the guild after someone took it: the takers are paid, the client is not asked to.
             if (q.CalledOff) return;
+            if (q.FundedByClient) return; // paid through the board (P4-82)
             int pay = c.Payment(q.RewardGold - q.BonusGold);
             _treasury.AddGold(pay, GoldReason.Commission);
             TotalFees += c.Fee;

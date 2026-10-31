@@ -21,7 +21,7 @@ namespace GuildMaster.Legacy
     /// The numbers live in <see cref="LegacyRules"/>, the wording in <see cref="LegacyTexts"/>; this class is the
     /// glue to the game world. Deaths stay permanent.
     /// </summary>
-    public class GuildLegacy : IDisposable
+    public class GuildLegacy : IDisposable, ISaveable, ISaveLink
     {
         readonly GameClock _clock;
         readonly GuildRoster _roster;
@@ -58,6 +58,122 @@ namespace GuildMaster.Legacy
         public float? ForcedRoll { get; set; }
 
         public FallenRecord Find(int id) => _fallen.Find(r => r.Id == id);
+
+        // ---------------- Save (P5-4) ----------------
+
+        [Serializable]
+        class SavedRelic
+        {
+            public string item;
+            public string name;
+            public int count;
+            public Vector2 position;
+            public RelicState state;
+            public string note;
+            /// <summary>The item on the ground while it lies there (its place in the ground list), else -1.</summary>
+            public int ground = -1;
+            public float dropped_hour;
+        }
+
+        [Serializable]
+        class SavedRecord
+        {
+            public int id;
+            public string adventurer, name, class_label, values, killer;
+            public int level, kills, quests, day;
+            public float died_at;
+            public Vector2 position;
+            public List<SavedRelic> relics = new();
+            public List<string> friends = new();
+            public List<string> relation_ids = new();
+            public List<int> relations = new();
+            public bool memorial;
+            public float memorial_hour;
+            public bool recovery_rewarded;
+        }
+
+        [Serializable]
+        class SaveData
+        {
+            public int next_id;
+            public List<SavedRecord> fallen = new();
+        }
+
+        SaveData _restoring;
+
+        public string SaveKey => "legacy";
+
+        public string Capture()
+        {
+            Services.TryGet<Items.GroundItemService>(out var ground);
+            var s = new SaveData { next_id = _nextId };
+            foreach (var r in _fallen)
+            {
+                var sr = new SavedRecord
+                {
+                    id = r.Id, adventurer = r.AdventurerId, name = r.Name, class_label = r.ClassLabel, values = r.Values, killer = r.KillerName,
+                    level = r.Level, kills = r.Kills, quests = r.QuestsDone, day = r.Day, died_at = r.DiedAtHour, position = r.Position,
+                    memorial = r.MemorialHeld, memorial_hour = r.MemorialHour, recovery_rewarded = r.RecoveryRewarded,
+                };
+                foreach (var relic in r.Relics)
+                    sr.relics.Add(new SavedRelic
+                    {
+                        item = relic.ItemId, name = relic.Name, count = relic.Count, position = relic.Position, state = relic.State, note = relic.Note,
+                        ground = relic.Ground != null && ground != null ? ground.IndexOf(relic.Ground) : -1, dropped_hour = relic.DroppedAtHour,
+                    });
+                sr.friends.AddRange(r.FriendIds);
+                var ids = new List<string>(r.Relations.Keys);
+                ids.Sort(StringComparer.Ordinal);
+                foreach (var id in ids) { sr.relation_ids.Add(id); sr.relations.Add(r.Relations[id]); }
+                s.fallen.Add(sr);
+            }
+            return JsonUtility.ToJson(s);
+        }
+
+        /// <summary>The wall of the fallen; members sent for relics find the record by its id.</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            _restoring = JsonUtility.FromJson<SaveData>(json);
+            _nextId = _restoring.next_id;
+            _fallen.Clear();
+            foreach (var sr in _restoring.fallen)
+            {
+                var r = new FallenRecord
+                {
+                    Id = sr.id, AdventurerId = sr.adventurer, Name = sr.name, ClassLabel = sr.class_label, Values = sr.values,
+                    KillerName = sr.killer, Level = sr.level, Kills = sr.kills, QuestsDone = sr.quests, Day = sr.day,
+                    DiedAtHour = sr.died_at, Position = sr.position, MemorialHeld = sr.memorial, MemorialHour = sr.memorial_hour,
+                    RecoveryRewarded = sr.recovery_rewarded,
+                };
+                foreach (var relic in sr.relics)
+                    r.Relics.Add(new RelicItem
+                    {
+                        ItemId = relic.item, Name = relic.name, Count = relic.count, Position = relic.position, State = relic.state,
+                        Note = relic.note, DroppedAtHour = relic.dropped_hour,
+                    });
+                r.FriendIds.AddRange(sr.friends);
+                for (int i = 0; i < sr.relation_ids.Count && i < sr.relations.Count; i++) r.Relations[sr.relation_ids[i]] = sr.relations[i];
+                _fallen.Add(r);
+                ctx.Register(RelicRetrievalState.RecordKey(r.Id), r);
+            }
+        }
+
+        /// <summary>Relics still lying there are the ground items again.</summary>
+        public void Link(SaveContext ctx)
+        {
+            for (int i = 0; i < _fallen.Count && i < _restoring.fallen.Count; i++)
+            {
+                var saved = _restoring.fallen[i].relics;
+                for (int k = 0; k < _fallen[i].Relics.Count && k < saved.Count; k++)
+                {
+                    if (saved[k].ground < 0) continue;
+                    var relic = _fallen[i].Relics[k];
+                    relic.Ground = ctx.Find<Items.GroundItem>(Items.GroundItemService.SaveId(saved[k].ground));
+                    if (relic.Ground != null && relic.State == RelicState.Lying) relic.Ground.Kept = true;
+                }
+            }
+            _restoring = null;
+        }
 
         /// <summary>Adds a record without a death event (tests).</summary>
         internal FallenRecord Add(FallenRecord rec)
@@ -116,6 +232,7 @@ namespace GuildMaster.Legacy
                 foreach (var g in a.DeathDrops)
                 {
                     if (g == null || g.Item == null) continue;
+                    g.Kept = true; // lies its full time, not swept off by the ground's item cap
                     rec.Relics.Add(new RelicItem
                     {
                         ItemId = g.Item.id,
@@ -332,6 +449,7 @@ namespace GuildMaster.Legacy
             d.stress = Mathf.Min(100f, d.stress + LegacyRules.LastStandStress);
             string by = killer != null ? killer.DisplayName : null;
             Remember(a, 3, LegacyTexts.MemoryLastStand(by), "last-stand");
+            ThoughtRecorder.Give(a, ThoughtRules.LastStand);
             a.Say(LegacyTexts.LastStandLine(GameRandom.Shared));
             _center?.Post(NotificationKind.Warning, LegacyTexts.LastStandTitle, LegacyTexts.LastStandNotice(d.name, by, LegacyRules.WoundedHours),
                 "laststand:" + d.id, NotificationLink.Management(d.id));

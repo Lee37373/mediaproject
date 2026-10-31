@@ -22,7 +22,7 @@ namespace GuildMaster.Tests
         [Test]
         public void OncePerDayEach_AndOnlyWhileResidentsAreUp()
         {
-            var treasury = new GuildTreasury(0, 0, 0f, 0);
+            var treasury = new GuildTreasury(0, 0);
             var service = new ChoreService(treasury);
             Assert.That(service.CanDo(ChoreKind.Forge, 10f, 10f).Ok, Is.True);
             Assert.That(service.CanDo(ChoreKind.Forge, 23f, 23f).Ok, Is.False, "asleep at night");

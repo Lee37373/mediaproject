@@ -294,6 +294,13 @@ namespace GuildMaster.Tests
 
             var idle = new MemberCare();
             Assert.That(idle.Tick(In(10, 85f), Always(0.1f)).HasFlag(CareStep.Sabotage), Is.False, "no quest to walk away from");
+
+            // P4-96: never from the middle of a fight (it ran home alone from a boss fight); once the fight is over it may.
+            var fighting = new MemberCare();
+            var inFight = In(10, 85f, onQuest: true, free: false);
+            inFight.InFight = true;
+            Assert.That(fighting.Tick(inFight, Always(0.1f)).HasFlag(CareStep.Sabotage), Is.False, "not mid-fight");
+            Assert.That(fighting.Tick(In(11, 85f, onQuest: true, free: false), Always(0.1f)).HasFlag(CareStep.Sabotage), Is.True, "after it");
         }
 
         [Test]
@@ -377,7 +384,7 @@ namespace GuildMaster.Tests
         [Test]
         public void Bonus_IsItsOwnExpenseInTheDailyReport()
         {
-            var treasury = new GuildTreasury(500, 0, 0f, 0);
+            var treasury = new GuildTreasury(500, 0);
             var ledger = new DailyLedger(treasury, 1, 8f);
             try
             {

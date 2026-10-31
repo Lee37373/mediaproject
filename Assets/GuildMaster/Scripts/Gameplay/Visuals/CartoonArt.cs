@@ -7,9 +7,9 @@ namespace GuildMaster.Visuals
     /// <summary>
     /// Map props in the cartoon style of the LAYERLAB character art: flat fills, thick dark
     /// outlines, rounded shapes, drawn from signed-distance shapes at 32 px per cell (anti-aliased).
-    /// Replaces the 16 px pixel art for trees, rocks, nests and buildings.
+    /// Replaces the 16 px pixel art for trees, rocks, nests and buildings (the buildings: CartoonBuildings.cs).
     /// </summary>
-    public static class CartoonArt
+    public static partial class CartoonArt
     {
         public const int PixelsPerUnit = 32;
 
@@ -21,50 +21,111 @@ namespace GuildMaster.Visuals
 
         // ---------------- Canvas ----------------
 
-        /// <summary>Small RGBA canvas with signed-distance shape fills (negative = inside).</summary>
+        /// <summary>
+        /// Small RGBA canvas with signed-distance shape fills (negative = inside). Shapes are given in logical pixels (32 a
+        /// cell); <c>scale</c> paints the picture that many times finer (the buildings, P4-114, to stand as crisp as the
+        /// characters beside them). On such a canvas whole 32×32 tiles, then 8×8 blocks, well outside a shape are skipped and
+        /// ones well inside filled without a look, so its shapes' distances must not grow faster than the true distance (the
+        /// helpers here are exact or under it); the small pictures at scale 1 look at every pixel (the flame's tongue grows
+        /// faster at its tip).
+        /// </summary>
         sealed class Canvas
         {
             public readonly int W, H;
+            readonly int _s, _pw, _ph;
+            readonly bool _cull;
             readonly Color[] _px;
+            const int Tile = 32, Block = 8;
 
-            public Canvas(int w, int h)
+            public Canvas(int w, int h, int scale = 1)
             {
                 W = w; H = h;
-                _px = new Color[w * h];
+                _s = Mathf.Max(1, scale);
+                _pw = w * _s; _ph = h * _s;
+                _px = new Color[_pw * _ph];
+                _cull = _s > 1;
             }
 
             /// <summary>Fills a shape with an outline band of <paramref name="outlinePx"/> just inside the edge.</summary>
             public void Shape(Func<float, float, float> sdf, Color fill, Color outline, float outlinePx)
             {
-                for (int y = 0; y < H; y++)
-                for (int x = 0; x < W; x++)
+                float inv = 1f / _s, o = outlinePx * _s;
+                Blocks(sdf, o, (bx, by, ex, ey, solid) =>
                 {
-                    float d = sdf(x + 0.5f, y + 0.5f);
-                    if (d > 1f) continue;
-                    float cover = Mathf.Clamp01(0.5f - d);             // anti-aliased edge
-                    var c = d > -outlinePx ? outline : fill;
-                    if (outlinePx > 0f && d > -outlinePx - 1f && d <= -outlinePx)  // soften the fill/outline seam
-                        c = Color.Lerp(fill, outline, Mathf.Clamp01(d + outlinePx + 1f));
-                    Blend(x, y, c, cover);
-                }
+                    for (int y = by; y < ey; y++)
+                    for (int x = bx; x < ex; x++)
+                    {
+                        if (solid) { Blend(x, y, fill, 1f); continue; }
+                        float d = sdf((x + 0.5f) * inv, (y + 0.5f) * inv) * _s;
+                        if (d > 1f) continue;
+                        float cover = Mathf.Clamp01(0.5f - d);             // anti-aliased edge
+                        var c = d > -o ? outline : fill;
+                        if (o > 0f && d > -o - 1f && d <= -o)              // soften the fill/outline seam
+                            c = Color.Lerp(fill, outline, Mathf.Clamp01(d + o + 1f));
+                        Blend(x, y, c, cover);
+                    }
+                });
             }
 
             /// <summary>Fills only where the canvas already has paint (e.g. highlights inside a canopy).</summary>
             public void ShapeClipped(Func<float, float, float> sdf, Func<float, float, float> clip, Color fill)
             {
-                for (int y = 0; y < H; y++)
-                for (int x = 0; x < W; x++)
+                float inv = 1f / _s;
+                // The clip is looked at only near the shape (a shape's own distance is under the pair's).
+                Func<float, float, float> both = (x, y) =>
                 {
-                    float d = Mathf.Max(sdf(x + 0.5f, y + 0.5f), clip(x + 0.5f, y + 0.5f));
-                    if (d > 1f) continue;
-                    Blend(x, y, fill, Mathf.Clamp01(0.5f - d));
+                    float d = sdf(x, y);
+                    return d > 16f ? d : Mathf.Max(d, clip(x, y));
+                };
+                Blocks(both, 0f, (bx, by, ex, ey, solid) =>
+                {
+                    for (int y = by; y < ey; y++)
+                    for (int x = bx; x < ex; x++)
+                    {
+                        if (solid) { Blend(x, y, fill, 1f); continue; }
+                        float px = (x + 0.5f) * inv, py = (y + 0.5f) * inv;
+                        float d = sdf(px, py) * _s;
+                        if (d > 1f) continue;
+                        d = Mathf.Max(d, clip(px, py) * _s);
+                        if (d > 1f) continue;
+                        Blend(x, y, fill, Mathf.Clamp01(0.5f - d));
+                    }
+                });
+            }
+
+            /// <summary>
+            /// The parts of the canvas a shape may touch, as (x0, y0, x1, y1, solid) in its pixels: solid when wholly inside,
+            /// more than <paramref name="inner"/> pixels from the edge. Without culling, the whole canvas at once.
+            /// </summary>
+            void Blocks(Func<float, float, float> dist, float inner, Action<int, int, int, int, bool> paint)
+            {
+                if (!_cull) { paint(0, 0, _pw, _ph, false); return; }
+                float inv = 1f / _s;
+                for (int ty = 0; ty < _ph; ty += Tile)
+                for (int tx = 0; tx < _pw; tx += Tile)
+                {
+                    int tex = Mathf.Min(tx + Tile, _pw), tey = Mathf.Min(ty + Tile, _ph);
+                    float tReach = (tex - tx + tey - ty) * 0.36f + 1.5f;   // half the diagonal, and the soft edge
+                    float dt = dist((tx + tex) * 0.5f * inv, (ty + tey) * 0.5f * inv) * _s;
+                    if (dt > tReach) continue;
+                    if (dt < -tReach - inner - 1f) { paint(tx, ty, tex, tey, true); continue; }
+                    for (int by = ty; by < tey; by += Block)
+                    for (int bx = tx; bx < tex; bx += Block)
+                    {
+                        int ex = Mathf.Min(bx + Block, tex), ey = Mathf.Min(by + Block, tey);
+                        float reach = (ex - bx + ey - by) * 0.36f + 1.5f;
+                        float dc = dist((bx + ex) * 0.5f * inv, (by + ey) * 0.5f * inv) * _s;
+                        if (dc > reach) continue;
+                        paint(bx, by, ex, ey, dc < -reach - inner - 1f);
+                    }
                 }
             }
 
             void Blend(int x, int y, Color c, float a)
             {
                 if (a <= 0f) return;
-                int i = y * W + x;
+                int i = y * _pw + x;
+                if (a >= 1f && c.a >= 1f) { _px[i] = c; return; }   // opaque over anything: just the colour
                 var dst = _px[i];
                 float outA = a * c.a + dst.a * (1f - a * c.a);
                 if (outA <= 0f) return;
@@ -74,7 +135,7 @@ namespace GuildMaster.Visuals
 
             public Sprite ToSprite(string key, Vector2 pivot)
             {
-                var tex = new Texture2D(W, H, TextureFormat.RGBA32, false)
+                var tex = new Texture2D(_pw, _ph, TextureFormat.RGBA32, false)
                 {
                     filterMode = FilterMode.Bilinear,
                     wrapMode = TextureWrapMode.Clamp,
@@ -82,7 +143,7 @@ namespace GuildMaster.Visuals
                 };
                 tex.SetPixels(_px);
                 tex.Apply(false, true);
-                var s = Sprite.Create(tex, new Rect(0, 0, W, H), pivot, PixelsPerUnit, 0, SpriteMeshType.FullRect);
+                var s = Sprite.Create(tex, new Rect(0, 0, _pw, _ph), pivot, PixelsPerUnit * _s, 0, SpriteMeshType.FullRect);
                 s.name = key;
                 s_cache[key] = s;
                 return s;
@@ -109,6 +170,53 @@ namespace GuildMaster.Visuals
                 float qx = Mathf.Abs(x - cx) - hx, qy = Mathf.Abs(y - cy) - hy;
                 float outside = new Vector2(Mathf.Max(qx, 0f), Mathf.Max(qy, 0f)).magnitude;
                 return outside + Mathf.Min(Mathf.Max(qx, qy), 0f) - r;
+            };
+
+        /// <summary>A stroke from one point to another with round ends (emblems, P4-87).</summary>
+        static Func<float, float, float> Segment(float x0, float y0, float x1, float y1, float r)
+            => (x, y) =>
+            {
+                float dx = x1 - x0, dy = y1 - y0;
+                float t = Mathf.Clamp01(((x - x0) * dx + (y - y0) * dy) / Mathf.Max(1e-4f, dx * dx + dy * dy));
+                float px = x0 + dx * t - x, py = y0 + dy * t - y;
+                return Mathf.Sqrt(px * px + py * py) - r;
+            };
+
+        /// <summary>A polygon (any simple one, corners in order), rounded out by <paramref name="r"/> (P4-114: roofs, gables).</summary>
+        static Func<float, float, float> Poly(float r, params Vector2[] v)
+        {
+            int n = v.Length;
+            var px = new float[n];
+            var py = new float[n];
+            var inv = new float[n];   // 1 / the squared length of the edge ending at each corner
+            for (int i = 0, j = n - 1; i < n; j = i, i++)
+            {
+                px[i] = v[i].x; py[i] = v[i].y;
+                inv[i] = 1f / Mathf.Max(1e-6f, (v[j] - v[i]).sqrMagnitude);
+            }
+            return (x, y) =>
+            {
+                float d = (x - px[0]) * (x - px[0]) + (y - py[0]) * (y - py[0]), s = 1f;
+                for (int i = 0, j = n - 1; i < n; j = i, i++)
+                {
+                    float ex = px[j] - px[i], ey = py[j] - py[i], wx = x - px[i], wy = y - py[i];
+                    float t = Mathf.Clamp01((wx * ex + wy * ey) * inv[i]);
+                    float bx = wx - ex * t, by = wy - ey * t;
+                    d = Mathf.Min(d, bx * bx + by * by);
+                    bool c1 = y >= py[i], c2 = y < py[j], c3 = ex * wy > ey * wx;
+                    if (c1 && c2 && c3 || !c1 && !c2 && !c3) s = -s;
+                }
+                return s * Mathf.Sqrt(d) - r;
+            };
+        }
+
+        /// <summary>An endless row of circles every <paramref name="step"/> along y = <paramref name="cy"/> (scalloped shingles, P4-114).</summary>
+        static Func<float, float, float> CircleRow(float x0, float cy, float step, float r)
+            => (x, y) =>
+            {
+                float lx = x - x0;
+                lx -= step * Mathf.Round(lx / step);
+                return Mathf.Sqrt(lx * lx + (y - cy) * (y - cy)) - r;
             };
 
         static Func<float, float, float> Union(params Func<float, float, float>[] shapes)
@@ -182,12 +290,13 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.15f));
         }
 
+        /// <param name="def">The owners the guild has seen there; null for a den whose owners nobody has seen (plain earth, P4-76).</param>
         public static Sprite Nest(Data.MonsterDefinition def)
         {
-            string key = "c_nest:" + def.id;
+            string key = "c_nest:" + (def != null ? def.id : "unknown");
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             var c = new Canvas(60, 40);
-            var mound = Color.Lerp(def.bodyColor, Hex(0x7A5634), 0.65f);
+            var mound = def != null ? Color.Lerp(def.bodyColor, Hex(0x7A5634), 0.65f) : Hex(0x7A5634);
             var body = Ellipse(30, 14, 27, 13);
             c.Shape(body, mound, Darker(mound, 0.45f), 3f);
             c.ShapeClipped(Ellipse(22, 20, 12, 5), (x, y) => body(x, y) + 3f, Lighter(mound, 0.2f));
@@ -227,6 +336,79 @@ namespace GuildMaster.Visuals
             {
                 float x0 = 11 + i * 14;
                 c.ShapeClipped(RoundRect(x0, 38, x0 + 7, 60, 0f), (x, y) => awning(x, y) + 2.5f, Hex(0xF6EEDC));
+            }
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
+        // ---------------- Ruins (P4-85) ----------------
+
+        /// <summary>A ruin's way down: a broken stone arch over dark steps (looted: the opening caved in).</summary>
+        public static Sprite RuinEntrance(bool caved = false)
+        {
+            string key = "c_ruin_entrance:" + caved;
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(64, 60);
+            var stone = Hex(0x9C958A);
+            var ink = Hex(0x3A3632);
+            c.Shape(Ellipse(32, 7, 28, 5f), new Color(0f, 0f, 0f, 0.25f), new Color(0f, 0f, 0f, 0.25f), 0f);
+            // The dark way down, steps fading into it.
+            c.Shape(RoundRect(17, 6, 47, 40, 4f), Hex(0x14110F), ink, 2f);
+            if (!caved)
+                for (int s = 0; s < 3; s++)
+                    c.Shape(RoundRect(19 + s * 2, 8 + s * 6, 45 - s * 2, 12 + s * 6, 1f), Darker(stone, 0.55f - s * 0.12f), ink, 1f);
+            else
+            {
+                c.Shape(Circle(26, 16, 7f), Darker(stone, 0.8f), ink, 1.5f);
+                c.Shape(Circle(38, 13, 6f), stone, ink, 1.5f);
+                c.Shape(Circle(32, 24, 5f), Darker(stone, 0.9f), ink, 1.5f);
+            }
+            // Pillars and the arch over them, one corner broken off.
+            c.Shape(RoundRect(8, 6, 18, 46, 2f), stone, ink, 2f);
+            c.Shape(RoundRect(46, 6, 56, 40, 2f), Darker(stone, 0.92f), ink, 2f);
+            c.Shape(RoundRect(6, 42, 46, 52, 2f), Lighter(stone, 0.1f), ink, 2f);
+            c.Shape(Circle(51, 43, 3f), Darker(stone, 0.85f), ink, 1.5f);
+            // Moss.
+            c.ShapeClipped(Ellipse(14, 48, 7, 3f), RoundRect(6, 42, 46, 52, 2f), Hex(0x6E8E4A));
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
+        /// <summary>The steps up inside a ruin, back to its way down.</summary>
+        public static Sprite RuinStairsUp()
+        {
+            const string key = "c_ruin_stairs";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(40, 36);
+            var stone = Hex(0x8E877D);
+            var ink = Hex(0x2C2926);
+            for (int s = 0; s < 4; s++)
+                c.Shape(RoundRect(4 + s * 3, 4 + s * 7, 36 - s * 3, 12 + s * 7, 1.5f), Lighter(stone, s * 0.08f), ink, 1.5f);
+            c.Shape(Ellipse(20, 33, 9, 2.5f), new Color(1f, 0.95f, 0.75f, 0.35f), new Color(1f, 0.95f, 0.75f, 0.35f), 0f);
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
+        /// <summary>A treasure chest; open, with the gold showing.</summary>
+        public static Sprite TreasureChest(bool open)
+        {
+            string key = "c_chest:" + open;
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(40, 36);
+            var wood = Hex(0x8B5A2B);
+            var ink = Hex(0x3A2412);
+            var band = Hex(0xE2B84A);
+            c.Shape(Ellipse(20, 5, 17, 3.5f), new Color(0f, 0f, 0f, 0.25f), new Color(0f, 0f, 0f, 0.25f), 0f);
+            c.Shape(RoundRect(5, 4, 35, 20, 2f), wood, ink, 2f);
+            c.Shape(RoundRect(5, 11, 35, 14, 0f), band, Darker(band, 0.6f), 1f);
+            if (open)
+            {
+                c.Shape(Ellipse(20, 20, 13, 4f), band, Darker(band, 0.6f), 1.5f);
+                c.Shape(Circle(15, 22, 2.5f), Lighter(band, 0.4f), Darker(band, 0.6f), 1f);
+                c.Shape(Circle(24, 23, 2f), Lighter(band, 0.5f), Darker(band, 0.6f), 1f);
+                c.Shape(RoundRect(6, 22, 34, 33, 3f), Darker(wood, 0.85f), ink, 2f);
+            }
+            else
+            {
+                c.Shape(RoundRect(5, 18, 35, 28, 5f), Lighter(wood, 0.08f), ink, 2f);
+                c.Shape(RoundRect(17, 13, 23, 21, 1f), band, Darker(band, 0.55f), 1.5f);
             }
             return c.ToSprite(key, new Vector2(0.5f, 0.1f));
         }
@@ -334,171 +516,71 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
         }
 
-        // ---------------- Buildings ----------------
-
-        public static Sprite Building(Town.BuildingType type, int tilesW, int tilesH)
-        {
-            string key = $"c_building:{type}:{tilesW}x{tilesH}";
-            if (s_cache.TryGetValue(key, out var cached)) return cached;
-            int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
-            var c = new Canvas(w, h);
-            if (type == Town.BuildingType.TrainingGround) return TrainingYard(c, key);
-            if (type == Town.BuildingType.Watchtower) return Watchtower(c, key);
-
-            var roof = type switch
-            {
-                Town.BuildingType.TownHall => Hex(0xD9534F),
-                Town.BuildingType.GuildHall => Hex(0x4A7BD0),
-                Town.BuildingType.Blacksmith => Hex(0x6B6F7A),
-                Town.BuildingType.Apothecary => Hex(0x4DB06B),
-                _ => Hex(0xB9854A),
-            };
-            var wall = Hex(0xF3E6C8);
-            float ink = 3.5f;
-            float roofBottom = h * 0.52f;
-
-            // Walls (lower part), with a darker base strip.
-            var walls = RoundRect(6, 2, w - 6, roofBottom + 8, 5f);
-            c.Shape(walls, wall, Ink, ink);
-            c.ShapeClipped(RoundRect(6, 2, w - 6, 12, 3f), (x, y) => walls(x, y) + ink, Hex(0xD8C7A2));
-
-            // Windows and door.
-            int bays = Mathf.Max(2, tilesW - 1);
-            float bayW = (w - 12f) / bays;
-            float doorX = w * 0.5f;
-            for (int i = 0; i < bays; i++)
-            {
-                float cx = 6 + bayW * (i + 0.5f);
-                if (Mathf.Abs(cx - doorX) < bayW * 0.6f) continue;
-                c.Shape(RoundRect(cx - 8, roofBottom - 26, cx + 8, roofBottom - 8, 4f), Hex(0x9ED8F5), Ink, 2.5f);
-                c.Shape(RoundRect(cx - 1, roofBottom - 25, cx + 1, roofBottom - 9, 0.5f), Ink, Ink, 0f);
-            }
-            c.Shape(RoundRect(doorX - 11, 2, doorX + 11, 34, 8f), Hex(0x9A6236), Ink, 3f);
-            c.Shape(Circle(doorX + 5, 18, 2f), Hex(0xF2C94C), Hex(0xF2C94C), 0f);
-
-            // Roof on top with shingle rows.
-            var roofShape = RoundRect(1, roofBottom, w - 1, h - 2, 7f);
-            c.Shape(roofShape, roof, Ink, ink);
-            for (float y = roofBottom + 10; y < h - 8; y += 11)
-            {
-                float yy = y;
-                c.ShapeClipped(RoundRect(4, yy, w - 4, yy + 3, 1.5f), (x, y2) => roofShape(x, y2) + ink, Darker(roof, 0.8f));
-            }
-            c.ShapeClipped(RoundRect(8, h - 14, w - 8, h - 9, 2f), (x, y) => roofShape(x, y) + ink, Lighter(roof, 0.3f));
-            if (type == Town.BuildingType.Blacksmith)
-                c.Shape(RoundRect(w - 26, h - 34, w - 14, h - 2, 2f), Hex(0x8A8E99), Ink, 2.5f);   // chimney
-            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
-        }
+        // ---------------- Other villages (P4-84) ----------------
 
         /// <summary>
-        /// What the building looks like inside (seen when the outside fades out): plank floor inside
-        /// thick walls, plus a few pieces of furniture per building type. Null for open yards.
+        /// Another village seen from afar (3×3 cells): two cottages behind a stake fence, roofs in the colours of
+        /// its region. Ruined, it is burnt stumps of wall and rubble.
         /// </summary>
-        public static Sprite BuildingInterior(Town.BuildingType type, int tilesW, int tilesH)
+        public static Sprite Village(World.Region region, bool ruined)
         {
-            if (type is Town.BuildingType.TrainingGround or Town.BuildingType.Watchtower) return null;
-            string key = $"c_interior:{type}:{tilesW}x{tilesH}";
+            string key = $"c_village:{region}:{ruined}";
             if (s_cache.TryGetValue(key, out var cached)) return cached;
-            int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
-            var c = new Canvas(w, h);
-            var wallBand = Hex(0xC9B48E);
-            var floor = Hex(0xD9A866);
-            // Outer walls, then the plank floor with board lines.
-            var outer = RoundRect(2, 2, w - 2, h - 2, 6f);
-            c.Shape(outer, wallBand, Ink, 3.5f);
-            var room = RoundRect(12, 12, w - 12, h - 14, 3f);
-            c.Shape(room, floor, Darker(wallBand, 0.7f), 2f);
-            for (float y = 22; y < h - 16; y += 12)
+            const int S = 96;
+            var c = new Canvas(S, S);
+            var woodInk = Hex(0x4A2E17);
+            c.Shape(Ellipse(48, 22, 44, 16), new Color(0f, 0f, 0f, 0.18f), new Color(0f, 0f, 0f, 0.18f), 0f);
+            if (ruined)
             {
-                float yy = y;
-                c.ShapeClipped(RoundRect(14, yy, w - 14, yy + 1.5f, 0.5f), (x, y2) => room(x, y2) + 2f, Darker(floor, 0.85f));
+                var soot = Hex(0x3A3532);
+                c.Shape(Ellipse(48, 30, 36, 14), Hex(0x6E655E), Darker(Hex(0x6E655E), 0.6f), 2f);
+                c.Shape(RoundRect(18, 26, 40, 46, 2f), soot, Hex(0x1E1A18), 2.5f);
+                c.Shape(RoundRect(54, 24, 80, 40, 2f), soot, Hex(0x1E1A18), 2.5f);
+                for (int i = 0; i < 9; i++)
+                {
+                    float x = 10 + i * 9.5f, tall = 5f + (i * 5 % 4) * 2.5f;
+                    c.Shape(RoundRect(x - 2.5f, 12, x + 2.5f, 12 + tall, 1f), Hex(0x2E2622), Hex(0x161210), 1.5f);
+                }
+                for (int i = 0; i < 6; i++)
+                    c.Shape(Ellipse(22 + i * 10, 20 + (i % 2) * 6, 4.5f, 3f), Hex(0x8E8C94), Hex(0x3C3B45), 1.5f);
+                return c.ToSprite(key, new Vector2(0.5f, 0.5f));
             }
-            // Doorway gap in the front wall.
-            c.Shape(RoundRect(w * 0.5f - 11, 0, w * 0.5f + 11, 14, 2f), floor, floor, 0f);
-
-            float cx = w * 0.5f;
-            switch (type)
+            var roof = region switch
             {
-                case Town.BuildingType.TownHall:
-                    c.Shape(RoundRect(cx - 12, 14, cx + 12, h - 30, 3f), Hex(0xC0392B), Darker(Hex(0xC0392B), 0.6f), 2f);   // carpet
-                    c.Shape(RoundRect(cx - 40, h - 44, cx + 40, h - 28, 4f), Hex(0x8A5A30), Ink, 2.5f);                    // long table
-                    for (int i = -1; i <= 1; i++) c.Shape(Circle(cx + i * 26, h - 52, 5f), Hex(0xB07A44), Ink, 2f);       // chairs
-                    break;
-                case Town.BuildingType.GuildHall:
-                    c.Shape(RoundRect(cx - 30, h - 30, cx + 30, h - 16, 2f), Hex(0xB98A55), Ink, 2.5f);                   // quest board
-                    for (int i = 0; i < 4; i++) c.Shape(RoundRect(cx - 26 + i * 14, h - 27, cx - 16 + i * 14, h - 19, 1f), Hex(0xFFF6DA), Ink, 1f);
-                    c.Shape(RoundRect(18, 30, 58, 42, 3f), Hex(0x8A5A30), Ink, 2.5f);                                      // counter
-                    c.Shape(Circle(w - 40, 48, 11f), Hex(0xA56B3A), Ink, 2.5f);                                            // round table
-                    c.Shape(Circle(w - 58, 48, 4.5f), Hex(0xB07A44), Ink, 2f);
-                    c.Shape(Circle(w - 22, 48, 4.5f), Hex(0xB07A44), Ink, 2f);
-                    break;
-                case Town.BuildingType.Blacksmith:
-                    c.Shape(RoundRect(16, h - 42, 44, h - 18, 4f), Hex(0x6B6F7A), Ink, 2.5f);                              // forge
-                    c.Shape(Ellipse(30, h - 30, 8, 6), Hex(0xFF9F3A), Hex(0xFF6B2A), 2f);                                  // fire
-                    c.Shape(Union(RoundRect(w - 52, 36, w - 20, 44, 2f), RoundRect(w - 42, 24, w - 30, 38, 1f)), Hex(0x4A4E57), Ink, 2f);  // anvil
-                    break;
-                case Town.BuildingType.Apothecary:
-                    c.Shape(RoundRect(14, h - 32, w - 14, h - 20, 2f), Hex(0x8A5A30), Ink, 2f);                            // shelf
-                    var bottles = new[] { Hex(0xE74C3C), Hex(0x3498DB), Hex(0x2ECC71), Hex(0xE74C3C), Hex(0x9B59B6) };
-                    for (int i = 0; i < bottles.Length && 20 + i * 12 < w - 20; i++) c.Shape(Circle(22 + i * 12, h - 26, 4f), bottles[i], Ink, 1.5f);
-                    c.Shape(RoundRect(cx - 18, 26, cx + 18, 36, 2f), Hex(0xA56B3A), Ink, 2f);                              // counter
-                    break;
-            }
-            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
-        }
-
-        /// <summary>A stone shaft with battlements, a lookout window and a pennant (P4-13).</summary>
-        static Sprite Watchtower(Canvas c, string key)
-        {
-            int w = c.W, h = c.H;
-            var stone = Hex(0xB9BCC6);
-            float shaftW = w * 0.34f;
-            float cx = w * 0.5f;
-            // Shaft, slightly tapered by drawing a wider base block underneath.
-            c.Shape(RoundRect(cx - shaftW * 0.72f, 2, cx + shaftW * 0.72f, h * 0.22f, 4f), Darker(stone, 0.85f), Ink, 3.5f);
-            var shaft = RoundRect(cx - shaftW, h * 0.16f, cx + shaftW, h * 0.74f, 4f);
-            c.Shape(shaft, stone, Ink, 3.5f);
-            // Stone courses.
-            for (float y = h * 0.24f; y < h * 0.70f; y += 13)
+                World.Region.Desert => Hex(0xD98E4A),
+                World.Region.Snow => Hex(0x6F8FB0),
+                World.Region.Swamp => Hex(0x6E8B4A),
+                World.Region.Wasteland => Hex(0x9A5A3C),
+                _ => Hex(0xB9854A),
+            };
+            var wall = region == World.Region.Desert ? Hex(0xEBD3A0) : Hex(0xF3E6C8);
+            // Back fence stakes, the two cottages, then the front stakes over their feet.
+            for (int i = 0; i < 9; i++)
             {
-                float yy = y;
-                c.ShapeClipped(RoundRect(cx - shaftW, yy, cx + shaftW, yy + 2f, 1f), (x, y2) => shaft(x, y2) + 3.5f, Darker(stone, 0.82f));
+                float x = 9 + i * 9.8f;
+                c.Shape(RoundRect(x - 2.5f, 52, x + 2.5f, 70, 1.5f), Hex(0x9A6436), woodInk, 1.5f);
             }
-            // Lookout window.
-            c.Shape(RoundRect(cx - 9, h * 0.46f, cx + 9, h * 0.62f, 7f), Hex(0x2B3242), Ink, 2.5f);
-            // Battlemented top: a wider band with three merlons.
-            var top = RoundRect(cx - shaftW * 1.25f, h * 0.70f, cx + shaftW * 1.25f, h * 0.82f, 3f);
-            c.Shape(top, Lighter(stone, 0.12f), Ink, 3.5f);
-            float merlonW = shaftW * 0.5f;
-            for (int i = -1; i <= 1; i++)
+            void Cottage(float x0, float y0, float w, float h)
             {
-                float mx = cx + i * shaftW * 0.8f;
-                c.Shape(RoundRect(mx - merlonW * 0.5f, h * 0.81f, mx + merlonW * 0.5f, h * 0.92f, 2f), Lighter(stone, 0.12f), Ink, 3f);
+                var walls = RoundRect(x0, y0, x0 + w, y0 + h * 0.55f, 3f);
+                c.Shape(walls, wall, Ink, 2.5f);
+                c.Shape(RoundRect(x0 + w * 0.5f - 5, y0, x0 + w * 0.5f + 5, y0 + 13, 4f), Hex(0x9A6236), Ink, 2f);
+                var top = RoundRect(x0 - 3, y0 + h * 0.5f, x0 + w + 3, y0 + h, 5f);
+                c.Shape(top, roof, Ink, 2.5f);
+                c.ShapeClipped(RoundRect(x0, y0 + h * 0.5f + 6, x0 + w, y0 + h * 0.5f + 8, 1f), (x, y) => top(x, y) + 2.5f, Darker(roof, 0.8f));
+                if (region == World.Region.Snow)
+                    c.ShapeClipped(RoundRect(x0 - 3, y0 + h - 7, x0 + w + 3, y0 + h, 3f), (x, y) => top(x, y), Hex(0xF4F8FC));
             }
-            // Pennant on the middle merlon.
-            c.Shape(RoundRect(cx - 1.5f, h * 0.88f, cx + 1.5f, h - 3, 1f), Hex(0x8A5A30), Ink, 2f);
-            c.Shape(RoundRect(cx + 1.5f, h - 14, cx + 18, h - 4, 2f), Hex(0xD9534F), Ink, 2.5f);
-            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
-        }
-
-        static Sprite TrainingYard(Canvas c, string key)
-        {
-            int w = c.W, h = c.H;
-            var yard = RoundRect(3, 3, w - 3, h - 3, 6f);
-            c.Shape(yard, Hex(0xDDBB82), Hex(0x8A5A30), 4f);
-            // Fence posts along the border and a couple of training dummies.
-            for (float x = 10; x < w - 6; x += 22)
+            Cottage(14, 34, 34, 40);
+            Cottage(50, 26, 32, 38);
+            for (int i = 0; i < 9; i++)
             {
-                c.Shape(RoundRect(x - 3, 2, x + 3, 12, 2f), Hex(0xB07A44), Ink, 2f);
-                c.Shape(RoundRect(x - 3, h - 12, x + 3, h - 2, 2f), Hex(0xB07A44), Ink, 2f);
+                float x = 9 + i * 9.8f;
+                if (i is 4 or 5) continue; // the gateway
+                c.Shape(RoundRect(x - 2.5f, 8, x + 2.5f, 24, 1.5f), Hex(0xA8703C), woodInk, 1.5f);
             }
-            for (int i = 0; i < 2; i++)
-            {
-                float cx = w * (0.33f + 0.34f * i), cy = h * 0.45f;
-                c.Shape(RoundRect(cx - 2, cy - 18, cx + 2, cy + 6, 1f), Hex(0x8A5A30), Ink, 1.5f);
-                c.Shape(Ellipse(cx, cy + 4, 9, 11), Hex(0xE8C98A), Ink, 2.5f);
-                c.Shape(Circle(cx, cy + 20, 6), Hex(0xE8C98A), Ink, 2.5f);
-            }
+            c.Shape(RoundRect(6, 14, 43, 17, 1f), Hex(0x7A5230), woodInk, 1f);
+            c.Shape(RoundRect(57, 14, 90, 17, 1f), Hex(0x7A5230), woodInk, 1f);
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
         }
     }

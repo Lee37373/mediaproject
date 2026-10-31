@@ -130,7 +130,7 @@ namespace GuildMaster.UI
         protected override void Refresh()
         {
             var roster = Services.Get<GuildRoster>();
-            _summary.text = $"길드원 {roster.Members.Count}/{roster.Capacity}명 · 파티별로 묶어 보여 줍니다(★ 리더). 행을 클릭하면 해당 모험가를 추적합니다.";
+            _summary.text = $"길드원 {roster.CountText} · 파티별로 묶어 보여 줍니다(★ 리더). 행을 클릭하면 해당 모험가를 추적합니다.";
             BuildGroups(roster.Members);
             EnsureRows(_content, _headers, _groups.Count, GroupHeader.Create);
             EnsureRows(_content, _rows, roster.Members.Count, MemberRow.Create);
@@ -226,7 +226,11 @@ namespace GuildMaster.UI
                 var d = a.Data;
                 string hpColor = UITheme.Hex(a.HpRatio > 0.6f ? UITheme.Good : a.HpRatio > 0.3f ? UITheme.Warn : UITheme.Bad);
                 string star = leader ? UIBuilder.Colored("★ ", UITheme.Accent) : "";
-                _main.text = $"{star}{d.name} {InspectorView.GradeTag(d.grade)}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
+                // Titles: a region lord or the dragon it helped bring down (P4-83, P4-93), a nemesis it slew (P4-109).
+                string titles = d.titles.Count > 0 ? " " + UIBuilder.Colored($"[칭호 {d.titles.Count}]", UITheme.Accent) : "";
+                // Weaker than the monsters round the town (P4-99): it trains, or hunts close in on its own.
+                if (a.IsNewcomer) titles += " " + UIBuilder.Colored("[신입]", UITheme.Exp);
+                _main.text = $"{star}{d.name} {InspectorView.GradeTag(d.grade)}{titles}  <color=#{UITheme.Hex(UITheme.TextMuted)}>{AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · {d.mbti} · 가치관 {d.values}</color>  " +
                              $"<color=#{hpColor}>HP {a.Hp:0}/{a.Stats.MaxHp:0}</color>  {UIBuilder.Colored(a.StateLabel, UITheme.Accent)}";
                 string quest = a.CurrentQuest != null ? $" · 의뢰 {a.CurrentQuest.Title}" : "";
                 var level = Welfare.StressRules.LevelOf(d.stress);
@@ -242,7 +246,7 @@ namespace GuildMaster.UI
                 if (Services.TryGet<Legacy.GuildLegacy>(out var legacy) && legacy.IsWounded(a))
                     stress += UIBuilder.Colored(" [중상]", UITheme.Bad);
                 _traits.text = "특성: " + Traits.TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad);
-                _sub.text = $"{LivingCostRules.Purse(d.gold, d.debt)} · EXP {d.exp}/{d.ExpToNextLevel} · 피로 {d.fatigue:0} · 스트레스 {stress} · 물약 {d.potions} · 전리품 {d.LootCount} · 처치 {d.kills} · 완료 {d.questsCompleted}{quest}";
+                _sub.text = $"{LivingCostRules.Purse(d.gold, d.debt)} · EXP {d.exp}/{d.ExpToNextLevel} · 기분 {MoodFormat.Mood(a)} · 피로 {d.fatigue:0} · 스트레스 {stress} · 물약 {d.potions} · 조명탄 {d.flares} · 전리품 {d.LootCount} · 처치 {d.kills} · 완료 {d.questsCompleted}{quest}";
             }
 
             void OpenDetail()

@@ -16,12 +16,11 @@ namespace GuildMaster.Session
 {
     /// <summary>
     /// Stands in for the player during a balance run (P5-1). It does the two things the loop cannot
-    /// start without: it walks the guild master out to scout (nothing can be posted against a nest
-    /// the guild has not seen), and it keeps a couple of hunt quests on the board, sized so the
-    /// roster reads them as "적당", paying the going rate. It is a measuring instrument, not an AI
-    /// player — it never upgrades buildings or builds towers, so a run measures the bare loop.
-    /// P4-68: it also talks visitors into joining, and posts against the nests threatening a raid
-    /// first — the 5-day run recruited no one and let the goblins by the town fill up.
+    /// start without: it walks the guild master out to scout (nothing is posted against a nest
+    /// the guild has not seen), and — since P4-82, when the town posts the hunts itself — it takes a
+    /// proposal card while too few quests the roster could take are open. It is a measuring instrument,
+    /// not an AI player — it never upgrades buildings or builds towers, so a run measures the bare loop.
+    /// P4-68: it also talks visitors into joining — the 5-day run recruited no one.
     /// Created on demand by <see cref="DebugCommands"/>.
     /// </summary>
     public class BalanceAutoPlayer : MonoBehaviour
@@ -35,14 +34,10 @@ namespace GuildMaster.Session
             return Instance;
         }
 
-        /// <summary>Gold paid per point of the species' EXP value, per monster asked for.</summary>
-        public const float GoldPerPower = 1.5f;
-        public const float ExpPerPower = 1f;
-        /// <summary>How many hunt quests to keep open at once.</summary>
+        /// <summary>Takes a proposal card while fewer quests than this are open that the roster could take (P4-82).</summary>
         public int OpenQuestTarget { get; set; } = 2;
-        /// <summary>Never post against a species whose observed population is at or below this.</summary>
-        public int SpareBelow { get; set; } = 2;
         public bool Running { get; private set; }
+        /// <summary>Proposal cards taken (P4-82; it used to post hunts itself).</summary>
         public int Posted { get; private set; }
         public int Skipped { get; private set; }
         public int ScoutLegs { get; private set; }
@@ -51,8 +46,6 @@ namespace GuildMaster.Session
         /// <summary>Visitors talked to, and how many of them joined (P4-68).</summary>
         public int RecruitTalks { get; private set; }
         public int Recruited { get; private set; }
-        /// <summary>Hunts posted on a nest threatening a raid (P4-68).</summary>
-        public int ThreatPosts { get; private set; }
 
         /// <summary>Scouting ring the master walks, in cells beyond the wall; it grows each lap.</summary>
         public const float FirstRing = 12f;
@@ -73,9 +66,7 @@ namespace GuildMaster.Session
         public const float ShieldBelow = 0.45f;
         public const float ShieldTo = 0.9f;
 
-        GuildIntel _intel;
         QuestBoard _board;
-        GuildTreasury _treasury;
         GuildRoster _roster;
         PlayerAvatar _master;
         WorldService _world;
@@ -87,14 +78,12 @@ namespace GuildMaster.Session
 
         public void Begin()
         {
-            _intel = Services.Get<GuildIntel>();
             _board = Services.Get<QuestBoard>();
-            _treasury = Services.Get<GuildTreasury>();
             _roster = Services.Get<GuildRoster>();
             _master = Services.Get<PlayerAvatar>();
             _world = Services.Get<WorldService>();
             Posted = Skipped = ScoutLegs = ScoutRetreats = ShieldSaves = 0;
-            RecruitTalks = Recruited = ThreatPosts = 0;
+            RecruitTalks = Recruited = 0;
             _talk = null;
             _talkedTo.Clear();
             _leg = 0;
@@ -108,6 +97,8 @@ namespace GuildMaster.Session
 
         /// <summary>How much to keep on the shelf, as a player would set it in the warehouse.</summary>
         public int PotionTarget { get; set; } = 6;
+        /// <summary>Flares kept in stock (P4-94).</summary>
+        public int FlareTarget { get; set; } = 4;
         public int GearTarget { get; set; } = 3;
 
         /// <summary>
@@ -120,6 +111,7 @@ namespace GuildMaster.Session
             foreach (var r in crafting.Recipes)
             {
                 if (r.outputItemId == DefaultContent.Potion) crafting.SetTarget(r, PotionTarget);
+                else if (r.outputItemId == GuildMaster.Flares.FlareRules.ItemId) crafting.SetTarget(r, FlareTarget);
                 else if (r.outputItemId == "gear_t1") crafting.SetTarget(r, GearTarget);
             }
         }
@@ -139,9 +131,8 @@ namespace GuildMaster.Session
 
         void OnHour(HourPassedEvent e)
         {
-            int open = _board.Quests.Count(q => q.IsActive);
-            if (open >= OpenQuestTarget) return;
-            TryPostOne();
+            if (TakeableOpen() >= OpenQuestTarget) return;
+            TryTakeCard();
         }
 
         void Update()
@@ -207,7 +198,7 @@ namespace GuildMaster.Session
                 _ = _talk.SendAsync(_talk.PlayerTurns == 0 ? Opening : PitchFor(_talk.Visitor.Data.values), false);
                 return;
             }
-            if (_roster.IsFull || !Services.TryGet<VisitorService>(out var visitors)) return;
+            if (!Services.TryGet<VisitorService>(out var visitors)) return;
             foreach (var v in visitors.Visitors)
             {
                 if (v == null || !v.IsAlive || !v.IsVisitor || v.InConversation || _talkedTo.Contains(v)) continue;
@@ -278,111 +269,46 @@ namespace GuildMaster.Session
             return Mathf.Max(1f, best);
         }
 
-        /// <summary>
-        /// Posts one hunt on the nest the guild knows best, at a count the roster can handle.
-        /// Everything it reads is observed intel, so the run obeys the information rule.
-        /// </summary>
-        public bool TryPostOne()
+        /// <summary>A quest the roster can come back from: below this it does not count as one the guild could take.</summary>
+        public const float SafeMargin = 1.2f;
+
+        /// <summary>Open, untaken quests the roster's best member could lead with a full party and come back.</summary>
+        int TakeableOpen()
         {
-            var nest = PickNest();
-            if (nest == null) { Skipped++; return false; }
-
-            var species = _intel.SpeciesOf(nest);
-            int observed = _intel.ObservedPopulation(species);
-            int maxParty = Mathf.Min(4, Mathf.Max(1, _roster.Members.Count));
             float power = LeaderPower();
+            int maxParty = Mathf.Min(4, Mathf.Max(1, _roster.Members.Count));
+            return _board.Quests.Count(q => q.Status == QuestStatus.Open && q.Assignees.Count == 0
+                                            && QuestRisk.Margin(power, Mathf.Min(maxParty, q.MaxParty), q) >= SafeMargin);
+        }
 
-            // Ask for as many as the roster can take on: grow the count while it still reads "적당".
-            int count = 1;
-            for (int c = 2; c <= Mathf.Min(6, observed - SpareBelow); c++)
+        /// <summary>
+        /// P4-82: the player posts no hunts any more — the town puts every den the guild has seen on the board. What
+        /// a player can still do is take another client's request from the proposal cards: one the roster reads as
+        /// "여유" or "적당", nearest first, drawing a new list when the old one is used up. Everything the cards are
+        /// made from is observed intel, so the run obeys the information rule.
+        /// </summary>
+        public bool TryTakeCard()
+        {
+            if (!Services.TryGet<Proposals.QuestProposalService>(out var proposals) || proposals.Generating) { Skipped++; return false; }
+            var card = proposals.Current
+                .Where(p => (p.Risk == QuestRisk.Easy || p.Risk == QuestRisk.Fair) && proposals.Check(p) == null)
+                .OrderBy(p => p.Target.Distance)
+                .FirstOrDefault();
+            if (card == null)
             {
-                var d = QuestBoard.HuntDanger(species, c, nest.WorldPosition, QuestBoard.HuntRadius);
-                if (QuestRisk.Margin(power, maxParty, d) < 1f) break;
-                count = c;
+                // Nothing worth taking: ask for a new list when allowed (it comes in a moment).
+                if (proposals.CanReroll(out _)) proposals.Reroll(out _);
+                Skipped++;
+                return false;
             }
-            if (count < 1) { Skipped++; return false; }
-
-            float per = Mathf.Max(1, species.expValue);
-            int gold = Mathf.RoundToInt(count * per * GoldPerPower);
-            int exp = Mathf.RoundToInt(count * per * ExpPerPower);
-            if (!_treasury.CanAfford(gold, exp)) { Skipped++; return false; }
-
-            var draft = new QuestDraft
-            {
-                Type = QuestType.Hunt,
-                Species = species,
-                Count = count,
-                RewardGold = gold,
-                RewardExp = exp,
-                MaxParty = maxParty,
-                Point = nest.WorldPosition,
-                HasPoint = true,
-                Radius = QuestBoard.HuntRadius,
-            };
-            if (!_board.TryPost(draft, out _, out _)) { Skipped++; return false; }
+            if (!proposals.Choose(card, out _)) { Skipped++; return false; }
             Posted++;
-            if (RaidThreat(nest) > 0f) ThreatPosts++;
             return true;
         }
 
-        /// <summary>A quest the roster can come back from: below this the auto player leaves it alone.</summary>
-        public const float SafeMargin = 1.2f;
-
-        /// <summary>
-        /// The nest a sensible player would send this roster to: one it can handle, nearest first.
-        /// Picking the fullest nest instead sent Lv1 parties across the map into goblin warriors and
-        /// wiped the guild by day 4, which measured the auto player's judgement, not the balance.
-        /// P4-68: among the ones it can handle, a nest threatening a raid comes first (fullest first),
-        /// since a player watching the walls would not leave those to swell.
-        /// </summary>
-        Nest PickNest()
-        {
-            float power = LeaderPower();
-            int maxParty = Mathf.Min(4, Mathf.Max(1, _roster.Members.Count));
-            var town = _world.TownCenterWorld;
-
-            Nest best = null;
-            float bestThreat = -1f, bestDistance = float.MaxValue;
-            foreach (var n in _intel.KnownNests)
-            {
-                var species = _intel.SpeciesOf(n);
-                if (species == null) continue;
-                if (_intel.Get(n).LastCount <= SpareBelow) continue;
-                if (_intel.ObservedPopulation(species) <= SpareBelow) continue;
-                if (_board.Quests.Any(q => q.IsActive && q.Species == species)) continue;
-
-                // One monster is the smallest quest there is; if even that is unsafe, stay away.
-                var danger = QuestBoard.HuntDanger(species, 1, n.WorldPosition, QuestBoard.HuntRadius);
-                if (QuestRisk.Margin(power, maxParty, danger) < SafeMargin) continue;
-
-                float distance = Vector2.Distance(n.WorldPosition, town);
-                float threat = RaidThreat(n);
-                if (threat > bestThreat || (threat == bestThreat && distance < bestDistance))
-                {
-                    bestThreat = threat;
-                    bestDistance = distance;
-                    best = n;
-                }
-            }
-            return best;
-        }
-
-        /// <summary>
-        /// How close a nest is to raiding the town, as far as the guild can tell: a raiding species'
-        /// nest by the town (<see cref="Town.WaveManager.RaidRadius"/>), by its last observed count
-        /// against the species' raid threshold. 0 for a nest that cannot raid the town.
-        /// </summary>
-        float RaidThreat(Nest n)
-        {
-            var species = _intel.SpeciesOf(n);
-            if (species == null || !species.canRaid) return 0f;
-            if (Vector2.Distance(n.WorldPosition, _world.TownCenterWorld) > Town.WaveManager.RaidRadius) return 0f;
-            return _intel.Get(n).LastCount / (float)Mathf.Max(1, species.raidThreshold);
-        }
-
         public string Report()
-            => $"[autoplayer] running={Running} posted={Posted} skipped={Skipped} scoutLegs={ScoutLegs} retreats={ScoutRetreats} "
-             + $"shieldSaves={ShieldSaves}{(ShieldMaster ? "" : " (shield off)")} ring={_ring:0} openTarget={OpenQuestTarget} spareBelow={SpareBelow} "
-             + $"threatPosts={ThreatPosts} recruitTalks={RecruitTalks} recruited={Recruited}";
+            => $"[autoplayer] running={Running} cardsTaken={Posted} skipped={Skipped} scoutLegs={ScoutLegs} retreats={ScoutRetreats} "
+             + $"shieldSaves={ShieldSaves}{(ShieldMaster ? "" : " (shield off)")} ring={_ring:0} openTarget={OpenQuestTarget} "
+             + $"townPosted={(Services.TryGet<TownQuestPoster>(out var town) ? town.Posted : 0)} recruitTalks={RecruitTalks} recruited={Recruited}";
     }
 }

@@ -12,6 +12,12 @@ namespace GuildMaster.Monsters
     public class MonsterRegroupState : State<Monster>
     {
         const float Timeout = 8f;
+        /// <summary>
+        /// Mates and homes farther than this cannot be reached before <see cref="Timeout"/> (at the regroup
+        /// pace), so they are not fallen back to. P4-81: on the 512 map a homeless kind took a "mate"
+        /// 490 cells away (same kind, no nest) and searched the whole map for it twice a second.
+        /// </summary>
+        public const float MaxDistance = 32f;
         const float ArriveDistance = 2f;
         const float RallyRadius = 6f;
         const float RepathSeconds = 0.5f;
@@ -23,6 +29,29 @@ namespace GuildMaster.Monsters
         float _repath;
 
         public override string Label => "재집결";
+
+        [System.Serializable]
+        class Saved
+        {
+            public string rally;
+            public Vector2 point;
+            public string enemy;
+        }
+
+        public override string SaveState() => JsonUtility.ToJson(new Saved
+        {
+            rally = RallyMate != null && RallyMate.IsAlive ? RallyMate.UnitId : null, point = Point,
+            enemy = Enemy != null && Enemy.IsAlive ? Enemy.UnitId : null,
+        });
+
+        public override void ResumeState(string json, Core.SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<Saved>(json);
+            RallyMate = ctx.Find<Monster>(s.rally);
+            Point = s.point;
+            Enemy = ctx.Find<Units.Unit>(s.enemy);
+            Enter();
+        }
 
         Vector2 Destination => RallyMate != null && RallyMate.IsAlive ? RallyMate.Position : Point;
 

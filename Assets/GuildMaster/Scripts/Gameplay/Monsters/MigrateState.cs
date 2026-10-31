@@ -14,13 +14,23 @@ namespace GuildMaster.Monsters
     public class MigrateState : State<Monster>
     {
         const float RepathSeconds = 1.5f;
+        /// <summary>
+        /// After a search that found no way: a stopped walker otherwise asks again every frame (P4-81:
+        /// a newcomer band at the 512 map's edge searched a 137-cell route 1045 times in a row).
+        /// </summary>
+        const float FailedRepathSeconds = 5f;
         const float Spread = 2f;
 
         float _repath;
+        bool _failed;
 
         public override string Label => "이주";
 
-        public override void Enter() => _repath = 0f;
+        public override void Enter()
+        {
+            _repath = 0f;
+            _failed = false;
+        }
 
         public override void Tick(float dt)
         {
@@ -38,13 +48,14 @@ namespace GuildMaster.Monsters
                 return;
             }
             _repath -= dt;
-            if (_repath > 0f && m.Mover.IsMoving) return;
+            if (_repath > 0f && (m.Mover.IsMoving || _failed)) return;
             _repath = RepathSeconds;
             // Each member aims at its own spot around the target (stable per monster).
             float angle = (Mathf.Abs(m.UnitId.GetHashCode()) % 360) * Mathf.Deg2Rad;
             var goal = band.Target.WorldPosition + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * Spread;
             // The band walks one route (P4-63): a species that lives in the woods moves through them.
-            m.Mover.SetDestination(goal, 1f, Units.RouteChoice.ForPack(m));
+            _failed = !m.Mover.SetDestination(goal, 1f, Units.RouteChoice.ForPack(m));
+            if (_failed) _repath = FailedRepathSeconds;
         }
 
         public override void Exit() => Owner.Mover.Stop();

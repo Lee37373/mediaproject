@@ -61,6 +61,14 @@ namespace GuildMaster.Tests
             Assert.That(PersuasionRules.IsRecklessBlocked(QuestRisk.Reckless, 1f, "명예"), Is.True, "cautious never goes");
             Assert.That(PersuasionRules.IsRecklessBlocked(QuestRisk.Reckless, -0.5f, "돈"), Is.False, "brave goes anyway");
             Assert.That(PersuasionRules.IsRecklessBlocked(QuestRisk.Risky, 1f, "안전"), Is.False, "only reckless quests are gated");
+            // The gate itself (moved from the model's decision checks, P4-91).
+            Assert.That(PersuasionRules.RecklessAllowed(QuestRisk.Risky, 1f, "안전", false), Is.True, "not reckless");
+            Assert.That(PersuasionRules.RecklessAllowed(QuestRisk.Reckless, 1f, "명예", true), Is.False, "coward never");
+            Assert.That(PersuasionRules.RecklessAllowed(QuestRisk.Reckless, 0f, "안전", true), Is.False, "safety-minded never");
+            Assert.That(PersuasionRules.RecklessAllowed(QuestRisk.Reckless, -0.5f, "돈", false), Is.True, "brave trait");
+            Assert.That(PersuasionRules.RecklessAllowed(QuestRisk.Reckless, 0f, "모험", false), Is.True, "adventure values");
+            Assert.That(PersuasionRules.RecklessAllowed(QuestRisk.Reckless, 0f, "돈", false), Is.False, "ordinary alone");
+            Assert.That(PersuasionRules.RecklessAllowed(QuestRisk.Reckless, 0f, "돈", true), Is.True, "ordinary joining a party");
         }
 
         [Test]

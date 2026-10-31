@@ -93,6 +93,18 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void AVisitorStrongerThanTheGuild_StartsColder_ButNeverOutOfReach()
+        {
+            // P4-88 (user decision 2026-10-18): an outer village's Lv17 does not join a Lv5 guild for the asking.
+            Assert.That(RecruitmentSession.InitialAffinity(null, 0), Is.EqualTo(RecruitmentSession.StartAffinity));
+            Assert.That(RecruitmentSession.InitialAffinity(null, 5), Is.EqualTo(RecruitmentSession.StartAffinity - 5 * RecruitmentSession.AffinityPerLevelAbove));
+            Assert.That(RecruitmentSession.InitialAffinity(null, 12), Is.EqualTo(16));
+            Assert.That(RecruitmentSession.InitialAffinity(null, 40), Is.EqualTo(RecruitmentSession.StartAffinity - RecruitmentSession.MaxLevelPenalty), "the penalty is capped");
+            Assert.That(RecruitmentSession.InitialAffinity(null, -3), Is.EqualTo(RecruitmentSession.StartAffinity), "a weaker visitor is no easier");
+            Assert.That(RecruitmentSession.NextRecruitAffinity(-1, null, 3, 12), Is.EqualTo(19), "small talk seeds the same way");
+        }
+
+        [Test]
         public void NextRecruitAffinity_SeedsOnFirstContactThenAccumulates()
         {
             // Ambient town small talk (BanterService) shares this same persistent affinity with the formal

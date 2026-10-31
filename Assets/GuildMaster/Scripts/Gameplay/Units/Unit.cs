@@ -28,6 +28,8 @@ namespace GuildMaster.Units
         public Unit Source;
         public float Amount;
         public bool Critical;
+        /// <summary>A step of poison (P4-87), not a blow: it leaves no new mark and shows as a small green number.</summary>
+        public bool OverTime;
     }
 
     public struct UnitDiedEvent
@@ -46,6 +48,11 @@ namespace GuildMaster.Units
         public string UnitId { get; protected set; }
         public string DisplayName { get; protected set; }
         public Faction Faction { get; protected set; }
+        /// <summary>
+        /// Not of the guild, but out on the road where monsters that go for people fall on it (P4-84: a refugee
+        /// from another village). Visitors in town and the merchant stay untouched.
+        /// </summary>
+        public virtual bool ExposedToMonsters => false;
         public CombatStats Stats;
         public float Hp { get; protected set; }
         public bool IsAlive => !_dead && Hp > 0f;
@@ -77,6 +84,14 @@ namespace GuildMaster.Units
 
         public float StunnedUntil { get; private set; }
         public bool IsStunned => Time.time < StunnedUntil;
+
+        /// <summary>Poison, broken armour and chill left by the guild's facilities (P4-87).</summary>
+        public Afflictions Afflictions { get; } = new();
+        /// <summary>Defence as blows meet it (broken armour taken off).</summary>
+        public float EffectiveDefense => Stats.Defense * (1f - Afflictions.ArmorBreak);
+        /// <summary>Seconds between attacks as they are now (a chill draws them out).</summary>
+        public float AttackCooldownNow => Stats.AttackCooldown / Mathf.Max(0.1f, 1f - Afflictions.Slow);
+
         float _speedBuff = 1f;
         float _speedBuffUntil;
         Vector2 _knockVelocity;
@@ -84,6 +99,12 @@ namespace GuildMaster.Units
 
         /// <summary>Combat intelligence tier (target choice, chase give-up, skill timing).</summary>
         public virtual CombatTier Tier => CombatTier.Novice;
+
+        /// <summary>
+        /// In the air (P4-93: the dragon on the wing): only shots reach it (<see cref="Combat.CanReach"/>), crowds do not
+        /// push it, and ground hazards do not touch it.
+        /// </summary>
+        public virtual bool IsAirborne => false;
 
         /// <summary>Fight behaviour, if this unit has one (debug gizmos).</summary>
         public virtual Engagement CombatEngagement => null;
@@ -94,7 +115,26 @@ namespace GuildMaster.Units
         void OnDrawGizmosSelected() => UnitGizmos.Draw(this, true);
 
         /// <summary>Unit currently targeted by this unit (for UI, taunts, focus fire).</summary>
-        public Unit CurrentTarget { get; internal set; }
+        public Unit CurrentTarget
+        {
+            get => _currentTarget;
+            internal set
+            {
+                if (ReferenceEquals(_currentTarget, value)) return;
+                if (!ReferenceEquals(_currentTarget, null)) _currentTarget._targetedBy.Remove(this);
+                _currentTarget = value;
+                if (!ReferenceEquals(value, null)) value._targetedBy.Add(this);
+            }
+        }
+
+        Unit _currentTarget;
+        readonly System.Collections.Generic.List<Unit> _targetedBy = new();
+
+        /// <summary>
+        /// Units whose <see cref="CurrentTarget"/> is this one, alive or not (P5-2: counting who
+        /// piles onto a target used to scan every unit around it).
+        /// </summary>
+        public Core.ListView<Unit> TargetedBy => new(_targetedBy);
 
         // ---------------- Group roles (P4-27) ----------------
 
@@ -134,7 +174,9 @@ namespace GuildMaster.Units
 
         protected void TickStatus(float dt)
         {
-            Mover.BuffMultiplier = Time.time < _speedBuffUntil ? _speedBuff : 1f;
+            Mover.BuffMultiplier = (Time.time < _speedBuffUntil ? _speedBuff : 1f) * (1f - Afflictions.Slow);
+            Afflictions.Tick(this, dt);
+            if (Visual != null) Visual.StatusTint = Afflictions.Tint;
             if (Time.time < _knockUntil)
             {
                 var next = Position + _knockVelocity * dt;
@@ -172,7 +214,7 @@ namespace GuildMaster.Units
         /// </summary>
         bool HoldAreaSkill(Skill s, Unit target)
         {
-            if (Tier < CombatTier.Heroic || s.AreaRadius <= 0f || target == null) return false;
+            if (Tier < CombatTier.Heroic || s.AreaRadius <= 0f || target == null || !s.SavedForGroups) return false;
             var center = s.AreaOnSelf ? Position : target.Position;
             int inBlast = UnitRegistry.CountInRadius(center, s.AreaRadius, u => u != this && IsHostileTo(u));
             int nearby = UnitRegistry.CountInRadius(Position, 6f, u => u != this && IsHostileTo(u));
@@ -187,7 +229,24 @@ namespace GuildMaster.Units
         }
 
         protected virtual void OnEnable() => UnitRegistry.Register(this);
-        protected virtual void OnDisable() => UnitRegistry.Unregister(this);
+
+        protected virtual void OnDisable()
+        {
+            UnitRegistry.Unregister(this);
+            // Off its target's list of attackers: a destroyed member was still counted round a monster it had been
+            // fighting, and scoring that monster read the destroyed object (a trial run threw 1700 times, P4-91).
+            CurrentTarget = null;
+        }
+
+        /// <summary>
+        /// Leaves the world for good without dying (a member who quits, a visitor who walks off): call just before its
+        /// object is destroyed, so whoever still points at it reads it as gone rather than touching a destroyed object.
+        /// </summary>
+        public void Vanish()
+        {
+            _dead = true;
+            CurrentTarget = null;
+        }
 
         /// <summary>Resets health/state for (re)spawn.</summary>
         protected void ResetVitals()
@@ -200,6 +259,8 @@ namespace GuildMaster.Units
             StunnedUntil = 0f;
             _speedBuffUntil = 0f;
             _knockUntil = 0f;
+            Afflictions.Clear();
+            if (Visual != null) Visual.StatusTint = Color.white;
             CurrentTarget = null;
             foreach (var s in Skills) s.ResetCooldown(GameRandomStagger());
             if (Mover) Mover.Speed = Stats.MoveSpeed;
@@ -212,14 +273,17 @@ namespace GuildMaster.Units
         /// <summary>
         /// Sight of another unit: within the sight radius (a third of it inside a forest), and no
         /// mountain, wall, building or — seen from outside — forest in between; up to two trees are
-        /// fine (P4-48, <see cref="ForestSight"/>). Use when picking new targets by sight.
+        /// fine (P4-48, <see cref="ForestSight"/>). Use when picking new targets by sight. The guild also sees whatever
+        /// stands in a flare's light near it (P4-94, <see cref="Flares.FlareService.LightsFor"/>).
         /// </summary>
         public bool CanSee(Unit other)
-            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, other.Position, Stats.SightRadius));
+            => other != null && (!Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, other.Position, Stats.SightRadius)
+                                 || Faction == Faction.Guild && Flares.FlareService.LightsFor(Position, other.Position));
 
         /// <summary>Same sight rule for a point (e.g. an item on the ground).</summary>
         public bool CanSee(Vector2 point)
-            => !Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, point, Stats.SightRadius);
+            => !Core.Services.TryGet<WorldService>(out var world) || world.CanSee(Position, point, Stats.SightRadius)
+               || Faction == Faction.Guild && Flares.FlareService.LightsFor(Position, point);
 
         /// <summary>How far this unit sees where it stands now (a third of its sight inside a forest).</summary>
         public float EffectiveSightRadius
@@ -307,9 +371,17 @@ namespace GuildMaster.Units
             return skill != null && skill.TryUseDeliberately(this, target);
         }
 
-        internal void ReceiveDamage(float amount, Unit source, bool critical)
+        /// <summary>
+        /// How much of a direct hit from <c>source</c> lands on <c>target</c> (P4-107: a kind's weakness and strength by class,
+        /// and the guild's mastery of a kind); null = all of it. Set by the bestiary; marks over time are not touched.
+        /// </summary>
+        public static System.Func<Unit, Unit, float> DamageFactor;
+
+        internal void ReceiveDamage(float amount, Unit source, bool critical, bool overTime = false)
         {
             if (!IsAlive) return;
+            if (!overTime && source != null && amount > 0f && DamageFactor != null)
+                amount = Mathf.Max(1f, Mathf.Round(amount * DamageFactor(source, this)));
             if (GuildInvulnerable && Faction == Faction.Guild) amount = 0f;
             Hp -= amount;
             if (source != null)
@@ -317,13 +389,20 @@ namespace GuildMaster.Units
                 LastAttacker = source;
                 LastAttackedTime = Time.time;
             }
-            Visual?.Flash();
-            EventBus.Publish(new UnitDamagedEvent { Target = this, Source = source, Amount = amount, Critical = critical });
+            if (!overTime)
+            {
+                Visual?.Flash();
+                Visual?.PlayHit();
+            }
+            EventBus.Publish(new UnitDamagedEvent { Target = this, Source = source, Amount = amount, Critical = critical, OverTime = overTime });
             OnDamaged(amount, source);
             if (Hp <= 0f)
             {
                 Hp = 0f;
                 _dead = true;
+                // Marks end with the life (the corpse fades from its own colour, not the poison's).
+                Afflictions.Clear();
+                if (Visual != null) Visual.StatusTint = Color.white;
                 Mover.Stop();
                 OnDeath(source);
                 Died?.Invoke(this);
@@ -333,5 +412,81 @@ namespace GuildMaster.Units
 
         protected virtual void OnDamaged(float amount, Unit source) { }
         protected abstract void OnDeath(Unit killer);
+
+        // ---------------- Save (P5-4) ----------------
+
+        /// <summary>
+        /// What every unit carries besides its own data: where it stands, its health, and the
+        /// moments it waits for (as seconds from now, see <see cref="SaveTime"/>). Only the living are saved.
+        /// </summary>
+        [Serializable]
+        public class UnitSave
+        {
+            public float x;
+            public float y;
+            public float hp;
+            public string last_attacker;
+            public float last_attacked;
+            public float next_attack;
+            public float stunned_until;
+            public float speed_buff = 1f;
+            public float speed_buff_until;
+            public float hidden_until;
+            public float grace_until;
+            /// <summary>Seconds left on each skill, in the order of <see cref="Skills"/>.</summary>
+            public System.Collections.Generic.List<float> skill_cooldowns = new();
+            /// <summary>Marks from the guild's facilities (P4-87); all zero when none.</summary>
+            public Afflictions.SaveData afflictions;
+        }
+
+        public UnitSave CaptureUnit()
+        {
+            var p = Position;
+            var s = new UnitSave
+            {
+                x = Round(p.x), y = Round(p.y), hp = Round(Hp),
+                last_attacker = LastAttacker != null && LastAttacker.IsAlive ? LastAttacker.UnitId : null,
+                last_attacked = SaveTime.Rel(LastAttackedTime), next_attack = SaveTime.Rel(NextAttackTime),
+                stunned_until = SaveTime.Rel(StunnedUntil), speed_buff = _speedBuff, speed_buff_until = SaveTime.Rel(_speedBuffUntil),
+                hidden_until = SaveTime.Rel(_hiddenUntil), grace_until = SaveTime.Rel(GraceUntil),
+                afflictions = Afflictions.Capture(),
+            };
+            foreach (var skill in Skills) s.skill_cooldowns.Add(SaveTime.Hundredths(skill.CooldownLeft));
+            return s;
+        }
+
+        /// <summary>Puts the saved standing back (call after the unit is set up; the attacker comes in <see cref="LinkUnit"/>).</summary>
+        public void RestoreUnit(UnitSave s)
+        {
+            transform.position = new Vector3(s.x, s.y, transform.position.z);
+            // Saved to the hundredth: a unit on its last sliver (under 1) comes back as it was, not topped up to 1.
+            Hp = Mathf.Clamp(s.hp, 0.01f, Stats.MaxHp);
+            LastAttackedTime = SaveTime.Abs(s.last_attacked);
+            NextAttackTime = SaveTime.Abs(s.next_attack);
+            StunnedUntil = SaveTime.Abs(s.stunned_until);
+            _speedBuff = s.speed_buff;
+            _speedBuffUntil = SaveTime.Abs(s.speed_buff_until);
+            _hiddenUntil = SaveTime.Abs(s.hidden_until);
+            if (Visual != null) Visual.Fade = IsHidden ? 0.35f : 1f;
+            GraceUntil = SaveTime.Abs(s.grace_until);
+            for (int i = 0; i < Skills.Count && i < s.skill_cooldowns.Count; i++) Skills[i].ResetCooldown(s.skill_cooldowns[i]);
+            Afflictions.Restore(s.afflictions);
+        }
+
+        public void LinkUnit(UnitSave s, SaveContext ctx)
+        {
+            if (!string.IsNullOrEmpty(s.last_attacker)) LastAttacker = ctx.Find<Unit>(s.last_attacker);
+            Afflictions.Link(s.afflictions, ctx);
+        }
+
+        /// <summary>Until this moment (Time.time) nothing can hurt the unit (a last stand's grace, F-6).</summary>
+        protected float GraceUntil { get; set; }
+
+        /// <summary>
+        /// Positions, health and timers to the hundredth: enough to stand in the same place, and stable
+        /// through a save → load → save. A timer still running is never rounded to zero (it would fire
+        /// on load, see <see cref="SaveTime.Hundredths"/>).
+        /// </summary>
+        protected static float Round(float v) => SaveTime.Hundredths(v);
     }
 }

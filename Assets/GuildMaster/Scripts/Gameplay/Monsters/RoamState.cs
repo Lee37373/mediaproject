@@ -19,7 +19,14 @@ namespace GuildMaster.Monsters
 
         public override string Label => "떠돌이";
 
-        public override void Enter() => _repath = 0f;
+        public override void Enter()
+        {
+            _repath = 0f;
+            _noWay = false;
+        }
+
+        /// <summary>The last search found no way: wait out the interval before searching again (P4-102: it searched every frame).</summary>
+        bool _noWay;
 
         public override void Tick(float dt)
         {
@@ -41,10 +48,10 @@ namespace GuildMaster.Monsters
                 if (Vector2.Distance(m.Position, goal) < 1.5f) { m.Mover.Stop(); return; }
             }
             _repath -= dt;
-            if (_repath > 0f && m.Mover.IsMoving) return;
+            if (_repath > 0f && (m.Mover.IsMoving || _noWay)) return;
             _repath = RepathSeconds;
             // The pack walks one route (P4-63): woodland kinds keep to the trees on the road.
-            m.Mover.SetDestination(goal, 1f, Units.RouteChoice.ForPack(m));
+            _noWay = !m.Mover.SetDestination(goal, 1f, Units.RouteChoice.ForPack(m));
         }
 
         public override void Exit() => Owner.Mover.Stop();

@@ -106,6 +106,8 @@ namespace GuildMaster.Tests
                     TownHalfSize = balance.townHalfSize,
                     NestCount = balance.nestCount,
                     MinNestDistanceFromTown = balance.minNestDistanceFromTown,
+                    InnerHalfSize = balance.innerHalfSize,
+                    InnerNestCount = balance.innerNestCount, Landforms = balance.landforms,
                 });
                 var assignment = EcosystemManager.AssignSpecies(db.monsters, map.Nests, new GameRandom(seed));
                 for (int i = 0; i < assignment.Count; i++)
@@ -115,9 +117,44 @@ namespace GuildMaster.Tests
                                 $"seed {seed}: {assignment[i].id} on {site.Region}/{site.Biome}");
                     seen.Add(assignment[i].id);
                 }
+                // P4-110: the new kinds are sure of their two dens on every map (one den of two or three died out in a day).
+                foreach (var s in db.monsters.Where(m => m.nestWeight < 1f))
+                    Assert.That(assignment.Count(a => a == s), Is.GreaterThanOrEqualTo(s.minNests), $"seed {seed}: {s.id}");
+                // And the old ones keep their place beside them: the near ring is still the slimes'.
+                Assert.That(Enumerable.Range(0, map.Nests.Count).OrderBy(i => map.Nests[i].DistanceFromTown).Take(3).All(i => assignment[i].id == "slime"),
+                            Is.True, $"seed {seed}: the three nearest dens are slimes'");
             }
             Object.DestroyImmediate(balance);
-            foreach (var s in db.monsters) Assert.That(seen, Does.Contain(s.id), $"{s.id} never got a nest");
+            // Region lords (P4-83) and the dragon (P4-93) are never dealt a den: their lairs are set apart (RegionLords.PickLairs, Dragon.PickLair).
+            foreach (var s in db.monsters.Where(m => !m.isRegionLord && !m.isDragon)) Assert.That(seen, Does.Contain(s.id), $"{s.id} never got a nest");
+        }
+
+        [Test]
+        public void On512Map_HalfTheNestsStayOnTheOld256Map()
+        {
+            // P4-81 (user decision 2026-10-16): 64 nests in all; spread evenly only 16 would be near the town.
+            // P4-110 (user decision 2026-10-30): 96 with the new kinds, half of them still near.
+            var balance = ScriptableObject.CreateInstance<Session.GameBalance>();
+            try
+            {
+                Assert.That(balance.mapWidth, Is.EqualTo(512));
+                var map = MapGenerator.Generate(new MapGenSettings
+                {
+                    Width = balance.mapWidth, Height = balance.mapHeight, Seed = 7, TownHalfSize = balance.townHalfSize,
+                    NestCount = balance.nestCount, MinNestDistanceFromTown = balance.minNestDistanceFromTown,
+                    InnerHalfSize = balance.innerHalfSize, InnerNestCount = balance.innerNestCount, Landforms = balance.landforms,
+                });
+                var c = map.TownCenter;
+                int inner = map.Nests.Count(n => Mathf.Abs(n.Cell.x - c.x) <= balance.innerHalfSize && Mathf.Abs(n.Cell.y - c.y) <= balance.innerHalfSize);
+                Assert.That(map.Nests.Count, Is.EqualTo(balance.nestCount));
+                Assert.That(inner, Is.EqualTo(balance.innerNestCount));
+                Assert.That(map.Nests.Max(n => (n.Cell - c).magnitude), Is.GreaterThan(Ecosystem.EcosystemManager.InnerEdge + 60f),
+                            "the outer land has nests far out (bosses and towns go there next)");
+            }
+            finally
+            {
+                Object.DestroyImmediate(balance);
+            }
         }
 
         [Test]

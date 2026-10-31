@@ -27,6 +27,9 @@ namespace GuildMaster.Units
         /// </summary>
         public static float ScaledHp(float listed) => listed * HpScale;
 
+        /// <summary>The other way: a real amount of health (damage, healing) in listed points, for rules written per listed point.</summary>
+        public static float ListedHp(float real) => real / HpScale;
+
         /// <summary>
         /// Defence that halves a hit. Armour divides damage instead of subtracting from it (P4-38,
         /// user report 2026-09-21: "one member clears a whole pack alone"): with subtraction a few
@@ -40,6 +43,13 @@ namespace GuildMaster.Units
 
         public static float Distance(Unit a, Unit b) => Vector2.Distance(a.Position, b.Position);
 
+        /// <summary>
+        /// Whether the attacker's blows can reach the target at all (P4-93, user decision 2026-10-20): something on the
+        /// wing is hit by shots only; once it comes down, by anyone. No attacker (a trap, a disaster) reaches anything.
+        /// </summary>
+        public static bool CanReach(Unit attacker, Unit target)
+            => target == null || !target.IsAirborne || attacker == null || attacker.Stats.IsRanged;
+
         public static bool InRange(Unit attacker, Unit target)
             => Distance(attacker, target) <= attacker.Stats.AttackRange + ContactPadding + target.Radius;
 
@@ -52,8 +62,9 @@ namespace GuildMaster.Units
             if (attacker == null || target == null || !attacker.IsAlive || !target.IsAlive || attacker.IsStunned) return false;
             if (Time.time < attacker.NextAttackTime || !InRange(attacker, target) || !HasShot(attacker, target)) return false;
 
-            attacker.NextAttackTime = Time.time + attacker.Stats.AttackCooldown;
+            attacker.NextAttackTime = Time.time + attacker.AttackCooldownNow;
             attacker.Visual?.FaceTowards(target.Position);
+            attacker.Visual?.PlayAttack();
 
             if (attacker.Stats.IsRanged && Services.TryGet<ProjectileService>(out var projectiles))
                 projectiles.Launch(attacker, target);
@@ -65,13 +76,13 @@ namespace GuildMaster.Units
         public static void ApplyHit(Unit attacker, Unit target)
         {
             attacker?.BreakStealth(); // hitting someone gives the hiding place away (P4-19)
-            if (target == null || !target.IsAlive) return;
+            if (target == null || !target.IsAlive || !CanReach(attacker, target)) return;
             var rng = GameRandom.Shared;
             float atk = attacker != null ? attacker.Stats.Attack : 5f;
             float raw = atk * rng.Range(0.9f, 1.1f);
             bool crit = rng.Chance(CritChance);
             if (crit) raw *= CritMultiplier;
-            float dmg = Mitigate(raw, target.Stats.Defense);
+            float dmg = Mitigate(raw, target.EffectiveDefense);
             target.ReceiveDamage(Mathf.Round(dmg), attacker, crit);
         }
     }
@@ -90,6 +101,8 @@ namespace GuildMaster.Units
     {
         /// <summary>How long a target dropped as unreachable is ignored.</summary>
         const float IgnoreSeconds = 6f;
+        /// <summary>How long one gone up out of reach is ignored (it may land in a moment).</summary>
+        const float AirborneIgnoreSeconds = 1f;
         /// <summary>Closing in by less than this does not count as progress in a chase.</summary>
         const float ChaseProgress = 0.3f;
 
@@ -140,6 +153,44 @@ namespace GuildMaster.Units
 
         public Engagement(Unit self) { _self = self; }
 
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        public class EngageSave
+        {
+            public string target;
+            public float locked_until;
+            public List<string> ignored = new();
+            public List<float> ignored_until = new();
+        }
+
+        public EngageSave Capture()
+        {
+            var s = new EngageSave
+            {
+                target = Target != null && Target.IsAlive ? Target.UnitId : null,
+                locked_until = SaveTime.Rel(_lockedUntil),
+            };
+            foreach (var (unit, until) in _ignored)
+            {
+                if (unit == null || !unit.IsAlive || Time.time >= until || string.IsNullOrEmpty(unit.UnitId)) continue;
+                s.ignored.Add(unit.UnitId);
+                s.ignored_until.Add(SaveTime.Rel(until));
+            }
+            return s;
+        }
+
+        /// <summary>Takes the saved fight up again (after the owner's state is back: some states clear it on entry).</summary>
+        public void Restore(EngageSave s, SaveContext ctx)
+        {
+            if (s == null) return;
+            _ignored.Clear();
+            for (int i = 0; i < s.ignored.Count && i < s.ignored_until.Count; i++)
+                if (ctx.Find<Unit>(s.ignored[i]) is { } u) _ignored.Add((u, SaveTime.Abs(s.ignored_until[i])));
+            if (!string.IsNullOrEmpty(s.target) && ctx.Find<Unit>(s.target) is { IsAlive: true } target) SetTarget(target);
+            _lockedUntil = SaveTime.Abs(s.locked_until);
+        }
+
         public void SetTarget(Unit target)
         {
             if (target == Target) return;
@@ -150,6 +201,10 @@ namespace GuildMaster.Units
             _tacticTimer = 0f;
             _retargetTimer = CombatTiers.RetargetInterval(_self.Tier);
             _holdOffTime = 0f;
+            _known = true;
+            _sightTimer = SightCheckSeconds;
+            IsSearching = false;
+            if (target != null) LastSeenPosition = target.Position;
             ResetChase();
         }
 
@@ -167,6 +222,8 @@ namespace GuildMaster.Units
             _kiting = false;
             _steering = false;
             _lockedUntil = 0f;
+            _known = true;
+            IsSearching = false;
             ResetChase();
         }
 
@@ -214,8 +271,15 @@ namespace GuildMaster.Units
 
             float dist = Combat.Distance(_self, Target);
             if (dist > GiveUpDistance) { Clear(); _self.Mover.Stop(); return EngageStatus.Lost; }
+            // Took to the air out of this unit's reach (P4-93): looked at again once it is down.
+            if (!Combat.CanReach(_self, Target)) { Ignore(Target, AirborneIgnoreSeconds); Clear(); _self.Mover.Stop(); return EngageStatus.Lost; }
 
             if (_self.IsStunned || IsChanneling()) return EngageStatus.Attacking;
+
+            // Out of sight (into a forest, behind cover): only where it was last seen is known (P4-70).
+            bool tracked;
+            using (s_trackMarker.Auto()) tracked = TrackTarget(dt, dist);
+            if (!tracked) using (s_searchMarker.Auto()) return SearchTick(dt);
 
             // Periodic re-evaluation (tier sets how often and what counts, see TargetSelector);
             // instinct-driven units only turn on whoever just hit them.
@@ -232,7 +296,8 @@ namespace GuildMaster.Units
             {
                 _retargetTimer = CombatTiers.RetargetInterval(tier);
                 if (CandidateFilter != null && Time.time >= _lockedUntil)
-                    better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
+                    using (s_retargetMarker.Auto())
+                        better = TargetSelector.Pick(_self, SearchRadius, CandidateFilter, this);
             }
             if (better != null && better != Target)
             {
@@ -240,10 +305,110 @@ namespace GuildMaster.Units
                 dist = Combat.Distance(_self, Target);
             }
 
-            if (HoldOffTick(dt, dist)) return EngageStatus.Chasing;
-            if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
+            using (s_holdOffMarker.Auto())
+                if (HoldOffTick(dt, dist)) return EngageStatus.Chasing;
+            using (s_skillsMarker.Auto())
+                if (_self.TryUseSkills(Target)) return EngageStatus.Attacking;
 
-            return _self.Stats.IsRanged ? RangedTick(dt, dist) : MeleeTick(dt, dist);
+            if (_self.Stats.IsRanged) using (s_rangedMarker.Auto()) return RangedTick(dt, dist);
+            using (s_meleeMarker.Auto()) return MeleeTick(dt, dist);
+        }
+
+        static readonly Unity.Profiling.ProfilerMarker s_trackMarker = new("Engage.Track"), s_searchMarker = new("Engage.Search"),
+            s_retargetMarker = new("Engage.Retarget"), s_holdOffMarker = new("Engage.HoldOff"), s_skillsMarker = new("Engage.Skills"),
+            s_rangedMarker = new("Engage.Ranged"), s_meleeMarker = new("Engage.Melee");
+
+        // ---------------- Losing sight of the target (P4-70) ----------------
+
+        /// <summary>This close a target is felt, seen or not.</summary>
+        public const float SenseRange = 1.5f;
+        /// <summary>A blow from the target within this many seconds gives away where it is.</summary>
+        const float HitRevealsSeconds = 2f;
+        /// <summary>A target fighting one of ours this close is heard (as <c>Adventurer.ComradeCryRadius</c> and the pack alarm).</summary>
+        const float HearFightRange = 8f;
+        /// <summary>Looking round the last-seen spot this long before giving up.</summary>
+        const float SearchSeconds = 3f;
+        /// <summary>Slack on top of the walk there and the look round before the whole search is given up.</summary>
+        const float SearchSlackSeconds = 3f;
+        const float SightCheckSeconds = 0.2f;
+
+        float _sightTimer;
+        bool _known = true, _lookedThisTick;
+        float _searchTime, _lookTime, _searchBudget;
+
+        /// <summary>The target is out of sight and this unit is searching where it was last seen (debug).</summary>
+        public bool IsSearching { get; private set; }
+        /// <summary>Where the target was last seen (or felt, or heard).</summary>
+        public Vector2 LastSeenPosition { get; private set; }
+
+        /// <summary>The target just slipped out of sight and the search for it begins (P4-94: a member may shoot a flare).</summary>
+        public System.Action<Unit, Vector2> LostSight { get; set; }
+
+        /// <summary>
+        /// Whether the unit still knows where its target is: it sees it (forest rules, <see cref="Unit.CanSee(Unit)"/>),
+        /// feels it right next to it, was just hit by it, or hears it fighting one of its own nearby.
+        /// </summary>
+        public static bool KnowsWhere(Unit self, Unit target, float dist)
+        {
+            if (dist <= SenseRange || self.WasRecentlyAttackedBy(target, HitRevealsSeconds)) return true;
+            if (dist <= HearFightRange && TargetSelector.IsAlly(self, target.CurrentTarget)) return true;
+            return self.CanSee(target);
+        }
+
+        /// <summary>Refreshes what is known of the target; false while it is out of sight.</summary>
+        bool TrackTarget(float dt, float dist)
+        {
+            _sightTimer -= dt;
+            _lookedThisTick = _sightTimer <= 0f;
+            if (_lookedThisTick)
+            {
+                _sightTimer = SightCheckSeconds;
+                _known = KnowsWhere(_self, Target, dist);
+            }
+            if (!_known) return false;
+            LastSeenPosition = Target.Position;
+            if (IsSearching) { IsSearching = false; ResetChase(); }
+            return true;
+        }
+
+        /// <summary>
+        /// Walks to where the target was last seen and looks round a moment (a forest cuts sight to a
+        /// third, so it may turn up close by); still nothing, and the target is dropped for a while.
+        /// A better visible target found meanwhile is taken instead.
+        /// </summary>
+        EngageStatus SearchTick(float dt)
+        {
+            if (!IsSearching)
+            {
+                IsSearching = true;
+                _searchTime = 0f;
+                // Long enough to walk to where it was last seen (a pack cry, a campfire may be far off).
+                _searchBudget = SearchSeconds + SearchSlackSeconds
+                                + 1.5f * Vector2.Distance(_self.Position, LastSeenPosition) / Mathf.Max(0.5f, _self.Stats.MoveSpeed);
+                _lookTime = 0f;
+                _kiting = false;
+                _steering = false;
+                LostSight?.Invoke(Target, LastSeenPosition);
+                if (!_self.Mover.SetDestination(LastSeenPosition, 0.4f)) return GiveUpSearch();
+            }
+            _searchTime += dt;
+            if (_lookedThisTick && CandidateFilter != null && Time.time >= _lockedUntil && !CombatTiers.RetaliatesOnly(_self.Tier)
+                && TargetSelector.Pick(_self, SearchRadius, u => u != Target && CandidateFilter(u), this) is { } other)
+            {
+                SetTarget(other);
+                return EngageStatus.Chasing;
+            }
+            if (!_self.Mover.IsMoving || (LastSeenPosition - _self.Position).sqrMagnitude < 0.6f * 0.6f) _lookTime += dt;
+            if (_lookTime >= SearchSeconds || _searchTime >= _searchBudget) return GiveUpSearch();
+            return EngageStatus.Chasing;
+        }
+
+        EngageStatus GiveUpSearch()
+        {
+            Ignore(Target, IgnoreSeconds);
+            Clear();
+            _self.Mover.Stop();
+            return EngageStatus.Lost;
         }
 
         /// <summary>After turning on an attacker, instinct-driven units ignore other hits this long.</summary>
@@ -324,7 +489,11 @@ namespace GuildMaster.Units
             {
                 ResetChase();
                 // Encircling (P4-28): between blows, keep working round to the own slot.
-                if (Time.time < _self.NextAttackTime && CircleToSlot(dt)) return EngageStatus.Attacking;
+                if (Time.time < _self.NextAttackTime && CircleToSlot(dt))
+                {
+                    _self.Visual?.FaceTowards(Target.Position); // steps round it facing it (P4-92)
+                    return EngageStatus.Attacking;
+                }
                 if (_self.Mover.IsMoving) _self.Mover.Stop();
                 Combat.TryAttack(_self, Target);
                 return EngageStatus.Attacking;
@@ -440,6 +609,8 @@ namespace GuildMaster.Units
                         _kiting = true;
                     }
                 }
+                // Backs away facing the fight (P4-92: turning to walk and back to shoot flickered every half second).
+                _self.Visual?.FaceTowards(Target.Position);
                 return EngageStatus.Chasing;
             }
             _kiting = false;
@@ -452,6 +623,7 @@ namespace GuildMaster.Units
                     _tacticTimer = 0.45f;
                     _self.Mover.SetDestination(hold, 0.2f);
                 }
+                _self.Visual?.FaceTowards(Target.Position);
                 return EngageStatus.Chasing;
             }
 

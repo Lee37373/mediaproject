@@ -15,7 +15,7 @@ namespace GuildMaster.Proposals
 
         public static string KindLabel(QuestType type) => "토벌";
 
-        public static string FallbackTitle(ProposalPlan p) => $"{p.Target.Label} 토벌 x{p.Count}";
+        public static string FallbackTitle(ProposalPlan p) => p.Target.IsLord ? $"[지대 군주] {p.Target.Label} 토벌" : $"{p.Target.Label} 토벌 x{p.Count}";
 
         static readonly string[] SafePitch =
         {
@@ -57,10 +57,10 @@ namespace GuildMaster.Proposals
             p.FromLlm = false;
         }
 
-        public static string NewProposals(int count) => $"새 의뢰 제안 {count}건이 도착했습니다. 마음에 드는 의뢰를 골라 등록하세요.";
+        public static string NewProposals(int count) => $"새 의뢰 요청 {count}건이 도착했습니다. 마음에 드는 의뢰를 골라 받으세요.";
 
         public const string NoMembers = "길드원이 없어 제안할 의뢰가 없습니다.";
-        public const string NoTargets = "제안할 만한 몬스터나 둥지를 아직 확인하지 못했습니다. 마을 밖을 탐색해 정보를 모아 보세요.";
-        public const string NoAffordable = "지금 길드 자금으로 감당할 수 있는 제안이 없습니다.";
+        public const string NoTargets = "게시판에 없는 둥지가 없습니다. 본 둥지는 마을이 모두 의뢰로 올렸습니다. 게시판에서 의뢰를 내리거나 마을 밖을 더 탐색해 보세요.";
+        public const string NoSuitable = "지금 길드원 실력으로 맡길 만한 요청이 없습니다.";
     }
 }

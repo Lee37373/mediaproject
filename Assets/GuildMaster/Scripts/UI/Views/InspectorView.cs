@@ -45,7 +45,7 @@ namespace GuildMaster.UI
         {
             var img = UIBuilder.Panel(canvas, "Inspector", UITheme.PanelBg);
             _panel = img.rectTransform;
-            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, 292));
+            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, MinHeight));
             _title = UIBuilder.Label(_panel, "", 18, TextAnchor.UpperLeft, UITheme.Accent, FontStyle.Bold);
             _title.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1), new Vector2(12, -8), new Vector2(-124, 26));
             _followButton = UIBuilder.Button(_panel, "추적 (F)", ToggleFocus, 96, 26, fontSize: 14);
@@ -69,7 +69,7 @@ namespace GuildMaster.UI
             var ringGo = new GameObject("SelectionRing");
             _ring = ringGo.AddComponent<SpriteRenderer>();
             _ring.sprite = SpriteFactory.Circle(20, new Color(1, 1, 1, 0), new Color(1f, 0.9f, 0.3f, 1f));
-            _ring.sortingOrder = 1990;
+            _ring.sortingOrder = FogOfWar.SortingOrder - 1010;
             ringGo.transform.localScale = new Vector3(1.2f, 0.6f, 1f);
             ringGo.SetActive(false);
         }
@@ -203,8 +203,24 @@ namespace GuildMaster.UI
             var nest = eco.Nests.Where(n => n.Discovered && Vector2.Distance(n.WorldPosition, p) < 1.2f)
                 .OrderBy(n => Vector2.Distance(n.WorldPosition, p)).FirstOrDefault();
             if (nest != null) return nest;
+            // A place worth going to the guild knows of (P4-105).
+            if (Services.TryGet<Places.PlaceService>(out var places) && places.PickAt(p, 1.2f) is { } place) return place;
             if (Services.TryGet<GateService>(out var gates) && gates.GateAt(p) is TownGate gate) return gate;
             var cell = World.GridMap.WorldToCell(p);
+            // Another village the guild has seen (P4-84): its icon and a little round it.
+            if (Services.TryGet<Villages.VillageService>(out var villages))
+            {
+                var village = villages.Known.FirstOrDefault(v => Vector2.Distance(v.WorldPosition, p) <= Villages.VillageRules.Size * 0.5f + 0.5f);
+                if (village != null) return village;
+            }
+            // A ruin (P4-85): its way down once the guild has seen the ground there, or its steps up from inside.
+            if (Services.TryGet<World.WorldService>(out var world) && Services.TryGet<FogOfWar>(out var fog))
+            {
+                var ruin = world.Map.Ruins.FirstOrDefault(r =>
+                    fog.IsExplored(r.Entrance) && Vector2.Distance(World.GridMap.CellToWorld(r.Entrance), p) <= 1.2f
+                    || fog.IsExplored(r.Inside) && Vector2.Distance(World.GridMap.CellToWorld(r.Inside), p) <= 1.2f);
+                if (ruin != null) return ruin;
+            }
             return Services.Get<TownService>().Buildings.FirstOrDefault(b => b.Footprint.Contains(cell));
         }
 
@@ -218,6 +234,9 @@ namespace GuildMaster.UI
                 case Nest n: pos = n.WorldPosition; scale = 1.4f; break;
                 case FogGhost g: pos = g.Position + new Vector2(0, -0.28f); break;
                 case TownGate gate: pos = gate.Center; scale = 2.4f; break;
+                case Villages.Village v: pos = v.WorldPosition + new Vector2(0f, -1.2f); scale = 3f; break;
+                case World.RuinSite r: pos = RuinSpotInView(r); scale = 2f; break;
+                case World.PlaceSite pl: pos = pl.WorldPosition + new Vector2(0f, -0.4f); scale = 1.8f; break;
                 default: _ring.gameObject.SetActive(false); return;
             }
             _ring.gameObject.SetActive(true);
@@ -234,12 +253,21 @@ namespace GuildMaster.UI
                 case Nest n: ShowNest(n); break;
                 case Building b: ShowBuilding(b); break;
                 case TownGate g: ShowGate(g); break;
+                case Villages.Village v: ShowVillage(v); break;
                 case Merchant m: ShowMerchant(m); break;
                 case Social.Resident r: ShowResident(r); break;
+                case Incidents.Traveller t: ShowTraveller(t); break;
+                case World.RuinSite r: ShowRuin(r); break;
+                case World.PlaceSite pl: ShowPlace(pl); break;
                 case FogGhost g: ShowGhost(g); break;
                 case PlayerAvatar: break;
             }
+            // Tall enough for what it says, the buttons in the corner kept clear (P4-104c: a member's card grew by its mood).
+            float height = Mathf.Max(MinHeight, BodyTop + _body.preferredHeight + ButtonRow);
+            if (Mathf.Abs(_panel.sizeDelta.y - height) > 0.5f) _panel.sizeDelta = new Vector2(_panel.sizeDelta.x, height);
         }
+
+        const float MinHeight = 292f, BodyTop = 38f, ButtonRow = 46f;
 
         /// <summary>A last sighting under the fog (P4-23): only what was seen, never the present state.</summary>
         void ShowGhost(FogGhost g)
@@ -274,6 +302,19 @@ namespace GuildMaster.UI
                 Muted("방문자에게 길드 이야기를 전합니다. 길드를 좋게 보면 영입을 권하기도 합니다.");
         }
 
+        /// <summary>A traveller on the road (P4-85 rescue): only what can be seen of it.</summary>
+        void ShowTraveller(Incidents.Traveller t)
+        {
+            _title.text = $"{t.DisplayName}  {Muted("(길손)")}";
+            string state = t.Current == Incidents.Traveller.Phase.Crouching
+                ? UIBuilder.Colored(t.StateLabel, UITheme.Bad) : UIBuilder.Colored(t.StateLabel, UITheme.Accent);
+            _body.text =
+                $"상태: {state} · 체력 {Mathf.RoundToInt(t.HpRatio * 100f)}%\n" +
+                Muted(t.Current == Incidents.Traveller.Phase.Crouching
+                    ? "수레 옆에 웅크려 버티고 있습니다. 둘러싼 몬스터를 모두 쓰러뜨리면 다시 길을 떠납니다."
+                    : $"{Quests.QuestBoard.DescribeArea(t.Destination)}(으)로 가는 길입니다.");
+        }
+
         static string Muted(string s) => UIBuilder.Colored(s, UITheme.TextMuted);
 
         /// <summary>Birth grade tag: muted for common, coloured for rare/heroic.</summary>
@@ -297,7 +338,7 @@ namespace GuildMaster.UI
             {
                 $"상태: {UIBuilder.Colored(a.StateLabel, UITheme.Accent)} · 의뢰: {quest}",
                 $"HP {a.Hp:0}/{s.MaxHp:0} · 공격 {s.Attack:0.#} · 방어 {s.Defense:0.#} · 사거리 {s.AttackRange:0.#}",
-                $"EXP {d.exp}/{d.ExpToNextLevel} · {LivingCostRules.Purse(d.gold, d.debt)} · 물약 {d.potions} · 장비 {d.gearTier}등급",
+                $"EXP {d.exp}/{d.ExpToNextLevel} · {LivingCostRules.Purse(d.gold, d.debt)} · 물약 {d.potions} · 조명탄 {d.flares} · 장비 {d.gearTier}등급",
                 $"피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 처치 {d.kills} · 완료 의뢰 {d.questsCompleted}",
             };
             // Values/personality/traits are the recruitment "answer key" (see RecruitDialogView, hidden there
@@ -313,9 +354,18 @@ namespace GuildMaster.UI
             else
             {
                 lines.Add($"성격 {d.mbti} · 가치관 {d.values} · 전투 {CombatTiers.Label(a.Tier)}");
-                lines.Add($"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}");
+                lines.Add($"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}"
+                          // Quirks picked up along the way (P4-104e).
+                          + (d.quirks.Count > 0 ? $" {Muted("· 버릇:")} " + UIBuilder.Colored(string.Join(", ", d.quirks.Select(q => QuirkRules.Label(q, ThoughtRecorder.SpeciesName))), UITheme.Accent) : ""));
+                // Titles (P4-83): a region lord's fall, for those who were there.
+                if (d.titles.Count > 0) lines.Add($"{Muted("칭호:")} {UIBuilder.Colored(string.Join(" · ", d.titles), UITheme.Accent)}");
             }
-            lines.Add($"{Muted(a.LastThoughtFromLlm ? "최근 생각(AI):" : "최근 생각:")} {a.LastThought ?? "-"}");
+            lines.Add($"{Muted("최근 생각:")} {a.LastThought ?? "-"}");
+            // What the latest decision weighed (P4-104a): why it went this way and not another.
+            if (a.LastThinking?.Choice != null) lines.Add($"{Muted("고려한 것:")} {a.LastThinking.Describe()}");
+            // Mood and the heaviest of its thoughts (P4-104c).
+            if (!a.IsVisitor)
+                lines.Add($"{Muted("기분:")} {MoodFormat.Mood(a)}{MoodFormat.Inspiration(a, Services.Get<GameClock>().TotalHours)} · {MoodFormat.Heaviest(a, 3)}");
             lines.Add($"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}");
             lines.Add($"{Muted("관계:")} {RelationsText(a)}");
             lines.Add(Muted("전리품: " + loot));
@@ -335,16 +385,35 @@ namespace GuildMaster.UI
         void ShowMonster(Monster m)
         {
             var d = m.Def;
-            _title.text = $"{(m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(m.Danger), UITheme.Danger(m.Danger))}";
+            _title.text = $"{(m.IsNemesis ? UIBuilder.Colored("[원수] ", UITheme.Bad) : m.IsRegionLord ? UIBuilder.Colored("[지대 군주] ", UITheme.Accent) : m.IsBoss ? UIBuilder.Colored("[보스] ", UITheme.Bad) : "")}{m.DisplayName}  {UIBuilder.Colored("위험 " + Quest.DangerLabel(m.Danger), UITheme.Danger(m.Danger))}";
             string prey = d.prey.Count == 0 ? "-" : string.Join(", ", d.prey.Select(p => p.displayName));
             string rivals = d.rivals.Count == 0 ? "-" : string.Join(", ", d.rivals.Select(p => p.displayName));
             _body.text =
+                NemesisText(m) +
                 $"상태: {UIBuilder.Colored(m.StateLabel, UITheme.Accent)} · 소속: {HomeName(m)}\n" +
                 $"HP {m.Hp:0}/{m.Stats.MaxHp:0} · 공격 {m.Stats.Attack:0.#} · 방어 {m.Stats.Defense:0.#}\n" +
                 $"성향: {(d.aggressiveToHumans ? UIBuilder.Colored("사람을 공격함", UITheme.Bad) : "먼저 공격하지 않음")} · 전투 {CombatTiers.Label(m.Tier)}\n" +
                 $"먹이: {prey} · 적대: {rivals}\n" +
+                ResearchText(d) +
                 GearText(m) +
                 $"{Muted("전리품: " + string.Join(", ", d.loot.Where(l => l.item).Select(l => $"{l.item.displayName}({l.chance * 100:0}%)")))}";
+        }
+
+        /// <summary>A nemesis's story (P4-109): its kind, what it did to the guild and when, its bounty. Empty for any other monster.</summary>
+        static string NemesisText(Monster m)
+        {
+            if (!m.IsNemesis || !Services.TryGet<Nemeses.NemesisService>(out var nemeses) || nemeses.Of(m) is not { } n) return "";
+            return $"{UIBuilder.Colored("원수", UITheme.Bad)} {Muted($"({m.Def.displayName})")}: {nemeses.Story(n)}\n";
+        }
+
+        /// <summary>The bestiary's line (P4-107): the research level, from 2 its weakness and strength, at 3 the mastery.</summary>
+        static string ResearchText(Data.MonsterDefinition d)
+        {
+            int level = Bestiary.BestiaryService.LevelOf(d);
+            if (level <= 0) return "";
+            string more = level >= 2 ? " · " + Bestiary.BestiaryText.Matchup(d) : Muted(" · 2단계부터 약점·강함");
+            if (level >= Bestiary.BestiaryRules.MaxLevel) more += UIBuilder.Colored(" · 숙련", UITheme.Good);
+            return $"도감: 연구 {level}단계{more}\n";
         }
 
         /// <summary>
@@ -415,8 +484,101 @@ namespace GuildMaster.UI
             RefreshRepairButton();
         }
 
+        /// <summary>
+        /// Another village (P4-84): what the guild saw of it, its quests on the board, and its candidates — only when the
+        /// guild master stands there (they are met in person; escorts may come along).
+        /// </summary>
+        void ShowVillage(Villages.Village v)
+        {
+            var villages = Services.Get<Villages.VillageService>();
+            bool visible = villages.IsVisible(v);
+            string where = $"{Monsters.RegionLords.RegionName(v.Region)} · {(v.Inner ? "안쪽 땅" : "바깥 땅")} · {QuestBoard.DescribeArea(v.WorldPosition)}";
+            _title.text = $"{v.DisplayName}  {Muted("다른 마을")}";
+            string state;
+            if (visible ? v.IsDestroyed : v.SeenRuined) state = UIBuilder.Colored("무너졌습니다 — 다시 세워지지 않습니다", UITheme.Bad);
+            else if (visible)
+            {
+                bool attacked = Services.TryGet<Villages.VillageRaids>(out var raids) && raids.IsUnderAttack(v);
+                state = $"내구도 {v.Hp:0}/{v.MaxHp:0}" + (attacked ? "  " + UIBuilder.Colored("습격받는 중!", UITheme.Bad) : "");
+            }
+            else
+            {
+                float ago = Services.Get<GameClock>().TotalHours - v.SeenAtHour;
+                state = Muted($"{(ago < 1f ? "방금" : $"{ago:0}시간 전")} 봤을 때 내구도 약 {Mathf.RoundToInt(v.SeenHpRatio * 20f) * 5}%");
+            }
+            int quests = Services.TryGet<QuestBoard>(out var board) ? board.Quests.Count(q => q.IsActive && q.Village == v) : 0;
+            var out_ = villages.CandidatesOut(v).ToList();
+            string candidates = (visible ? v.IsDestroyed : v.SeenRuined) ? ""
+                : out_.Count > 0
+                    ? "영입 후보: " + string.Join(", ", out_.Select(a => $"{a.Data.name}({AdventurerData.ClassLabel(a.Data.cls)} Lv.{a.Data.level})"))
+                      + "\n" + Muted("후보를 눌러 영입 대화를 하세요. 영입하면 혼자 우리 마을로 걸어옵니다.")
+                    : Muted("영입 후보는 길드 마스터가 직접 가야 만날 수 있습니다. (호위를 데려갈 수 있습니다)");
+            _body.text = $"{where}\n{state}" + (quests > 0 ? $" · 이 마을의 의뢰 {quests}건" : "") + "\n" + candidates;
+            RefreshRepairButton();
+        }
+
+        /// <summary>The camera looks into the ruin's dungeon now (P4-85).</summary>
+        static bool CameraIsBelow(World.RuinSite r)
+            => Services.TryGet<CameraController>(out var cam) && Services.TryGet<World.WorldService>(out var world)
+               && world.Map.RuinAt(World.GridMap.WorldToCell(cam.transform.position)) == r;
+
+        /// <summary>Where the ruin is in the camera's view: its steps up from inside, else its way down.</summary>
+        static Vector2 RuinSpotInView(World.RuinSite r)
+            => World.GridMap.CellToWorld(CameraIsBelow(r) ? r.Inside : r.Entrance);
+
+        /// <summary>A ruin (P4-85): what the guild knows of it — word of it, its quest, whether its treasure is taken.</summary>
+        void ShowRuin(World.RuinSite r)
+        {
+            var incidents = Services.Get<Incidents.IncidentService>();
+            var talk = incidents.ActiveAt(r);
+            bool looted = incidents.IsLooted(r.Index);
+            string name = talk != null && (talk.Rumoured || talk.Sighted) || looted ? Incidents.IncidentRules.RuinName(r) : "오래된 유적";
+            _title.text = $"{name}  {Muted("(유적)")}";
+            string state = looted ? "보물은 이미 가져갔습니다."
+                : talk is { Rumoured: true } ? $"탐사 의뢰: {talk.Quest?.Title ?? "-"} · {Incidents.IncidentRules.RuinProgress(talk)}"
+                : "아직 알려진 이야기가 없습니다.";
+            _body.text = $"{Quests.QuestBoard.DescribeArea(World.GridMap.CellToWorld(r.Entrance))}\n{state}\n" +
+                         Muted("땅 아래로 이어지는 입구입니다. 안은 길드원이 들어가야 보입니다.");
+            RefreshRepairButton();
+        }
+
+        /// <summary>A place worth going to (P4-105): what it is, what it does, and how it stands now.</summary>
+        void ShowPlace(World.PlaceSite p)
+        {
+            _title.text = $"{p.Name()}  {Muted("(장소)")}";
+            var places = Services.Get<Places.PlaceService>();
+            string state = p.Kind switch
+            {
+                World.PlaceKind.OreVein or World.PlaceKind.HerbPatch when !places.IsReady(p)
+                    => $"다시 {(p.Kind == World.PlaceKind.OreVein ? "캘" : "딸")} 수 있기까지 약 {Mathf.CeilToInt(places.HoursUntilReady(p))}시간",
+                World.PlaceKind.OreVein => "캘 수 있습니다.",
+                World.PlaceKind.HerbPatch => "약초가 자라 있습니다.",
+                World.PlaceKind.WatchRuin => places.IsClimbed(p) ? "이미 올라가 둘레를 살폈습니다." : "아직 아무도 올라가 보지 않았습니다.",
+                _ => "",
+            };
+            _body.text = $"{Quests.QuestBoard.DescribeArea(p.WorldPosition)}" + (state.Length > 0 ? $"\n{state}" : "") + $"\n{Muted(Places.PlaceRules.Describe(p.Kind))}";
+            RefreshRepairButton();
+        }
+
         void RefreshRepairButton()
         {
+            if (_selected is World.RuinSite ruin)
+            {
+                // The ruin's corner: look down into its halls, or back up from them.
+                _repairButton.gameObject.SetActive(true);
+                _repairButton.interactable = true;
+                _repairButton.SetLabel(CameraIsBelow(ruin) ? "지상으로" : "내부 보기");
+                return;
+            }
+            if (_selected is Villages.Village village)
+            {
+                // The village corner holds "go there": the guild master walks to its doorstep.
+                _repairButton.gameObject.SetActive(true);
+                bool here = Services.TryGet<PlayerAvatar>(out var master) && Vector2.Distance(master.Position, village.WorldPosition) <= Villages.VillageRules.MeetRadius;
+                _repairButton.interactable = !here && master != null && master.IsAlive;
+                _repairButton.SetLabel(here ? "마을에 와 있음" : "길드 마스터 보내기");
+                return;
+            }
             var gate = _selected as TownGate;
             _repairButton.gameObject.SetActive(gate != null);
             if (gate == null || !Services.TryGet<GateService>(out var gates)) return;
@@ -429,7 +591,15 @@ namespace GuildMaster.UI
 
         void OnRepairClicked()
         {
+            if (_selected is Villages.Village village && Services.TryGet<PlayerAvatar>(out var master))
+                master.MoveTo(village.Doorstep, null, 0.6f);
             if (_selected is TownGate gate && Services.TryGet<GateService>(out var gates)) gates.TryRepair(gate);
+            if (_selected is World.RuinSite ruin && Services.TryGet<CameraController>(out var cam))
+            {
+                bool below = CameraIsBelow(ruin);
+                cam.Follow(null);
+                cam.JumpTo(World.GridMap.CellToWorld(below ? ruin.Entrance : ruin.Inside));
+            }
             RefreshText();
             RefreshRepairButton();
         }

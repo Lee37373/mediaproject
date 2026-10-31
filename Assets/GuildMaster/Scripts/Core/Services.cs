@@ -40,7 +40,19 @@ namespace GuildMaster.Core
             return false;
         }
 
-        public static void Clear() => s_services.Clear();
+        /// <summary>
+        /// Counts the sessions (every <see cref="Clear"/>, i.e. every boot of the composition root).
+        /// Async work that outlives its session — an LLM answer arriving after a load or a restart —
+        /// compares the number it started under and drops its result, instead of writing into the
+        /// next game through the services that are registered by then.
+        /// </summary>
+        public static int Generation { get; private set; }
+
+        public static void Clear()
+        {
+            s_services.Clear();
+            Generation++;
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetOnPlay() => Clear();

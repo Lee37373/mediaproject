@@ -1,6 +1,5 @@
 using System.Linq;
 using GuildMaster.Adventurers;
-using GuildMaster.Adventurers.Prompts;
 using GuildMaster.Ecosystem;
 using GuildMaster.Data;
 using GuildMaster.Traits;
@@ -71,6 +70,24 @@ namespace GuildMaster.Tests
             Assert.That(founders, Is.LessThan(FreeHunt.MaxRadius), "the founding party does not head for the edge");
             Assert.That(veterans, Is.GreaterThan(founders));
             Assert.That(veterans, Is.LessThanOrEqualTo(FreeHunt.MaxRadius));
+        }
+
+        [Test]
+        public void OnlyABandThatTakesTheInnerEdge_GoesIntoTheOuterLand()
+        {
+            // P4-81: the 512 map's land past the inner edge is born 15 → 25.
+            var db = DefaultContent.Build();
+            const float outermost = 350f;
+            float Reach(params CombatStats[] band) => FreeHunt.RoamRadius(band, null, db.monsters, outermost);
+            float founders = Reach(Member(AdventurerClass.Warrior, 1), Member(AdventurerClass.Ranger, 1),
+                                   Member(AdventurerClass.Priest, 1), Member(AdventurerClass.Mage, 1));
+            float legends = Reach(Member(AdventurerClass.Warrior, 30, 3), Member(AdventurerClass.Ranger, 30, 3),
+                                  Member(AdventurerClass.Priest, 30, 3), Member(AdventurerClass.Mage, 30, 3));
+            Assert.That(founders, Is.EqualTo(FreeHunt.RoamRadius(new[] { Member(AdventurerClass.Warrior, 1), Member(AdventurerClass.Ranger, 1),
+                                   Member(AdventurerClass.Priest, 1), Member(AdventurerClass.Mage, 1) }, null, db.monsters)),
+                        "the early game reaches as far as on the 256 map");
+            Assert.That(legends, Is.GreaterThan(FreeHunt.MaxRadius));
+            Assert.That(legends, Is.LessThanOrEqualTo(outermost));
         }
 
         [Test]
@@ -172,21 +189,6 @@ namespace GuildMaster.Tests
 
             var brave = new AdventurerData { level = 3, potions = 1, values = "명예" };
             Assert.That(RuleBasedDecisionMaker.StayChance(brave, TraitSet.FromIds(new[] { "brave" }, db)), Is.EqualTo(0f));
-        }
-
-        [Test]
-        public void HuntIsAnActionBothDecisionPathsKnow()
-        {
-            Assert.That(DecisionPrompt.Actions, Does.Contain("hunt"));
-            StringAssert.Contains("hunt", DecisionPrompt.BuildGrammar(Enumerable.Empty<string>()));
-
-            var dto = new DecisionPrompt.ResponseDto { action = "hunt", reason = "의뢰가 없다", say = "나가 보지." };
-            Assert.That(LlmDecisionMaker.TryInterpret(dto, 1f, new string[0], false, out var d, out _), Is.True);
-            Assert.That(d.Action, Is.EqualTo(AdventurerAction.Hunt));
-
-            // Walking out is as risky as a quest, so it needs the same health.
-            Assert.That(LlmDecisionMaker.TryInterpret(dto, 0.1f, new string[0], false, out _, out var reject), Is.False);
-            Assert.That(reject, Is.EqualTo("unsafe"));
         }
 
         [Test]

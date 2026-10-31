@@ -229,12 +229,52 @@ namespace GuildMaster.Social
             for (int i = 0; i < raw.Length; i++)
             {
                 string name = i % 2 == 0 ? nameA : nameB;
-                string line = BanterPrompt.StripOwnName(BanterPrompt.StripLeadingMarks(StripSpeakerTag(LlmJson.CleanSentence(CutAtSpeakerTag(raw[i], nameA, nameB), LineMaxChars, LineMaxChars, true), name)), name);
+                string line = StripOwnName(StripLeadingMarks(StripSpeakerTag(LlmJson.CleanSentence(CutAtSpeakerTag(raw[i], nameA, nameB), LineMaxChars, LineMaxChars, true), name)), name);
                 if (string.IsNullOrWhiteSpace(line)) break;
                 result.Add((i % 2, line));
             }
             if (result.Count < 2) result.Clear();
             return result;
+        }
+
+        // ---- Line clean-up (were BanterPrompt's, which main removed; copied here at the 2026-10-31 merge) ----
+
+        static readonly System.Text.RegularExpressions.Regex LeadingMark =
+            new(@"^\s*[\(（][^\)）]{0,20}[\)）]\s*");
+
+        /// <summary>Drops a stage direction the model put in front ("(웃으며) ...").</summary>
+        public static string StripLeadingMarks(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return line;
+            string cur = line;
+            for (int i = 0; i < 2; i++)
+            {
+                string next = LeadingMark.Replace(cur, "");
+                if (next.Length == 0) return cur;
+                cur = next;
+            }
+            return cur;
+        }
+
+        static readonly string[] VocativeSuffixes = { "아", "야", "이", "" };
+
+        /// <summary>Drops the speaker calling themselves by name at the start ("아리스, ...").</summary>
+        public static string StripOwnName(string line, string ownName)
+        {
+            if (string.IsNullOrEmpty(line)) return line;
+            // The model sometimes writes names as "[아리스]" (JSON-ish habit).
+            line = line.Replace("[", "").Replace("]", "");
+            if (string.IsNullOrEmpty(ownName)) return line;
+            foreach (var suffix in VocativeSuffixes)
+            {
+                string head = ownName + suffix;
+                if (!line.StartsWith(head) || line.Length <= head.Length) continue;
+                char next = line[head.Length];
+                if (next != ',' && next != '.' && next != '!' && next != ' ') continue;
+                string rest = line.Substring(head.Length).TrimStart(',', '.', '!', ' ');
+                return rest.Length > 0 ? rest : line;
+            }
+            return line;
         }
     }
 }

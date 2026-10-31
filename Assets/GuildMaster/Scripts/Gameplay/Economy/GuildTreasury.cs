@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace GuildMaster.Economy
 {
-    public struct TreasuryChangedEvent { public int Gold; public int Exp; }
+    public struct TreasuryChangedEvent { public int Gold; }
     public struct InventoryChangedEvent { public string ItemId; public int Count; }
 
     /// <summary>
@@ -30,8 +30,18 @@ namespace GuildMaster.Economy
         public const string Medical = "medical";
         /// <summary>Members' meals and lodging, and debts for them repaid (P4-68).</summary>
         public const string Living = "living";
-        /// <summary>A client paying for a finished quest, the guild's cut included (2026-10-29).</summary>
+        /// <summary>Placing a building, and the half refunded on demolishing it (P4-13); pushing the town walls out (P4-86).</summary>
+        public const string Build = "build";
+        /// <summary>Repairing a gate (P4-39) or a building (P4-74).</summary>
+        public const string Repair = "repair";
+        /// <summary>The recruitment notice (P4-38), and its refund.</summary>
+        public const string Recruit = "recruit";
+        /// <summary>The guild's fee on a client's quest (P4-82).</summary>
         public const string Commission = "commission";
+        /// <summary>The town's grant for a new guild rank (P4-106).</summary>
+        public const string Grant = "grant";
+        /// <summary>What a decision card cost or brought in (P4-111c): the report's "other".</summary>
+        public const string Decision = "decision";
         /// <summary>Money taken from a member by the guild master (2026-10-29).</summary>
         public const string Tribute = "tribute";
         /// <summary>The guild master's odd jobs for the townsfolk (2026-10-29).</summary>
@@ -41,48 +51,73 @@ namespace GuildMaster.Economy
     }
 
     /// <summary>
-    /// The player's guild funds: gold, the hourly EXP pool used for quest rewards,
-    /// and the stockpile of materials/goods. All mutations publish change events.
+    /// The player's guild funds: gold and the stockpile of materials/goods. All mutations publish change
+    /// events. P4-82 (user decision 2026-10-17): there is no guild EXP any more — quest EXP comes from the
+    /// clients, and members train in town at the training ground.
     /// </summary>
-    public class GuildTreasury
+    public class GuildTreasury : ISaveable
     {
         readonly Dictionary<string, int> _stock = new();
 
-        public int Gold { get; private set; }
-        public int Exp { get; private set; }
-        public IReadOnlyDictionary<string, int> Stock => _stock;
+        // ---------------- Save (P5-4) ----------------
 
-        /// <summary>EXP generated per game hour (modified by buildings in later phases).</summary>
-        public float ExpPerHour { get; set; }
-        public int DailyTax { get; set; }
-
-        float _expFraction;
-
-        public GuildTreasury(int gold, int exp, float expPerHour, int dailyTax)
+        [System.Serializable]
+        class SaveData
         {
-            Gold = gold;
-            Exp = exp;
-            ExpPerHour = expPerHour;
-            DailyTax = dailyTax;
-            EventBus.Subscribe<HourPassedEvent>(OnHour);
-            EventBus.Subscribe<DayPassedEvent>(OnDay);
+            public int gold;
+            public int daily_tax;
+            public float tax_cut_today;
+            public List<Data.ItemStack> stock = new();
         }
 
-        void OnHour(HourPassedEvent e)
+        public string SaveKey => "treasury";
+
+        public string Capture()
         {
-            _expFraction += ExpPerHour;
-            int whole = Mathf.FloorToInt(_expFraction);
-            if (whole <= 0) return;
-            _expFraction -= whole;
-            AddExp(whole);
+            var s = new SaveData { gold = Gold, daily_tax = DailyTax, tax_cut_today = TaxCutToday };
+            var ids = new List<string>(_stock.Keys);
+            ids.Sort(System.StringComparer.Ordinal); // the same order every time, whatever was added first
+            foreach (var id in ids) s.stock.Add(new Data.ItemStack { itemId = id, count = _stock[id] });
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            Gold = s.gold;
+            DailyTax = s.daily_tax;
+            TaxCutToday = s.tax_cut_today;
+            _stock.Clear();
+            foreach (var st in s.stock) _stock[st.itemId] = st.count;
+            Notify();
+        }
+
+        public int Gold { get; private set; }
+        public IReadOnlyDictionary<string, int> Stock => _stock;
+
+        public int DailyTax { get; set; }
+
+        /// <summary>Share of today's tax lost (P4-72: a disaster at the walls); reset when the tax comes in.</summary>
+        public float TaxCutToday { get; private set; }
+
+        /// <summary>Today's tax is cut by this share (the largest cut of the day holds).</summary>
+        public void CutTodaysTax(float share) => TaxCutToday = Mathf.Clamp01(Mathf.Max(TaxCutToday, share));
+
+        public GuildTreasury(int gold, int dailyTax)
+        {
+            Gold = gold;
+            DailyTax = dailyTax;
+            EventBus.Subscribe<DayPassedEvent>(OnDay);
         }
 
         void OnDay(DayPassedEvent e)
         {
-            if (DailyTax > 0) AddGold(DailyTax, GoldReason.Tax);
+            int tax = Mathf.RoundToInt(DailyTax * (1f - TaxCutToday));
+            TaxCutToday = 0f;
+            if (tax > 0) AddGold(tax, GoldReason.Tax);
         }
 
-        public bool CanAfford(int gold, int exp = 0) => Gold >= gold && Exp >= exp;
+        public bool CanAfford(int gold) => Gold >= gold;
 
         public void AddGold(int amount, string reason = null)
         {
@@ -98,23 +133,6 @@ namespace GuildMaster.Economy
             Gold -= amount;
             Notify();
             if (amount > 0) EventBus.Publish(new GoldFlowEvent { Amount = -amount, Reason = reason });
-            return true;
-        }
-
-        public void AddExp(int amount)
-        {
-            if (amount == 0) return;
-            Exp += amount;
-            Notify();
-        }
-
-        public bool TrySpend(int gold, int exp, string reason = null)
-        {
-            if (gold < 0 || exp < 0 || !CanAfford(gold, exp)) return false;
-            Gold -= gold;
-            Exp -= exp;
-            Notify();
-            if (gold > 0) EventBus.Publish(new GoldFlowEvent { Amount = -gold, Reason = reason });
             return true;
         }
 
@@ -136,6 +154,6 @@ namespace GuildMaster.Economy
             return true;
         }
 
-        void Notify() => EventBus.Publish(new TreasuryChangedEvent { Gold = Gold, Exp = Exp });
+        void Notify() => EventBus.Publish(new TreasuryChangedEvent { Gold = Gold });
     }
 }

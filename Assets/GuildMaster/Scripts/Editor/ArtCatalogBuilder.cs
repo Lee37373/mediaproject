@@ -37,14 +37,24 @@ namespace GuildMaster.EditorTools
             ("goblin/goblin_warrior.png", "boss_goblin"),
         };
 
+        /// <summary>Minimal EnemyMonster prefabs (P4-110): every one a rig, keyed by its name in lower case ("toad_king").</summary>
+        const string RigPrefabs = LayerLab + "2D Minimal-EnemyMonster/EnemyMonster 3/Prefabs";
+
+        /// <summary>From the menu the rigs' stills are baked again too (after the pack is updated).</summary>
         [MenuItem("GuildMaster/아트 카탈로그 다시 만들기")]
-        public static void Build()
+        static void BuildFromMenu() => Build(rebakeStills: true);
+
+        /// <summary>Builds the catalog, baking only the rig stills that are missing.</summary>
+        public static void Build() => Build(rebakeStills: false);
+
+        static void Build(bool rebakeStills)
         {
             var catalog = AssetDatabase.LoadAssetAtPath<CharacterArtCatalog>(CatalogPath);
             bool created = catalog == null;
             if (created) catalog = ScriptableObject.CreateInstance<CharacterArtCatalog>();
             catalog.skins.Clear();
             catalog.monsters.Clear();
+            catalog.rigs.Clear();
 
             foreach (var (folder, skin) in Skins)
             {
@@ -58,6 +68,17 @@ namespace GuildMaster.EditorTools
                 var s = AssetDatabase.LoadAssetAtPath<Sprite>(ArtImportSettings.MonsterImages + file);
                 if (s != null) catalog.monsters.Add(new CharacterArtCatalog.MonsterArt { key = key, sprite = s });
             }
+            if (AssetDatabase.IsValidFolder(RigPrefabs))
+            {
+                var rigs = AssetDatabase.FindAssets("t:Prefab", new[] { RigPrefabs })
+                    .Select(g => AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(g)))
+                    .Where(p => p != null && p.GetComponent<Animator>() != null)
+                    .Select(p => (key: p.name.ToLowerInvariant(), prefab: p))
+                    .OrderBy(r => r.key, System.StringComparer.Ordinal).ToList();
+                var stills = RigPortraitBaker.Bake(rigs, rebakeStills);
+                foreach (var (key, prefab) in rigs)
+                    catalog.rigs.Add(new CharacterArtCatalog.MonsterRig { key = key, prefab = prefab, portrait = stills[key] });
+            }
 
             BuildHumans(catalog);
             BuildVfx(catalog);
@@ -70,7 +91,7 @@ namespace GuildMaster.EditorTools
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();
             Debug.Log($"[Art] Catalog built: {catalog.skins.Count} skins, {catalog.monsters.Count} monsters, " +
-                      $"people rig {(catalog.humanRig != null ? "yes" : "no")} ({catalog.humanParts.Count} part kinds), {catalog.vfx.Count} effects");
+                      $"{catalog.rigs.Count} rigs, people rig {(catalog.humanRig != null ? "yes" : "no")} ({catalog.humanParts.Count} part kinds), {catalog.vfx.Count} effects");
         }
 
         // ---- People and effects (2026-10-30: "캐릭터(사람)와 애니메이션 효과를 새 에셋으로") ----
@@ -152,7 +173,8 @@ namespace GuildMaster.EditorTools
         /// <summary>Rebuild after the packages are imported (after import settings were applied).</summary>
         static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
         {
-            if (!imported.Any(p => p.StartsWith(LayerLab))) return;
+            // The rig stills it bakes itself land in Layer Lab too: they must not start another build.
+            if (!imported.Any(p => p.StartsWith(LayerLab) && !p.StartsWith(RigPortraitBaker.Folder))) return;
             EditorApplication.delayCall -= Build;
             EditorApplication.delayCall += Build;
         }

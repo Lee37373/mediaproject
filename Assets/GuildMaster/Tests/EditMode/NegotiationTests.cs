@@ -174,7 +174,7 @@ namespace GuildMaster.Tests
         {
             var db = DefaultContent.Build();
             db.BuildIndex();
-            var treasury = new GuildTreasury(100, 0, 0, 0);
+            var treasury = new GuildTreasury(100, 0);
             var go = new GameObject("board");
             try
             {
@@ -205,7 +205,7 @@ namespace GuildMaster.Tests
         {
             var db = DefaultContent.Build();
             db.BuildIndex();
-            var treasury = new GuildTreasury(100, 0, 0, 0);
+            var treasury = new GuildTreasury(100, 0);
             var go = new GameObject("board");
             try
             {

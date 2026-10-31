@@ -73,6 +73,7 @@ namespace GuildMaster.UI
             if (Services.TryGet<LLM.LlmGateway>(out var llm)) HudView.ExtraStatus = () => llm ? llm.StatusText : "";
             var hud = HudLayer.gameObject.AddComponent<HudView>();
             hud.Build(HudLayer);
+            Services.Register(hud); // the coins fly to its gold (P4-106 H8)
             var minimap = HudLayer.gameObject.AddComponent<MinimapView>();
             minimap.Build(HudLayer);
             Services.Register(minimap);
@@ -84,29 +85,41 @@ namespace GuildMaster.UI
             // "다음 할 일" checklist and hints (F-19), under the windows.
             HudLayer.gameObject.AddComponent<GuideView>().Build(HudLayer);
 
+            // The next rank's conditions (P4-106), under the side menu and beneath the windows.
+            const float MenuHeight = 684f; // fifteen buttons of 40 with 6 between (P4-112: the guild's rules; 2026-10-31 merge: 살림, 관계도)
+            HudLayer.gameObject.AddComponent<GoalPanelView>().Build(HudLayer, new Vector2(8, -60 - MenuHeight - 10));
+
             WindowLayer = UIBuilder.Rect(HudLayer, "Windows").Stretch();
 
             var menu = UIBuilder.Rect(HudLayer, "SideMenu");
-            menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, 510)); // 410 → 510: one more window (살림, 2026-10-29)
+            menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, MenuHeight));
             UIBuilder.VLayout(menu, 6, 0);
 
             AddWindow<QuestBoardView>(menu, "의뢰 게시판 (Q)", Key.Q, new Vector2(1180, 680));
             AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1000, 560));
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
             // Food and quest payments (economy round 2, 2026-10-29).
-            AddWindow<HouseholdView>(menu, "살림 (K)", Key.K, new Vector2(820, 740));
+            AddWindow<HouseholdView>(menu, "살림 (U)", Key.U, new Vector2(820, 740));
             // Residents' odd jobs as minigames (일손 돕기, 2026-10-29), opened from the household window.
             AddWindow<ChoreView>(null, null, Key.None, new Vector2(820, 560));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             AddWindow<MerchantView>(menu, "행상인 (T)", Key.T, new Vector2(760, 600));
-            AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(700, 300));
+            AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(760, 620));
             // Daily accounts: income, spending and events per game day (F-3). Moved off B, which
             // construction (P4-13) already claimed.
             AddWindow<DailyReportView>(menu, "정산 (L)", Key.L, new Vector2(960, 760));
             // The wall of the fallen: relics to fetch, memorials (F-6).
             AddWindow<MemorialView>(menu, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
-            // Who gets along with whom, and how everyone feels (F-10).
-            AddWindow<RelationshipView>(menu, "관계도 (G)", Key.G, new Vector2(1040, 720));
+            // The guild's rank and fame (P4-106).
+            AddWindow<GuildRankView>(menu, "길드 등급 (G)", Key.G, new Vector2(900, 720));
+            // The bestiary (P4-107).
+            AddWindow<BestiaryView>(menu, "몬스터 도감 (K)", Key.K, new Vector2(1000, 640));
+            // Decision cards (P4-111c).
+            AddWindow<DilemmaView>(menu, "결정 (J)", Key.J, new Vector2(900, 760));
+            // The guild's rules (P4-112, H2).
+            AddWindow<GuildLawView>(menu, "길드 규칙 (P)", Key.P, new Vector2(980, 760));
+            // Who gets along with whom, and how everyone feels (F-10). G went to the guild rank at the 2026-10-31 merge.
+            AddWindow<RelationshipView>(menu, "관계도 (V)", Key.V, new Vector2(1040, 720));
             // Notification list (F-1); the side-menu button shows the unread count (kept up to date by ToastLayer).
             var notificationView = AddWindow<NotificationView>(null, null, Key.N, new Vector2(820, 560));
             var notificationButton = UIBuilder.Button(menu, "알림 (N)", () => Focus(notificationView), -1, 40);
@@ -116,7 +129,7 @@ namespace GuildMaster.UI
             AddWindow<RecruitDialogView>(null, null, Key.None, new Vector2(980, 600));
             // Opened from the quest board ("설득") once a quest has stayed untaken (P4-24).
             AddWindow<PersuadeDialogView>(null, null, Key.None, new Vector2(1040, 700));
-            AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 380));
+            AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 450));
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
             // Opened from the inspector and roster [상세] buttons (P4-6).
             AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 700));
@@ -132,18 +145,24 @@ namespace GuildMaster.UI
 
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);
+            // Coins to the gold and the rank banner (P4-106 H8), above the windows.
+            HudLayer.gameObject.AddComponent<RewardFxLayer>().Build(HudLayer);
             // Toasts for new notifications on the right edge, above the windows (F-1).
             var toasts = HudLayer.gameObject.AddComponent<ToastLayer>();
             toasts.MenuButton = notificationButton;
             toasts.Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
+            // The guild reaching rank S — the four region lords among its conditions (P4-83, P4-106): the victory; play goes on.
+            HudLayer.gameObject.AddComponent<VictoryView>().Build(HudLayer);
             // Menus (P4-10): pause (ESC) and title over the world, settings above both.
             _pause = HudLayer.gameObject.AddComponent<PauseMenuView>();
             _title = HudLayer.gameObject.AddComponent<TitleView>();
             _settings = HudLayer.gameObject.AddComponent<SettingsView>();
-            _pause.Build(HudLayer, _settings);
-            _title.Build(HudLayer, _settings);
+            _saves = HudLayer.gameObject.AddComponent<SaveLoadView>(); // P5-4
+            _pause.Build(HudLayer, _settings, _saves);
+            _title.Build(HudLayer, _settings, _saves);
             _settings.Build(HudLayer);
+            _saves.Build(HudLayer);
             // ` key: shortcut reference with toggle states (drawn above everything else).
             HudLayer.gameObject.AddComponent<KeyHelpView>().Build(HudLayer);
             // Hover tooltips sit above every window.
@@ -155,6 +174,7 @@ namespace GuildMaster.UI
         PauseMenuView _pause;
         TitleView _title;
         SettingsView _settings;
+        SaveLoadView _saves;
 
         void OnDestroy() => EventBus.Unsubscribe<MapPickingChangedEvent>(OnPicking);
 
@@ -247,6 +267,7 @@ namespace GuildMaster.UI
             {
                 if (!kb.escapeKey.wasPressedThisFrame) return;
                 if (_settings.IsOpen) _settings.Hide();
+                else if (_saves.IsOpen) _saves.Hide();
                 else if (_pause.IsOpen) _pause.Hide();
                 return;
             }

@@ -15,7 +15,7 @@ namespace GuildMaster.Economy
     /// up) and put the product into the guild stock. Recipes unlock with the station's craft tier
     /// (P4-1). Stock targets (user decision) keep a product topped up automatically.
     /// </summary>
-    public class CraftingService : MonoBehaviour
+    public class CraftingService : MonoBehaviour, ISaveable
     {
         public const int MaxQueuePerStation = 3;
         const float AutoCheckSeconds = 1f;
@@ -88,6 +88,56 @@ namespace GuildMaster.Economy
             if (!_queues.TryGetValue(r.station, out var q)) _queues[r.station] = q = new List<Job>();
             q.Add(new Job { Recipe = r });
             return true;
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SavedJob
+        {
+            public BuildingType station;
+            public string recipe;
+            public float hours;
+        }
+
+        [System.Serializable]
+        class SaveData
+        {
+            /// <summary>Every station's queue, in order (stations sorted).</summary>
+            public List<SavedJob> jobs = new();
+            public List<string> target_recipes = new();
+            public List<int> targets = new();
+        }
+
+        public string SaveKey => "crafting";
+
+        public string Capture()
+        {
+            var s = new SaveData();
+            var stations = _queues.Keys.ToList();
+            stations.Sort();
+            foreach (var station in stations)
+                foreach (var job in _queues[station])
+                    s.jobs.Add(new SavedJob { station = station, recipe = job.Recipe.id, hours = job.Hours });
+            var ids = _targets.Keys.ToList();
+            ids.Sort(System.StringComparer.Ordinal);
+            foreach (var id in ids) { s.target_recipes.Add(id); s.targets.Add(_targets[id]); }
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _queues.Clear();
+            foreach (var j in s.jobs)
+            {
+                var recipe = _db.recipes.FirstOrDefault(r => r.id == j.recipe);
+                if (recipe == null) { ctx.Warnings.Add("crafting: unknown recipe " + j.recipe); continue; }
+                if (!_queues.TryGetValue(j.station, out var q)) _queues[j.station] = q = new List<Job>();
+                q.Add(new Job { Recipe = recipe, Hours = j.hours });
+            }
+            _targets.Clear();
+            for (int i = 0; i < s.target_recipes.Count && i < s.targets.Count; i++) _targets[s.target_recipes[i]] = s.targets[i];
         }
 
         /// <summary>Stock level to keep (0 = no auto-crafting).</summary>

@@ -23,8 +23,52 @@ namespace GuildMaster.Ecosystem
         public Biome Biome { get; private set; }
         /// <summary>Terrain region of the site (P4-58: species live by region).</summary>
         public Region Region { get; private set; }
-        /// <summary>Whether a species can live here (P4-58).</summary>
-        public bool Suits(MonsterDefinition species) => species != null && species.LivesAt(Region, Biome);
+        /// <summary>
+        /// Whether a species can live here (P4-58) — and may move in: a region lord's lair is its own, and cleansed
+        /// land takes nobody new (P4-83). Every move into a site (migration, newcomers, roaming packs, flight
+        /// from a disaster) asks this.
+        /// </summary>
+        public bool Suits(MonsterDefinition species) => species != null && !IsLair && !Sealed && species.LivesAt(Region, Biome);
+
+        /// <summary>The lair of a region lord (P4-83): its guards breed here while it lives; nobody leaves or moves in.</summary>
+        public bool IsLair { get; private set; }
+        /// <summary>The lord this lair was dealt (it may be dead now).</summary>
+        public MonsterDefinition Lord { get; private set; }
+        /// <summary>Cleansed land (P4-83): nothing is born here or moves in any more.</summary>
+        public bool Sealed { get; internal set; }
+
+        /// <summary>
+        /// The town's walls moved out over this site (P4-86): it is the town's ground now — sealed, its den gone
+        /// from the map and from what the guild knows (<see cref="Discovered"/> false).
+        /// </summary>
+        public bool Retired { get; private set; }
+
+        /// <summary>See <see cref="Retired"/>; whoever still lives here has to be gone first.</summary>
+        internal void Retire()
+        {
+            Retired = true;
+            Sealed = true;
+            Discovered = false;
+            if (_renderer != null) _renderer.enabled = false;
+        }
+
+        internal void MakeLair(MonsterDefinition lord)
+        {
+            IsLair = true;
+            Lord = lord;
+            name = $"Nest {NestId} (lair of {lord.id})";
+        }
+
+        /// <summary>The lord, alive and at home.</summary>
+        public Monster LivingLord
+        {
+            get
+            {
+                if (!IsLair) return null;
+                foreach (var m in _members) if (m != null && m.IsAlive && m.IsRegionLord) return m;
+                return null;
+            }
+        }
         public int Capacity { get; private set; }
         public float GrowthAccumulator { get; set; }
         /// <summary>Breeding factor of this site by its distance from the town (<see cref="EcosystemManager.GrowthFactor"/>).</summary>
@@ -40,7 +84,8 @@ namespace GuildMaster.Ecosystem
         public int EmptyHours { get; set; }
         public bool Discovered { get; private set; }
 
-        public IReadOnlyList<Monster> Members => _members;
+        public ListView<Monster> Members => new(_members);
+        internal List<Monster> MemberList => _members;
         public int Population => _members.Count;
         public bool IsEmpty => _members.Count == 0;
         public Vector2 WorldPosition => GridMap.CellToWorld(Cell);
@@ -123,6 +168,25 @@ namespace GuildMaster.Ecosystem
             // The map keeps the old den art until the guild sees the new owners (GuildIntel).
         }
 
+        /// <summary>Save (P5-4): the owners it has now (they may have changed since the map was dealt), quietly.</summary>
+        internal void RestoreSpecies(MonsterDefinition species)
+        {
+            if (species == null || species == Species) return;
+            Species = species;
+            Capacity = species.nestCapacity;
+            name = $"Nest {NestId} ({species.id})";
+        }
+
+        /// <summary>Save (P5-4): found before; shown on the map at once, no discovery event.</summary>
+        internal void RestoreDiscovered(bool discovered)
+        {
+            Discovered = discovered && !Retired;
+            if (_renderer != null) _renderer.enabled = Discovered;
+        }
+
+        /// <summary>Save (P5-4): a saved member back in its place in the pack's order (the first one alive leads).</summary>
+        internal void RestoreMember(Monster m) => _members.Add(m);
+
         EcosystemManager _eco;
 
         public void Init(EcosystemManager eco, string id, MonsterDefinition species, NestSite site)
@@ -138,13 +202,18 @@ namespace GuildMaster.Ecosystem
             transform.position = WorldPosition;
 
             _renderer = gameObject.AddComponent<SpriteRenderer>();
-            _renderer.sprite = CartoonArt.Nest(species);
+            // Plain earth until the guild sees who lives here (GuildIntel calls ShowAs then, P4-76):
+            // a den tinted by its owners' colour told them apart before anyone had seen them.
+            _renderer.sprite = CartoonArt.Nest(null);
             _renderer.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f) - 2;
             _renderer.enabled = false;
         }
 
-        /// <summary>A new member at the nest, or at <paramref name="at"/> (newcomers walking in from the map edge); <paramref name="boss"/> = the pack's boss (P4-57).</summary>
-        public Monster SpawnMember(Vector2? at = null, bool boss = false)
+        /// <summary>
+        /// A new member at the nest, or at <paramref name="at"/> (newcomers walking in from the map edge); <paramref name="boss"/> = the pack's boss (P4-57).
+        /// <paramref name="kind"/> is another kind than the nest's own: a lair's lord (P4-83).
+        /// </summary>
+        public Monster SpawnMember(Vector2? at = null, bool boss = false, MonsterDefinition kind = null)
         {
             var pool = Services.Get<PoolService>();
             var world = Services.Get<WorldService>();
@@ -152,7 +221,7 @@ namespace GuildMaster.Ecosystem
             world.Grid.TryRandomWalkableNear(at.HasValue ? GridMap.WorldToCell(at.Value) : Cell, 2, rng, out var cell);
             var pos = GridMap.CellToWorld(cell) + rng.InsideUnitCircle() * 0.3f;
             var monster = pool.Spawn<Monster>(Monster.PoolKey, pos);
-            monster.Setup(Species, this, boss);
+            monster.Setup(kind ?? Species, this, boss);
             _members.Add(monster);
             return monster;
         }
@@ -175,7 +244,7 @@ namespace GuildMaster.Ecosystem
 
         void Update()
         {
-            if (Discovered) return;
+            if (Discovered || Retired) return;
             _revealTimer -= Time.unscaledDeltaTime;
             if (_revealTimer > 0f) return;
             _revealTimer = 0.5f;

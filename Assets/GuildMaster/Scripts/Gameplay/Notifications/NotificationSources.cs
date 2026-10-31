@@ -73,6 +73,117 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Town.BuildingDestroyedEvent>(OnBuildingDestroyed);
             EventBus.Subscribe<Town.MerchantArrivedEvent>(OnMerchant);
             EventBus.Subscribe<Reports.DailyReportClosedEvent>(OnDailyReport);
+            EventBus.Subscribe<Disasters.DisasterSightedEvent>(OnDisasterSighted);
+            EventBus.Subscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
+            EventBus.Subscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
+            EventBus.Subscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
+            EventBus.Subscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
+            EventBus.Subscribe<Places.PlaceDiscoveredEvent>(OnPlaceFound);
+            EventBus.Subscribe<Guild.GuildRankChangedEvent>(OnRankUp);
+            EventBus.Subscribe<Bestiary.ResearchLevelEvent>(OnResearch);
+            EventBus.Subscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
+            EventBus.Subscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
+            EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
+            EventBus.Subscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
+            EventBus.Subscribe<RefugeeArrivedEvent>(OnRefugee);
+            EventBus.Subscribe<Incidents.IncidentRumouredEvent>(OnIncidentRumoured);
+            EventBus.Subscribe<Incidents.IncidentEndedEvent>(OnIncidentEnded);
+            EventBus.Subscribe<Dragons.DragonSightedEvent>(OnDragonSighted);
+            EventBus.Subscribe<Dragons.DragonLairFoundEvent>(OnDragonLair);
+            EventBus.Subscribe<Dragons.DragonSlainEvent>(OnDragonSlain);
+            EventBus.Subscribe<Dragons.DragonHoardRaidedEvent>(OnDragonHoard);
+            EventBus.Subscribe<Dragons.DragonEnragedEvent>(OnDragonEnraged);
+            EventBus.Subscribe<MentalBreakEvent>(OnBreak);
+            EventBus.Subscribe<InspirationEvent>(OnInspired);
+            EventBus.Subscribe<QuirkGainedEvent>(OnQuirk);
+            EventBus.Subscribe<Nemeses.NemesisDeedEvent>(OnNemesisDeed);
+            EventBus.Subscribe<Nemeses.NemesisFellEvent>(OnNemesisFell);
+            EventBus.Subscribe<Seasons.SeasonComingEvent>(OnSeasonComing);
+            EventBus.Subscribe<Seasons.SeasonChangedEvent>(OnSeasonChanged);
+            EventBus.Subscribe<Seasons.FestivalEvent>(OnFestival);
+            EventBus.Subscribe<Dilemmas.DilemmaDealtEvent>(OnDilemma);
+            EventBus.Subscribe<Dilemmas.DilemmaResolvedEvent>(OnDilemmaResolved);
+            EventBus.Subscribe<Guild.GuildHolidayEvent>(OnHoliday);
+        }
+
+        // The guild's holiday (P4-112): why nobody goes out today.
+        void OnHoliday(Guild.GuildHolidayEvent e)
+            => _center.Post(NotificationKind.Info, "길드 휴일",
+                $"오늘은 아무도 새 일을 나가지 않습니다. 마을에 있으면 스트레스가 {Guild.GuildLawRules.HolidayRelief:0.#}배로 풀립니다.", "holiday:" + e.Day);
+
+        // Decision cards (P4-111c): one to answer; once it is decided the call goes (and one decided by the clock says so).
+        void OnDilemma(Dilemmas.DilemmaDealtEvent e)
+            => _center.Post(NotificationKind.Quest, "결정할 일: " + e.Card.Title,
+                $"{e.Card.Text} ({Dilemmas.DilemmaRules.DeadlineHours:0}시간 안에 안 고르면 '{e.Card.Label(e.Card.Def.Default)}')",
+                "dilemma:" + e.Card.Id, NotificationLink.Dilemmas());
+
+        void OnDilemmaResolved(Dilemmas.DilemmaResolvedEvent e)
+        {
+            _center.Resolve("dilemma:" + e.Card.Id);
+            if (e.ByDeadline)
+                _center.Post(NotificationKind.Info, "결정 기한 지남: " + e.Card.Title, $"'{e.Card.Label(e.Choice)}'(으)로 정했습니다. {e.Result}",
+                    "dilemma_done:" + e.Card.Id, NotificationLink.Dilemmas());
+        }
+
+        // The seasons (P4-111b): told the day before so the guild can get ready, and as each comes.
+        void OnSeasonComing(Seasons.SeasonComingEvent e)
+            => _center.Post(NotificationKind.Info, $"내일부터 {Seasons.SeasonRules.Name(e.Season)}", Seasons.SeasonRules.Changes(e.Season) + ".", "season_eve:" + e.Day);
+
+        void OnSeasonChanged(Seasons.SeasonChangedEvent e)
+            => _center.Post(e.Season == Seasons.Season.Winter ? NotificationKind.Warning : NotificationKind.Info,
+                $"{Seasons.SeasonRules.Name(e.Season)}이 왔습니다", Seasons.SeasonRules.Changes(e.Season) + ".", "season:" + e.Day);
+
+        void OnFestival(Seasons.FestivalEvent e)
+            => _center.Post(NotificationKind.Success, "수확 축제", $"오늘 하루, 마을에 있는 길드원은 스트레스가 {Seasons.SeasonRules.FestivalStressRelief:0}배로 풀리고 축제를 즐깁니다.",
+                "festival:" + e.Day);
+
+        /// <summary>
+        /// A nemesis named or grown (P4-109), pointing at where it was: a danger for a member killed, a warning for one driven
+        /// off (most of them — 24 of 29 in a measured run).
+        /// </summary>
+        void OnNemesisDeed(Nemeses.NemesisDeedEvent e)
+        {
+            var n = e.Nemesis;
+            _center.Post(e.Deed.kind == Nemeses.DeedKind.Killed ? NotificationKind.Danger : NotificationKind.Warning,
+                e.IsNew ? "원수 등장" : "원수", Nemeses.NemesisService.DeedText(e),
+                "nemesis:" + n.UnitId, NotificationLink.Location(n.LastSeen));
+        }
+
+        /// <summary>A nemesis fell: good news when a member brought it down.</summary>
+        void OnNemesisFell(Nemeses.NemesisFellEvent e)
+        {
+            _center.Resolve("nemesis:" + e.Nemesis.UnitId);
+            _center.Post(e.Slayer != null ? NotificationKind.Success : NotificationKind.Info, "원수 쓰러짐", Nemeses.NemesisService.FellText(e),
+                "nemesis:" + e.Nemesis.UnitId + ":fell", e.Slayer != null ? NotificationLink.Management(e.Slayer.Data.id) : default);
+        }
+
+        /// <summary>A quirk picked up (P4-104e): a fear is a warning, the others are good news.</summary>
+        void OnQuirk(QuirkGainedEvent e)
+        {
+            if (e.Adventurer == null) return;
+            bool fear = e.Quirk.StartsWith(QuirkRules.FearPrefix);
+            _center.Post(fear ? NotificationKind.Warning : NotificationKind.Success, "버릇",
+                $"{e.Adventurer.Data.name}에게 '{e.Label}' 버릇이 생겼습니다. {QuirkRules.Describe(e.Quirk, ThoughtRecorder.SpeciesName)}",
+                "quirk:" + e.Adventurer.Data.id + ":" + e.Quirk, NotificationLink.Management(e.Adventurer.Data.id));
+        }
+
+        /// <summary>A member broke (P4-104d). Quitting is told by the roster's side (GuildWelfare.Release).</summary>
+        void OnBreak(MentalBreakEvent e)
+        {
+            if (e.Stage != MentalBreakEvent.Phase.Began || e.Adventurer == null || e.Kind == BreakKind.Quit) return;
+            var a = e.Adventurer;
+            string with = e.Other != null ? $" ({e.Other.Data.name}와(과))" : "";
+            _center.Post(e.Severity >= BreakSeverity.Major ? NotificationKind.Danger : NotificationKind.Warning, "정신적 붕괴",
+                $"{a.Data.name}이(가) 무너졌습니다: {BreakRules.Label(e.Kind)}{with}. 기분이 너무 낮았습니다.",
+                "break:" + a.Data.id, NotificationLink.Management(a.Data.id));
+        }
+
+        void OnInspired(InspirationEvent e)
+        {
+            if (e.Ended || e.Adventurer == null) return;
+            var a = e.Adventurer;
+            _center.Post(NotificationKind.Success, "영감", $"{a.Data.name}에게 {BreakRules.Label(e.Kind)}이 떠올랐습니다: {BreakRules.Effect(e.Kind)}, {BreakRules.InspirationHours:0}시간.",
+                "inspired:" + a.Data.id, NotificationLink.Management(a.Data.id));
         }
 
         public void Dispose()
@@ -88,7 +199,72 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<Town.RaidEndedEvent>(OnRaidEnded);
             EventBus.Unsubscribe<Town.BuildingDestroyedEvent>(OnBuildingDestroyed);
             EventBus.Unsubscribe<Town.MerchantArrivedEvent>(OnMerchant);
+            EventBus.Unsubscribe<Dragons.DragonSightedEvent>(OnDragonSighted);
+            EventBus.Unsubscribe<Dragons.DragonLairFoundEvent>(OnDragonLair);
+            EventBus.Unsubscribe<Dragons.DragonSlainEvent>(OnDragonSlain);
+            EventBus.Unsubscribe<Dragons.DragonHoardRaidedEvent>(OnDragonHoard);
+            EventBus.Unsubscribe<Dragons.DragonEnragedEvent>(OnDragonEnraged);
             EventBus.Unsubscribe<Reports.DailyReportClosedEvent>(OnDailyReport);
+            EventBus.Unsubscribe<Disasters.DisasterSightedEvent>(OnDisasterSighted);
+            EventBus.Unsubscribe<Disasters.DisasterEndedEvent>(OnDisasterEnded);
+            EventBus.Unsubscribe<Ecosystem.BossSightedEvent>(OnBossSighted);
+            EventBus.Unsubscribe<Ecosystem.RegionCleansedEvent>(OnRegionCleansed);
+            EventBus.Unsubscribe<World.ZoneDiscoveredEvent>(OnZoneFound);
+            EventBus.Unsubscribe<Places.PlaceDiscoveredEvent>(OnPlaceFound);
+            EventBus.Unsubscribe<Guild.GuildRankChangedEvent>(OnRankUp);
+            EventBus.Unsubscribe<Bestiary.ResearchLevelEvent>(OnResearch);
+            EventBus.Unsubscribe<World.DeepWoodsSightedEvent>(OnDeepWoods);
+            EventBus.Unsubscribe<Villages.VillageDiscoveredEvent>(OnVillageFound);
+            EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
+            EventBus.Unsubscribe<Villages.VillageRuinsSeenEvent>(OnVillageRuins);
+            EventBus.Unsubscribe<RefugeeArrivedEvent>(OnRefugee);
+            EventBus.Unsubscribe<Incidents.IncidentRumouredEvent>(OnIncidentRumoured);
+            EventBus.Unsubscribe<Incidents.IncidentEndedEvent>(OnIncidentEnded);
+            EventBus.Unsubscribe<MentalBreakEvent>(OnBreak);
+            EventBus.Unsubscribe<InspirationEvent>(OnInspired);
+            EventBus.Unsubscribe<QuirkGainedEvent>(OnQuirk);
+            EventBus.Unsubscribe<Nemeses.NemesisDeedEvent>(OnNemesisDeed);
+            EventBus.Unsubscribe<Nemeses.NemesisFellEvent>(OnNemesisFell);
+        }
+
+        // ---------------- Sudden incidents (P4-85): heard by rumour ----------------
+
+        static string IncidentKey(Incidents.Incident i) => "incident:" + i.Id;
+
+        void OnIncidentRumoured(Incidents.IncidentRumouredEvent e)
+        {
+            var i = e.Incident;
+            _center.Post(NotificationKind.Quest, Incidents.IncidentRules.RumourHeadline(i), Incidents.IncidentRules.RumourText(i),
+                IncidentKey(i), NotificationLink.Location(i.RumourCentre));
+        }
+
+        void OnIncidentEnded(Incidents.IncidentEndedEvent e)
+        {
+            if (!e.Known) return;
+            _center.Resolve(IncidentKey(e.Incident));
+            // A nemesis's fall is told as its own (P4-109).
+            if (e.Incident.Kind == Incidents.IncidentKind.Nemesis) return;
+            if (e.Incident.Outcome == Incidents.IncidentOutcome.Resolved && Incidents.IncidentRules.EndedText(e.Incident) is { } text)
+                _center.Post(NotificationKind.Success, Incidents.IncidentRules.Tag(e.Incident.Kind), text, IncidentKey(e.Incident) + ":end");
+        }
+
+        // ---------------- Natural disasters (P4-72): only those the guild has seen ----------------
+
+        void OnDisasterSighted(Disasters.DisasterSightedEvent e)
+        {
+            var d = e.Disaster;
+            _center.Post(NotificationKind.Danger, $"{d.Name} 발생!",
+                $"{QuestBoard.DescribeArea(d.WorldOrigin)}에서 {d.NameI} 번지고 있습니다. 마을이 {Disasters.DisasterRules.WorkName(d.Kind)} 의뢰를 냈습니다.",
+                "disaster:" + d.Id, NotificationLink.Location(d.WorldOrigin));
+        }
+
+        void OnDisasterEnded(Disasters.DisasterEndedEvent e)
+        {
+            if (!e.Known) return;
+            _center.Resolve("disaster:" + e.Disaster.Id);
+            if (e.DealtWith)
+                _center.Post(NotificationKind.Success, $"{e.Disaster.Name} 수습",
+                    $"길드가 {e.Disaster.NameEul} 수습했습니다.", "disaster-end:" + e.Disaster.Id);
         }
 
         static string NegotiableKey(Quest q) => "negotiable:" + q.Id;
@@ -101,13 +277,18 @@ namespace GuildMaster.Notifications
             CheckCrises();
         }
 
-        /// <summary>A quest left untaken long enough that the guild master can negotiate (P4-24/25). Announced once per quest.</summary>
+        /// <summary>
+        /// A quest left untaken long enough that the guild master can negotiate (P4-24/25). Announced once per quest,
+        /// and only for the ones the guild master chose to take on (a patron's request, an escort): the town posts a
+        /// hunt on every den the guild has seen (P4-82), so most of its far ones wait untaken and would flood the list.
+        /// They can still be negotiated from the board.
+        /// </summary>
         void CheckNegotiable()
         {
             if (_board == null || !Services.TryGet<PersuasionService>(out var persuasion)) return;
             foreach (var q in _board.Quests)
             {
-                if (!persuasion.IsOpen(q)) continue;
+                if (q.Client == QuestClient.Town || !persuasion.IsOpen(q)) continue;
                 int waited = Mathf.FloorToInt(_clock.TotalHours - q.PostedAtHour);
                 _center.PostOnce(NegotiableKey(q), NotificationKind.Quest, "협상 가능",
                     NotificationTexts.Negotiable(q.Title, waited), NotificationLink.Negotiation(q.Id));
@@ -147,6 +328,61 @@ namespace GuildMaster.Notifications
                     "quest-failed:" + e.Quest.Id, NotificationLink.QuestBoard());
         }
 
+        // ---------------- Region lords (P4-83) ----------------
+
+        void OnBossSighted(Ecosystem.BossSightedEvent e)
+        {
+            if (e.Boss == null || !e.Boss.IsRegionLord) return;
+            _center.PostOnce("lord-seen:" + e.Boss.Def.id, NotificationKind.Danger, "지대 군주 발견",
+                $"{Monsters.RegionLords.RegionName(e.Boss.Def.lordRegion)}의 군주 {e.Boss.DisplayName}(Lv.{e.Boss.Level})을(를) 발견했습니다. 마을이 토벌 의뢰를 올립니다.",
+                NotificationLink.Location(e.Boss.Position));
+        }
+
+        void OnRegionCleansed(Ecosystem.RegionCleansedEvent e)
+            => _center.Post(NotificationKind.Success, "지대 정화",
+                $"{e.Lord.displayName}이(가) 쓰러졌습니다. {Monsters.RegionLords.RegionName(e.Region)} 바깥 땅에 더는 새 몬스터가 나타나지 않습니다. ({e.Fallen}/{e.Total})",
+                "cleansed:" + e.Lord.id, NotificationLink.Location(e.Position));
+
+        // ---------------- The dragon (P4-93) ----------------
+
+        void OnDragonSighted(Dragons.DragonSightedEvent e)
+        {
+            if (e.Dragon == null) return;
+            string name = e.Dragon.DisplayName;
+            _center.Post(NotificationKind.Danger, e.First ? "드래곤 발견" : "드래곤 출현",
+                e.First
+                    ? $"{name}(Lv.{e.Dragon.Level}){Adventurers.MemoryRecorder.Josa(name, "을", "를")} 처음 보았습니다. {(e.Flying ? "날고 있을 때는 원거리 공격만 닿고, 충분히 맞으면 땅으로 내려옵니다." : "")}"
+                    : $"{name}{Adventurers.MemoryRecorder.Josa(name, "이", "가")} {(e.Flying ? "하늘을 날고 있습니다" : "보입니다")}.",
+                "dragon-seen", NotificationLink.Location(e.Position));
+        }
+
+        void OnDragonLair(Dragons.DragonLairFoundEvent e)
+            => _center.PostOnce("dragon-lair", NotificationKind.Warning, "드래곤의 둥지",
+                (e.DragonAtHome ? "금화 더미 위에서 드래곤이 잠들어 있습니다. " : "드래곤이 잠드는 금화 더미를 찾았습니다. ")
+                + $"보물은 {e.HoardValue}G어치로 보입니다. 드래곤이 비운 틈에 털 수 있고, 잘 때 다가가면 깰 수 있습니다.",
+                NotificationLink.Location(e.Position));
+
+        void OnDragonSlain(Dragons.DragonSlainEvent e)
+            => _center.PostOnce("dragon-slain", NotificationKind.Success, "드래곤 처치",
+                $"{e.Def.displayName}{Adventurers.MemoryRecorder.Josa(e.Def.displayName, "이", "가")} 쓰러졌습니다. 둥지의 보물을 가져올 수 있습니다.",
+                NotificationLink.Location(e.Position));
+
+        void OnDragonHoard(Dragons.DragonHoardRaidedEvent e)
+        {
+            string name = e.By?.Data?.name ?? "길드원";
+            _center.Post(e.Woke ? NotificationKind.Danger : NotificationKind.Success, e.Woke ? "드래곤이 깨어남" : "드래곤의 보물",
+                $"{name}{Adventurers.MemoryRecorder.Josa(name, "이", "가")} 드래곤의 보물 {e.Value}G어치를 챙겼습니다.{(e.Woke ? " 드래곤이 깨어났습니다!" : " 드래곤이 알아채면 쫓아올 것입니다.")}",
+                "dragon-hoard", NotificationLink.Location(e.Position));
+        }
+
+        void OnDragonEnraged(Dragons.DragonEnragedEvent e)
+        {
+            if (!e.Seen || e.Thief?.Data == null) return;
+            _center.Post(NotificationKind.Danger, "드래곤의 분노",
+                $"보물을 도둑맞은 드래곤이 {e.Thief.Data.name}{Adventurers.MemoryRecorder.Josa(e.Thief.Data.name, "을", "를")} 쫓습니다!",
+                "dragon-enraged", NotificationLink.Location(e.Position));
+        }
+
         // ---------------- Guild members ----------------
 
         void OnDied(AdventurerDiedEvent e)
@@ -163,6 +399,60 @@ namespace GuildMaster.Notifications
             if (e.Adventurer == null) return;
             _center.Post(NotificationKind.Success, "레벨 업", NotificationTexts.LevelUp(e.Adventurer.Data.name, e.Level),
                 "levelup:" + e.Adventurer.Data.id, NotificationLink.Adventurer(e.Adventurer.Data.id));
+        }
+
+        // ---------------- Zones (P4-102): land the guild now knows by name ----------------
+
+        void OnZoneFound(World.ZoneDiscoveredEvent e)
+            => _center.Post(e.Zone.Kind == World.ZoneKind.Pocket ? NotificationKind.Warning : NotificationKind.Info, "새 지역 발견",
+                $"{e.Zone.Name}({World.ZoneDiscovery.Describe(e.Zone)})", "zone:" + e.Zone.Index,
+                NotificationLink.Location(World.GridMap.CellToWorld(e.Zone.Heart)));
+
+        // A place worth going to (P4-105).
+        void OnPlaceFound(Places.PlaceDiscoveredEvent e)
+            => _center.Post(NotificationKind.Info, "새 장소 발견", $"{e.Place.Name()}: {Places.PlaceRules.Describe(e.Place.Kind)}", "place:" + e.Place.Index,
+                NotificationLink.Location(e.Place.WorldPosition));
+
+        // The guild's rank (P4-106): each step up, with what it opened.
+        void OnRankUp(Guild.GuildRankChangedEvent e)
+            => _center.Post(NotificationKind.Success, $"길드 {Guild.GuildRankRules.Name(e.Rank)} 달성", Guild.GuildRankRules.Rewards(e.Rank),
+                "rank:" + e.Rank, NotificationLink.GuildRank());
+
+        // The bestiary (P4-107): a kind's weakness found out, a kind mastered.
+        void OnResearch(Bestiary.ResearchLevelEvent e)
+            => _center.Post(NotificationKind.Success, $"{e.Species.displayName} 연구 {e.Level}단계",
+                Bestiary.BestiaryText.LevelNews(e.Species, e.Level), "research:" + e.Species.id + ":" + e.Level, NotificationLink.Bestiary());
+
+        // The deep woods (P4-103): once, the first time the guild sees them.
+        void OnDeepWoods(World.DeepWoodsSightedEvent e)
+            => _center.Post(NotificationKind.Warning, "깊은 숲",
+                "독 안개와 숨은 덫, 매복하는 둥지가 있는 위험한 숲입니다. 길이 난 숲길로 지나는 것이 안전합니다.", "deepwoods",
+                NotificationLink.Location(World.GridMap.CellToWorld(e.Cell)));
+
+        // ---------------- Other villages (P4-84): only what the guild has seen ----------------
+
+        void OnVillageFound(Villages.VillageDiscoveredEvent e)
+            => _center.Post(NotificationKind.Info, "새 마을 발견",
+                $"{e.Village.DisplayName}({Monsters.RegionLords.RegionName(e.Village.Region)}, {QuestBoard.DescribeArea(e.Village.WorldPosition)}). 길드 마스터가 직접 가면 영입 후보를 만날 수 있습니다.",
+                "village:" + e.Village.Id, NotificationLink.Location(e.Village.WorldPosition));
+
+        void OnVillageRaid(Villages.VillageRaidSightedEvent e)
+            => _center.Post(NotificationKind.Danger, "마을 습격",
+                $"{e.Village.DisplayName}이(가) {e.Species?.displayName} {e.Raiders}마리에게 습격받고 있습니다. 마을이 방어 의뢰를 냈습니다.",
+                "village_raid:" + e.Village.Id, NotificationLink.Location(e.Village.WorldPosition));
+
+        void OnVillageRuins(Villages.VillageRuinsSeenEvent e)
+            => _center.Post(NotificationKind.Warning, "마을 소멸",
+                e.SawItFall ? $"{e.Village.DisplayName}이(가) 무너졌습니다. 다시 세워지지 않습니다." : $"{e.Village.DisplayName}이(가) 무너져 폐허만 남았습니다.",
+                "village_fell:" + e.Village.Id, NotificationLink.Location(e.Village.WorldPosition));
+
+        void OnRefugee(RefugeeArrivedEvent e)
+        {
+            if (e.Visitor == null) return;
+            var d = e.Visitor.Data;
+            _center.Post(NotificationKind.Info, "피난민 도착",
+                $"{e.From}에서 피난 온 {d.name}({AdventurerData.ClassLabel(d.cls)} Lv.{d.level})이(가) 광장에 있습니다. 말을 걸어 영입해 보세요.",
+                "refugee:" + d.id, NotificationLink.Adventurer(d.id));
         }
 
         void OnVisitor(Recruitment.VisitorArrivedEvent e)

@@ -192,7 +192,7 @@ namespace GuildMaster.Tests
 
         // ---------------- The service (what needs no adventurer) ----------------
 
-        GuildLegacy NewLegacy(NotificationCenter center = null) => new(null, null, new GuildTreasury(500, 0, 0f, 0), center);
+        GuildLegacy NewLegacy(NotificationCenter center = null) => new(null, null, new GuildTreasury(500, 0), center);
 
         [Test]
         public void Add_NumbersTheRecords_AndFindsThem()

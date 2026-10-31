@@ -5,24 +5,37 @@ using GuildMaster.Economy;
 
 namespace GuildMaster.Reports
 {
-    /// <summary>Where the guild's gold came from or went (F-3). Income kinds first, then expense kinds.</summary>
+    /// <summary>
+    /// Where the guild's gold came from or went (F-3). Income kinds first, then expense kinds; later additions go
+    /// at the end (saved reports keep the sums in this order), so read <see cref="GoldCategories.Income"/> for which is which.
+    /// </summary>
     public enum GoldCategory
     {
-        Tax, GoodsSold, MerchantSales, LivingCosts, QuestRefund, Commission, Tribute, SideJob, OtherIncome,
-        QuestEscrow, Negotiation, LootBought, Crafting, Upgrade, Bonus, Food, OtherExpense,
+        Tax, GoodsSold, MerchantSales, LivingCosts, QuestRefund, OtherIncome,
+        QuestEscrow, Negotiation, LootBought, Crafting, Upgrade, Building, Bonus, OtherExpense,
+        /// <summary>The guild's fee on a client's quest (P4-82).</summary>
+        Commission,
+        /// <summary>The town's grant for a new guild rank (P4-106).</summary>
+        Grant,
+        /// <summary>Money taken from members (2026-10-29, economy round 2).</summary>
+        Tribute,
+        /// <summary>The guild master's odd jobs for the townsfolk (2026-10-29).</summary>
+        SideJob,
+        /// <summary>Food bought for the guild (2026-10-29).</summary>
+        Food,
     }
 
     public static class GoldCategories
     {
         public static readonly GoldCategory[] Income =
-            { GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.LivingCosts, GoldCategory.QuestRefund,
-              GoldCategory.Commission, GoldCategory.Tribute, GoldCategory.SideJob, GoldCategory.OtherIncome };
+            { GoldCategory.Commission, GoldCategory.Grant, GoldCategory.Tax, GoldCategory.GoodsSold, GoldCategory.MerchantSales, GoldCategory.LivingCosts, GoldCategory.QuestRefund,
+              GoldCategory.Tribute, GoldCategory.SideJob, GoldCategory.OtherIncome };
 
         public static readonly GoldCategory[] Expense =
-            { GoldCategory.QuestEscrow, GoldCategory.Negotiation, GoldCategory.LootBought, GoldCategory.Crafting, GoldCategory.Upgrade, GoldCategory.Bonus,
+            { GoldCategory.QuestEscrow, GoldCategory.Negotiation, GoldCategory.LootBought, GoldCategory.Crafting, GoldCategory.Upgrade, GoldCategory.Building, GoldCategory.Bonus,
               GoldCategory.Food, GoldCategory.OtherExpense };
 
-        public static bool IsIncome(GoldCategory c) => c <= GoldCategory.OtherIncome;
+        public static bool IsIncome(GoldCategory c) => System.Array.IndexOf(Income, c) >= 0;
 
         /// <summary>
         /// Sorts one treasury movement (positive = in, negative = out) into a category by its reason.
@@ -41,11 +54,13 @@ namespace GuildMaster.Reports
                 GoldReason.Loot => GoldCategory.LootBought,
                 GoldReason.Craft => GoldCategory.Crafting,
                 GoldReason.Upgrade => GoldCategory.Upgrade,
+                GoldReason.Build or GoldReason.Repair => GoldCategory.Building,
                 GoldReason.Bonus => GoldCategory.Bonus,
                 GoldReason.Commission => GoldCategory.Commission,
                 GoldReason.Tribute => GoldCategory.Tribute,
                 GoldReason.SideJob => GoldCategory.SideJob,
                 GoldReason.Food => GoldCategory.Food,
+                GoldReason.Grant => GoldCategory.Grant,
                 null => amount > 0 ? GoldCategory.QuestRefund : GoldCategory.QuestEscrow,
                 _ => amount > 0 ? GoldCategory.OtherIncome : GoldCategory.OtherExpense,
             };
@@ -55,12 +70,13 @@ namespace GuildMaster.Reports
 
         public static string Label(GoldCategory c) => c switch
         {
+            GoldCategory.Commission => "의뢰 수수료",
+            GoldCategory.Grant => "등급 하사금",
             GoldCategory.Tax => "일일 세금",
             GoldCategory.GoodsSold => "상품 판매(길드원 구매)",
             GoldCategory.MerchantSales => "행상인 판매",
             GoldCategory.LivingCosts => "길드원 생활비",
             GoldCategory.QuestRefund => "의뢰 보상 환급",
-            GoldCategory.Commission => "의뢰 대금(수수료 포함)",
             GoldCategory.Tribute => "상납금",
             GoldCategory.SideJob => "일손 돕기",
             GoldCategory.Food => "식량 구매",
@@ -70,6 +86,7 @@ namespace GuildMaster.Reports
             GoldCategory.LootBought => "전리품 매입",
             GoldCategory.Crafting => "제작 비용",
             GoldCategory.Upgrade => "건물 업그레이드",
+            GoldCategory.Building => "건설·수리",
             GoldCategory.Bonus => "길드원 보너스",
             _ => "기타 지출",
         };
@@ -88,8 +105,6 @@ namespace GuildMaster.Reports
 
         public int GoldStart { get; internal set; }
         public int GoldEnd { get; internal set; }
-        public int ExpStart { get; internal set; }
-        public int ExpEnd { get; internal set; }
 
         // Activity of the day.
         public int QuestsPosted { get; internal set; }
@@ -106,15 +121,17 @@ namespace GuildMaster.Reports
         public List<string> LevelUps { get; } = new();
         public List<string> BuildingsLost { get; } = new();
 
-        public DailyReport(int day, float startHour, int gold, int exp)
+        public DailyReport(int day, float startHour, int gold)
         {
             Day = day;
             StartHour = startHour;
             GoldStart = GoldEnd = gold;
-            ExpStart = ExpEnd = exp;
         }
 
         public int Amount(GoldCategory c) => _amounts[(int)c];
+
+        /// <summary>Save (P5-4): the sums per category, in <see cref="GoldCategory"/> order.</summary>
+        internal int[] Amounts => _amounts;
 
         internal void Add(GoldCategory c, int amount) => _amounts[(int)c] += amount;
 

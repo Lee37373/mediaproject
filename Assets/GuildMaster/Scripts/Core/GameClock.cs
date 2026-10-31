@@ -10,7 +10,7 @@ namespace GuildMaster.Core
     /// In-game calendar. Game time advances with scaled time, so pausing/speeding
     /// the game is done through Time.timeScale (see SetSpeed).
     /// </summary>
-    public class GameClock : MonoBehaviour
+    public class GameClock : MonoBehaviour, ISaveable
     {
         /// <summary>
         /// Pause, then the speeds the player can pick with 1..4 and the HUD buttons. Everything else
@@ -63,6 +63,28 @@ namespace GuildMaster.Core
                 EventBus.Publish(new HourPassedEvent { Day = day, Hour = hour });
                 if (hour == 0) EventBus.Publish(new DayPassedEvent { Day = day });
             }
+        }
+
+        // ---------------- Save (P5-4) ----------------
+
+        [System.Serializable]
+        class SaveData
+        {
+            public float total_hours;
+            public int speed_index;
+        }
+
+        public string SaveKey => "clock";
+
+        public string Capture() => JsonUtility.ToJson(new SaveData { total_hours = _totalHours, speed_index = SpeedIndex });
+
+        /// <summary>The hours in between are not replayed: no hour or day events fire for them.</summary>
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _totalHours = s.total_hours;
+            _lastWholeHour = Mathf.FloorToInt(_totalHours);
+            SetSpeed(s.speed_index);
         }
 
         /// <summary>Converts game hours to real (scaled) seconds.</summary>

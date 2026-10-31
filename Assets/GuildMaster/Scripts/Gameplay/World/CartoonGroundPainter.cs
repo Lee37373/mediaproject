@@ -16,7 +16,7 @@ namespace GuildMaster.World
         readonly MapData _map;
         readonly int _w, _h;
         // Per-layer indicator per tile (0/1): smoothed at paint time.
-        readonly byte[] _forest, _sand, _water, _road, _mountain, _nearBorder;
+        readonly byte[] _forest, _sand, _water, _road, _mountain, _nearBorder, _deep;
 
         // ---- Palette ----
         static readonly Color32 Grass = C(0x7C, 0xCF, 0x4F), GrassLight = C(0x8E, 0xDA, 0x5C);
@@ -30,6 +30,9 @@ namespace GuildMaster.World
         static readonly Color32 Wood = C(0xB5, 0x7C, 0x45), WoodDark = C(0x8A, 0x5A, 0x30), WoodLine = C(0x4A, 0x30, 0x1C);
 
         static Color32 C(int r, int g, int b) => new((byte)r, (byte)g, (byte)b, 255);
+
+        /// <summary>The deep woods' shade of a colour (P4-103).</summary>
+        static Color32 Dim(Color32 c) => new((byte)(c.r * 0.58f), (byte)(c.g * 0.64f), (byte)(c.b * 0.62f), 255);
 
         // ---- Regions (P4-55): the same shapes in each region's colours ----
 
@@ -80,7 +83,7 @@ namespace GuildMaster.World
             // Under a feature the ground only shows at its wobbly rim: that ground belongs to the
             // open land around it (else the feature's own region showed in cell-shaped notches).
             if (!IsOpen(cx, cy)) return OpenNeighbourRegion(cx, cy, own);
-            var frayed = TerrainRegions.AtFrayed(_map.RegionLayout, u, v);
+            var frayed = TerrainRegions.FrayedAt(_map, u, v);
             if (frayed == own) return own;
             for (int dy = -1; dy <= 1; dy++)
             for (int dx = -1; dx <= 1; dx++)
@@ -154,24 +157,37 @@ namespace GuildMaster.World
             _h = map.Height;
             PixelsPerTile = pixelsPerTile;
             int n = _w * _h;
-            _forest = new byte[n]; _sand = new byte[n]; _water = new byte[n]; _road = new byte[n]; _mountain = new byte[n];
-            for (int i = 0; i < n; i++)
-            {
-                var t = map.Tiles[i];
-                _forest[i] = (byte)(t == TileType.Forest ? 1 : 0);
-                // Beaches: sand also rings every body of water.
-                _sand[i] = (byte)(t == TileType.Sand || t == TileType.Water ? 1 : 0);
-                _water[i] = (byte)(t == TileType.Water ? 1 : 0);
-                _road[i] = (byte)(t == TileType.Road ? 1 : 0);
-                _mountain[i] = (byte)(t == TileType.Mountain ? 1 : 0);
-            }
+            _forest = new byte[n]; _sand = new byte[n]; _water = new byte[n]; _road = new byte[n]; _mountain = new byte[n]; _deep = new byte[n];
+            for (int i = 0; i < n; i++) ReadTile(i);
             _nearBorder = NearBorder();
         }
 
-        /// <summary>Fills a block of tiles [tx0, tx0+tilesW) × [ty0, ty0+tilesH) into pixels (row-major, bottom row first).</summary>
-        public void Paint(int tx0, int ty0, int tilesW, int tilesH, Color32[] pixels)
+        void ReadTile(int i)
         {
-            int ppt = PixelsPerTile;
+            var t = _map.Tiles[i];
+            _forest[i] = (byte)(t == TileType.Forest ? 1 : 0);
+            _deep[i] = (byte)(t == TileType.Forest && _map.Deep[i] ? 1 : 0);
+            // Beaches: sand also rings every body of water.
+            _sand[i] = (byte)(t == TileType.Sand || t == TileType.Water ? 1 : 0);
+            _water[i] = (byte)(t == TileType.Water ? 1 : 0);
+            _road[i] = (byte)(t == TileType.Road ? 1 : 0);
+            _mountain[i] = (byte)(t == TileType.Mountain ? 1 : 0);
+        }
+
+        /// <summary>The tiles in this block changed (P4-86: the town walls moved out); paint from them from now on.</summary>
+        public void Refresh(RectInt cells)
+        {
+            for (int y = Mathf.Max(0, cells.yMin); y < Mathf.Min(_h, cells.yMax); y++)
+            for (int x = Mathf.Max(0, cells.xMin); x < Mathf.Min(_w, cells.xMax); x++)
+                ReadTile(y * _w + x);
+        }
+
+        /// <summary>Fills a block of tiles [tx0, tx0+tilesW) × [ty0, ty0+tilesH) into pixels (row-major, bottom row first).</summary>
+        public void Paint(int tx0, int ty0, int tilesW, int tilesH, Color32[] pixels) => Paint(tx0, ty0, tilesW, tilesH, pixels, PixelsPerTile);
+
+        /// <summary>The same at another resolution (P4-81: the whole map's low-detail backdrop); shapes are in cells, so they match.</summary>
+        public void Paint(int tx0, int ty0, int tilesW, int tilesH, Color32[] pixels, int ppt)
+        {
             int pw = tilesW * ppt, ph = tilesH * ppt;
             for (int py = 0; py < ph; py++)
             {
@@ -210,26 +226,26 @@ namespace GuildMaster.World
             {
                 case TileType.Wall: return WallPixel(lx, ly, cx, cy);
                 case TileType.Gate: return GatePixel(lx, ly, cx, cy);
+                // The underground (P4-85): the dark between, and the ruins' halls.
+                case TileType.Void: return VoidColor;
+                case TileType.RuinFloor: return RuinFloorPixel(u, v);
+                case TileType.RuinWall: return RuinWallPixel(lx, ly, cx, cy);
             }
 
-            bool town = _map.TownRect.Contains(new Vector2Int(cx, cy));
-            var region = town ? Region.Grassland : RegionAt(u, v, cx, cy);
+            if (_map.TownRect.Contains(new Vector2Int(cx, cy))) return TownPixel(u, v);
+            var region = RegionAt(u, v, cx, cy);
             var pal = Palettes[(int)region];
-            Color32 c = town ? CobblePixel(u, v) : GrassPixel(u, v, pal);
-            if (town)
-            {
-                // Inside the walls only the plaza roads are overlaid.
-                Overlay(ref c, _road, u, v, Road, RoadEdge, 0.06f, 0.35f);
-                return c;
-            }
+            Color32 c = GrassPixel(u, v, pal);
 
             // Each feature in its own region's colours (a lake is all water or all lava).
             var forestPal = Palettes[(int)LayerRegion(_forest, cx, cy, region)];
             var wetPal = Palettes[(int)LayerRegion(_sand, cx, cy, region)];
             Overlay(ref c, _forest, u, v, forestPal.ForestFloor, forestPal.ForestEdge, 0.05f, 0.5f);
+            // The deep woods (P4-103): the same floor in the canopy's gloom.
+            Overlay(ref c, _deep, u, v, Dim(forestPal.ForestFloor), Dim(forestPal.ForestEdge), 0.05f, 0.6f);
             Overlay(ref c, _sand, u, v, wetPal.Sand, wetPal.SandEdge, 0.05f, 0.45f);
             WaterOverlay(ref c, u, v, wetPal);
-            Overlay(ref c, _road, u, v, Road, RoadEdge, 0.07f, 0.3f);
+            if (!BridgeOverlay(ref c, u, v, cx, cy)) Overlay(ref c, _road, u, v, Road, RoadEdge, 0.07f, 0.3f);
             MountainOverlay(ref c, u, v);
             return c;
         }
@@ -314,18 +330,62 @@ namespace GuildMaster.World
             return c;
         }
 
-        // ---------------- Town (grid-aligned) ----------------
+        // ---------------- Town (P4-114: kept grass, cobbled streets and a round plaza) ----------------
 
-        Color32 CobblePixel(float u, float v)
+        static readonly Color32 TownGrass = C(0x86, 0xD4, 0x58), TownGrassLight = C(0x95, 0xDD, 0x66), TownTuft = C(0x6C, 0xB8, 0x48);
+        static readonly Color32 CobbleLight = C(0xE6, 0xE0, 0xD4), Curb = C(0x8E, 0x85, 0x78), Mosaic = C(0xE2, 0xBC, 0x84);
+        static readonly Color32[] Petals = { C(0xFF, 0xFF, 0xFF), C(0xFF, 0xD2, 0x4A), C(0xFF, 0x8F, 0xB4) };
+        /// <summary>The plaza's radius round the town centre, in cells.</summary>
+        const float PlazaRadius = 2.7f;
+
+        /// <summary>
+        /// Inside the walls: grass kept short, with little flowers; the roads from gate to gate cobbled a little wider than
+        /// their cells, with a curb; a round cobbled plaza at the crossing with a ring of warm stone in it.
+        /// </summary>
+        Color32 TownPixel(float u, float v)
         {
-            // Half-tile stones, every other row offset by half a stone.
-            float su = u * 2f, sv = v * 2f;
+            float f = Field(_road, u, v, out _);
+            float du = u - (_map.TownCenter.x + 0.5f), dv = v - (_map.TownCenter.y + 0.5f);
+            float r = Mathf.Sqrt(du * du + dv * dv);
+            bool street = f >= 0.3f, plaza = r <= PlazaRadius;
+            if (street || plaza)
+            {
+                if ((!street || f < 0.38f) && (!plaza || r > PlazaRadius - 0.1f)) return Curb;
+                if (plaza && (Mathf.Abs(r - 1.25f) < 0.12f || r < 0.42f)) return MosaicPixel(u, v);
+                return CobblePixel(u, v);
+            }
+
+            float n = ValueNoise(u * 0.22f, v * 0.22f);
+            var c = n > 0.6f ? TownGrassLight : TownGrass;
+            if (Speck(u * 4f, v * 4f, 0.025f, 0.1f, 0.24f)) c = TownTuft;
+            if (Speck(u * 3f, v * 3f, 0.045f, 0.13f, 0.13f))
+                c = Petals[(int)(Hash01(Mathf.FloorToInt(u * 3f) + 7, Mathf.FloorToInt(v * 3f)) * Petals.Length) % Petals.Length];
+            return c;
+        }
+
+        /// <summary>Rounded stones in staggered rows, lit from above, in a darker grout.</summary>
+        static Color32 CobblePixel(float u, float v)
+        {
+            float su = u * 2.4f, sv = v * 2.4f;
             int row = Mathf.FloorToInt(sv);
             if ((row & 1) == 1) su += 0.5f;
             int col = Mathf.FloorToInt(su);
-            float lx = su - col, ly = sv - row;
-            if (lx < 0.07f || ly < 0.07f) return Grout;
-            return Hash01(col, row) < 0.3f ? CobbleAlt : Cobble;
+            float lx = su - col - 0.5f, ly = sv - row - 0.5f;
+            float qx = Mathf.Abs(lx) - 0.3f, qy = Mathf.Abs(ly) - 0.27f;
+            float d = new Vector2(Mathf.Max(qx, 0f), Mathf.Max(qy, 0f)).magnitude + Mathf.Min(Mathf.Max(qx, qy), 0f) - 0.14f;
+            if (d > 0f) return Grout;
+            float h = Hash01(col, row);
+            var c = h < 0.28f ? CobbleAlt : h > 0.82f ? CobbleLight : Cobble;
+            return ly > 0.16f && d < -0.05f ? Color32.Lerp(c, CobbleLight, 0.55f) : c;
+        }
+
+        /// <summary>The plaza's ring and middle: small square setts of warm stone.</summary>
+        static Color32 MosaicPixel(float u, float v)
+        {
+            float su = u * 5f, sv = v * 5f;
+            float lx = su - Mathf.Floor(su), ly = sv - Mathf.Floor(sv);
+            if (lx < 0.14f || ly < 0.14f) return Grout;
+            return Hash01(Mathf.FloorToInt(su) + 3, Mathf.FloorToInt(sv)) < 0.3f ? Color32.Lerp(Mosaic, CobbleLight, 0.4f) : Mosaic;
         }
 
         Color32 WallPixel(float lx, float ly, int cx, int cy)
@@ -336,6 +396,68 @@ namespace GuildMaster.World
             float fx = bx - Mathf.Floor(bx), fy = ly * 2f - Mathf.Floor(ly * 2f);
             if (fx < 0.08f || fy < 0.08f) return WallLine;
             return Hash01(cx * 2 + Mathf.FloorToInt(bx), cy * 2 + Mathf.FloorToInt(ly * 2f)) < 0.35f ? WallTop : WallStone;
+        }
+
+        // ---------------- Ruins underground (P4-85) ----------------
+
+        static readonly Color32 VoidColor = new(6, 5, 9, 255);
+        static readonly Color32 RuinSlab = new(0x5C, 0x56, 0x52, 255);
+        static readonly Color32 RuinSlabAlt = new(0x52, 0x4C, 0x49, 255);
+        static readonly Color32 RuinGrout = new(0x34, 0x30, 0x2E, 255);
+        static readonly Color32 RuinMoss = new(0x4E, 0x5E, 0x3E, 255);
+        static readonly Color32 RuinBlock = new(0x3A, 0x36, 0x3F, 255);
+        static readonly Color32 RuinBlockTop = new(0x55, 0x50, 0x5C, 255);
+        static readonly Color32 RuinLine = new(0x22, 0x1F, 0x26, 255);
+
+        /// <summary>Big worn flagstones, a few mossy.</summary>
+        Color32 RuinFloorPixel(float u, float v)
+        {
+            int col = Mathf.FloorToInt(u), row = Mathf.FloorToInt(v);
+            float lx = u - col, ly = v - row;
+            if (lx < 0.06f || ly < 0.06f) return RuinGrout;
+            float h = Hash01(col, row);
+            if (h < 0.12f && Speck(u * 3f, v * 3f, 0.5f, 0.35f, 0.3f)) return RuinMoss;
+            return h < 0.45f ? RuinSlabAlt : RuinSlab;
+        }
+
+        /// <summary>Dark stone blocks with a lighter top edge where the floor is in front (below).</summary>
+        Color32 RuinWallPixel(float lx, float ly, int cx, int cy)
+        {
+            bool front = _map.InBounds(cx, cy - 1) && _map[cx, cy - 1] == TileType.RuinFloor;
+            if (front && ly < 0.18f) return RuinBlockTop;
+            float bx = lx * 2f + ((Mathf.FloorToInt(ly * 2f) & 1) == 1 ? 0.5f : 0f);
+            float fx = bx - Mathf.Floor(bx), fy = ly * 2f - Mathf.Floor(ly * 2f);
+            if (fx < 0.07f || fy < 0.07f) return RuinLine;
+            return RuinBlock;
+        }
+
+        /// <summary>
+        /// A road with water either side is a wooden bridge (P4-101: the bridges over the rivers, and the gates' roads
+        /// where they cross a river or a lake): planks across the way, dark rails along its sides, straight edges.
+        /// </summary>
+        bool BridgeOverlay(ref Color32 c, float u, float v, int cx, int cy)
+        {
+            if (_road[cy * _w + cx] == 0) return false;
+            bool northward = WaterBeside(cx, cy, 1, 0) && WaterBeside(cx, cy, -1, 0);
+            if (!northward && !(WaterBeside(cx, cy, 0, 1) && WaterBeside(cx, cy, 0, -1))) return false;
+            float f = Field(_road, u, v, out _);
+            if (f < 0.5f) return true; // the water beside the deck
+            if (f < 0.62f) { c = WoodLine; return true; }
+            float along = (northward ? v : u) * 3f;
+            float plank = along - Mathf.Floor(along);
+            c = plank < 0.12f ? WoodLine : (Mathf.FloorToInt(along) & 1) == 0 ? Wood : WoodDark;
+            return true;
+        }
+
+        /// <summary>Water within two cells this way, with only road between.</summary>
+        bool WaterBeside(int x, int y, int dx, int dy)
+        {
+            for (int k = 1; k <= 2; k++)
+            {
+                if (At(_water, x + dx * k, y + dy * k) != 0) return true;
+                if (At(_road, x + dx * k, y + dy * k) == 0) return false;
+            }
+            return false;
         }
 
         Color32 GatePixel(float lx, float ly, int cx, int cy)

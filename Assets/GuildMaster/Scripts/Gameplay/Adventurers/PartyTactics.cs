@@ -95,35 +95,53 @@ namespace GuildMaster.Adventurers
         /// <summary>Quests that give formations: several members, not an escort (that has its own).</summary>
         static bool IsPartyQuest(Quest q) => q != null && q.IsActive && q.Type != QuestType.Escort && q.Assignees.Count >= 2;
 
-        /// <summary>Out on the quest (travelling to it or working its area), so part of the formation.</summary>
+        /// <summary>
+        /// Out on the quest (travelling to it or working its area), hunting, or on the way home
+        /// (P4-71: a party walks home together too, not on a lure run), so part of the formation.
+        /// </summary>
         static bool IsOut(Adventurer a)
             => a != null && a.IsAlive && a.IsGuildMember
-               && (a.Fsm.Current == a.TravelState || a.Fsm.Current == a.HuntState || a.Fsm.Current == a.FreeHuntState);
+               && (a.Fsm.Current == a.TravelState || a.Fsm.Current == a.HuntState || a.Fsm.Current == a.FreeHuntState
+                   || a.Fsm.Current == a.ReturnState && !a.ReturnState.Luring);
 
         /// <summary>
-        /// What holds this adventurer's party together: its quest, or the hunting band it went out
-        /// with (P4-37). Null when it is on its own.
+        /// What holds this adventurer's party together: its quest, the hunting band it went out
+        /// with (P4-37, also while it walks back from a party retreat, P4-71), or on the way home its
+        /// standing party (P4-50). Null when it is on its own.
         /// </summary>
+        static bool Homeward(Adventurer a) => a.Fsm.Current == a.ReturnState;
+
         static object GroupOf(Adventurer a)
         {
             if (IsPartyQuest(a.CurrentQuest)) return a.CurrentQuest;
-            if (a.Fsm.Current != a.FreeHuntState || !Services.TryGet<HuntBandService>(out var bands)) return null;
-            var band = bands.BandOf(a);
-            return band != null && band.Members.Count >= 2 ? band : null;
+            var s = a.Fsm.Current;
+            if (s != a.FreeHuntState && s != a.ReturnState) return null;
+            if (Services.TryGet<HuntBandService>(out var bands) && bands.BandOf(a) is { } band && band.Members.Count >= 2) return band;
+            if (s == a.ReturnState && Services.TryGet<GuildParties>(out var parties)) return parties.PartyOf(a);
+            return null;
         }
 
-        /// <summary>Members of the adventurer's party who are out, leader first (joining order).</summary>
+        /// <summary>
+        /// Members of the adventurer's party who are out, leader first (joining order) — only those going
+        /// the same way: one walking home is no formation for one setting out (P4-73: a quest leader in town
+        /// stood waiting hours for a member still on its way back).
+        /// </summary>
         public List<Adventurer> Party(Adventurer a, List<Adventurer> into)
         {
             into.Clear();
-            switch (GroupOf(a))
+            var group = GroupOf(a);
+            bool home = Homeward(a);
+            switch (group)
             {
                 case Quest q:
                     foreach (var t in q.Assignees)
-                        if (t is Adventurer m && m.CurrentQuest == q && IsOut(m)) into.Add(m);
+                        if (t is Adventurer m && m.CurrentQuest == q && IsOut(m) && Homeward(m) == home) into.Add(m);
                     break;
                 case HuntBand band:
-                    foreach (var m in band.Members) if (IsOut(m)) into.Add(m);
+                    foreach (var m in band.Members) if (IsOut(m) && Homeward(m) == home && GroupOf(m) == group) into.Add(m);
+                    break;
+                case Party party:
+                    foreach (var m in party.Members) if (IsOut(m) && Homeward(m) == home && GroupOf(m) == group) into.Add(m);
                     break;
             }
             if (into.Count < 2) into.Clear();
@@ -299,6 +317,7 @@ namespace GuildMaster.Adventurers
         {
             Quest q => IsPartyQuest(q),
             HuntBand b => b.Members.Count >= 2,
+            Party p => p.Members.Count >= 2,
             _ => false,
         };
 
@@ -318,6 +337,9 @@ namespace GuildMaster.Adventurers
             if (Services.TryGet<HuntBandService>(out var bands))
                 foreach (var band in bands.Bands)
                     if (band.Members.Count >= 2) Track(band, LeaderOfBand(band));
+            if (Services.TryGet<GuildParties>(out var standing))
+                foreach (var p in standing.Parties)
+                    if (p.Members.Count >= 2) Track(p, LeaderOfParty(p));
         }
 
         static Adventurer LeaderOfQuest(Quest q)
@@ -330,6 +352,13 @@ namespace GuildMaster.Adventurers
         static Adventurer LeaderOfBand(HuntBand band)
         {
             foreach (var m in band.Members) if (IsOut(m)) return m;
+            return null;
+        }
+
+        /// <summary>A standing party walking home together (P4-71): its first member on the way.</summary>
+        static Adventurer LeaderOfParty(Party p)
+        {
+            foreach (var m in p.Members) if (IsOut(m) && GroupOf(m) == p) return m;
             return null;
         }
 

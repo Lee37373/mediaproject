@@ -117,7 +117,7 @@ namespace GuildMaster.UI
                 row.ItemId = item.id;
                 float demand = market.Demand(item);
                 var demandColor = demand >= 1.15f ? UITheme.Good : demand >= 0.9f ? UITheme.Text : UITheme.Bad;
-                string cat = item.category switch { ItemCategory.Material => "재료", ItemCategory.Potion => "물약", _ => "장비" };
+                string cat = item.category switch { ItemCategory.Material => "재료", ItemCategory.Potion => "물약", ItemCategory.Tool => "도구", _ => "장비" };
                 bool usedInCrafting = crafting != null && crafting.Recipes.Any(r => r.inputs.Any(x => x.itemId == item.id));
                 row.Info.text =
                     $"<color=#{UITheme.Hex(item.color)}>■</color> {item.displayName} x{count}  {UIBuilder.Colored($"[{cat}]" + (usedInCrafting ? " 제작 재료" : ""), UITheme.TextMuted)}\n" +
