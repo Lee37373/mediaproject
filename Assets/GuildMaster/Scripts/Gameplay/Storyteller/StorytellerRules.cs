@@ -119,7 +119,7 @@ namespace GuildMaster.Storytelling
         {
             StoryBeat.TownRaid => 3f,
             StoryBeat.Horde => 3f,
-            StoryBeat.DragonFlight => 1.5f,
+            StoryBeat.DragonFlight => 2.3f,
             _ => 2f,
         };
 
