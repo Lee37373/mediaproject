@@ -47,6 +47,9 @@ namespace GuildMaster.Welfare
         int _streak;
         bool _begun;
         bool _demandMet;
+        /// <summary>At the start: the member had asked for a talk; their unanswered demands (grudges).</summary>
+        readonly bool _asked;
+        readonly int _grudges;
 
         public Adventurer Member { get; }
         public CounselConcern Concern { get; }
@@ -57,6 +60,8 @@ namespace GuildMaster.Welfare
         public int Relief { get; private set; }
         public int Harm { get; private set; }
         public int Hurtful { get; private set; }
+        /// <summary>Caring lines that fell flat (<see cref="CounselOdds"/>); at the limit the member walks out.</summary>
+        public int Fails { get; private set; }
         public int PlayerTurns { get; private set; }
         public float StartStress { get; }
         public bool Busy { get; private set; }
@@ -87,6 +92,8 @@ namespace GuildMaster.Welfare
             StartStress = member.Data.stress;
             var care = welfare?.Care(member);
             Concern = CounselConcerns.Detect(ReadState(member, care));
+            _asked = care != null && care.Demand == CareDemand.Talk;
+            _grudges = care?.Grudges ?? 0;
             // Talkers and members who are not holding a grudge say what is wrong straight away.
             bool extrovert = !string.IsNullOrEmpty(member.Data.mbti) && char.ToUpperInvariant(member.Data.mbti[0]) == 'E';
             Open = extrovert && (care == null || care.Grudges == 0);
@@ -161,19 +168,45 @@ namespace GuildMaster.Welfare
             finally { Busy = false; }
             if (Member == null || !Member.IsAlive) { Finish(CounselOutcome.Ended); Changed?.Invoke(); return; }
 
-            int streak = _last == reply.reaction ? _streak + 1 : 0;
+            // A caring line has to land (2026-10-31): rolled like the recruit talk; a failure adds stress instead.
+            bool offTopic = choice != null && IsOffTopic(choice);
+            bool repeat = _last == reply.reaction;
+            var roll = CounselRoll.Success;
+            if (CounselOdds.Rolls(reply.reaction))
+            {
+                int chance = CounselOdds.Chance(reply.reaction, reply.touched, offTopic, Member.Data.mbti, _grudges, Member.Data.stress,
+                                                _asked || _demandMet, Open, repeat);
+                roll = CounselOdds.Roll(chance, GameRandom.Shared.Value, GameRandom.Shared.Value);
+            }
+
+            int streak = repeat ? _streak + 1 : 0;
             _last = reply.reaction;
             _streak = streak;
-            int delta = CounselScoring.Cap(CounselScoring.Score(reply.reaction, streak, Member.Data.mbti, reply.touched, _demandMet), Relief, Harm);
+            int delta;
+            string feedback;
+            if (roll == CounselRoll.Success)
+            {
+                delta = CounselScoring.Cap(CounselScoring.Score(reply.reaction, streak, Member.Data.mbti, reply.touched, _demandMet), Relief, Harm);
+                feedback = CounselScoring.Feedback(reply.reaction, delta, reply.touched);
+                if (CounselScoring.IsHurtful(reply.reaction)) Hurtful++;
+            }
+            else
+            {
+                delta = CounselScoring.Cap(-CounselOdds.Harm(roll), Relief, Harm);
+                feedback = CounselOdds.Feedback(roll);
+                Fails++;
+                if (roll == CounselRoll.CritFail) Hurtful++;
+                reply = (FailLine(choice, reply.reaction, offTopic, roll), reply.reaction, false);
+            }
             if (delta > 0) Relief += delta; else Harm -= delta;
-            if (CounselScoring.IsHurtful(reply.reaction)) Hurtful++;
             _welfare?.ApplyCounsel(Member, delta);
 
             AddTurn(false, reply.text);
             Member.Say(reply.text, toFeed: false);
-            _reactions.Add((_turns.Count, CounselScoring.Feedback(reply.reaction, delta, reply.touched), delta));
-            if (!Open && CounselScoring.OpensUp(reply.reaction)) Open = true;
-            if (!ConcernKnown && (reply.touched || Open && CounselScoring.OpensUp(reply.reaction)))
+            _reactions.Add((_turns.Count, feedback, delta));
+            bool landed = roll == CounselRoll.Success;
+            if (landed && !Open && CounselScoring.OpensUp(reply.reaction)) Open = true;
+            if (landed && !ConcernKnown && (reply.touched || Open && CounselScoring.OpensUp(reply.reaction)))
             {
                 ConcernKnown = true;
                 _notes.Add((_turns.Count, "고민: " + Concern.Label));
@@ -189,6 +222,45 @@ namespace GuildMaster.Welfare
             }
             RefreshChoices();
             Changed?.Invoke();
+        }
+
+        /// <summary>A guess at, or help for, a worry the member does not have.</summary>
+        bool IsOffTopic(CounselChoice c)
+            => (c.Kind == CounselChoiceKind.Touch || c.Kind == CounselChoiceKind.Solve) && c.Topic != null && Concern != null && c.Topic != Concern.Kind;
+
+        /// <summary>
+        /// The chance (%) that a choice lands, for the window; 0 for a harsh line (never rolled, always hurts).
+        /// See <see cref="ChanceHidden"/>: before the worry is known a guess's odds would give the answer away.
+        /// </summary>
+        public int ChanceOf(CounselChoice c)
+        {
+            if (c == null || Member == null || Concern == null) return 0;
+            var (reaction, touched) = CounselBank.ReactionFor(c, Concern);
+            return CounselOdds.Chance(reaction, touched, IsOffTopic(c), Member.Data.mbti, _grudges, Member.Data.stress,
+                                      _asked || _demandMet, Open, _last == reaction);
+        }
+
+        public bool ChanceHidden(CounselChoice c)
+            => c != null && !ConcernKnown && (c.Kind == CounselChoiceKind.Touch || c.Kind == CounselChoiceKind.Solve);
+
+        /// <summary>The member's answer to a line that fell flat (written lines; a short fallback without them).</summary>
+        string FailLine(CounselChoice choice, CounselReaction reaction, bool offTopic, CounselRoll roll)
+        {
+            var bank = CounselBank.Shared;
+            string key;
+            if (roll == CounselRoll.CritFail) key = "fail.crit";
+            else if (offTopic) key = choice.Kind == CounselChoiceKind.Solve ? "solution.miss" : "wrong.guess";
+            else if (choice != null) key = "fail." + choice.Kind;
+            else key = "fail." + reaction switch
+            {
+                CounselReaction.Solution => nameof(CounselChoiceKind.Solve),
+                CounselReaction.Listen => nameof(CounselChoiceKind.Listen),
+                CounselReaction.Praise => nameof(CounselChoiceKind.Praise),
+                CounselReaction.Small => nameof(CounselChoiceKind.Small),
+                _ => nameof(CounselChoiceKind.Empathy),
+            };
+            string text = bank.Line(key, _register, GameRandom.Shared) ?? bank.Line("fail.Empathy", _register, GameRandom.Shared);
+            return string.IsNullOrEmpty(text) ? "…그래요." : text.Replace("{subject}", string.IsNullOrEmpty(Concern?.Subject) ? "그 친구" : Concern.Subject);
         }
 
         (string, CounselReaction, bool) ChoiceReply(CounselChoice choice)
@@ -208,11 +280,12 @@ namespace GuildMaster.Welfare
         }
 
         /// <summary>Whether the talk is over after this line (pure rules on the session's totals).</summary>
-        CounselOutcome Verdict() => Judge(Relief, Harm, Hurtful, PlayerTurns, Member.Data.stress);
+        CounselOutcome Verdict() => Judge(Relief, Harm, Hurtful, PlayerTurns, Member.Data.stress, Fails);
 
-        public static CounselOutcome Judge(int relief, int harm, int hurtful, int playerTurns, float stressNow)
+        public static CounselOutcome Judge(int relief, int harm, int hurtful, int playerTurns, float stressNow, int fails = 0)
         {
-            if (hurtful >= CounselScoring.WalkoutNegatives || harm >= CounselScoring.MaxHarm) return CounselOutcome.Walkout;
+            if (hurtful >= CounselScoring.WalkoutNegatives || harm >= CounselScoring.MaxHarm || fails >= CounselOdds.FailLimit)
+                return CounselOutcome.Walkout;
             if (relief >= CounselScoring.ReliefGoal || (relief > 0 && stressNow < CounselScoring.CalmStress)) return CounselOutcome.Relieved;
             if (playerTurns >= CounselScoring.MaxTurns) return CounselOutcome.Ended;
             return CounselOutcome.Ongoing;

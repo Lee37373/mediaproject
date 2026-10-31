@@ -50,6 +50,19 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void Townsfolk_SkipMonsterLikeEyes()
+        {
+            Assert.That(HumanLook.IsScaryEye("Body_Eye_018"), Is.True, "glowing red");
+            Assert.That(HumanLook.IsScaryEye("Body_Eye_009"), Is.True, "glowing yellow");
+            Assert.That(HumanLook.IsScaryEye("Body_Eye_011"), Is.True, "hollow gray");
+            Assert.That(HumanLook.IsScaryEye("Body_Eye_002_Blue"), Is.False);
+            Assert.That(HumanLook.IsScaryEye("Body_Eye_001"), Is.False);
+            Assert.That(HumanLook.IsScaryEye(null), Is.False);
+            Assert.That(HumanLook.Plain("x").FriendlyEyes, Is.False, "only townsfolk ask for it");
+            Assert.That(HumanLook.Plain("x").OffHand, Is.EqualTo(HumanLook.None), "empty left hand unless asked");
+        }
+
+        [Test]
         public void SkillColours_PickThePacksNearestVariant()
         {
             Assert.That(CasualVfx.ColorName(new Color(0.9f, 0.2f, 0.2f)), Is.EqualTo("Red"));

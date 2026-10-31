@@ -3,8 +3,7 @@ using UnityEngine;
 namespace GuildMaster.Session
 {
     /// <summary>
-    /// Player settings kept between runs (PlayerPrefs, P4-10): LLM on/off and the screen mode.
-    /// Volume joins with the sound work (P4-9). Also carries what the title screen hands to the next
+    /// Player settings kept between runs (PlayerPrefs, P4-10): LLM on/off, the screen mode and (P4-9) the volumes. Also carries what the title screen hands to the next
     /// scene load (a chosen seed, whether to show the title again).
     /// </summary>
     public static class GameSettings
@@ -37,6 +36,28 @@ namespace GuildMaster.Session
                 PlayerPrefs.Save();
                 ApplyScreen();
             }
+        }
+
+        // ---------------- Volume (P4-9, 2026-10-31) ----------------
+
+        const string SfxKey = "gm.sfxVolume";
+        const string MusicKey = "gm.musicVolume";
+
+        /// <summary>Raised when a volume changes, so the sound service can follow at once.</summary>
+        public static event System.Action VolumeChanged;
+
+        /// <summary>Effects volume, 0..1.</summary>
+        public static float SfxVolume
+        {
+            get => PlayerPrefs.GetFloat(SfxKey, 0.8f);
+            set { PlayerPrefs.SetFloat(SfxKey, Mathf.Clamp01(value)); PlayerPrefs.Save(); VolumeChanged?.Invoke(); }
+        }
+
+        /// <summary>Music volume, 0..1.</summary>
+        public static float MusicVolume
+        {
+            get => PlayerPrefs.GetFloat(MusicKey, 0.6f);
+            set { PlayerPrefs.SetFloat(MusicKey, Mathf.Clamp01(value)); PlayerPrefs.Save(); VolumeChanged?.Invoke(); }
         }
 
         /// <summary>Applies the saved screen mode (no effect inside the editor's Game view).</summary>

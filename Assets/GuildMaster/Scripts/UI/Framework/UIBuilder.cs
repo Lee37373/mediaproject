@@ -102,6 +102,7 @@ namespace GuildMaster.UI
             img.type = Image.Type.Sliced;
             img.color = color;
             img.raycastTarget = raycast;
+            UISkin.Panel(img); // cartoon skin when Resources/UI/Skin is present (2026-10-31)
             return img;
         }
 
@@ -215,6 +216,8 @@ namespace GuildMaster.UI
             var text = Label(img.transform, label, fontSize, TextAnchor.MiddleCenter);
             text.rectTransform.Stretch(4, 4, 0, 0);
             img.Size(width, height);
+            UISkin.Button(btn, img, baseColor, text);            // 2026-10-31: skin and click sound
+            btn.onClick.AddListener(GuildMaster.Audio.Sound.Click);
             return btn;
         }
 

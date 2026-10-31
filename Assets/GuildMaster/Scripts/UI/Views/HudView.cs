@@ -43,10 +43,16 @@ namespace GuildMaster.UI
                 _speedButtons[i] = UIBuilder.Button(bar.transform, label, () => Services.Get<GameClock>().SetSpeed(idx), 46, 32, null, 14);
             }
             UIBuilder.Rect(bar.transform, "Spacer").Size(-1, -1, 1);
+            // 2026-10-31: an icon before each resource when the UI skin is present (none without it).
+            UISkin.LayoutIcon(bar.transform, "gold");
             _gold = UIBuilder.Label(bar.transform, "", 17).Size(150);
+            UISkin.LayoutIcon(bar.transform, "food");
             _food = UIBuilder.Label(bar.transform, "", 17).Size(110); // 2026-10-29: the guild's food
+            UISkin.LayoutIcon(bar.transform, "exp");
             _exp = UIBuilder.Label(bar.transform, "", 17).Size(190);
+            UISkin.LayoutIcon(bar.transform, "material");
             _materials = UIBuilder.Label(bar.transform, "", 17).Size(120);
+            UISkin.LayoutIcon(bar.transform, "guild");
             _members = UIBuilder.Label(bar.transform, "", 17).Size(130);
             _monsters = UIBuilder.Label(bar.transform, "", 17).Size(130);
             _extra = UIBuilder.Label(bar.transform, "", 15, TextAnchor.MiddleRight, UITheme.TextMuted).Size(200);

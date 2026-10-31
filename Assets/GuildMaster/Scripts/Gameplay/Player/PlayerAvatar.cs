@@ -30,11 +30,16 @@ namespace GuildMaster.Player
             go.transform.position = position;
             go.AddComponent<PathFollower>();
             var visual = go.AddComponent<CharacterVisual>();
-            // The guild master as a person of the CharacterMaker rig (2026-10-30): a sword, a helmet, no shield.
+            // The guild master as a person of the CharacterMaker rig. Not a fighter (user, 2026-10-31): no weapon, a ledger
+            // in hand, a wide hat and the guild's purple-and-gold cloak, a touch taller, so they stand out from everyone.
             var look = HumanLook.Plain("guildmaster");
-            look.Weapon = "Sword";
-            look.WeaponIndex = 5;
-            look.Helmet = 9;
+            look.Weapon = null;
+            look.Shield = HumanLook.None;
+            look.OffHand = HumanRig.PartIndex("Sub_Item", "FA_WP_Sub_Book_001_Red", HumanLook.None);
+            look.Helmet = HumanRig.PartIndex("Helmet", "FA_Helmet_001_Brown", 9);
+            look.Chest = HumanRig.PartIndex("Chest", "FA_Chest_016_PurpleYellow", look.Chest);
+            look.FriendlyEyes = true;
+            look.Scale = 1.1f;
             look.Runs = true;
             if (!visual.InitHuman(look))
             {

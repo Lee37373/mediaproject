@@ -54,7 +54,7 @@ namespace GuildMaster.UI
             _stressLabel = UIBuilder.Label(left.transform, "", 15).Size(-1, 24);
             _stress = UIBuilder.Slider(left.transform, 0, 100, 0, null);
             _stress.interactable = false;
-            _concern = UIBuilder.Label(left.transform, "", 15, TextAnchor.UpperLeft).Size(-1, 90);
+            _concern = UIBuilder.Label(left.transform, "", 15, TextAnchor.UpperLeft).Size(-1, 112); // 90 → 112: failure count (2026-10-31)
             _concern.verticalOverflow = VerticalWrapMode.Overflow;
             _status = UIBuilder.Label(left.transform, "", 15, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 60);
             _status.verticalOverflow = VerticalWrapMode.Overflow;
@@ -170,6 +170,9 @@ namespace GuildMaster.UI
                 ? "고민: " + UIBuilder.Colored(_session.Concern.Label, UITheme.Warn)
                 : "고민: " + UIBuilder.Colored("???", UITheme.TextMuted) + "\n" +
                   UIBuilder.Colored("무엇이 힘든지 물어보고 들어 주세요. 진짜 고민을 짚으면 훨씬 잘 풀립니다.", UITheme.TextMuted);
+            // 2026-10-31: kind lines can fall flat (stress up); three and the member walks out.
+            _concern.text += "\n" + UIBuilder.Colored($"헛말 {_session.Fails}/{CounselOdds.FailLimit}", _session.Fails > 0 ? UITheme.Bad : UITheme.TextMuted)
+                             + UIBuilder.Colored(" (와닿지 않으면 스트레스↑, 3번이면 자리를 뜸)", UITheme.TextMuted);
 
             bool ongoing = _session.Outcome == CounselOutcome.Ongoing;
             _status.text = _session.Outcome switch
@@ -187,7 +190,7 @@ namespace GuildMaster.UI
                 bool show = ongoing && i < choices.Count;
                 _choiceButtons[i].gameObject.SetActive(show);
                 if (!show) continue;
-                _choiceButtons[i].SetLabel($"{i + 1}. {choices[i].Text}");
+                _choiceButtons[i].SetLabel($"{i + 1}. {choices[i].Text} {ChanceTag(choices[i])}");
                 _choiceButtons[i].interactable = !_session.Busy;
             }
             _input.interactable = ongoing;
@@ -217,6 +220,16 @@ namespace GuildMaster.UI
             _chat.text = sb.ToString();
             Canvas.ForceUpdateCanvases();
             _chatScroll.verticalNormalizedPosition = 0f;
+        }
+
+        /// <summary>The odds next to a choice, like the recruit talk: "(성공 65%)", "(성공 ??%)" before the worry is known, "(위험)" for a harsh line.</summary>
+        string ChanceTag(CounselChoice c)
+        {
+            if (c.Kind == CounselChoiceKind.Tough) return UIBuilder.Colored("(위험)", UITheme.Bad);
+            if (_session.ChanceHidden(c)) return UIBuilder.Colored("(성공 ??%)", UITheme.TextMuted);
+            int chance = _session.ChanceOf(c);
+            var color = chance >= 65 ? UITheme.Good : chance >= 40 ? UITheme.Warn : UITheme.Bad;
+            return UIBuilder.Colored($"(성공 {chance}%)", color);
         }
     }
 }

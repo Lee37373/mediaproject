@@ -10,7 +10,7 @@ namespace GuildMaster.UI
 {
     /// <summary>
     /// Settings overlay (P4-10), opened from the title and pause menus: LLM on/off, full screen and
-    /// resolution. Values persist through <see cref="GameSettings"/>. Volume arrives with sound (P4-9).
+    /// resolution, and (P4-9) effects and music volume. Values persist through <see cref="GameSettings"/>.
     /// </summary>
     public class SettingsView : MonoBehaviour
     {
@@ -28,7 +28,7 @@ namespace GuildMaster.UI
             _root = dim.rectTransform;
             _root.Stretch();
             var box = UIBuilder.Panel(_root, "Box", UITheme.PanelBg);
-            box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 360));
+            box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 440));
             UIBuilder.VLayout(box, 10, 24);
             UIBuilder.Label(box.transform, "설정", 26, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 40);
 
@@ -38,6 +38,10 @@ namespace GuildMaster.UI
             _fullscreen = UIBuilder.Button(fsRow, "", ToggleFullscreen, 200, 34, null, 15);
             var resRow = Row(box.transform, "해상도");
             _resolution = UIBuilder.Dropdown(resRow, new List<string>(), OnResolution, 200, 34);
+            var sfxRow = Row(box.transform, "효과음");
+            UIBuilder.Slider(sfxRow, 0f, 1f, GameSettings.SfxVolume, v => GameSettings.SfxVolume = v, 200);
+            var musicRow = Row(box.transform, "배경 음악");
+            UIBuilder.Slider(musicRow, 0f, 1f, GameSettings.MusicVolume, v => GameSettings.MusicVolume = v, 200);
 
             _note = UIBuilder.Label(box.transform, "", 14, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 56);
             _note.verticalOverflow = VerticalWrapMode.Overflow;
@@ -86,8 +90,8 @@ namespace GuildMaster.UI
             _llm.SetLabel(GameSettings.LlmEnabled ? "켬 (LLM 판단·대화)" : "끔 (규칙 기반)");
             _fullscreen.SetLabel(GameSettings.Fullscreen ? "켬" : "끔");
             _note.text = Application.isEditor
-                ? "에디터에서는 화면 설정이 저장만 되고 적용되지 않습니다(빌드에서 적용). 볼륨은 사운드 작업(P4-9) 때 추가됩니다."
-                : "볼륨은 사운드 작업(P4-9) 때 추가됩니다.";
+                ? "에디터에서는 화면 설정이 저장만 되고 적용되지 않습니다(빌드에서 적용)."
+                : "";
         }
 
         void ToggleLlm()

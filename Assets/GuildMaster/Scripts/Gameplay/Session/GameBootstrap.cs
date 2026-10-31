@@ -132,6 +132,10 @@ namespace GuildMaster.Session
             var casualVfx = AddSystem<CasualVfx>();
             casualVfx.Init();
             Services.Register(casualVfx);
+            // Sound effects and town music (P4-9, 2026-10-31); silent when Resources/Audio is empty.
+            var sound = AddSystem<GuildMaster.Audio.SoundService>();
+            sound.Init();
+            Services.Register(sound);
             // Items on the ground (P4-21): drops of the dead, picked up by monsters and adventurers.
             var groundItems = AddSystem<Items.GroundItemService>();
             groundItems.Init(pool, clock, db);

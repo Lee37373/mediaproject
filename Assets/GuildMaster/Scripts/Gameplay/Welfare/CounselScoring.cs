@@ -36,8 +36,8 @@ namespace GuildMaster.Welfare
 
         /// <summary>Most stress one talk can take away.</summary>
         public const int MaxRelief = 45;
-        /// <summary>Most stress one talk can add.</summary>
-        public const int MaxHarm = 15;
+        /// <summary>Most stress one talk can add (15 → 24 on 2026-10-31, so failed lines can cost something).</summary>
+        public const int MaxHarm = 24;
         /// <summary>Relief at which the member feels better and ends the talk themselves.</summary>
         public const int ReliefGoal = 30;
         /// <summary>Below this stress the member has nothing left to get off their chest.</summary>

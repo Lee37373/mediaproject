@@ -35,6 +35,7 @@ namespace GuildMaster.UI
             title.rectTransform.Stretch(14, 50, 0, 0);
             var close = UIBuilder.Button(header.transform, "X", Close, 30, 30, UITheme.ButtonDanger);
             ((RectTransform)close.transform).Anchor(new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-4, 0), new Vector2(30, 30));
+            UISkin.Window(frameImg, header, close, title); // 2026-10-31: cartoon frame when the skin is present
 
             Body = UIBuilder.Rect(Frame, "Body");
             Body.Stretch(10, 10, 46, 10);
@@ -49,6 +50,7 @@ namespace GuildMaster.UI
         public void Open()
         {
             bool wasOpen = Frame.gameObject.activeSelf;
+            if (!wasOpen) GuildMaster.Audio.Sound.Play(GuildMaster.Audio.SoundKeys.Open);
             Frame.gameObject.SetActive(true);
             Frame.SetAsLastSibling();
             if (Core.Services.TryGet<UIRoot>(out var root)) root.NotifyOpened(this, wasOpen);
@@ -59,6 +61,7 @@ namespace GuildMaster.UI
 
         public void Close()
         {
+            if (Frame.gameObject.activeSelf) GuildMaster.Audio.Sound.Play(GuildMaster.Audio.SoundKeys.Close);
             Frame.gameObject.SetActive(false);
             if (Core.Services.TryGet<UIRoot>(out var root)) root.NotifyClosed(this);
         }

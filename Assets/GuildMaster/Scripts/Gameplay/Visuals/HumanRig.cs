@@ -15,13 +15,28 @@ namespace GuildMaster.Visuals
         public string Weapon;
         public int WeaponIndex;
         public int Shield;
+        /// <summary>Something held in the left hand instead of a shield (a book, a potion ...); -1 none.</summary>
+        public int OffHand;
         public Color Skin, HairColor;
         /// <summary>Size against an adult (children are smaller).</summary>
         public float Scale;
         /// <summary>Runs when moving (adventurers, the guild master); walks otherwise (townsfolk).</summary>
         public bool Runs;
+        /// <summary>Townsfolk skip the glowing and hollow eyes that read as monsters (user, 2026-10-31).</summary>
+        public bool FriendlyEyes;
 
         public const int None = -1;
+
+        /// <summary>Eye parts that look like a monster's: glowing red, glowing yellow, hollow gray.</summary>
+        static readonly string[] ScaryEyes = { "Body_Eye_009", "Body_Eye_011", "Body_Eye_018" };
+
+        public static bool IsScaryEye(string spriteName)
+        {
+            if (string.IsNullOrEmpty(spriteName)) return false;
+            foreach (var s in ScaryEyes)
+                if (spriteName.StartsWith(s)) return true;
+            return false;
+        }
 
         static readonly Color[] SkinTones =
         {
@@ -52,7 +67,7 @@ namespace GuildMaster.Visuals
             return new HumanLook
             {
                 Hair = rng.Next(1000), Eye = rng.Next(1000), Beard = rng.NextDouble() < 0.25 ? rng.Next(1000) : None,
-                Helmet = None, Chest = rng.Next(1000), Weapon = null, WeaponIndex = 0, Shield = None,
+                Helmet = None, Chest = rng.Next(1000), Weapon = null, WeaponIndex = 0, Shield = None, OffHand = None,
                 Skin = SkinTones[rng.Next(SkinTones.Length)], HairColor = HairTones[rng.Next(HairTones.Length)],
                 Scale = 1f, Runs = false,
             };
@@ -164,6 +179,31 @@ namespace GuildMaster.Visuals
             if (_parts.TryGetValue(path, out var t)) t.gameObject.SetActive(on);
         }
 
+        /// <summary>An eye part from the ones that don't look like a monster's.</summary>
+        static Sprite PickFriendlyEye(int index)
+        {
+            if (index < 0) return null;
+            var all = ArtLibrary.HumanPart("Eye");
+            if (all == null || all.Length == 0) return null;
+            var calm = new List<Sprite>(all.Length);
+            foreach (var s in all)
+                if (s != null && !HumanLook.IsScaryEye(s.name)) calm.Add(s);
+            return calm.Count == 0 ? all[index % all.Length] : calm[index % calm.Count];
+        }
+
+        /// <summary>
+        /// The index of a named part (file name without extension, e.g. "FA_Chest_016_PurpleYellow") among the pack's
+        /// parts of that type, so a look can ask for a particular piece; <paramref name="fallback"/> when it is missing.
+        /// </summary>
+        public static int PartIndex(string type, string spriteName, int fallback)
+        {
+            var list = ArtLibrary.HumanPart(type);
+            if (list == null || string.IsNullOrEmpty(spriteName)) return fallback;
+            for (int i = 0; i < list.Length; i++)
+                if (list[i] != null && list[i].name == spriteName) return i;
+            return fallback;
+        }
+
         static Sprite Pick(string type, int index)
         {
             if (index < 0) return null;
@@ -188,7 +228,7 @@ namespace GuildMaster.Visuals
             var hair = look.HairColor.a > 0f ? look.HairColor : Color.white;
             if (Part("Body") is { } body) body.color = skin;
             if (Part("Body/Head") is { } head) head.color = skin;
-            Set("Body/Head/Eye", Pick("Eye", look.Eye));
+            Set("Body/Head/Eye", look.FriendlyEyes ? PickFriendlyEye(look.Eye) : Pick("Eye", look.Eye));
             Set("Body/Head/Hair", helmet ? null : Pick("Hair", look.Hair), hair);
             Set("Body/Head/Hair_Helmet", helmet ? Pick("Helmet_Hair", look.Hair) : null, hair);
             Set("Body/Head/Helmet", helmet ? Pick("Helmet", look.Helmet) : null);
@@ -207,11 +247,11 @@ namespace GuildMaster.Visuals
             foreach (var cb in new[] { "Crossbow", "Crossbow_Down", "Crossbow_Line_Up", "Crossbow_Line_Down", "Bolt" })
                 Show("HandRight/Crossbow/" + cb, false);
             Set("HandLeft/Shield", Pick("Shield", look.Shield));
-            Show("HandLeft/Sub_Item", false);
+            Set("HandLeft/Sub_Item", look.Shield == HumanLook.None ? Pick("Sub_Item", look.OffHand) : null);
 
             _tintable.Clear();
             foreach (var path in new[] { "Body", "Body/Head", "Body/Chest", "Body/Head/Eye", "Body/Head/Hair", "Body/Head/Hair_Helmet",
-                                         "Body/Head/Helmet", "Body/Head/Beard", "HandLeft/Shield", "HandRight/Bow/Bow" })
+                                         "Body/Head/Helmet", "Body/Head/Beard", "HandLeft/Shield", "HandLeft/Sub_Item", "HandRight/Bow/Bow" })
                 if (Part(path) is { } r) _tintable.Add((r, r.color));
             foreach (var w in Weapons)
                 if (w != "Bow" && Part("HandRight/" + w) is { } r) _tintable.Add((r, r.color));

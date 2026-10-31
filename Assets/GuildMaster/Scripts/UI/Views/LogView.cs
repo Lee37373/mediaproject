@@ -7,7 +7,10 @@ using UnityEngine.UI;
 
 namespace GuildMaster.UI
 {
-    /// <summary>Bottom-left event feed: latest log entries plus NPC speech (chat).</summary>
+    /// <summary>
+    /// Bottom-right event feed: latest log entries plus NPC speech (chat). Moved from the bottom left, where the guide
+    /// and menus covered it (user, 2026-10-31); steps left of the inspector while something is selected.
+    /// </summary>
     public class LogView : MonoBehaviour
     {
         const int VisibleLines = 11;
@@ -15,12 +18,16 @@ namespace GuildMaster.UI
 
         readonly Queue<string> _lines = new();
         Text _text;
+        RectTransform _panel;
         bool _dirty;
+        /// <summary>Inspector panel width (420) plus margins, for stepping aside while it is open.</summary>
+        const float BesideInspector = -436f;
 
         public void Build(RectTransform canvas)
         {
             var panel = UIBuilder.Panel(canvas, "Log", new Color(0.05f, 0.04f, 0.07f, 0.72f), raycast: false);
-            panel.rectTransform.Anchor(Vector2.zero, Vector2.zero, Vector2.zero, new Vector2(8, 8), new Vector2(620, 236));
+            _panel = panel.rectTransform;
+            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(620, 236));
             _text = UIBuilder.Label(panel.transform, "", 14, TextAnchor.LowerLeft);
             _text.rectTransform.Stretch(10, 10, 8, 8);
             _text.verticalOverflow = VerticalWrapMode.Overflow;
@@ -72,6 +79,9 @@ namespace GuildMaster.UI
 
         void LateUpdate()
         {
+            bool inspecting = Services.TryGet<InspectorView>(out var inspector) && inspector.Selected != null;
+            float x = inspecting ? BesideInspector : -8f;
+            if (_panel != null && !Mathf.Approximately(_panel.anchoredPosition.x, x)) _panel.anchoredPosition = new Vector2(x, 8);
             if (!_dirty) return;
             _dirty = false;
             _text.text = string.Join("\n", _lines);

@@ -56,6 +56,7 @@ namespace GuildMaster.Social
         {
             var look = HumanLook.Plain("resident_" + p.Id);
             look.HairColor = hair;
+            look.FriendlyEyes = true; // no monster-like eyes on townsfolk (2026-10-31)
             switch (p.Job)
             {
                 case ResidentJob.Blacksmith: look.Weapon = "Blunt"; look.WeaponIndex = 0; look.Beard = 3; break;

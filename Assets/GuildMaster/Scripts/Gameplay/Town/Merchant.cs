@@ -41,6 +41,7 @@ namespace GuildMaster.Town
             // A bearded peddler of the CharacterMaker rig when imported (2026-10-30).
             var look = HumanLook.Plain("merchant");
             look.Beard = 2;
+            look.FriendlyEyes = true; // no monster-like eyes on townsfolk (2026-10-31)
             var anim = ArtLibrary.Adventurer("raccoon");
             if (visual.InitHuman(look)) { /* drawn by the rig */ }
             else if (anim != null) visual.InitAnimated(anim);

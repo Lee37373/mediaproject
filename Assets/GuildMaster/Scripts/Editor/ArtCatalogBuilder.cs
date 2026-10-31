@@ -84,6 +84,7 @@ namespace GuildMaster.EditorTools
         static readonly string[] PartFolders =
         {
             "Hair", "Helmet_Hair", "Eye", "Beard", "Chest", "Helmet", "Sword", "Axe", "Blunt", "Spear", "Staff", "Wand", "Bow", "Arrow", "Shield",
+            "Sub_Item", // left-hand items: the guild master's ledger (2026-10-31)
         };
 
         /// <summary>The effects the game plays (by prefab file name); the rest of the pack is left out of the build.</summary>
