@@ -96,7 +96,9 @@ namespace GuildMaster.Ecosystem
 
         void Update()
         {
-            if (_eco == null) return;
+            // Not while paused: the first frame of a loaded, paused game used to look at every nest once (the timer starts at
+            // 0) and start a rout's cool-down the game had not had, so the save taken a second later differed (2026-10-31).
+            if (_eco == null || Time.deltaTime <= 0f) return;
             _timer -= Time.deltaTime;
             if (_timer > 0f) return;
             _timer = CheckInterval;
