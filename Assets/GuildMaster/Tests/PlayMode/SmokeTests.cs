@@ -1834,6 +1834,12 @@ namespace GuildMaster.Tests
             Assert.That(world.Pathfinder.FindPath(outside, c, path), Is.True, "the guild walks in");
             Assert.That(world.Pathfinder.FindPath(outside, c, path, passesGates: false), Is.False, "a monster does not");
             Assert.That(den.Retired, Is.True, "the cleared den's site is the town's now");
+            // The walls' pictures stand on the new ring, a tower at each corner and each side of each gate (P4-115).
+            var pieces = Services.Get<Town.TownWallView>().Pieces.ToList();
+            Assert.That(pieces.All(p => map[p.cell.x, p.cell.y] == World.TileType.Wall), Is.True, "only on wall cells");
+            Assert.That(pieces.Count, Is.EqualTo(4 * (2 * 15 + 1) - 4 - 4 * 3), "on every one of the new ring's");
+            Assert.That(pieces.Count(p => p.piece == Town.WallPiece.Corner), Is.EqualTo(4));
+            Assert.That(pieces.Count(p => p.piece == Town.WallPiece.GateTower), Is.EqualTo(8));
 
             // Up to the last step, then no further.
             while (!expansion.AtMax)
@@ -3910,6 +3916,11 @@ namespace GuildMaster.Tests
             yield return WaitFor(() => !rookie.Mover.IsMoving, 10f);
             Assert.That(rookie.Fsm.Current, Is.EqualTo(rookie.TrainState), rookie.StateLabel);
             Assert.That(Vector2.Distance(rookie.Position, ground.Center), Is.LessThan(5f), "at the training yard");
+            // Beside a dummy or the target, on sand drawn under it (P4-115: one picture over the yard hid everyone in it).
+            float nearest = Town.TrainingYardLayout.Of(ground.Level).Where(s => s.Drills)
+                                .Min(s => Vector2.Distance(Town.TrainingYardLayout.WorldOf(ground.Footprint, s), rookie.Position));
+            Assert.That(nearest, Is.LessThan(Town.TrainingYardLayout.Beside + 0.5f), "beside something to strike");
+            Assert.That(ground.GetComponent<SpriteRenderer>().sortingOrder, Is.LessThan(Visuals.CharacterVisual.BaseSortingOrder - 8 * 512), "the sand lies under the people");
             Assert.That(upgrades.TrainingExpFor(rookie.Data.level), Is.GreaterThan(upgrades.TrainingExpFor(veteran.Data.level)), "behind the best, it gains more");
 
             int before = rookie.Data.exp, level = rookie.Data.level, toNext = rookie.Data.ExpToNextLevel;

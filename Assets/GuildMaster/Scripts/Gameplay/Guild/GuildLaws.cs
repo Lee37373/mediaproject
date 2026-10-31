@@ -23,14 +23,18 @@ namespace GuildMaster.Guild
     /// </summary>
     public class GuildLaws : MonoBehaviour, ISaveable
     {
-        static readonly int[] s_choice = new int[GuildLawRules.Count];
+        // Defaults from the start too: before any play (edit-mode tests after a domain reload) every rule read option 0.
+        static readonly int[] s_choice = WithDefaults(new int[GuildLawRules.Count]);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() => SetDefaults();
 
-        static void SetDefaults()
+        static void SetDefaults() => WithDefaults(s_choice);
+
+        static int[] WithDefaults(int[] choice)
         {
-            for (int i = 0; i < s_choice.Length; i++) s_choice[i] = GuildLawRules.All[i].Default;
+            for (int i = 0; i < choice.Length; i++) choice[i] = GuildLawRules.All[i].Default;
+            return choice;
         }
 
         /// <summary>The way this rule is set now (its default with no guild up).</summary>

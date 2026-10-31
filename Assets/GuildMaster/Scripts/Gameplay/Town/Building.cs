@@ -47,6 +47,8 @@ namespace GuildMaster.Town
     {
         SpriteRenderer _renderer;
         SpriteRenderer _interior;
+        /// <summary>Pictures standing on their own, sorted by their foot (the training yard's fences and dummies, P4-115).</summary>
+        readonly System.Collections.Generic.List<SpriteRenderer> _parts = new();
         Color _tint = Color.white;
         float _alpha = 1f;
         float _checkTimer;
@@ -80,8 +82,7 @@ namespace GuildMaster.Town
             transform.position = new Vector3(footprint.center.x, footprint.center.y, 0f);
 
             _renderer = gameObject.AddComponent<SpriteRenderer>();
-            _renderer.sprite = CartoonArt.Building(type, footprint.width, footprint.height, door.x - footprint.xMin);
-            _renderer.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(footprint.yMin * 8f) + 4;
+            Draw();
 
             // Interior drawn underneath; visible when the outside fades (see Update).
             var interior = CartoonArt.BuildingInterior(type, footprint.width, footprint.height);
@@ -96,16 +97,63 @@ namespace GuildMaster.Town
             }
         }
 
+        /// <summary>
+        /// Puts up the pictures for the building's level (P4-115: they grow richer as it goes up). The training yard is
+        /// people's ground: its sand lies under them and what stands in it (the fences, each dummy and target) is sorted
+        /// among them by its foot — one picture over the whole yard hid everyone training in it.
+        /// </summary>
+        void Draw()
+        {
+            foreach (var p in _parts) if (p != null) Destroy(p.gameObject);
+            _parts.Clear();
+            var r = Footprint;
+            int doorColumn = DoorCell.x - r.xMin;
+            if (Type != BuildingType.TrainingGround)
+            {
+                _renderer.sprite = CartoonArt.Building(Type, r.width, r.height, doorColumn, Level);
+                _renderer.sortingOrder = SortAt(r.yMin) + 3;
+                ApplyColor();
+                return;
+            }
+            _renderer.sprite = CartoonArt.TrainingYardGround(r.width, r.height, doorColumn, Level);
+            _renderer.sortingOrder = MapRenderer.DecorOrder + 1;
+            AddPart(CartoonArt.TrainingYardFence(r.width, r.height, doorColumn, front: false), Center, r.yMax - 0.53f);
+            AddPart(CartoonArt.TrainingYardFence(r.width, r.height, doorColumn, front: true), Center, r.yMin + 0.12f);
+            foreach (var s in TrainingYardLayout.Of(Level))
+            {
+                var at = TrainingYardLayout.WorldOf(r, s);
+                AddPart(CartoonArt.TrainingStation(s.Kind), at, at.y);
+            }
+            ApplyColor();
+        }
+
+        /// <summary>The sorting order of something standing with its foot at <paramref name="footY"/> (as people are sorted).</summary>
+        static int SortAt(float footY) => CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(footY * 8f) + 1;
+
+        void AddPart(Sprite sprite, Vector2 at, float footY)
+        {
+            var go = new GameObject("Part");
+            go.transform.SetParent(transform, false);
+            go.transform.position = at;
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = sprite;
+            sr.sortingOrder = SortAt(footY);
+            _parts.Add(sr);
+        }
+
         public void SetLevel(int level)
         {
             Level = level;
+            Draw();
             EventBus.Publish(new BuildingLevelChangedEvent { Building = this, Level = level });
         }
 
         /// <summary>Puts a saved level and durability back quietly (P5-4: no upgrade or collapse events).</summary>
         public void RestoreState(int level, float maxHp, float hp)
         {
+            bool redraw = level != Level;
             Level = level;
+            if (redraw) Draw();
             MaxHp = maxHp;
             Hp = Mathf.Clamp(hp, 0f, maxHp);
             _tint = Color.Lerp(new Color(0.45f, 0.3f, 0.3f), Color.white, MaxHp > 0f ? Hp / MaxHp : 1f);
@@ -144,7 +192,9 @@ namespace GuildMaster.Town
 
         void ApplyColor()
         {
-            if (_renderer) _renderer.color = new Color(_tint.r, _tint.g, _tint.b, _alpha);
+            var color = new Color(_tint.r, _tint.g, _tint.b, _alpha);
+            if (_renderer) _renderer.color = color;
+            foreach (var p in _parts) if (p != null) p.color = color;
             if (_interior) _interior.enabled = _alpha < 0.999f;
         }
 

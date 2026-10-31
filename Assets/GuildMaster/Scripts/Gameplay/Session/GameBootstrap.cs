@@ -166,6 +166,10 @@ namespace GuildMaster.Session
             var decor = AddSystem<TownDecor>();
             decor.Init(world, town);
             Services.Register(decor);
+            // The walls standing up (P4-115): a picture on each wall cell, put up again when the walls move out.
+            var walls = AddSystem<TownWallView>();
+            walls.Init(world);
+            Services.Register(walls);
 
             // --- Units, ecosystem, quests ---
             var pool = Services.Get<PoolService>();
