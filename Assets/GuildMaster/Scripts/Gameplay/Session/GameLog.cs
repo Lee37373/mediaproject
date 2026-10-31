@@ -320,6 +320,20 @@ namespace GuildMaster.Session
                 + (e.Pleased + e.Displeased > 0 ? $" (반김 {e.Pleased}명 · 못마땅 {e.Displeased}명)" : ""), LogCategory.Info));
             EventBus.Subscribe<Guild.GuildHolidayEvent>(e => Add(
                 $"[휴일] 오늘은 길드 휴일입니다. 아무도 새 일을 나가지 않고, 마을에 있으면 스트레스가 {Guild.GuildLawRules.HolidayRelief:0.#}배로 풀립니다.", LogCategory.Info));
+            // The town's outer defences (P4-113): what the guild saw them do.
+            EventBus.Subscribe<Town.DefenceTrapSprungEvent>(e =>
+            {
+                if (!e.Seen || e.Victim == null) return;
+                string name = e.Victim.DisplayName;
+                Add($"[방어] 함정이 {name}{Adventurers.MemoryRecorder.Josa(name, "을", "를")} 붙잡았습니다"
+                    + (e.ChargesLeft > 0 ? $" (남은 횟수 {e.ChargesLeft})." : " (다 썼습니다 — 건설 창에서 다시 놓기)."), LogCategory.Combat);
+            });
+            EventBus.Subscribe<Town.ArrowTowerKillEvent>(e =>
+            {
+                if (e.Victim == null) return;
+                string name = e.Victim.DisplayName;
+                Add($"[방어] 화살탑이 {name}{Adventurers.MemoryRecorder.Josa(name, "을", "를")} 쓰러뜨렸습니다.", LogCategory.Combat);
+            });
             // The guild's rank (P4-106).
             EventBus.Subscribe<Guild.GuildRankChangedEvent>(e => Add(
                 $"[등급] 길드가 {Guild.GuildRankRules.Name(e.Rank)}이 되었습니다! {Guild.GuildRankRules.Rewards(e.Rank)}", LogCategory.Quest));

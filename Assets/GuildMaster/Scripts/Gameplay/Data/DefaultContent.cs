@@ -550,6 +550,20 @@ namespace GuildMaster.Data
                     effectText = "주변 14칸을 성벽 너머까지 감시",
                 });
 
+            // The arrow tower (P4-113, H10): placed outside the walls like a watchtower, raised by clicking it; what each level
+            // shoots is Town.DefenceRules.
+            BuildingLevel T(int level, int gold, int hp, params ItemCost[] items)
+            {
+                var lv = new BuildingLevel { goldCost = gold, maxHp = hp, footprint = 2, sightRadius = Town.DefenceRules.TowerSight(level),
+                                             effectText = $"{Town.DefenceRules.TowerEffect(level)} · 내구도 {hp}" };
+                lv.itemCosts.AddRange(items);
+                return lv;
+            }
+            B(Town.BuildingType.ArrowTower,
+                T(1, 200, 260, I("stone_shard", 6), I("iron_ore", 4)),
+                T(2, 450, 360, I("stone_shard", 6), I("iron_ore", 10)),
+                T(3, 900, 480, I("stone_shard", 10), I("iron_ore", 16)));
+
             // The guild's facilities (P4-87, user decision 2026-10-19: 400 / 1000 / 2000G a level plus materials, the
             // dormitory 1500G). Placed inside the walls like a tower; the second and third of a kind cost more (FacilityRules).
             BuildingLevel F(Town.BuildingType type, int level, int gold, int hp, params ItemCost[] items)

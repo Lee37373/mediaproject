@@ -496,6 +496,7 @@ namespace GuildMaster.Visuals
             var c = new Canvas(w, h);
             if (type == Town.BuildingType.TrainingGround) return TrainingYard(c, key);
             if (type == Town.BuildingType.Watchtower) return Watchtower(c, key);
+            if (type == Town.BuildingType.ArrowTower) return ArrowTower(c, key);
 
             var roof = type switch
             {
@@ -608,7 +609,7 @@ namespace GuildMaster.Visuals
         /// </summary>
         public static Sprite BuildingInterior(Town.BuildingType type, int tilesW, int tilesH)
         {
-            if (type is Town.BuildingType.TrainingGround or Town.BuildingType.Watchtower) return null;
+            if (type is Town.BuildingType.TrainingGround or Town.BuildingType.Watchtower or Town.BuildingType.ArrowTower) return null;
             string key = $"c_interior:{type}:{tilesW}x{tilesH}";
             if (s_cache.TryGetValue(key, out var cached)) return cached;
             int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
@@ -722,6 +723,33 @@ namespace GuildMaster.Visuals
             // Pennant on the middle merlon.
             c.Shape(RoundRect(cx - 1.5f, h * 0.88f, cx + 1.5f, h - 3, 1f), Hex(0x8A5A30), Ink, 2f);
             c.Shape(RoundRect(cx + 1.5f, h - 14, cx + 18, h - 4, 2f), Hex(0xD9534F), Ink, 2.5f);
+            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
+        }
+
+        /// <summary>A timber tower on four legs with a railed platform, a peaked roof and an arrow slit (P4-113).</summary>
+        static Sprite ArrowTower(Canvas c, string key)
+        {
+            int w = c.W, h = c.H;
+            var timber = Hex(0xB07A44);
+            float cx = w * 0.5f;
+            float legW = w * 0.06f, spread = w * 0.3f;
+            // Legs, splayed a little, with a cross brace.
+            c.Shape(RoundRect(cx - spread - legW, 2, cx - spread + legW, h * 0.56f, 2f), Darker(timber, 0.85f), Ink, 3f);
+            c.Shape(RoundRect(cx + spread - legW, 2, cx + spread + legW, h * 0.56f, 2f), Darker(timber, 0.85f), Ink, 3f);
+            c.Shape(RoundRect(cx - spread, h * 0.22f, cx + spread, h * 0.27f, 1.5f), Darker(timber, 0.75f), Ink, 2f);
+            // The platform: a plank box with a slit to shoot through.
+            var box = RoundRect(cx - spread * 1.25f, h * 0.48f, cx + spread * 1.25f, h * 0.74f, 3f);
+            c.Shape(box, timber, Ink, 3.5f);
+            for (float x = cx - spread * 1.25f + 10; x < cx + spread * 1.25f - 4; x += 10)
+            {
+                float xx = x;
+                c.ShapeClipped(RoundRect(xx, h * 0.48f, xx + 1.5f, h * 0.74f, 0.5f), (px, py) => box(px, py) + 3.5f, Darker(timber, 0.8f));
+            }
+            c.Shape(RoundRect(cx - 2.5f, h * 0.54f, cx + 2.5f, h * 0.68f, 1.5f), Hex(0x2B2420), Ink, 1.5f);
+            // Peaked roof.
+            c.Shape(RoundRect(cx - spread * 1.4f, h * 0.73f, cx + spread * 1.4f, h * 0.82f, 3f), Hex(0x9B3B2E), Ink, 3f);
+            c.Shape(RoundRect(cx - spread * 0.9f, h * 0.81f, cx + spread * 0.9f, h * 0.9f, 3f), Hex(0x9B3B2E), Ink, 3f);
+            c.Shape(RoundRect(cx - spread * 0.4f, h * 0.89f, cx + spread * 0.4f, h - 4, 3f), Hex(0x9B3B2E), Ink, 3f);
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
         }
 

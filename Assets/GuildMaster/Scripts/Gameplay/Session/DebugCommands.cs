@@ -1290,6 +1290,78 @@ namespace GuildMaster.Session
             return sb.Length == 0 ? "none" : sb.ToString();
         }
 
+        // ---------------- Outer defences (P4-113) ----------------
+
+        /// <summary>
+        /// A spot beyond the walls this many cells out from the south gate, a little to the side (where a raid walks in), for
+        /// something this wide; nothing found is (-1, -1).
+        /// </summary>
+        public static Vector2 DefenceSpot(int out_ = 4, int side = 3, int size = 1)
+        {
+            var map = Services.Get<World.WorldService>().Map;
+            var gate = map.Gates.OrderBy(g => g.y).First();
+            for (int r = 0; r < 6; r++)
+                foreach (int dx in new[] { side + r, -side - r })
+                {
+                    var c = new Vector2Int(gate.x + dx, map.TownRect.yMin - out_ - r);
+                    var p = World.GridMap.CellToWorld(c);
+                    if (size > 1 ? Services.Get<Town.ConstructionService>().CannotPlaceAt(Town.BuildingType.ArrowTower, p) == null
+                                 : Services.Get<Town.DefenceService>().CannotSetTrapAt(p) == null) return p;
+                }
+            return new Vector2(-1f, -1f);
+        }
+
+        /// <summary>Builds an arrow tower (default: beyond the south gate) at this level; free puts its price in the vault first.</summary>
+        public static string BuildArrowTower(float x = -1f, float y = -1f, int level = 1, bool free = true)
+        {
+            var construction = Services.Get<Town.ConstructionService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var point = x < 0f || y < 0f ? DefenceSpot(5, 4, 2) : new Vector2(x, y);
+            var db = Services.Get<Data.GameDatabase>();
+            var def = db.Building(Town.BuildingType.ArrowTower);
+            if (free)
+                for (int lv = 1; lv <= Mathf.Clamp(level, 1, def.MaxLevel); lv++)
+                {
+                    treasury.AddGold(def.Level(lv).goldCost);
+                    foreach (var c in def.Level(lv).itemCosts) treasury.AddStock(c.itemId, c.count);
+                }
+            if (!construction.TryBuild(Town.BuildingType.ArrowTower, point, out var error)) return "failed: " + error;
+            var tower = Services.Get<Town.TownService>().Buildings.Last(b => b.Type == Town.BuildingType.ArrowTower);
+            var upgrades = Services.Get<Town.UpgradeService>();
+            while (tower.Level < level && upgrades.TryUpgrade(tower, out error)) { }
+            return $"arrow tower Lv{tower.Level} at ({tower.Center.x:0.0}, {tower.Center.y:0.0}){(tower.Level < level ? " — " + error : "")}\n" + Defences();
+        }
+
+        /// <summary>Sets a trap (default: beyond the south gate); free puts its price in the vault first.</summary>
+        public static string SetTrap(float x = -1f, float y = -1f, bool free = true)
+        {
+            var defences = Services.Get<Town.DefenceService>();
+            var point = x < 0f || y < 0f ? DefenceSpot() : new Vector2(x, y);
+            if (free)
+            {
+                Services.Get<Economy.GuildTreasury>().AddGold(Town.DefenceRules.TrapGold);
+                Services.Get<Economy.GuildTreasury>().AddStock(Town.DefenceRules.TrapIronItem, Town.DefenceRules.TrapIron);
+            }
+            return defences.TrySetTrap(point, out var error) ? $"trap at ({point.x:0.0}, {point.y:0.0})\n" + Defences() : "failed: " + error;
+        }
+
+        /// <summary>The arrow towers (level, durability, range, what each would shoot now) and the traps (where, charges).</summary>
+        public static string Defences()
+        {
+            var sb = new StringBuilder();
+            foreach (var b in Services.Get<Town.TownService>().Buildings.Where(b => b.Type == Town.BuildingType.ArrowTower))
+            {
+                var tower = b.GetComponent<Town.ArrowTower>();
+                var target = tower != null && !b.IsDestroyed ? tower.PickTarget() : null;
+                sb.AppendLine($"  tower Lv{b.Level} at ({b.Center.x:0.0}, {b.Center.y:0.0}) hp {b.Hp:0}/{b.MaxHp:0} range {Town.DefenceRules.TowerRange(b.Level):0}" +
+                              $"{(b.IsDestroyed ? " FALLEN" : "")} target {(target != null ? $"{target.DisplayName} {Vector2.Distance(b.Center, target.Position):0.0}" : "-")}");
+            }
+            var defences = Services.Get<Town.DefenceService>();
+            sb.AppendLine($"  traps {defences.TrapCount} (spent {defences.SpentCount}, rearm {defences.RearmCost}G): " +
+                          string.Join(" ", defences.Traps.Take(20).Select(t => $"{t.cell}:{t.charges}")));
+            return sb.ToString();
+        }
+
         /// <summary>Tears down the nearest player-placed building to a point (default: the master).</summary>
         public static string Demolish(float x = -1f, float y = -1f)
         {

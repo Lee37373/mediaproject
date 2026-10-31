@@ -6061,6 +6061,108 @@ namespace GuildMaster.Tests
             }
         }
 
+        /// <summary>
+        /// The town's outer defences (P4-113, H10): an arrow tower goes beyond the walls only, sees round itself and shoots the
+        /// monster it sees in range down, farther once raised; a trap springs on a monster once (not again while it is held
+        /// on it), three times in all, and is set again for gold; the walls moving out take up what is now inside them and
+        /// give back all it cost. The traps' section saves as it is.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Defences_ATowerShootsWhatItSees_ATrapSpringsOncePerMonster_AndTheWallsTakeThemUp()
+        {
+            yield return Boot();
+            var construction = Services.Get<Town.ConstructionService>();
+            var defences = Services.Get<Town.DefenceService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var map = Services.Get<World.WorldService>().Map;
+            var goblin = Services.Get<EcosystemManager>().Species.First(s => s.id == "goblin");
+            Monster SpawnAt(Vector2 p)
+            {
+                var m = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, p);
+                m.Setup(goblin, null);
+                return m;
+            }
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                Assert.That(construction.CannotPlaceAt(Town.BuildingType.ArrowTower, map.TownCenter), Does.Contain("성벽 밖에만"));
+                var far = new Vector2(map.TownCenter.x, map.TownRect.yMin - Town.DefenceRules.Reach - 3);
+                Assert.That(construction.CannotPlaceAt(Town.BuildingType.ArrowTower, far), Does.Contain("15칸 안"));
+
+                // A tower five cells out by the south gate: it shoots the goblin it sees.
+                Assert.That(DebugCommands.BuildArrowTower(), Does.StartWith("arrow tower Lv1"));
+                var tower = Services.Get<Town.TownService>().Buildings.Last(b => b.Type == Town.BuildingType.ArrowTower);
+                Assert.That(tower.GetComponent<Fog.VisionSource>().SightRadius, Is.EqualTo(Town.DefenceRules.TowerSight(1)));
+                // A den's own, at home and minding its business, is not its to shoot; a stray is.
+                var resident = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.IsDefendingTerritory && m.Engage.Target == null && !m.IsRegionLord && !m.IsDragon);
+                Assert.That(Town.ArrowTower.IsThreat(resident), Is.False, "a den's own at home");
+                var target = SpawnAt(tower.Center + new Vector2(0f, -5f));
+                Assert.That(Town.ArrowTower.IsThreat(target), Is.True, "a stray");
+                target.Stun(30f);
+                yield return WaitFor(() => !target.IsAlive, 20f);
+                Assert.That(target.IsAlive, Is.False, "shot down");
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[방어] 화살탑이 고블린")), Is.True, "logged");
+                Assert.That(Services.Get<Town.UpgradeService>().TryUpgrade(tower, out _) || TryAfford(tower), Is.True, "raised");
+                Assert.That(tower.Level, Is.EqualTo(2));
+                Assert.That(tower.GetComponent<Fog.VisionSource>().SightRadius, Is.EqualTo(Town.DefenceRules.TowerSight(2)), "sees further");
+                Assert.That(tower.MaxHp, Is.EqualTo(Services.Get<GameDatabase>().Building(Town.BuildingType.ArrowTower).Level(2).maxHp));
+
+                // Traps three and eight cells out.
+                var near = DebugCommands.DefenceSpot(3, -6);
+                var farther = DebugCommands.DefenceSpot(8, -6);
+                Assert.That(DebugCommands.SetTrap(near.x, near.y), Does.StartWith("trap"));
+                Assert.That(DebugCommands.SetTrap(farther.x, farther.y), Does.StartWith("trap"));
+                Assert.That(defences.CannotSetTrapAt(near), Does.Contain("이미 함정"));
+                var nearCell = World.GridMap.WorldToCell(near);
+                var caught = SpawnAt(World.GridMap.CellToWorld(nearCell));
+                yield return WaitFor(() => defences.ChargesAt(nearCell) < Town.DefenceRules.TrapCharges, 3f);
+                Assert.That(defences.ChargesAt(nearCell), Is.EqualTo(Town.DefenceRules.TrapCharges - 1), "a novice goblin is caught");
+                Assert.That(caught.Hp, Is.LessThan(caught.Stats.MaxHp));
+                yield return new WaitForSeconds(1f);
+                Assert.That(defences.ChargesAt(nearCell), Is.EqualTo(Town.DefenceRules.TrapCharges - 1), "not again while it is held on it");
+                caught.Mover.Stop();
+                caught.transform.position = farther + new Vector2(30f, 0f);
+                for (int k = 0; k < Town.DefenceRules.TrapCharges - 1; k++)
+                {
+                    int before = defences.ChargesAt(nearCell);
+                    SpawnAt(World.GridMap.CellToWorld(nearCell)).Stun(30f);
+                    yield return WaitFor(() => defences.ChargesAt(nearCell) < before, 3f);
+                }
+                Assert.That(defences.ChargesAt(nearCell), Is.EqualTo(0), "spent");
+                Assert.That(defences.SpentCount, Is.EqualTo(1));
+                treasury.AddGold(defences.RearmCost);
+                int gold = treasury.Gold;
+                Assert.That(defences.TryRearmAll(out _), Is.True);
+                Assert.That(treasury.Gold, Is.EqualTo(gold - Town.DefenceRules.TrapRearmGold));
+                Assert.That(defences.ChargesAt(nearCell), Is.EqualTo(Town.DefenceRules.TrapCharges), "set again");
+
+                string saved = defences.Capture();
+                defences.Restore(saved, null);
+                Assert.That(defences.Capture(), Is.EqualTo(saved), "its section comes back as it was");
+
+                // The walls move out four cells: the tower (four to five out) and the near trap come up, paid back; the far trap stays.
+                DebugCommands.ClearSkirmish();
+                Assert.That(Town.DefenceRules.CellsBeyondWalls(nearCell, map.TownRect), Is.LessThanOrEqualTo(Town.TownExpansionRules.Step), "the near trap is in the step");
+                Assert.That(Town.DefenceRules.CellsBeyondWalls(tower.Footprint.max - Vector2Int.one, map.TownRect), Is.LessThanOrEqualTo(Town.TownExpansionRules.Step), "so is the tower");
+                Assert.That(DebugCommands.ExpandTown(true), Does.StartWith("expanded"));
+                Assert.That(Services.Get<Town.TownService>().Buildings.Contains(tower), Is.False, "the tower came down");
+                Assert.That(defences.ChargesAt(nearCell), Is.EqualTo(-1), "the near trap came up");
+                Assert.That(defences.ChargesAt(World.GridMap.WorldToCell(farther)), Is.EqualTo(Town.DefenceRules.TrapCharges), "the far one stays");
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[방어] 넓어진 성벽 안의 함정 1개")), Is.True);
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+        }
+
+        /// <summary>Puts the tower's next level in the vault and raises it.</summary>
+        static bool TryAfford(Town.Building tower)
+        {
+            var next = Services.Get<Town.UpgradeService>().NextLevel(tower);
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            treasury.AddGold(next.goldCost);
+            foreach (var c in next.itemCosts) treasury.AddStock(c.itemId, c.count);
+            return Services.Get<Town.UpgradeService>().TryUpgrade(tower, out _);
+        }
+
         /// <summary>A stretch of water nobody has explored yet, with walkable ground either side of it.</summary>
         static bool FindUnseenLake(GuildMaster.Fog.FogOfWar fog, out Vector2Int lake, out Vector2Int near, out Vector2Int far)
         {

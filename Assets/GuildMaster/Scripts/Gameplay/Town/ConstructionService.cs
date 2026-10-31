@@ -27,7 +27,7 @@ namespace GuildMaster.Town
         /// <summary>Types the player can place (the build window lists these).</summary>
         public static readonly BuildingType[] Placeable =
         {
-            BuildingType.Watchtower,
+            BuildingType.Watchtower, BuildingType.ArrowTower,
             BuildingType.Armory, BuildingType.ArmorWorkshop, BuildingType.DiningHall,
             BuildingType.PoisonLab, BuildingType.RuneForge, BuildingType.FrostAltar, BuildingType.Dormitory,
         };
@@ -156,9 +156,12 @@ namespace GuildMaster.Town
 
         /// <summary>Why the building cannot go here, or null. Used by the preview and by TryBuild.</summary>
         public string CannotPlaceAt(BuildingType type, Vector2 point)
-            => ConstructionRules.CannotPlace(_world.Grid, _town.Buildings, _world.Map.Gates,
-                                             ConstructionRules.FootprintAt(point, FootprintOf(type)),
-                                             insideWalls: FacilityRules.IsFacility(type));
+        {
+            var foot = ConstructionRules.FootprintAt(point, FootprintOf(type));
+            // The outer defences (P4-113): beyond the walls, not too far out.
+            if (DefenceRules.IsDefence(type) && DefenceRules.OutOfReach(foot, _world.Map.TownRect) is { } far) return far;
+            return ConstructionRules.CannotPlace(_world.Grid, _town.Buildings, _world.Map.Gates, foot, insideWalls: FacilityRules.IsFacility(type));
+        }
 
         public bool TryBuild(BuildingType type, Vector2 point, out string error)
         {
@@ -171,6 +174,7 @@ namespace GuildMaster.Town
             var foot = ConstructionRules.FootprintAt(point, FootprintOf(type));
             var b = _town.Build(type, foot, cost.maxHp, _mapRenderer);
             if (type == BuildingType.Watchtower) AttachVision(b, cost.sightRadius);
+            if (type == BuildingType.ArrowTower) b.gameObject.AddComponent<ArrowTower>().Init(b);
             EventBus.Publish(new BuildingBuiltEvent { Building = b });
             return true;
         }
@@ -186,6 +190,11 @@ namespace GuildMaster.Town
             if (type == BuildingType.Watchtower)
             {
                 AttachVision(b, CostOf(type)?.sightRadius ?? 0f);
+                if (b.IsDestroyed) b.GetComponent<VisionSource>().enabled = false;
+            }
+            if (type == BuildingType.ArrowTower)
+            {
+                b.gameObject.AddComponent<ArrowTower>().Init(b);
                 if (b.IsDestroyed) b.GetComponent<VisionSource>().enabled = false;
             }
             return b;

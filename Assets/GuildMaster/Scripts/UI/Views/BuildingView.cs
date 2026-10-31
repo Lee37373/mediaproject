@@ -42,6 +42,7 @@ namespace GuildMaster.UI
             BuildingType.GuildHall => "시간당 EXP가",
             BuildingType.Blacksmith or BuildingType.Apothecary => "제작이",
             BuildingType.TrainingGround => "훈련이",
+            BuildingType.ArrowTower => "사격과 감시가", // P4-113
             _ when FacilityRules.IsFacility(type) => "효과가",
             _ => "건물의 기능이",
         };
@@ -84,7 +85,7 @@ namespace GuildMaster.UI
                 return;
             }
             bool facility = FacilityRules.IsFacility(_building.Type);
-            if (canDemolish && !facility)
+            if (canDemolish && !facility && def.MaxLevel <= 1) // the watchtower: one level (the arrow tower rises, P4-113)
             {
                 _current.text = def.Level(1).effectText;
                 _next.text = _building.IsDestroyed

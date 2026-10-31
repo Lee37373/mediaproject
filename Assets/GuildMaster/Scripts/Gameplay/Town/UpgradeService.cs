@@ -84,7 +84,7 @@ namespace GuildMaster.Town
         void Apply(Building b, BuildingLevel lv)
         {
             // A facility's level is read by FacilityService (BuildingLevelChangedEvent); it also grows sturdier (P4-87).
-            if (FacilityRules.IsFacility(b.Type) && lv.maxHp > 0f) b.SetMaxHp(lv.maxHp, heal: false);
+            if ((FacilityRules.IsFacility(b.Type) || DefenceRules.IsDefence(b.Type)) && lv.maxHp > 0f) b.SetMaxHp(lv.maxHp, heal: false);
             switch (b.Type)
             {
                 case BuildingType.TownHall:

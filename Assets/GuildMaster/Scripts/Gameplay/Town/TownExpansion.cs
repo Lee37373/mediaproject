@@ -184,7 +184,9 @@ namespace GuildMaster.Town
             {
                 if (Services.TryGet<ConstructionService>(out var construction))
                     foreach (var b in _town.Buildings.ToList())
-                        if (construction.CanDemolish(b) && ConstructionRules.InTheWayOfWalls(map, map.Gates, b.Footprint))
+                        // The outer defences (P4-113) belong beyond the walls: one now inside them comes down too.
+                        if (construction.CanDemolish(b) && (ConstructionRules.InTheWayOfWalls(map, map.Gates, b.Footprint)
+                                                            || DefenceRules.IsDefence(b.Type) && DefenceRules.OutOfReach(b.Footprint, map.TownRect) != null))
                             refunds.Add(construction.TakeDownForWalls(b));
                 StepOffTheWalls(oldTown);
             }

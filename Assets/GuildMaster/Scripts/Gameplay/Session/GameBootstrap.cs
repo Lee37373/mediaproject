@@ -157,6 +157,11 @@ namespace GuildMaster.Session
             expansion.Init(world, town, gates, mapRenderer, townVision, treasury, db);
             Services.Register(expansion);
             save.Register(expansion);
+            // The guild's traps (P4-113; its arrow towers are placed buildings): saved after the walls, which are rebuilt first.
+            var defences = AddSystem<DefenceService>();
+            defences.Init(world, treasury, fog);
+            Services.Register(defences);
+            save.Register(defences);
 
             // --- Units, ecosystem, quests ---
             var pool = Services.Get<PoolService>();
