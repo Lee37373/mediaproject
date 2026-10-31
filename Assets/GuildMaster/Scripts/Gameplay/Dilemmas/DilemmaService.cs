@@ -88,6 +88,9 @@ namespace GuildMaster.Dilemmas
 
         float Now => _clock.TotalHours;
 
+        /// <summary>Game hours of give on a due time (the 2026-10-31 measure: every deadline came an hour late, at 25 hours).</summary>
+        const float DueSlack = 0.1f;
+
         public void Init(GameClock clock, GuildRoster roster, GuildTreasury treasury, WorldService world, int seed)
         {
             _clock = clock;
@@ -105,7 +108,8 @@ namespace GuildMaster.Dilemmas
         void OnHour(HourPassedEvent e)
         {
             if (!Enabled) return;
-            float now = Now;
+            // A card dealt on the hour is a few minutes past it by the time its own hour strikes again: that hour is its due.
+            float now = Now + DueSlack;
             foreach (var card in _open.Where(c => now >= c.DeadlineHour).ToList()) Resolve(card, DefaultChoice(card), byDeadline: true);
             foreach (var p in _pending.Where(p => now >= p.DueHour).ToList())
             {

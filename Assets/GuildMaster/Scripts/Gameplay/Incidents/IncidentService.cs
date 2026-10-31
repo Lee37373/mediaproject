@@ -353,6 +353,20 @@ namespace GuildMaster.Incidents
             return i;
         }
 
+        /// <summary>
+        /// The empty den sites nearest the town a horde could head for, nearest first, with no dice drawn: the storyteller picks
+        /// among a few (P4-111 — always the nearest sent five hordes in twenty days to the same site).
+        /// </summary>
+        public List<Nest> HordeSites(int count)
+        {
+            if (!Services.TryGet<MigrationService>(out var migration)) return new List<Nest>();
+            var town = _world.TownCenterWorld;
+            return _eco.Nests.Where(n => n.IsEmpty && !n.IsLair && !n.Sealed && !migration.IsTarget(n)
+                                         && Vector2.Distance(n.WorldPosition, town) >= IncidentRules.HordeMinDistance + _world.TownGrowth
+                                         && _eco.AllSpecies.Any(s => s != null && !s.isRegionLord && n.Suits(s)))
+                             .OrderBy(n => Vector2.Distance(n.WorldPosition, town)).Take(count).ToList();
+        }
+
         bool PickHordeSite(MigrationService migration, out Nest site, out MonsterDefinition kind)
         {
             var town = _world.TownCenterWorld;

@@ -268,8 +268,10 @@ namespace GuildMaster.Storytelling
                 case StoryBeat.Horde:
                 {
                     if (!Services.TryGet<IncidentService>(out var incidents)) return false;
+                    var sites = incidents.HordeSites(StorytellerRules.HordeSiteChoices);
+                    if (sites.Count == 0) return false;
                     int size = StorytellerRules.HordeSize(GuildPower);
-                    var horde = incidents.StartHorde(size: size);
+                    var horde = incidents.StartHorde(sites[rng.Range(0, sites.Count)], size: size);
                     if (horde == null) return false;
                     detail = $"{horde.SpeciesName} {horde.HordeSize}마리 Lv{horde.HordeLevel} → {horde.Site?.DisplayName}";
                     return true;

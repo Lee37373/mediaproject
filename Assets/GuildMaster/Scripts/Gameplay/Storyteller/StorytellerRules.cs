@@ -143,6 +143,8 @@ namespace GuildMaster.Storytelling
         public static int RaidSize(float guildPower) => Mathf.Clamp(Mathf.RoundToInt(2f + guildPower / RaidPowerPerHead), RaidMin, RaidMax);
 
         public const int HordeMinSize = 8, HordeMaxSize = 18;
+        /// <summary>A horde heads for one of this many empty den sites nearest the town (the nearest alone drew every horde to one place).</summary>
+        public const int HordeSiteChoices = 4;
         public const float HordePowerPerHead = 6f;
 
         public static int HordeSize(float guildPower) => Mathf.Clamp(Mathf.RoundToInt(6f + guildPower / HordePowerPerHead), HordeMinSize, HordeMaxSize);
