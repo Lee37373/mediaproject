@@ -132,6 +132,8 @@ namespace GuildMaster.Guild
             if (Grant(r) > 0) parts.Add($"하사금 {Grant(r)}G");
             if (r > GuildRank.F && VisitorBonus(r) > VisitorBonus(r - 1)) parts.Add($"방문자 레벨 +{VisitorBonus(r)}");
             if (r > GuildRank.F && VisitInterval(r) < VisitInterval(r - 1)) parts.Add($"방문자가 더 자주 옴(간격 ×{VisitInterval(r):0.##})");
+            // A rule of the guild's to set (P4-112, H2).
+            foreach (var law in GuildLawRules.OpenedAt(r)) parts.Add($"길드 규칙 '{law.Name}' 열림");
             return string.Join(" · ", parts);
         }
 

@@ -287,6 +287,8 @@ namespace GuildMaster.Adventurers
         /// <summary>Asked once a night per leader: its caution against the dark (<see cref="CampRules.NightCampChance"/>).</summary>
         bool ChoosesNightCamp(Adventurer leader, bool alone)
         {
+            // The guild's night march rule (P4-112): press on through every night, or camp every night; the leader's call otherwise.
+            if (Guild.GuildLaws.NightMarch != Guild.GuildLawRules.NightFree) return Guild.GuildLaws.NightMarch == Guild.GuildLawRules.NightCamp;
             int night = Mathf.FloorToInt((_clock.TotalHours + 24f - CampRules.DawnHour) / 24f);
             if (_nightChoice.TryGetValue(leader, out var c) && c.night == night) return c.camp;
             bool camp = GameRandom.Shared.Chance(CampRules.NightCampChance(RouteChoice.ForParty(leader), alone));

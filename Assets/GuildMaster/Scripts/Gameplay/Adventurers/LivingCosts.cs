@@ -104,10 +104,12 @@ namespace GuildMaster.Adventurers
 
         void OnHour(HourPassedEvent e)
         {
+            // The guild's rule may keep its members at its own cost (P4-112): nothing is charged, and nothing comes in.
+            bool charged = !Guild.GuildLaws.GuildPaysUpkeep;
             foreach (var a in _roster.Members)
             {
                 if (a == null || !a.IsAlive) continue;
-                if (IsLodging(a)) _lodging += Charge(a, LodgingGoldPerHour);
+                if (charged && IsLodging(a)) _lodging += Charge(a, LodgingGoldPerHour);
                 // Catches gold that arrived by a path that does not settle on its own (a bonus, say).
                 Settle(a);
             }
@@ -116,8 +118,9 @@ namespace GuildMaster.Adventurers
         void OnDay(DayPassedEvent e)
         {
             int meal = UnityEngine.Mathf.RoundToInt(MealGold * Seasons.SeasonService.Meal); // dearer in winter (P4-111b)
-            foreach (var a in _roster.Members)
-                if (a != null && a.IsAlive) _meals += Charge(a, meal);
+            if (!Guild.GuildLaws.GuildPaysUpkeep)
+                foreach (var a in _roster.Members)
+                    if (a != null && a.IsAlive) _meals += Charge(a, meal);
 
             EventBus.Publish(new LivingCostsDayEvent
             {

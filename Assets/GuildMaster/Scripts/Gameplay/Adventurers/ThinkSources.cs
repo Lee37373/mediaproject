@@ -23,21 +23,26 @@ namespace GuildMaster.Adventurers
             new IdleSource(),
         };
 
-        /// <summary>Hurt or worn out: rest first.</summary>
+        /// <summary>Hurt or worn out: rest first — sooner when the guild's rule says heal before going out (P4-112).</summary>
         sealed class RestSource : IThinkSource
         {
             public ThinkLayer Layer => ThinkLayer.Body;
 
             public void Offer(Adventurer a, IReadOnlyList<Quest> available, List<ThinkOption> into)
             {
-                if (a.HpRatio >= 0.6f && a.Data.fatigue <= 70f) return;
+                if (a.HpRatio >= Guild.GuildLaws.RestBelowHp && a.Data.fatigue <= Guild.GuildLaws.RestAboveFatigue) return;
+                bool byRule = a.HpRatio >= 0.6f && a.Data.fatigue <= 70f; // would have gone out but for the rule
                 into.Add(new ThinkOption
                 {
                     Action = AdventurerAction.Rest, Score = 1f, Label = "휴식",
-                    Reason = "몸 상태가 좋지 않다", Say = "좀 쉬어야겠어...",
+                    Reason = byRule ? "길드 규칙상 다 나을 때까지 쉰다" : "몸 상태가 좋지 않다", Say = byRule ? "규칙이니까, 다 나을 때까지 쉬자." : "좀 쉬어야겠어...",
                 });
             }
         }
+
+        /// <summary>A newcomer the guild's rule keeps at training while the training ground teaches (P4-112): no quest, no hunt.</summary>
+        public static bool TrainsByRule(Adventurer a)
+            => Guild.GuildLaws.MandatoryTraining && a != null && a.IsNewcomer && Services.TryGet<Town.UpgradeService>(out var upgrades) && upgrades.Trains;
 
         /// <summary>No potion left while the guild sells them and it can pay.</summary>
         sealed class PotionSource : IThinkSource
@@ -87,10 +92,11 @@ namespace GuildMaster.Adventurers
             {
                 string tired = Welfare.GuildWelfare.AnyQuestRefusal(a);
                 if (tired == null) return;
+                bool holiday = tired == Guild.GuildLawRules.HolidayRefusal; // the guild's holiday (P4-112)
                 into.Add(new ThinkOption
                 {
-                    Action = AdventurerAction.Idle, Score = 1f, Label = "쉬며 버팀", Reason = tired,
-                    Say = Welfare.StressRules.LevelOf(a.Data.stress) == Welfare.StressLevel.Breaking ? "지금은... 아무것도 하고 싶지 않아." : null,
+                    Action = AdventurerAction.Idle, Score = 1f, Label = holiday ? "길드 휴일" : "쉬며 버팀", Reason = tired,
+                    Say = holiday ? null : Welfare.StressRules.LevelOf(a.Data.stress) == Welfare.StressLevel.Breaking ? "지금은... 아무것도 하고 싶지 않아." : null,
                 });
             }
         }
@@ -122,6 +128,7 @@ namespace GuildMaster.Adventurers
 
             public void Offer(Adventurer a, IReadOnlyList<Quest> available, List<ThinkOption> into)
             {
+                if (TrainsByRule(a)) return; // the training below instead (P4-112)
                 foreach (var q in available)
                 {
                     // A newcomer's quest out beyond its ground is a dare (P4-100): rolled here, once a look.

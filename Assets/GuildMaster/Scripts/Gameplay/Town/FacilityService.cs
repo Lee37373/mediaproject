@@ -65,10 +65,11 @@ namespace GuildMaster.Town
 
         /// <summary>
         /// <see cref="StressRelief"/> of the running game, or 1 with none (pure tests, before boot) — times the harvest
-        /// festival's on its day (P4-111b), the one other thing that eases stress in town.
+        /// festival's on its day (P4-111b) and the guild's holiday's (P4-112), the other things that ease stress in town.
         /// </summary>
         public static float TownStressRelief
-            => (Services.TryGet<FacilityService>(out var f) && f.IsLive ? f.StressRelief : 1f) * Seasons.SeasonService.FestivalRelief;
+            => (Services.TryGet<FacilityService>(out var f) && f.IsLive ? f.StressRelief : 1f) * Seasons.SeasonService.FestivalRelief
+               * Guild.GuildLaws.HolidayRelief;
 
         /// <summary>Members get the guild's scale; visitors, candidates and refugees only the weakened base.</summary>
         public StatScale ScaleFor(Adventurer a)

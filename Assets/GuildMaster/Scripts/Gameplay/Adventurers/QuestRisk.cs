@@ -65,6 +65,13 @@ namespace GuildMaster.Adventurers
             => partySize <= 1 && q != null && q.Type == Quests.QuestType.Hunt && q.RequiredCount >= SoloRaiseCount
                && q.Incident == null && !IsBossWork(q);
 
+        /// <summary>
+        /// One alone on high-danger work while the guild's rule says such work goes in company (P4-112): it asks others along
+        /// as for a big hunt, and puts the quest down if nobody comes, however strong it is.
+        /// </summary>
+        public static bool AloneAgainstTheRule(Quests.Quest q, int partySize)
+            => partySize <= 1 && q != null && q.MaxParty > 1 && q.Danger == Data.DangerLevel.High && !IsPartyWork(q) && Guild.GuildLaws.PartyOnlyRisky;
+
         /// <summary>What the quest asks of this many: <see cref="Requirement(Quests.Quest)"/>, a danger step up for a big hunt alone.</summary>
         public static float Requirement(Quests.Quest q, int partySize)
             => SoloRaises(q, partySize)
@@ -120,7 +127,7 @@ namespace GuildMaster.Adventurers
             if (!IsPartyWork(q))
             {
                 // A big hunt nobody is on yet (P4-100): with those it can ask along now, as it will ask them at once.
-                if (SoloRaises(q, now) && q.MaxParty > 1) return Mathf.Min(q.MaxParty, now + AskableNow(q, taker));
+                if ((SoloRaises(q, now) || AloneAgainstTheRule(q, now)) && q.MaxParty > 1) return Mathf.Min(q.MaxParty, now + AskableNow(q, taker));
                 return now;
             }
             return Mathf.Clamp(Mathf.Max(now, GatherableCount(q)), now, Mathf.Max(now, q.MaxParty));
@@ -151,7 +158,8 @@ namespace GuildMaster.Adventurers
         /// big hunt its taker would go on alone (P4-100: everyone it asked said no).
         /// </summary>
         public static bool TooFewFor(Quests.Quest q, float leaderPower, int partySize)
-            => (IsPartyWork(q) || SoloRaises(q, partySize)) && Label(Margin(leaderPower, partySize, q)) == Reckless;
+            => AloneAgainstTheRule(q, partySize)
+               || (IsPartyWork(q) || SoloRaises(q, partySize)) && Label(Margin(leaderPower, partySize, q)) == Reckless;
 
         /// <summary>
         /// A gathering for party work may set out (P4-97): when the quest is full, or when this many are up to it — for a

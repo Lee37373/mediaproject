@@ -2079,6 +2079,39 @@ namespace GuildMaster.Session
             return Rank();
         }
 
+        // ---------------- The guild's rules (P4-112) ----------------
+
+        /// <summary>Every rule: the way in force, open or not, hours locked, and how many members like and dislike it; then each member's feeling.</summary>
+        public static string Laws()
+        {
+            var laws = Services.Get<Guild.GuildLaws>();
+            var sb = new StringBuilder($"holiday today={Guild.GuildLaws.IsHoliday}\n");
+            foreach (var def in Guild.GuildLawRules.All)
+            {
+                int now = Guild.GuildLaws.Of(def.Law);
+                var (liked, disliked) = laws.Reactions(def.Law, now);
+                sb.AppendLine($"  {def.Law} = {now} {def.Options[now].Label}  open={laws.IsOpen(def.Law)} (at {def.OpensAt}) locked {laws.HoursLocked(def.Law):0.0}h  like {liked} dislike {disliked}");
+            }
+            foreach (var m in Services.Get<GuildRoster>().Members)
+            {
+                if (m == null || !m.IsAlive || m.IsVisitor) continue;
+                var mood = Guild.GuildLaws.MoodOf(m);
+                if (mood.Liked == 0f && mood.Disliked == 0f) continue;
+                sb.AppendLine($"  {m.Data.name} [{string.Join(",", m.Data.traitIds)}/{m.Data.values}{(m.IsNewcomer ? "/신입" : "")}] +{mood.Liked:0.#} ({string.Join("·", mood.LikedNames)}) {mood.Disliked:0.#} ({string.Join("·", mood.DislikedNames)})");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Sets a rule ("Loot", "Shop"… or its index) to a way; <paramref name="force"/> skips its rank and lock.</summary>
+        public static string SetLaw(string law, int option, bool force = true)
+        {
+            if (!System.Enum.TryParse(law, true, out Guild.GuildLaw which)) return "no such rule: " + law;
+            var laws = Services.Get<Guild.GuildLaws>();
+            string why = laws.CannotChange(which, option);
+            bool changed = laws.Change(which, option, force);
+            return (changed ? "changed" : "not changed: " + why) + "\n" + Laws();
+        }
+
         // ---------------- Breaks and inspirations (P4-104d) ----------------
 
         /// <summary>Breaks the member at that roster index now: a kind by its enum name ("Berserk", "Brawl"…), or "" for what its mood and place pick.</summary>

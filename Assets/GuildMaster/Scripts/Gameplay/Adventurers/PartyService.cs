@@ -192,6 +192,13 @@ namespace GuildMaster.Adventurers
         const float HuntMinHp = 0.6f;
         const float HuntMaxFatigue = 60f;
 
+        /// <summary>The same, or stricter when the guild's rule says heal before going out (P4-112).</summary>
+        static bool FitToBeAsked(Adventurer a)
+            => a.HpRatio >= Math.Max(HuntMinHp, Guild.GuildLaws.RestBelowHp) && a.Data.fatigue < Math.Min(HuntMaxFatigue, Guild.GuildLaws.RestAboveFatigue);
+
+        /// <summary>Said by an invitee the guild's rules keep home: still mending, or a newcomer kept at training (P4-112).</summary>
+        public const string MendingLine = "다 나을 때까지 쉬래. 길드 규칙이야.", TrainingLine = "길드 규칙상 훈련부터 해야 해.";
+
         class HuntGathering
         {
             public HuntBand Band;
@@ -225,7 +232,7 @@ namespace GuildMaster.Adventurers
             var candidates = _roster.Members
                 .Where(a => a != leader && FreeInTown(a) && !band.Has(a) && !IsInvited(a)
                             && (parties == null || parties.PartyOf(a) == null)
-                            && a.HpRatio >= HuntMinHp && a.Data.fatigue < HuntMaxFatigue
+                            && FitToBeAsked(a) && !ThinkSources.TrainsByRule(a)
                             && Relationships.Get(leader, a) > HostileThreshold
                             && HuntBandService.SameFooting(a, leader)) // newcomers hunt with newcomers (P4-99)
                 .OrderByDescending(a => Relationships.Get(leader, a))
@@ -369,6 +376,9 @@ namespace GuildMaster.Adventurers
         static (bool accept, string say) RuleDecide(Adventurer c, Adventurer leader, Quest quest = null)
         {
             if (c == null) return (false, null);
+            // The guild's rules first (P4-112): one still mending, or a newcomer kept at training, stays.
+            if (Guild.GuildLaws.HealFirst && !FitToBeAsked(c)) return (false, MendingLine);
+            if (ThinkSources.TrainsByRule(c)) return (false, TrainingLine);
             if (quest != null && (QuestRisk.NewcomerHoldsBack(c, quest) || QuestRisk.HoldsBack(c, quest))) return (false, TooGreenLine);
             float chance = AcceptChanceOverride ?? Math.Min(0.95f, RuleAcceptChance(c.Data.values, c.Traits?.PartyAffinity ?? 1f, Relationships.Get(c, leader))
                                                                + (QuestRisk.IsBossWork(quest) ? BossWorkEagerness : 0f)
@@ -435,6 +445,9 @@ namespace GuildMaster.Adventurers
         /// <summary>Said by the taker of a big hunt that nobody would come along on (P4-100).</summary>
         public const string AloneLine = "혼자서는 무리야. 같이 갈 사람이 있을 때 다시 맡자.";
 
+        /// <summary>Said by the taker of high-danger work the guild's rule keeps from going alone (P4-112).</summary>
+        public const string RuleAloneLine = "길드 규칙상 위험한 의뢰는 혼자 못 가. 같이 갈 사람이 있을 때 다시 맡자.";
+
         /// <summary>The quest goes back on the board; the leader and whoever had joined stay in town.</summary>
         void GiveUp(Quest q, Adventurer leader, List<Adventurer> joined, string line = TooFewLine)
         {
@@ -461,7 +474,7 @@ namespace GuildMaster.Adventurers
             if (!QuestRisk.TooFewFor(q, AdventurerStats.Power(taker.Data), 1)) return false;
             _gatherings.Remove(q);
             _putDownAt[(q, taker)] = Hour;
-            GiveUp(q, taker, new List<Adventurer>(), AloneLine);
+            GiveUp(q, taker, new List<Adventurer>(), QuestRisk.AloneAgainstTheRule(q, 1) ? RuleAloneLine : AloneLine);
             return true;
         }
 

@@ -62,17 +62,25 @@ namespace GuildMaster.Adventurers
             return shares;
         }
 
-        /// <summary>Rule split: half of the pool equally, half by each member's part in the fights.</summary>
-        public static int[] RuleSplit(int pool, IReadOnlyList<float> contribution)
+        /// <summary>
+        /// Rule split: <paramref name="equalShare"/> of the pool equally, the rest by each member's part in the fights — half and
+        /// half unless the guild's split rule says even (1) or by deeds (0) (P4-112).
+        /// </summary>
+        public static int[] RuleSplit(int pool, IReadOnlyList<float> contribution, float equalShare = 0.5f)
         {
             int n = contribution.Count;
             if (n == 0) return Array.Empty<int>();
             float total = contribution.Sum(c => Mathf.Max(0f, c));
+            float byDeeds = 1f - equalShare;
             var weights = new float[n];
             for (int i = 0; i < n; i++)
-                weights[i] = 0.5f / n + (total > 0f ? 0.5f * Mathf.Max(0f, contribution[i]) / total : 0.5f / n);
+                weights[i] = equalShare / n + (total > 0f ? byDeeds * Mathf.Max(0f, contribution[i]) / total : byDeeds / n);
             return Distribute(pool, weights);
         }
+
+        /// <summary>What the one splitting says, by the split rule.</summary>
+        static string SplitLine(float equalShare)
+            => equalShare >= 1f ? "모두 똑같이 나누자." : equalShare <= 0f ? "활약한 만큼 가져가자." : "활약한 만큼, 그리고 고르게 나누자.";
 
         /// <summary>
         /// Chance this member walks out after the split: an unfair share (under 70% of an equal one)
@@ -103,7 +111,8 @@ namespace GuildMaster.Adventurers
                 return;
             }
             var contribution = members.Select(m => p.Out.TryGetValue(m, out var r) ? r.Weight : 0f).ToList();
-            Conclude(p, parties, members, RuleSplit(p.Pool, contribution), "활약한 만큼, 그리고 고르게 나누자.");
+            float equal = Guild.GuildLaws.SplitEqualShare;
+            Conclude(p, parties, members, RuleSplit(p.Pool, contribution, equal), SplitLine(equal));
         }
 
         /// <summary>

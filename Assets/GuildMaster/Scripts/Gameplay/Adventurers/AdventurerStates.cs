@@ -880,12 +880,14 @@ namespace GuildMaster.Adventurers
             bool pooled = parties != null && parties.PartyOf(a) is { } party && party.WentOut(a) && !party.Settling;
             int loot = a.Data.LootCount;
             int earned = trade.BuyLoot(a);
+            // Loot the guild's by its rule (P4-112): handed in for a finder's fee.
+            bool owed = Guild.GuildLaws.LootShare < 1f;
             if (earned > 0 && pooled && parties.Deposit(a, earned))
             {
                 a.Data.gold -= earned;
-                a.Say($"전리품을 팔아 {earned}G를 파티 몫으로 모았다.");
+                a.Say(owed ? $"전리품을 길드에 넘기고 수고비 {earned}G를 파티 몫으로 모았다." : $"전리품을 팔아 {earned}G를 파티 몫으로 모았다.");
             }
-            else if (earned > 0) a.Say($"전리품을 팔아 {earned}G를 벌었다.");
+            else if (earned > 0) a.Say(owed ? $"전리품을 길드에 넘기고 수고비 {earned}G를 받았다." : $"전리품을 팔아 {earned}G를 벌었다.");
             else if (loot > 0) a.Say("길드에 돈이 없다니... 전리품은 내가 들고 있지.");
             // A good haul brought home (P4-104e: an everyday good thought).
             if (earned > 0) ThoughtRecorder.Give(a, ThoughtRules.GoodHaul);

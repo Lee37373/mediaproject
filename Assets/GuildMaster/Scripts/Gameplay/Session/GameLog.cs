@@ -314,6 +314,12 @@ namespace GuildMaster.Session
             EventBus.Subscribe<Dilemmas.DilemmaDealtEvent>(e => Add($"[결정] {e.Card.Title}: {e.Card.Text}", LogCategory.Info));
             EventBus.Subscribe<Dilemmas.DilemmaResolvedEvent>(e => Add(
                 $"[결정] {e.Card.Title} → {e.Card.Label(e.Choice)}{(e.ByDeadline ? " (기한이 지나 기본 선택)" : "")}. {e.Result}", LogCategory.Info));
+            // The guild's rules (P4-112).
+            EventBus.Subscribe<Guild.GuildLawChangedEvent>(e => Add(
+                $"[규칙] {Guild.GuildLawRules.Def(e.Law).Name}: {Guild.GuildLawRules.Def(e.Law).Options[e.From].Label} → {Guild.GuildLawRules.Def(e.Law).Options[e.To].Label}"
+                + (e.Pleased + e.Displeased > 0 ? $" (반김 {e.Pleased}명 · 못마땅 {e.Displeased}명)" : ""), LogCategory.Info));
+            EventBus.Subscribe<Guild.GuildHolidayEvent>(e => Add(
+                $"[휴일] 오늘은 길드 휴일입니다. 아무도 새 일을 나가지 않고, 마을에 있으면 스트레스가 {Guild.GuildLawRules.HolidayRelief:0.#}배로 풀립니다.", LogCategory.Info));
             // The guild's rank (P4-106).
             EventBus.Subscribe<Guild.GuildRankChangedEvent>(e => Add(
                 $"[등급] 길드가 {Guild.GuildRankRules.Name(e.Rank)}이 되었습니다! {Guild.GuildRankRules.Rewards(e.Rank)}", LogCategory.Quest));

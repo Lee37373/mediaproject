@@ -5935,6 +5935,132 @@ namespace GuildMaster.Tests
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
 
+        /// <summary>
+        /// The guild's rules (P4-112, H2): five open at F, the rest at their ranks; a change is logged, said aloud by those it
+        /// moves, felt as a thought of the moment by whom it galls or pleases, and locked for three days. Loot owed to the guild
+        /// pays a finder's fee, the shop's prices follow its rule, the guild paying the keep charges no meals, the holiday keeps
+        /// everyone home and eases stress, healing first sends the merely scratched to rest, and keeping to the trails makes the
+        /// deep woods dear even to the bold. Its section saves as it is.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator GuildLaws_OpenByRank_LockAfterAChange_MoveTheMembers_AndSetTheirNumbers()
+        {
+            yield return Boot();
+            var laws = Services.Get<Guild.GuildLaws>();
+            var trade = Services.Get<Economy.TradeService>();
+            var db = Services.Get<GameDatabase>();
+            var changes = new System.Collections.Generic.List<Guild.GuildLawChangedEvent>();
+            int holidays = 0, mealsCharged = -1;
+            Action<Guild.GuildLawChangedEvent> onChange = e => changes.Add(e);
+            Action<Guild.GuildHolidayEvent> onHoliday = _ => holidays++;
+            Action<LivingCostsDayEvent> onKeep = e => mealsCharged = e.Meals;
+            EventBus.Subscribe(onChange);
+            EventBus.Subscribe(onHoliday);
+            EventBus.Subscribe(onKeep);
+            string start = laws.Capture();
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                Assert.That(Enum.GetValues(typeof(Guild.GuildLaw)).Cast<Guild.GuildLaw>().Count(laws.IsOpen), Is.EqualTo(5), "five at F");
+                Assert.That(laws.CannotChange(Guild.GuildLaw.Training, 1), Does.Contain("E등급"));
+
+                // Two members who take loot owed to the guild differently.
+                var members = Roster.Members.Where(a => a.IsAlive && !a.IsVisitor).ToList();
+                var greedy = members[0];
+                var loyal = members[1];
+                greedy.Data.traitIds = new System.Collections.Generic.List<string> { "greedy" };
+                greedy.Data.values = "돈";
+                loyal.Data.traitIds = new System.Collections.Generic.List<string> { "loyal" };
+                loyal.Data.values = "명예";
+
+                var stinger = db.Item("bee_stinger");
+                int price = trade.LootPrice(stinger);
+                Assert.That(laws.Change(Guild.GuildLaw.Loot, 1), Is.True);
+                Assert.That(changes.Count, Is.EqualTo(1));
+                Assert.That(changes[0].Pleased, Is.GreaterThanOrEqualTo(1), "the loyal");
+                Assert.That(changes[0].Displeased, Is.GreaterThanOrEqualTo(1), "the greedy");
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[규칙] 전리품: 개인 소유 → 길드 귀속")), Is.True, "logged");
+                var galled = ThoughtRecorder.Situational(greedy).FirstOrDefault(t => t.id == ThoughtRules.LawsDisliked.Id);
+                Assert.That(galled?.value, Is.EqualTo(-7f), "greedy and after money");
+                Assert.That(galled.label, Does.Contain("전리품 길드 귀속"));
+                Assert.That(ThoughtRecorder.Situational(loyal).Any(t => t.id == ThoughtRules.LawsLiked.Id && t.value > 0f), Is.True, "the loyal like it");
+                Assert.That(laws.CannotChange(Guild.GuildLaw.Loot, 0), Does.Contain("시간 뒤"), "locked for three days");
+                Assert.That(laws.Change(Guild.GuildLaw.Loot, 0), Is.False);
+                Assert.That(laws.HoursLocked(Guild.GuildLaw.Loot), Is.EqualTo(Guild.GuildLawRules.LockHours).Within(0.01f));
+
+                // Loot handed in for a finder's fee.
+                int pay = trade.LootPay(stinger);
+                Assert.That(pay, Is.EqualTo(Mathf.Max(1, Mathf.RoundToInt(price * Guild.GuildLawRules.LootFeeShare))));
+                Assert.That(pay, Is.LessThan(price));
+                greedy.CarriedLoot.Add(new ItemStack("bee_stinger", 5));
+                int stock = Services.Get<Economy.GuildTreasury>().GetStock("bee_stinger");
+                Assert.That(trade.BuyLoot(greedy), Is.EqualTo(5 * pay));
+                Assert.That(Services.Get<Economy.GuildTreasury>().GetStock("bee_stinger"), Is.EqualTo(stock + 5), "the guild's now");
+
+                // The shop's prices.
+                var potion = db.Item(DefaultContent.Potion);
+                int usual = trade.GoodsPrice(potion);
+                Assert.That(laws.Change(Guild.GuildLaw.Shop, 2), Is.True);
+                Assert.That(trade.GoodsPrice(potion), Is.GreaterThan(usual), "dear");
+                Assert.That(ThoughtRecorder.Situational(loyal).Any(t => t.id == ThoughtRules.LawsDisliked.Id), Is.True, "everyone minds dear prices");
+
+                // Healing first: one at 80% in town rests rather than go out.
+                var scratched = members[2];
+                scratched.Mover.Stop();
+                scratched.transform.position = Services.Get<World.WorldService>().TownCenterWorld;
+                typeof(Unit).GetMethod("SetHp", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(scratched, new object[] { scratched.Stats.MaxHp * 0.8f });
+                scratched.Data.fatigue = 0f;
+                var none = new System.Collections.Generic.List<Quest>();
+                Assert.That(RuleBasedDecisionMaker.Decide(scratched, none).Action, Is.Not.EqualTo(AdventurerAction.Rest), "free to go at 80%");
+                Assert.That(laws.Change(Guild.GuildLaw.Wounded, 1), Is.True);
+                Assert.That(RuleBasedDecisionMaker.Decide(scratched, none).Action, Is.EqualTo(AdventurerAction.Rest), "rests until healed");
+
+                // Keeping to the trails: a known deep-wood cell costs even the bold dear; the hurried still cut through.
+                var world = Services.Get<World.WorldService>();
+                var map = world.Map;
+                int deep = Enumerable.Range(0, map.Width * map.Height).FirstOrDefault(i => map.Deep[i] && map.Tiles[i] == World.TileType.Forest);
+                Assert.That(map.Deep[deep], Is.True, "the map has deep woods");
+                int dx = deep % map.Width, dy = deep / map.Width;
+                float bold = world.Risk.Multiplier(dx, dy, 0.15f);
+                Assert.That(laws.Change(Guild.GuildLaw.DeepWoods, 1, force: true), Is.True);
+                Assert.That(world.Risk.Multiplier(dx, dy, 0.15f), Is.GreaterThan(bold * 3f), "the bold go round");
+                Assert.That(world.Risk.Multiplier(dx, dy, 0f), Is.EqualTo(1f), "in a hurry: straight through");
+
+                // The guild pays the keep: the day's meals charge nobody.
+                Assert.That(laws.Change(Guild.GuildLaw.Upkeep, 1), Is.True);
+                JumpClockTo(24f - 0.02f);
+                yield return WaitFor(() => mealsCharged >= 0, 5f);
+                Assert.That(mealsCharged, Is.EqualTo(0), "no meals charged");
+
+                // The holiday (the last day of a season, rank A's rule): nobody goes out, stress eases faster at home.
+                Assert.That(laws.Change(Guild.GuildLaw.Holiday, 1), Is.False, "not open at F");
+                typeof(Guild.GuildRankService).GetProperty(nameof(Guild.GuildRankService.Rank)).SetValue(Services.Get<Guild.GuildRankService>(), Guild.GuildRank.A);
+                Assert.That(laws.Change(Guild.GuildLaw.Holiday, 1), Is.True, "open at A");
+                JumpClockTo(4 * 24f - 0.02f);
+                yield return WaitFor(() => holidays > 0, 5f);
+                Assert.That(Guild.GuildLaws.IsHoliday, Is.True);
+                Assert.That(Welfare.GuildWelfare.AnyQuestRefusal(loyal), Is.EqualTo(Guild.GuildLawRules.HolidayRefusal));
+                Assert.That(Town.FacilityService.TownStressRelief, Is.EqualTo(Guild.GuildLawRules.HolidayRelief), "no dormitory, no festival");
+                Assert.That(Services.Get<Notifications.NotificationCenter>().Entries.Any(n => n.Title == "길드 휴일"), Is.True);
+                Assert.That(ThoughtRecorder.Situational(scratched).Any(t => t.id == ThoughtRules.Holiday.Id), Is.True, "at home on the holiday");
+
+                string saved = laws.Capture();
+                laws.Restore(start, null);
+                Assert.That(Guild.GuildLaws.Of(Guild.GuildLaw.Loot), Is.EqualTo(0));
+                laws.Restore(saved, null);
+                Assert.That(laws.Capture(), Is.EqualTo(saved), "its section comes back as it was");
+                Assert.That(Guild.GuildLaws.Of(Guild.GuildLaw.Holiday), Is.EqualTo(1));
+            }
+            finally
+            {
+                laws.Restore(start, null);
+                EventBus.Unsubscribe(onChange);
+                EventBus.Unsubscribe(onHoliday);
+                EventBus.Unsubscribe(onKeep);
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+            }
+        }
+
         /// <summary>A stretch of water nobody has explored yet, with walkable ground either side of it.</summary>
         static bool FindUnseenLake(GuildMaster.Fog.FogOfWar fog, out Vector2Int lake, out Vector2Int near, out Vector2Int far)
         {

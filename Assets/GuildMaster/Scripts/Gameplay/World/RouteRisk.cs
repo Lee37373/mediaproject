@@ -84,7 +84,16 @@ namespace GuildMaster.World
             if (caution < 0f && (!_map.InBounds(x, y) || _map.Tiles[_map.Index(x, y)] != TileType.Forest || Cleared(_map.Index(x, y)))) return 1f;
             // The deep woods (P4-104b): a careful walker keeps to the trails. Only known cells get here (unknown ones cost flat).
             float risk = At(x, y);
-            if (caution > 0f && DeepStanding(x, y)) risk += DeepWoodRules.RouteRisk;
+            if (caution > 0f && DeepStanding(x, y))
+            {
+                // Kept to the trails by the guild's rule (P4-112): even the bold go round, unless in a hurry (caution 0).
+                if (Guild.GuildLaws.KeepToTrails)
+                {
+                    caution = Mathf.Max(caution, Guild.GuildLawRules.TrailsCaution);
+                    risk += Guild.GuildLawRules.TrailsRisk;
+                }
+                else risk += DeepWoodRules.RouteRisk;
+            }
             return Mathf.Max(0.05f, 1f + caution * risk);
         }
 

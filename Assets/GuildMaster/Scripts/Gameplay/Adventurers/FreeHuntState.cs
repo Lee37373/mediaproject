@@ -468,7 +468,9 @@ namespace GuildMaster.Adventurers
                     // With the known dens next door that would pile in, and in known deep woods only a fight well within
                     // the band's means (P4-104b: bands took a den at a time and died to the zone, or blind in the woods).
                     int foes = FreeHunt.ExpectedEnemies(1, s, count) + AreaRisk.ExtraFoesAround(s, n.WorldPosition, n);
-                    float share = AreaRisk.KnownDeep(n.WorldPosition) ? DeepWoodRules.HuntLossShare : 1f;
+                    bool deep = AreaRisk.KnownDeep(n.WorldPosition);
+                    if (deep && Guild.GuildLaws.KeepToTrails) continue; // the guild's rule keeps hunts out of the deep woods (P4-112)
+                    float share = deep ? DeepWoodRules.HuntLossShare : 1f;
                     if (!FreeHunt.CanTake(BandAgainst(s), _bandHp, FoeAgainst(s, FreeHunt.StatsOf(s, n.BirthLevel)), foes, share)) continue;
                     float score = FreeHunt.DenScore(s, count, Vector2.Distance(n.WorldPosition, a.Position), n.BirthLevel);
                     if (score <= bestScore) continue;

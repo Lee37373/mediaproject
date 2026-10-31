@@ -119,6 +119,8 @@ namespace GuildMaster.Welfare
             // A badly wounded member (F-6) takes no quest until the wound heals or is treated.
             if (Legacy.GuildLegacy.WoundedRefusal(a) is { } wounded) return wounded;
             if (StressRules.LevelOf(a.Data.stress) == StressLevel.Breaking) return "지쳐서 의뢰를 맡을 기분이 아니다";
+            // The guild's holiday (P4-112): nobody sets out on new work today.
+            if (Guild.GuildLaws.IsHoliday) return Guild.GuildLawRules.HolidayRefusal;
             return null;
         }
 

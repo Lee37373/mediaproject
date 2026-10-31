@@ -103,7 +103,13 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Seasons.FestivalEvent>(OnFestival);
             EventBus.Subscribe<Dilemmas.DilemmaDealtEvent>(OnDilemma);
             EventBus.Subscribe<Dilemmas.DilemmaResolvedEvent>(OnDilemmaResolved);
+            EventBus.Subscribe<Guild.GuildHolidayEvent>(OnHoliday);
         }
+
+        // The guild's holiday (P4-112): why nobody goes out today.
+        void OnHoliday(Guild.GuildHolidayEvent e)
+            => _center.Post(NotificationKind.Info, "길드 휴일",
+                $"오늘은 아무도 새 일을 나가지 않습니다. 마을에 있으면 스트레스가 {Guild.GuildLawRules.HolidayRelief:0.#}배로 풀립니다.", "holiday:" + e.Day);
 
         // Decision cards (P4-111c): one to answer; once it is decided the call goes (and one decided by the clock says so).
         void OnDilemma(Dilemmas.DilemmaDealtEvent e)

@@ -167,6 +167,10 @@ namespace GuildMaster.Adventurers
         public static readonly ThoughtDef WantsRest = D("wants_rest", "그만 쉬고 싶다", -4f, 0f);
         public static readonly ThoughtDef Idle = D("idle", "할 일 없이 놀고 있다", -2f, 0f);
         public static readonly ThoughtDef Afraid = D("afraid", "{0}이(가) 무섭다", -6f, 0f);
+        // The guild's rules (P4-112, H2): the rules it likes and the ones it does not, as they stand (weights from Guild.GuildLawRules).
+        public static readonly ThoughtDef LawsLiked = D("laws_liked", "마음에 드는 길드 규칙: {0}", 0f, 0f);
+        public static readonly ThoughtDef LawsDisliked = D("laws_disliked", "못마땅한 길드 규칙: {0}", 0f, 0f);
+        public static readonly ThoughtDef Holiday = D("holiday", "오늘은 길드 휴일이다", 4f, 0f);
 
         public static readonly IReadOnlyList<ThoughtDef> All = new[]
         {
@@ -178,6 +182,7 @@ namespace GuildMaster.Adventurers
             WarmLodge, ColdLodge, Thirsty,
             Talked, Bonus, Ignored, FriendLeft,
             HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival, Crowded, Lonely, WantsRest, Idle, Afraid,
+            LawsLiked, LawsDisliked, Holiday,
         };
 
         public static ThoughtDef Find(string id)

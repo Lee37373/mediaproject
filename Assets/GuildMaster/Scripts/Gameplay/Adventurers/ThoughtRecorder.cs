@@ -153,6 +153,12 @@ namespace GuildMaster.Adventurers
                 if (Has(d.traitIds, "diligent") && home && a.IsIdleInTown && d.fatigue < 30f) Put(ThoughtRules.Idle, ThoughtRules.Idle.Mood);
                 // A kind it fears (a quirk) close by.
                 if (d.quirks.Count > 0 && FearedNear(a) is { } feared) Put(ThoughtRules.Afraid, ThoughtRules.Afraid.Mood, feared.Def.displayName);
+
+                // The guild's rules as they stand (P4-112, H2: no further than the mood, user decision), and its holiday at home.
+                var laws = Guild.GuildLaws.MoodOf(a);
+                Put(ThoughtRules.LawsLiked, laws.Liked, Guild.GuildLawRules.Names(laws.LikedNames));
+                Put(ThoughtRules.LawsDisliked, laws.Disliked, Guild.GuildLawRules.Names(laws.DislikedNames));
+                if (home && Guild.GuildLaws.IsHoliday) Put(ThoughtRules.Holiday, ThoughtRules.Holiday.Mood);
             }
             return list;
         }

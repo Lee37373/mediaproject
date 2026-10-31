@@ -80,7 +80,7 @@ namespace GuildMaster.UI
             Services.Register(inspector);
 
             // The next rank's conditions (P4-106), under the side menu and beneath the windows.
-            const float MenuHeight = 548f; // twelve buttons of 40 with 6 between (P4-111c: the decisions)
+            const float MenuHeight = 594f; // thirteen buttons of 40 with 6 between (P4-112: the guild's rules)
             HudLayer.gameObject.AddComponent<GoalPanelView>().Build(HudLayer, new Vector2(8, -60 - MenuHeight - 10));
 
             WindowLayer = UIBuilder.Rect(HudLayer, "Windows").Stretch();
@@ -106,6 +106,8 @@ namespace GuildMaster.UI
             AddWindow<BestiaryView>(menu, "몬스터 도감 (K)", Key.K, new Vector2(1000, 640));
             // Decision cards (P4-111c).
             AddWindow<DilemmaView>(menu, "결정 (J)", Key.J, new Vector2(900, 760));
+            // The guild's rules (P4-112, H2).
+            AddWindow<GuildLawView>(menu, "길드 규칙 (P)", Key.P, new Vector2(980, 760));
             // Notification list (F-1); the side-menu button shows the unread count (kept up to date by ToastLayer).
             var notificationView = AddWindow<NotificationView>(null, null, Key.N, new Vector2(820, 560));
             var notificationButton = UIBuilder.Button(menu, "알림 (N)", () => Focus(notificationView), -1, 40);

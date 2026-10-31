@@ -130,7 +130,9 @@ namespace GuildMaster.Session
             treasury.AddStock(DefaultContent.Potion, Balance.startingPotions);
             Services.Register(treasury);
             save.Register(treasury);
-            Services.Register(new TradeService(treasury, db) { LootBuyRate = Balance.lootBuyRate, GoodsSellRate = Balance.goodsSellRate });
+            var trade = new TradeService(treasury, db) { LootBuyRate = Balance.lootBuyRate, GoodsSellRate = Balance.goodsSellRate };
+            Services.Register(trade);
+            save.Register(trade); // the loot buy rate the guild master set (it used to go back to the default on loading)
             var gameLog = new GameLog(clock, db);
             Services.Register(gameLog);
             save.Register(gameLog);
@@ -388,6 +390,11 @@ namespace GuildMaster.Session
             rank.Init(clock, roster, treasury, loading: load != null);
             Services.Register(rank);
             save.Register(rank);
+            // The guild's rules (P4-112, H2): after the rank that opens them; the systems read their numbers from it.
+            var laws = AddSystem<Guild.GuildLaws>();
+            laws.Init(clock, roster);
+            Services.Register(laws);
+            save.Register(laws);
             // The seasons (P4-111b, H11): from the day, nothing saved; the others ask it for their factor.
             var seasons = AddSystem<Seasons.SeasonService>();
             seasons.Init(clock, roster, world);
