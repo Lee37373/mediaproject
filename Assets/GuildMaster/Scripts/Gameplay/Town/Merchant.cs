@@ -38,8 +38,12 @@ namespace GuildMaster.Town
             go.AddComponent<PathFollower>();
             var visual = go.AddComponent<CharacterVisual>();
             // Raccoon peddler from the imported art; generated pixel art without the packages.
+            // A bearded peddler of the CharacterMaker rig when imported (2026-10-30).
+            var look = HumanLook.Plain("merchant");
+            look.Beard = 2;
             var anim = ArtLibrary.Adventurer("raccoon");
-            if (anim != null) visual.InitAnimated(anim);
+            if (visual.InitHuman(look)) { /* drawn by the rig */ }
+            else if (anim != null) visual.InitAnimated(anim);
             else visual.Init(PixelArt.Humanoid("merchant", new Color(0.35f, 0.22f, 0.12f), new Color(0.95f, 0.8f, 0.65f),
                 new Color(0.55f, 0.35f, 0.6f), new Color(0.9f, 0.75f, 0.3f), new Color(0.3f, 0.25f, 0.2f)));
             var m = go.AddComponent<Merchant>();

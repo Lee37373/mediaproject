@@ -31,5 +31,28 @@ namespace GuildMaster.Visuals
 
         public List<Skin> skins = new();
         public List<MonsterArt> monsters = new();
+
+        // ---- 2D Minimal-CharacterMaker (people, 2026-10-30) and Cartoon Casual VFX Pack ----
+
+        /// <summary>Sprites for one kind of body part or gear ("Hair", "Sword", ...), in file-name order.</summary>
+        [Serializable]
+        public class HumanPart
+        {
+            public string type;
+            public Sprite[] sprites;
+        }
+
+        [Serializable]
+        public class Vfx
+        {
+            public string key;
+            public GameObject prefab;
+        }
+
+        /// <summary>The CharacterMaker's animated character (Animator + one SpriteRenderer per part). Null without the package.</summary>
+        public GameObject humanRig;
+        public List<HumanPart> humanParts = new();
+        /// <summary>Effect prefabs by file name ("Hit1_White", "Levelup_Yellow", ...). Empty without the package.</summary>
+        public List<Vfx> vfx = new();
     }
 }

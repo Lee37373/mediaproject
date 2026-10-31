@@ -30,9 +30,18 @@ namespace GuildMaster.Player
             go.transform.position = position;
             go.AddComponent<PathFollower>();
             var visual = go.AddComponent<CharacterVisual>();
-            var anim = ArtLibrary.Adventurer("penguin");
-            if (anim != null) visual.InitAnimated(anim);
-            else visual.Init(PixelArt.GuildMaster());
+            // The guild master as a person of the CharacterMaker rig (2026-10-30): a sword, a helmet, no shield.
+            var look = HumanLook.Plain("guildmaster");
+            look.Weapon = "Sword";
+            look.WeaponIndex = 5;
+            look.Helmet = 9;
+            look.Runs = true;
+            if (!visual.InitHuman(look))
+            {
+                var anim = ArtLibrary.Adventurer("penguin");
+                if (anim != null) visual.InitAnimated(anim);
+                else visual.Init(PixelArt.GuildMaster());
+            }
             var vision = go.AddComponent<VisionSource>();
             vision.SightRadius = sight;
             go.AddComponent<HealthBar>();

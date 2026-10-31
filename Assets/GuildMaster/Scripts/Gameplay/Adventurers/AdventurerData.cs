@@ -47,6 +47,8 @@ namespace GuildMaster.Adventurers
         public int recruitStage, recruitWins, recruitFails;
         /// <summary>Said no to joining: never recruitable again.</summary>
         public bool recruitRefused;
+        /// <summary>Probing questions asked so far (2026-10-30: a visitor puts up with only a few, see VisitorReveal.QuestionLimit).</summary>
+        public int recruitAsked;
         /// <summary>
         /// What the guild master has found out about this visitor by talking ("values", "personality",
         /// "trait:&lt;id&gt;"), see Recruitment.VisitorReveal. Only these are shown before they join.

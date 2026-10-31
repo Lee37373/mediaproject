@@ -37,28 +37,28 @@ namespace GuildMaster.Recruitment
         /// <summary>The same argument again right away is less convincing.</summary>
         public const int RepeatPenalty = 15;
         /// <summary>Each stage after the first is harder (5 → 6 on 2026-10-29: the choices now follow the talk, so it got easier).</summary>
-        public const int StagePenalty = 6;
+        public const int StagePenalty = 5;
         /// <summary>Points of affinity per point of chance, and the most it can add or take (2026-10-29: /2 and +20 → /3 and ±15).</summary>
         public const int AffinityStep = 3, AffinityBonusMax = 15;
         /// <summary>Part of a failure that is a critical one (ends the talk): 15% → 20% on 2026-10-29; half for a bad line.</summary>
-        public const float CriticalFailShare = 0.2f, BadCriticalFailShare = 0.5f;
+        public const float CriticalFailShare = 0.18f, BadCriticalFailShare = 0.5f;
 
         /// <summary>Two stages, or three for a visitor whose traits make recruiting harder.</summary>
         public static int StagesFor(float recruitDifficulty) => recruitDifficulty > 0.001f ? 3 : 2;
 
         /// <summary>
         /// The chance before affinity and the rest, by how the line sits with this visitor. Lowered on 2026-10-29 (user:
-        /// "영입이 쉬워졌으니 실패 확률도 올라가야") from 80/70/55/50/25/20: once the choices followed the visitor's own
-        /// questions, the matching pitch came up nearly every turn.
+        /// "영입이 쉬워졌으니 실패 확률도 올라가야") from 80/70/55/50/25/20 to 75/65/50/45/20/15, then set between the two
+        /// on 2026-10-30 ("너무 잘 안됨", 중간): about half of two-stage visitors join when the guild master knows them.
         /// </summary>
         public static int BaseChance(RecruitReaction r) => r switch
         {
-            RecruitReaction.ValueMatch => 75,
-            RecruitReaction.TraitMatch => 65,
-            RecruitReaction.Answered => 50,
-            RecruitReaction.Friendly => 45,
-            RecruitReaction.LowEffort => 20,
-            RecruitReaction.Clash => 15,
+            RecruitReaction.ValueMatch => 78,
+            RecruitReaction.TraitMatch => 68,
+            RecruitReaction.Answered => 52,
+            RecruitReaction.Friendly => 48,
+            RecruitReaction.LowEffort => 22,
+            RecruitReaction.Clash => 17,
             _ => 5,
         };
 

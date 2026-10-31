@@ -42,11 +42,28 @@ namespace GuildMaster.Social
             go.AddComponent<PathFollower>();
             var visual = go.AddComponent<CharacterVisual>();
             var (hair, body, accent, legs) = Colors(profile.Job);
-            visual.Init(PixelArt.Humanoid("resident_" + profile.Id, hair, new Color(0.95f, 0.8f, 0.65f), body, accent, legs),
-                        profile.Job == ResidentJob.Child ? 0.8f : 1f);
+            // CharacterMaker rig when imported (2026-10-30), generated pixel art otherwise.
+            if (!visual.InitHuman(Look(profile, hair)))
+                visual.Init(PixelArt.Humanoid("resident_" + profile.Id, hair, new Color(0.95f, 0.8f, 0.65f), body, accent, legs),
+                            profile.Job == ResidentJob.Child ? 0.8f : 1f);
             var r = go.AddComponent<Resident>();
             r.Setup(profile, workplace);
             return r;
+        }
+
+        /// <summary>A resident dressed for the job: the smith with a hammer, the guard armed and helmeted, a small child.</summary>
+        static HumanLook Look(ResidentProfile p, Color hair)
+        {
+            var look = HumanLook.Plain("resident_" + p.Id);
+            look.HairColor = hair;
+            switch (p.Job)
+            {
+                case ResidentJob.Blacksmith: look.Weapon = "Blunt"; look.WeaponIndex = 0; look.Beard = 3; break;
+                case ResidentJob.Guard: look.Weapon = "Spear"; look.WeaponIndex = 1; look.Helmet = 2; look.Shield = 1; break;
+                case ResidentJob.Chief: look.Beard = 7; break;
+                case ResidentJob.Child: look.Scale = 0.75f; look.Beard = HumanLook.None; break;
+            }
+            return look;
         }
 
         static (Color hair, Color body, Color accent, Color legs) Colors(ResidentJob job) => job switch

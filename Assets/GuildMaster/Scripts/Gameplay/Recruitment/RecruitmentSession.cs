@@ -119,6 +119,43 @@ namespace GuildMaster.Recruitment
             _followTopic = f.topic;
         }
 
+        // ---- Questions (user decision 2026-10-30: a roll, and only a few per visitor) ----
+
+        /// <summary>Kind of question → the player turn from which it may be tried again after a dodge.</summary>
+        readonly Dictionary<string, int> _askCooldown = new();
+        /// <summary>Affinity lost for asking once the visitor has had enough questions.</summary>
+        public const int PesterPenalty = 4;
+
+        public int QuestionLimit => Visitor?.Data != null ? VisitorReveal.QuestionLimit(Visitor.Data.mbti) : 0;
+        public int QuestionsLeft => Visitor?.Data != null ? Mathf.Max(0, QuestionLimit - Visitor.Data.recruitAsked) : 0;
+
+        static string AskKey(RecruitChoiceKind k) => k switch
+        {
+            RecruitChoiceKind.AskValues => VisitorReveal.Values,
+            RecruitChoiceKind.AskPersonality => VisitorReveal.Personality,
+            RecruitChoiceKind.AskTraits => "trait",
+            _ => null,
+        };
+
+        /// <summary>The chance a question choice gets an honest answer (percent), or -1 for a line that is not one.</summary>
+        public int AskChanceOf(RecruitChoice c)
+        {
+            string key = c != null ? AskKey(c.Kind) : null;
+            return key == null ? -1 : VisitorReveal.AskChance(key, Affinity);
+        }
+
+        /// <summary>Questions not to offer now: all once the visitor has had enough, and a dodged kind for a while.</summary>
+        HashSet<RecruitChoiceKind> NoAsk()
+        {
+            var no = new HashSet<RecruitChoiceKind>();
+            foreach (var k in new[] { RecruitChoiceKind.AskValues, RecruitChoiceKind.AskPersonality, RecruitChoiceKind.AskTraits })
+                if (QuestionsLeft <= 0 || (_askCooldown.TryGetValue(AskKey(k), out int until) && PlayerTurns < until)) no.Add(k);
+            return no;
+        }
+
+        static bool Answers(string revealKey, string asked)
+            => asked == "trait" ? revealKey.StartsWith(VisitorReveal.TraitPrefix) : revealKey == asked;
+
         string KnownValuesNow(AdventurerData d) => VisitorReveal.IsRevealed(d, VisitorReveal.Values) ? d.values : null;
 
         /// <summary>What the visitor asks about after a stage: what they care about more often than not.</summary>
@@ -351,7 +388,16 @@ namespace GuildMaster.Recruitment
 
             // What the visitor tells this time by the rules (VisitorReveal, user report 2026-10-07): decided
             // before the reply so the model (or the rule-based line) actually says it.
-            var planned = VisitorReveal.BeforeReply(Visitor.Data, playerText, PlayerTurns, Affinity, out string revealHint);
+            // A probing question is a roll, and a visitor only puts up with a few (2026-10-30).
+            var vd = Visitor.Data;
+            string asked = VisitorReveal.AskedAbout(vd, playerText);
+            bool mayAsk = asked == null || QuestionsLeft > 0;
+            if (asked != null && mayAsk) vd.recruitAsked++;
+            var planned = VisitorReveal.BeforeReply(vd, playerText, PlayerTurns, Affinity, out string revealHint,
+                                                    asked != null ? GameRandom.Shared.Value : 0f, mayAsk);
+            bool pestered = asked != null && !mayAsk;
+            if (asked != null && mayAsk && !planned.Any(p => Answers(p.Key, asked)))
+                _askCooldown[asked] = PlayerTurns + VisitorReveal.AskCooldownTurns;
             int affinityBefore = Affinity;
             if (choice != null) _usedChoices.Add(choice.Id);
             var reply = choice != null ? ChoiceReply(choice, planned) : await GetReplyAsync(playerText, proposal, nagging, planned, mayJoin);
@@ -364,11 +410,13 @@ namespace GuildMaster.Recruitment
             if (nagging) delta = NaggedDelta(delta);
             // Finding things out does not win anyone over, but rudeness still costs (2026-10-29).
             delta = choice != null ? 0 : Mathf.Min(0, delta);
+            if (pestered) delta = Mathf.Min(0, delta) - PesterPenalty;
             _lastReaction = reply.Reaction;
             _reactionStreak = streak;
             Affinity = Mathf.Clamp(Affinity + delta, 0, 100);
             AddTurn(false, reply.Text);
-            if (delta < 0) _reactions.Add((_turns.Count, RecruitScoring.Feedback(reply.Reaction, delta, nagging), delta));
+            if (pestered) _reactions.Add((_turns.Count, "▼ 이것저것 캐물어서 귀찮아함 (호감 하락)", delta));
+            else if (delta < 0) _reactions.Add((_turns.Count, RecruitScoring.Feedback(reply.Reaction, delta, nagging), delta));
             var after = VisitorReveal.AfterReply(Visitor.Data, reply.Reaction,
                 valueClash: reply.Reaction == RecruitReaction.Clash && RecruitScoring.ClashesWithValue(playerText, Visitor.Data.values),
                 wantedTrait: choice != null ? RecruitLines.WantedTrait(choice, Visitor.Data.traitIds) : RecruitScoring.WantedTrait(playerText, Visitor.Data.traitIds),
@@ -424,6 +472,7 @@ namespace GuildMaster.Recruitment
                 Used = _usedChoices,
                 FollowKind = _followKind,
                 FollowTopic = _followTopic,
+                NoAsk = NoAsk(),
             }, GameRandom.Shared));
         }
 

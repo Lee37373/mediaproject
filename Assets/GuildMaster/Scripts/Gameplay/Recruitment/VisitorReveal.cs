@@ -60,6 +60,39 @@ namespace GuildMaster.Recruitment
         /// <summary>Passing each of these, a visitor opens up about one more trait by themselves.</summary>
         public static readonly int[] OpenUpAffinity = { 55, 70 };
 
+        // ---- Questions (user decision 2026-10-30: "질문도 확률 판정" + "질문 횟수 제한") ----
+        // Asking used to be a sure thing from affinity 40 — the starting affinity — so one question on the first line
+        // gave the values away. Now a question is a roll that affinity improves, and each visitor puts up with only a
+        // few probing questions.
+
+        /// <summary>Lines after a dodged question before the same kind of question can be tried again.</summary>
+        public const int AskCooldownTurns = 2;
+        public const int MinAskChance = 10, MaxAskChance = 90;
+
+        /// <summary>The chance (percent) that asking about this gets an honest answer: better liked, more open.</summary>
+        public static int AskChance(string key, int affinity)
+        {
+            int baseChance = key == Values ? 35 : key == Personality ? 50 : 30;
+            return System.Math.Clamp(baseChance + (affinity - ValuesAskAffinity) * 3 / 2, MinAskChance, MaxAskChance);
+        }
+
+        /// <summary>Probing questions a visitor puts up with: talkers (E) three, the rest two.</summary>
+        public static int QuestionLimit(string mbti)
+            => !string.IsNullOrEmpty(mbti) && char.ToUpperInvariant(mbti[0]) == 'E' ? 3 : 2;
+
+        /// <summary>
+        /// What a line asks about that is still hidden: <see cref="Values"/>, <see cref="Personality"/>, "trait", or null.
+        /// Asking about something already known costs nothing.
+        /// </summary>
+        public static string AskedAbout(AdventurerData d, string text)
+        {
+            if (d == null) return null;
+            if (AsksValues(text) && !IsRevealed(d, Values) && !string.IsNullOrEmpty(d.values)) return Values;
+            if (AsksTraits(text) && NextHiddenTrait(d) != null) return "trait";
+            if (AsksPersonality(text) && !IsRevealed(d, Personality) && !string.IsNullOrEmpty(d.mbti)) return Personality;
+            return null;
+        }
+
         public static string TraitKey(string traitId) => TraitPrefix + traitId;
 
         public static bool IsRevealed(AdventurerData d, string key)
@@ -106,27 +139,31 @@ namespace GuildMaster.Recruitment
         /// values or a trait when asked and liked enough. <paramref name="hint"/> explains a question that was asked
         /// too early ("호감 40 이상이면 털어놓음"), or is null.
         /// </summary>
-        public static List<RevealStep> BeforeReply(AdventurerData d, string playerText, int playerTurns, int affinity, out string hint)
+        /// <param name="askRoll">The dice for a question in [0, 1) (2026-10-30); 0 always lands (tests).</param>
+        /// <param name="mayAsk">False once the visitor has had enough questions: nothing asked is answered.</param>
+        public static List<RevealStep> BeforeReply(AdventurerData d, string playerText, int playerTurns, int affinity, out string hint,
+                                                   float askRoll = 0f, bool mayAsk = true)
         {
             hint = null;
             var steps = new List<RevealStep>();
             if (d == null) return steps;
+            string asked = AskedAbout(d, playerText);
+            bool answered = false;
+            if (asked != null)
+            {
+                int chance = AskChance(asked, affinity);
+                answered = mayAsk && askRoll * 100f < chance;
+                string what = asked == Values ? "무엇이 중요한지" : asked == Personality ? "어떤 사람인지" : "장단점을";
+                if (!mayAsk) hint = "이것저것 캐묻자 귀찮아하며 대답하지 않음 (캐물을 수 있는 횟수를 다 씀)";
+                else if (!answered) hint = $"{what} 물었지만 얼버무림 (확률 {chance}%, 호감이 높을수록 잘 털어놓음)";
+            }
             if (!IsRevealed(d, Personality) && !string.IsNullOrEmpty(d.mbti))
             {
-                if (AsksPersonality(playerText)) steps.Add(new RevealStep(Personality, "성격을 묻자 스스로 이야기함"));
+                if (asked == Personality && answered) steps.Add(new RevealStep(Personality, "성격을 묻자 스스로 이야기함"));
                 else if (playerTurns >= PersonalityTurns) steps.Add(new RevealStep(Personality, "몇 마디 나누니 말투와 태도에서 드러남"));
             }
-            if (!IsRevealed(d, Values) && !string.IsNullOrEmpty(d.values) && AsksValues(playerText))
-            {
-                if (affinity >= ValuesAskAffinity) steps.Add(new RevealStep(Values, "무엇이 중요한지 묻자 털어놓음"));
-                else hint = $"가치관을 물었지만 아직 경계해서 얼버무림 (호감 {ValuesAskAffinity} 이상이면 털어놓음)";
-            }
-            string trait = NextHiddenTrait(d);
-            if (trait != null && AsksTraits(playerText))
-            {
-                if (affinity >= TraitsAskAffinity) steps.Add(new RevealStep(TraitKey(trait), "장단점을 묻자 털어놓음"));
-                else hint ??= $"장단점을 물었지만 아직 말하지 않음 (호감 {TraitsAskAffinity} 이상이면 털어놓음)";
-            }
+            if (asked == Values && answered) steps.Add(new RevealStep(Values, "무엇이 중요한지 묻자 털어놓음"));
+            if (asked == "trait" && answered) steps.Add(new RevealStep(TraitKey(NextHiddenTrait(d)), "장단점을 묻자 털어놓음"));
             return steps;
         }
 
@@ -180,8 +217,8 @@ namespace GuildMaster.Recruitment
         public static string HowToFind(string kind) => kind switch
         {
             Personality => $"{PersonalityTurns}마디 이상 대화하거나 성격을 물어보기",
-            Values => $"관심사를 건드리기(▲관심) · 호감 {ValuesAskAffinity}↑에서 무엇이 중요한지 묻기",
-            _ => $"좋아할 이야기 하기(▲마음에 듦) · 호감 {string.Join("/", OpenUpAffinity)} 돌파 · 호감 {TraitsAskAffinity}↑에서 장단점 묻기",
+            Values => "관심사를 건드리기(▲관심) · 무엇이 중요한지 묻기(확률, 호감이 높을수록 잘 털어놓음)",
+            _ => $"좋아할 이야기 하기(▲마음에 듦) · 호감 {string.Join("/", OpenUpAffinity)} 돌파 · 장단점 묻기(확률)",
         };
 
         /// <summary>What the model is told to let out in this reply ("네가 가장 중요하게 여기는 것(돈)").</summary>

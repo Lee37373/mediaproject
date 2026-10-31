@@ -177,12 +177,23 @@ namespace GuildMaster.Tests
         public void Reveal_Values_WhenTouched_OrAskedOnceLikedEnough()
         {
             var d = Visitor();
-            var early = VisitorReveal.BeforeReply(d, "뭐가 제일 중요하세요?", 1, VisitorReveal.ValuesAskAffinity - 1, out var hint);
-            Assert.That(early, Is.Empty);
-            StringAssert.Contains(VisitorReveal.ValuesAskAffinity.ToString(), hint, "asked too early: says what it takes");
-            var asked = VisitorReveal.BeforeReply(d, "뭐가 제일 중요하세요?", 1, VisitorReveal.ValuesAskAffinity, out hint);
+            // 2026-10-30: asking is a roll that affinity improves, and a visitor only takes a few questions.
+            Assert.That(VisitorReveal.AskChance(VisitorReveal.Values, 40), Is.EqualTo(35));
+            Assert.That(VisitorReveal.AskChance(VisitorReveal.Values, 60), Is.GreaterThan(VisitorReveal.AskChance(VisitorReveal.Values, 40)));
+            Assert.That(VisitorReveal.AskChance(VisitorReveal.Values, 100), Is.EqualTo(VisitorReveal.MaxAskChance));
+            var early = VisitorReveal.BeforeReply(d, "뭐가 제일 중요하세요?", 1, 40, out var hint, askRoll: 0.9f);
+            Assert.That(early, Is.Empty, "the roll missed: they dodge");
+            StringAssert.Contains("35%", hint, "and the window says the odds");
+            var asked = VisitorReveal.BeforeReply(d, "뭐가 제일 중요하세요?", 1, 40, out hint, askRoll: 0.1f);
             Assert.That(asked.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.Values }));
             Assert.That(hint, Is.Null);
+            var pestered = VisitorReveal.BeforeReply(d, "뭐가 제일 중요하세요?", 1, 90, out hint, 0f, mayAsk: false);
+            Assert.That(pestered, Is.Empty, "no more questions");
+            StringAssert.Contains("캐묻", hint);
+            Assert.That(VisitorReveal.QuestionLimit("ENFP"), Is.EqualTo(3));
+            Assert.That(VisitorReveal.QuestionLimit("ISTJ"), Is.EqualTo(2));
+            Assert.That(VisitorReveal.AskedAbout(d, "뭐가 제일 중요하세요?"), Is.EqualTo(VisitorReveal.Values));
+            Assert.That(VisitorReveal.AskedAbout(d, "날씨 좋네요"), Is.Null);
             var touched = VisitorReveal.AfterReply(d, RecruitReaction.ValueMatch, false, null, 30, 38);
             Assert.That(touched.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.Values }));
             Assert.That(touched[0].Reason, Is.Not.Empty);
@@ -201,16 +212,17 @@ namespace GuildMaster.Tests
             var opened = VisitorReveal.AfterReply(d, RecruitReaction.Friendly, false, null, mark - 2, mark);
             Assert.That(opened.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.TraitKey("arrogant") }), "opening up: the first hidden one");
             Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.Friendly, false, null, mark, mark + 3), Is.Empty, "only when crossing");
-            VisitorReveal.BeforeReply(d, "장점이 뭐예요?", 1, VisitorReveal.TraitsAskAffinity - 1, out var hint);
-            StringAssert.Contains(VisitorReveal.TraitsAskAffinity.ToString(), hint);
-            var asked = VisitorReveal.BeforeReply(d, "장점이 뭐예요?", 1, VisitorReveal.TraitsAskAffinity, out _);
+            VisitorReveal.BeforeReply(d, "장점이 뭐예요?", 1, 40, out var hint, askRoll: 0.95f);
+            StringAssert.Contains("얼버무림", hint);
+            var asked = VisitorReveal.BeforeReply(d, "장점이 뭐예요?", 1, 40, out _, askRoll: 0f);
             Assert.That(asked.Select(s => s.Key), Is.EqualTo(new[] { VisitorReveal.TraitKey("arrogant") }));
-            var notTwice = VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, "arrogant", 50, 56, asked);
+            // 56 → 60: no open-up mark (55/70) crossed, so only the pitch itself could show a trait.
+            var notTwice = VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, "arrogant", 56, 60, asked);
             Assert.That(notTwice, Is.Empty, "what was already planned is not repeated, and no other trait comes out in its place");
             // 2026-10-29: a pitch for a trait already known does not give away a different one.
             VisitorReveal.Reveal(d, VisitorReveal.TraitKey("sturdy"));
-            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, "sturdy", 50, 56), Is.Empty);
-            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, null, 50, 56).Count, Is.LessThanOrEqualTo(1), "a typed line the model judged may still show one");
+            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, "sturdy", 56, 60), Is.Empty);
+            Assert.That(VisitorReveal.AfterReply(d, RecruitReaction.TraitMatch, false, null, 56, 60).Count, Is.LessThanOrEqualTo(1), "a typed line the model judged may still show one");
         }
 
         [Test]

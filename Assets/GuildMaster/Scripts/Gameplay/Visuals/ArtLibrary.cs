@@ -55,6 +55,32 @@ namespace GuildMaster.Visuals
             return m != null && m.sprite != null ? m.sprite : null;
         }
 
+        // ---- People and effects (2026-10-30, 2D Minimal-CharacterMaker / Cartoon Casual VFX Pack) ----
+
+        /// <summary>The CharacterMaker rig, or null when that pack is not imported (callers keep the old art).</summary>
+        public static GameObject HumanRigPrefab => Catalog != null ? Catalog.humanRig : null;
+
+        /// <summary>True when people are drawn with the CharacterMaker rig.</summary>
+        public static bool HasHumans => HumanRigPrefab != null && Catalog.humanParts.Count > 0;
+
+        /// <summary>Sprites of one part kind ("Hair", "Sword", ...), or null.</summary>
+        public static Sprite[] HumanPart(string type)
+        {
+            if (Catalog == null || string.IsNullOrEmpty(type)) return null;
+            var p = Catalog.humanParts.FirstOrDefault(x => x.type == type);
+            return p?.sprites;
+        }
+
+        /// <summary>An effect prefab by file name ("Hit1_White"), or null.</summary>
+        public static GameObject Vfx(string key)
+        {
+            if (Catalog == null || string.IsNullOrEmpty(key)) return null;
+            var v = Catalog.vfx.FirstOrDefault(x => x.key == key);
+            return v != null ? v.prefab : null;
+        }
+
+        public static bool HasVfx => Catalog != null && Catalog.vfx.Count > 0;
+
         /// <summary>Animated adventurer skin, e.g. "knight". Null if absent.</summary>
         public static CharacterAnimSet Adventurer(string skin)
         {

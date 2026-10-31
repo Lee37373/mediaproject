@@ -128,6 +128,10 @@ namespace GuildMaster.Session
             particles.Init(pool);
             Services.Register(particles);
             AddSystem<CombatFeedback>().Init(particles, fx);
+            // Effects from the Cartoon Casual VFX Pack when imported (2026-10-30): hits, skills, heals, level-ups.
+            var casualVfx = AddSystem<CasualVfx>();
+            casualVfx.Init();
+            Services.Register(casualVfx);
             // Items on the ground (P4-21): drops of the dead, picked up by monsters and adventurers.
             var groundItems = AddSystem<Items.GroundItemService>();
             groundItems.Init(pool, clock, db);

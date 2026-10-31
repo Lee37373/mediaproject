@@ -55,16 +55,19 @@ namespace GuildMaster.Visuals
             float share = victim.Stats.MaxHp > 0f ? e.Amount / victim.Stats.MaxHp : 0f;
             var color = ColorOf(victim);
 
+            // The Cartoon Casual VFX Pack draws hits when imported (CasualVfx, 2026-10-30); hit-stop and shake stay here.
+            bool packHits = CasualVfx.Active;
             int count = Mathf.RoundToInt(Mathf.Lerp(4f, 14f, Mathf.Clamp01(share * 2.5f))) + (e.Critical ? 8 : 0);
-            _particles.Burst(at, new BurstSpec
-            {
-                Color = color, Count = count, SpeedMin = 1.2f, SpeedMax = e.Critical ? 4.2f : 3f,
-                SizeMin = 0.14f, SizeMax = e.Critical ? 0.42f : 0.3f, Lifetime = 0.45f, Gravity = 0.6f, Radius = 0.1f,
-            });
+            if (!packHits)
+                _particles.Burst(at, new BurstSpec
+                {
+                    Color = color, Count = count, SpeedMin = 1.2f, SpeedMax = e.Critical ? 4.2f : 3f,
+                    SizeMin = 0.14f, SizeMax = e.Critical ? 0.42f : 0.3f, Lifetime = 0.45f, Gravity = 0.6f, Radius = 0.1f,
+                });
 
             if (e.Critical)
             {
-                _fx.Spark(at, CritFlash, 1.1f, 0.18f);
+                if (!packHits) _fx.Spark(at, CritFlash, 1.1f, 0.18f);
                 bool guildInvolved = victim.Faction == Faction.Guild || (e.Source != null && e.Source.Faction == Faction.Guild);
                 if (guildInvolved && Time.unscaledTime >= _nextHitStop && Services.TryGet<GameClock>(out var clock))
                 {
@@ -95,7 +98,8 @@ namespace GuildMaster.Visuals
 
             if (victim.Faction == Faction.Guild)
             {
-                // A fallen member: pale light drifting up.
+                // A fallen member: pale light drifting up (smoke from CasualVfx when the pack is imported).
+                if (!CasualVfx.Active)
                 _particles.Burst(at, new BurstSpec
                 {
                     Color = new Color(0.9f, 0.95f, 1f, 0.9f), Count = 14, SpeedMin = 0.2f, SpeedMax = 0.6f,
@@ -110,6 +114,7 @@ namespace GuildMaster.Visuals
         {
             var a = e.Adventurer;
             if (a == null || !OnScreen(a.Position, out _)) return;
+            if (CasualVfx.Active) return; // the pack's level-up effect plays instead (2026-10-30)
             _fx.Ring(a.Position, 1.3f, LevelGold, 0.6f);
             _fx.Spark(a.Position + new Vector2(0f, 0.4f), LevelGold, 1.4f, 0.35f);
             _particles.Burst(a.Position + new Vector2(0f, 0.1f), new BurstSpec

@@ -48,9 +48,10 @@ namespace GuildMaster.Tests
             Assert.That(RecruitPersuasion.Chance(RecruitReaction.Rude, 0, 2, true).Success, Is.EqualTo(RecruitPersuasion.MinChance));
             Assert.That(RecruitPersuasion.Chance(RecruitReaction.ValueMatch, 100, 0, false).Success, Is.LessThanOrEqualTo(RecruitPersuasion.MaxChance));
             // 2026-10-29: harder than before — a matching pitch at neutral affinity is no sure thing, and the bonus is capped.
-            Assert.That(value.Success, Is.EqualTo(75));
-            Assert.That(RecruitPersuasion.Chance(RecruitReaction.ValueMatch, 100, 0, false).Success, Is.EqualTo(90));
-            Assert.That(RecruitPersuasion.Chance(RecruitReaction.Friendly, 40, 1, false).CriticalFail, Is.EqualTo(12), "a fifth of the failures end it");
+            // 2026-10-30: set between the old and the hard numbers (user: "너무 잘 안됨").
+            Assert.That(value.Success, Is.EqualTo(78));
+            Assert.That(RecruitPersuasion.Chance(RecruitReaction.ValueMatch, 100, 0, false).Success, Is.EqualTo(93));
+            Assert.That(RecruitPersuasion.Chance(RecruitReaction.Friendly, 40, 1, false).CriticalFail, Is.EqualTo(10));
 
             var c = new PersuadeChance { Success = 60, Critical = 10, CriticalFail = 6 };
             Assert.That(RecruitPersuasion.Roll(c, 0.05f), Is.EqualTo(PersuadeRoll.CriticalSuccess));

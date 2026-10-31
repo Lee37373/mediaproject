@@ -62,6 +62,10 @@ namespace GuildMaster.Recruitment
         /// </summary>
         public RecruitChoiceKind? FollowKind;
         public string FollowTopic;
+        /// <summary>Questions not to offer (2026-10-30: the visitor has had enough, or just dodged that one).</summary>
+        public ICollection<RecruitChoiceKind> NoAsk;
+
+        public bool MayAsk(RecruitChoiceKind k) => NoAsk == null || !NoAsk.Contains(k);
     }
 
     /// <summary>
@@ -171,12 +175,13 @@ namespace GuildMaster.Recruitment
                 Put(Pick(RecruitChoiceKind.Greet, null, s.Used, rng));
                 Put(Pick(RecruitChoiceKind.About, null, s.Used, rng));
                 Put(Pick(RecruitChoiceKind.Guild, null, s.Used, rng));
-                Put(Pick(s.KnownValues == null ? RecruitChoiceKind.AskValues : RecruitChoiceKind.Pitch, s.KnownValues, s.Used, rng));
+                if (s.KnownValues != null) Put(Pick(RecruitChoiceKind.Pitch, s.KnownValues, s.Used, rng));
+                else if (s.MayAsk(RecruitChoiceKind.AskValues)) Put(Pick(RecruitChoiceKind.AskValues, null, s.Used, rng));
                 return result;
             }
 
             // What the visitor just asked or brought up comes first, in the slot of its kind.
-            var follow = s.FollowKind.HasValue ? Pick(s.FollowKind.Value, s.FollowTopic, s.Used, rng) : null;
+            var follow = s.FollowKind.HasValue && s.MayAsk(s.FollowKind.Value) ? Pick(s.FollowKind.Value, s.FollowTopic, s.Used, rng) : null;
             bool followArgues = follow != null && IsArgument(follow.Kind);
             if (followArgues) Put(follow);
             if (follow != null && follow.Kind == RecruitChoiceKind.Pitch) topics.Remove(follow.Topic);
@@ -209,9 +214,9 @@ namespace GuildMaster.Recruitment
                 return result;
             }
             var questions = new List<RecruitChoiceKind>();
-            if (s.KnownValues == null) questions.Add(RecruitChoiceKind.AskValues);
-            if (s.HiddenTraitLeft) questions.Add(RecruitChoiceKind.AskTraits);
-            if (!s.PersonalityKnown) questions.Add(RecruitChoiceKind.AskPersonality);
+            if (s.KnownValues == null && s.MayAsk(RecruitChoiceKind.AskValues)) questions.Add(RecruitChoiceKind.AskValues);
+            if (s.HiddenTraitLeft && s.MayAsk(RecruitChoiceKind.AskTraits)) questions.Add(RecruitChoiceKind.AskTraits);
+            if (!s.PersonalityKnown && s.MayAsk(RecruitChoiceKind.AskPersonality)) questions.Add(RecruitChoiceKind.AskPersonality);
             if (s.PlayerTurns < 3) questions.Add(RecruitChoiceKind.About);
             if (questions.Count > 0) Put(Pick(rng.Pick(questions), null, s.Used, rng));
             else Put(Pick(RecruitChoiceKind.Pitch, topics[3], s.Used, rng));

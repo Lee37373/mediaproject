@@ -224,7 +224,12 @@ namespace GuildMaster.UI
         string ChanceTag(RecruitChoice c)
         {
             if (c.Kind == RecruitChoiceKind.Greet) return UIBuilder.Colored("(인사)", UITheme.TextMuted);
-            if (!RecruitLines.IsArgument(c.Kind)) return UIBuilder.Colored("(질문)", UITheme.TextMuted);
+            if (!RecruitLines.IsArgument(c.Kind))
+            {
+                // A probing question is a roll too (2026-10-30), and it uses up one of the few the visitor puts up with.
+                int ask = _session.AskChanceOf(c);
+                return UIBuilder.Colored(ask < 0 ? "(질문)" : $"(캐묻기 {ask}%)", UITheme.TextMuted);
+            }
             if (!_session.ChanceKnown(c)) return UIBuilder.Colored("(성공 ??%)", UITheme.TextMuted);
             int p = _session.ChanceOf(c).Success;
             var color = p >= 65 ? UITheme.Good : p >= 40 ? UITheme.Warn : UITheme.Bad;
@@ -297,10 +302,11 @@ namespace GuildMaster.UI
                 _help.text = (how.Length > 0 ? "알아내는 법" + how + "\n\n" : "") +
                              "설득: 한 단계에 3번 성공하면 다음 단계, 마지막 단계를 넘기면 합류. " +
                              "한 단계에서 3번 실패하거나 크게 실패하면 거절하고 다시는 영입할 수 없습니다. " +
-                             "가치관·특성을 알아내면 성공 확률이 보입니다.";
+                             "가치관·특성을 알아내면 성공 확률이 보입니다. " +
+                             "캐묻기(가치관·성격·장단점 질문)는 확률로 성공하고 방문자마다 2~3번까지만 받아 줍니다.";
             }
             _affinity.value = _session.Affinity;
-            _affinityLabel.text = $"호감도 {_session.Affinity}/100 · 대화 {_session.PlayerTurns}회";
+            _affinityLabel.text = $"호감도 {_session.Affinity}/100 · 대화 {_session.PlayerTurns}회 · 캐묻기 {_session.QuestionsLeft}/{_session.QuestionLimit}";
             _progress.text = RecruitPersuasion.Progress(_session.Stages, _session.Stage, _session.StageWins, _session.StageFails);
 
             bool ongoing = _session.Outcome == RecruitOutcome.Ongoing;

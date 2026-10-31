@@ -190,10 +190,14 @@ namespace GuildMaster.Adventurers
             SkillFactory.Assign(this, data.skillIds);
             Traits = TraitSet.FromIds(data.traitIds, Services.TryGet<GameDatabase>(out var db) ? db : null);
             RecalculateStats(fullHeal: true);
-            // Imported Cute Adventurers skin when available, generated pixel art otherwise.
-            var anim = ArtLibrary.Adventurer(SkinFor(data.cls, data.id));
-            if (anim != null) Visual.InitAnimated(anim);
-            else Visual.Init(ClassSprite(data));
+            // People are drawn with the CharacterMaker rig when that pack is imported (2026-10-30); otherwise the Cute
+            // Adventurers skin, and generated pixel art without any pack.
+            if (!Visual.InitHuman(HumanLook.Adventurer(data.id, data.cls, data.skinColor, data.hairColor)))
+            {
+                var anim = ArtLibrary.Adventurer(SkinFor(data.cls, data.id));
+                if (anim != null) Visual.InitAnimated(anim);
+                else Visual.Init(ClassSprite(data));
+            }
             GetComponent<HealthBar>().Init(this, 0.75f, new Color(0.3f, 0.85f, 0.35f));
             GetComponent<HealthBar>().AlwaysVisible = false;
             GetComponent<VisionSource>().SightRadius = Stats.SightRadius;

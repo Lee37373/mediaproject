@@ -23,6 +23,36 @@ namespace GuildMaster.Visuals
 
         public SpriteRenderer Body => _body;
 
+        // ---- People drawn with the CharacterMaker rig (2026-10-30, see HumanRig) ----
+        HumanRig _rig;
+        Units.Unit _unit;
+        float _attackStamp;
+        Color _rigTint = Color.white;
+        bool _rigLying;
+
+        public HumanRig Rig => _rig;
+
+        /// <summary>
+        /// Draws this character with the CharacterMaker rig (people only). False when that pack is not imported:
+        /// the caller then uses the old art.
+        /// </summary>
+        public bool InitHuman(HumanLook look)
+        {
+            if (!ArtLibrary.HasHumans) return false;
+            Init(null, 1f);
+            var rig = HumanRig.Create(transform, look);
+            if (rig == null) return false;
+            _rig = rig;
+            // The rig has its own shadow and parts; the plain body sprite stays empty.
+            _shadow.enabled = false;
+            _unit = GetComponent<Units.Unit>();
+            _attackStamp = _unit != null ? _unit.NextAttackTime : 0f;
+            return true;
+        }
+
+        /// <summary>Plays the rig's skill swing (no-op for sprite characters).</summary>
+        public void PlaySkill() => _rig?.PlaySkill();
+
         // ---- Frame animation (imported art, see ArtLibrary) ----
         CharacterAnimSet _anim;
         float _animTime;
@@ -46,6 +76,7 @@ namespace GuildMaster.Visuals
         /// <summary>Plays the death frames once (animated characters only).</summary>
         public void PlayDeath()
         {
+            if (_rig != null) { _rig.PlayDeath(); return; }
             if (_anim == null || _anim.Die.Length == 0 || _dying) return;
             _dying = true;
             _animTime = 0f;
@@ -98,6 +129,36 @@ namespace GuildMaster.Visuals
         /// <summary>Extra transparency on top of the tint (1 = solid). Used by stealth, P4-19.</summary>
         public float Fade { get; set; } = 1f;
 
+        void UpdateRig(bool moving, bool left)
+        {
+            _rig.Face(left);
+            _rig.SetMoving(moving);
+            // A new attack started (Combat sets the next attack time when it swings): play the swing.
+            if (_unit != null && _unit.NextAttackTime > _attackStamp + 0.01f)
+            {
+                _attackStamp = _unit.NextAttackTime;
+                _rig.PlayAttack();
+            }
+            if (Lying != _rigLying)
+            {
+                _rigLying = Lying;
+                _rig.SetLying(Lying);
+            }
+            _rig.SetSorting(BaseSortingOrder - Mathf.RoundToInt(transform.position.y * 8f));
+            Color want;
+            if (_flashTimer > 0f)
+            {
+                _flashTimer -= Time.deltaTime;
+                want = Shown(_flashTimer > 0f ? new Color(1f, 0.45f, 0.45f, _tint.a) : _tint);
+            }
+            else want = Shown(_tint);
+            if (want != _rigTint)
+            {
+                _rigTint = want;
+                _rig.SetTint(want);
+            }
+        }
+
         public void SetTint(Color c)
         {
             _tint = c;
@@ -121,6 +182,7 @@ namespace GuildMaster.Visuals
             bool moving = _mover != null && (_mover.IsMoving || _mover.IsSteering);
             bool left = _faceOverrideTimer > 0f ? _facingLeftOverride : _mover != null && _mover.FacingLeft;
             _faceOverrideTimer -= Time.deltaTime;
+            if (_rig != null) { UpdateRig(moving, left); return; }
             _body.flipX = ArtFacesLeft ? !left : left;
 
             if (moving) _bobPhase += Time.deltaTime * 14f;

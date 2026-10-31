@@ -122,6 +122,26 @@ namespace GuildMaster.Tests
             Assert.That(b.StageNext(NpcVoice.Register.Warm, "안전", null), Is.EqualTo(b.Line("stage.next.안전", NpcVoice.Register.Warm, null)));
         }
 
+        /// <summary>2026-10-30: no questions are offered once the visitor has had enough, or for one just dodged.</summary>
+        [Test]
+        public void Offer_LeavesOutQuestionsTheVisitorWillNotTake()
+        {
+            var b = Shipped();
+            var rng = new GameRandom(9);
+            var all = new HashSet<RecruitChoiceKind> { RecruitChoiceKind.AskValues, RecruitChoiceKind.AskPersonality, RecruitChoiceKind.AskTraits };
+            for (int i = 0; i < 20; i++)
+            {
+                var s = State(2 + i % 3);
+                s.NoAsk = all;
+                s.FollowKind = RecruitChoiceKind.AskValues;
+                var offer = b.Offer(s, rng);
+                Assert.That(offer.Any(c => all.Contains(c.Kind)), Is.False);
+                Assert.That(offer.Count, Is.EqualTo(RecruitLines.ChoiceCount));
+                var first = b.Offer(new RecruitChoiceState { FirstTalk = true, Used = new HashSet<string>(), NoAsk = all, KnownTraits = new List<string>() }, rng);
+                Assert.That(first.Any(c => all.Contains(c.Kind)), Is.False);
+            }
+        }
+
         /// <summary>User report 2026-10-29: a reply should sound like the trait that was won over.</summary>
         [Test]
         public void TraitHit_SoundsLikeThatTrait_AndHabitsShowNowAndThen()
