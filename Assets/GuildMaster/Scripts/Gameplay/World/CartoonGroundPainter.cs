@@ -232,16 +232,10 @@ namespace GuildMaster.World
                 case TileType.RuinWall: return RuinWallPixel(lx, ly, cx, cy);
             }
 
-            bool town = _map.TownRect.Contains(new Vector2Int(cx, cy));
-            var region = town ? Region.Grassland : RegionAt(u, v, cx, cy);
+            if (_map.TownRect.Contains(new Vector2Int(cx, cy))) return TownPixel(u, v);
+            var region = RegionAt(u, v, cx, cy);
             var pal = Palettes[(int)region];
-            Color32 c = town ? CobblePixel(u, v) : GrassPixel(u, v, pal);
-            if (town)
-            {
-                // Inside the walls only the plaza roads are overlaid.
-                Overlay(ref c, _road, u, v, Road, RoadEdge, 0.06f, 0.35f);
-                return c;
-            }
+            Color32 c = GrassPixel(u, v, pal);
 
             // Each feature in its own region's colours (a lake is all water or all lava).
             var forestPal = Palettes[(int)LayerRegion(_forest, cx, cy, region)];
@@ -336,18 +330,62 @@ namespace GuildMaster.World
             return c;
         }
 
-        // ---------------- Town (grid-aligned) ----------------
+        // ---------------- Town (P4-114: kept grass, cobbled streets and a round plaza) ----------------
 
-        Color32 CobblePixel(float u, float v)
+        static readonly Color32 TownGrass = C(0x86, 0xD4, 0x58), TownGrassLight = C(0x95, 0xDD, 0x66), TownTuft = C(0x6C, 0xB8, 0x48);
+        static readonly Color32 CobbleLight = C(0xE6, 0xE0, 0xD4), Curb = C(0x8E, 0x85, 0x78), Mosaic = C(0xE2, 0xBC, 0x84);
+        static readonly Color32[] Petals = { C(0xFF, 0xFF, 0xFF), C(0xFF, 0xD2, 0x4A), C(0xFF, 0x8F, 0xB4) };
+        /// <summary>The plaza's radius round the town centre, in cells.</summary>
+        const float PlazaRadius = 2.7f;
+
+        /// <summary>
+        /// Inside the walls: grass kept short, with little flowers; the roads from gate to gate cobbled a little wider than
+        /// their cells, with a curb; a round cobbled plaza at the crossing with a ring of warm stone in it.
+        /// </summary>
+        Color32 TownPixel(float u, float v)
         {
-            // Half-tile stones, every other row offset by half a stone.
-            float su = u * 2f, sv = v * 2f;
+            float f = Field(_road, u, v, out _);
+            float du = u - (_map.TownCenter.x + 0.5f), dv = v - (_map.TownCenter.y + 0.5f);
+            float r = Mathf.Sqrt(du * du + dv * dv);
+            bool street = f >= 0.3f, plaza = r <= PlazaRadius;
+            if (street || plaza)
+            {
+                if ((!street || f < 0.38f) && (!plaza || r > PlazaRadius - 0.1f)) return Curb;
+                if (plaza && (Mathf.Abs(r - 1.25f) < 0.12f || r < 0.42f)) return MosaicPixel(u, v);
+                return CobblePixel(u, v);
+            }
+
+            float n = ValueNoise(u * 0.22f, v * 0.22f);
+            var c = n > 0.6f ? TownGrassLight : TownGrass;
+            if (Speck(u * 4f, v * 4f, 0.025f, 0.1f, 0.24f)) c = TownTuft;
+            if (Speck(u * 3f, v * 3f, 0.045f, 0.13f, 0.13f))
+                c = Petals[(int)(Hash01(Mathf.FloorToInt(u * 3f) + 7, Mathf.FloorToInt(v * 3f)) * Petals.Length) % Petals.Length];
+            return c;
+        }
+
+        /// <summary>Rounded stones in staggered rows, lit from above, in a darker grout.</summary>
+        static Color32 CobblePixel(float u, float v)
+        {
+            float su = u * 2.4f, sv = v * 2.4f;
             int row = Mathf.FloorToInt(sv);
             if ((row & 1) == 1) su += 0.5f;
             int col = Mathf.FloorToInt(su);
-            float lx = su - col, ly = sv - row;
-            if (lx < 0.07f || ly < 0.07f) return Grout;
-            return Hash01(col, row) < 0.3f ? CobbleAlt : Cobble;
+            float lx = su - col - 0.5f, ly = sv - row - 0.5f;
+            float qx = Mathf.Abs(lx) - 0.3f, qy = Mathf.Abs(ly) - 0.27f;
+            float d = new Vector2(Mathf.Max(qx, 0f), Mathf.Max(qy, 0f)).magnitude + Mathf.Min(Mathf.Max(qx, qy), 0f) - 0.14f;
+            if (d > 0f) return Grout;
+            float h = Hash01(col, row);
+            var c = h < 0.28f ? CobbleAlt : h > 0.82f ? CobbleLight : Cobble;
+            return ly > 0.16f && d < -0.05f ? Color32.Lerp(c, CobbleLight, 0.55f) : c;
+        }
+
+        /// <summary>The plaza's ring and middle: small square setts of warm stone.</summary>
+        static Color32 MosaicPixel(float u, float v)
+        {
+            float su = u * 5f, sv = v * 5f;
+            float lx = su - Mathf.Floor(su), ly = sv - Mathf.Floor(sv);
+            if (lx < 0.14f || ly < 0.14f) return Grout;
+            return Hash01(Mathf.FloorToInt(su) + 3, Mathf.FloorToInt(sv)) < 0.3f ? Color32.Lerp(Mosaic, CobbleLight, 0.4f) : Mosaic;
         }
 
         Color32 WallPixel(float lx, float ly, int cx, int cy)

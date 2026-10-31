@@ -80,7 +80,7 @@ namespace GuildMaster.Town
             transform.position = new Vector3(footprint.center.x, footprint.center.y, 0f);
 
             _renderer = gameObject.AddComponent<SpriteRenderer>();
-            _renderer.sprite = CartoonArt.Building(type, footprint.width, footprint.height);
+            _renderer.sprite = CartoonArt.Building(type, footprint.width, footprint.height, door.x - footprint.xMin);
             _renderer.sortingOrder = CharacterVisual.BaseSortingOrder - Mathf.RoundToInt(footprint.yMin * 8f) + 4;
 
             // Interior drawn underneath; visible when the outside fades (see Update).
@@ -92,6 +92,7 @@ namespace GuildMaster.Town
                 _interior = go.AddComponent<SpriteRenderer>();
                 _interior.sprite = interior;
                 _interior.sortingOrder = World.MapRenderer.DecorOrder + 1;
+                _interior.enabled = false;   // the outside does not fill its footprint (P4-114): shown only while it fades
             }
         }
 
@@ -144,6 +145,7 @@ namespace GuildMaster.Town
         void ApplyColor()
         {
             if (_renderer) _renderer.color = new Color(_tint.r, _tint.g, _tint.b, _alpha);
+            if (_interior) _interior.enabled = _alpha < 0.999f;
         }
 
         /// <summary>

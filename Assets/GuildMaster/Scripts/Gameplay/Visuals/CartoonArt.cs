@@ -7,7 +7,7 @@ namespace GuildMaster.Visuals
     /// <summary>
     /// Map props in the cartoon style of the LAYERLAB character art: flat fills, thick dark
     /// outlines, rounded shapes, drawn from signed-distance shapes at 32 px per cell (anti-aliased).
-    /// Replaces the 16 px pixel art for trees, rocks, nests and buildings.
+    /// Replaces the 16 px pixel art for trees, rocks, nests and buildings (the buildings: CartoonBuildings.cs).
     /// </summary>
     public static partial class CartoonArt
     {
@@ -21,50 +21,111 @@ namespace GuildMaster.Visuals
 
         // ---------------- Canvas ----------------
 
-        /// <summary>Small RGBA canvas with signed-distance shape fills (negative = inside).</summary>
+        /// <summary>
+        /// Small RGBA canvas with signed-distance shape fills (negative = inside). Shapes are given in logical pixels (32 a
+        /// cell); <c>scale</c> paints the picture that many times finer (the buildings, P4-114, to stand as crisp as the
+        /// characters beside them). On such a canvas whole 32×32 tiles, then 8×8 blocks, well outside a shape are skipped and
+        /// ones well inside filled without a look, so its shapes' distances must not grow faster than the true distance (the
+        /// helpers here are exact or under it); the small pictures at scale 1 look at every pixel (the flame's tongue grows
+        /// faster at its tip).
+        /// </summary>
         sealed class Canvas
         {
             public readonly int W, H;
+            readonly int _s, _pw, _ph;
+            readonly bool _cull;
             readonly Color[] _px;
+            const int Tile = 32, Block = 8;
 
-            public Canvas(int w, int h)
+            public Canvas(int w, int h, int scale = 1)
             {
                 W = w; H = h;
-                _px = new Color[w * h];
+                _s = Mathf.Max(1, scale);
+                _pw = w * _s; _ph = h * _s;
+                _px = new Color[_pw * _ph];
+                _cull = _s > 1;
             }
 
             /// <summary>Fills a shape with an outline band of <paramref name="outlinePx"/> just inside the edge.</summary>
             public void Shape(Func<float, float, float> sdf, Color fill, Color outline, float outlinePx)
             {
-                for (int y = 0; y < H; y++)
-                for (int x = 0; x < W; x++)
+                float inv = 1f / _s, o = outlinePx * _s;
+                Blocks(sdf, o, (bx, by, ex, ey, solid) =>
                 {
-                    float d = sdf(x + 0.5f, y + 0.5f);
-                    if (d > 1f) continue;
-                    float cover = Mathf.Clamp01(0.5f - d);             // anti-aliased edge
-                    var c = d > -outlinePx ? outline : fill;
-                    if (outlinePx > 0f && d > -outlinePx - 1f && d <= -outlinePx)  // soften the fill/outline seam
-                        c = Color.Lerp(fill, outline, Mathf.Clamp01(d + outlinePx + 1f));
-                    Blend(x, y, c, cover);
-                }
+                    for (int y = by; y < ey; y++)
+                    for (int x = bx; x < ex; x++)
+                    {
+                        if (solid) { Blend(x, y, fill, 1f); continue; }
+                        float d = sdf((x + 0.5f) * inv, (y + 0.5f) * inv) * _s;
+                        if (d > 1f) continue;
+                        float cover = Mathf.Clamp01(0.5f - d);             // anti-aliased edge
+                        var c = d > -o ? outline : fill;
+                        if (o > 0f && d > -o - 1f && d <= -o)              // soften the fill/outline seam
+                            c = Color.Lerp(fill, outline, Mathf.Clamp01(d + o + 1f));
+                        Blend(x, y, c, cover);
+                    }
+                });
             }
 
             /// <summary>Fills only where the canvas already has paint (e.g. highlights inside a canopy).</summary>
             public void ShapeClipped(Func<float, float, float> sdf, Func<float, float, float> clip, Color fill)
             {
-                for (int y = 0; y < H; y++)
-                for (int x = 0; x < W; x++)
+                float inv = 1f / _s;
+                // The clip is looked at only near the shape (a shape's own distance is under the pair's).
+                Func<float, float, float> both = (x, y) =>
                 {
-                    float d = Mathf.Max(sdf(x + 0.5f, y + 0.5f), clip(x + 0.5f, y + 0.5f));
-                    if (d > 1f) continue;
-                    Blend(x, y, fill, Mathf.Clamp01(0.5f - d));
+                    float d = sdf(x, y);
+                    return d > 16f ? d : Mathf.Max(d, clip(x, y));
+                };
+                Blocks(both, 0f, (bx, by, ex, ey, solid) =>
+                {
+                    for (int y = by; y < ey; y++)
+                    for (int x = bx; x < ex; x++)
+                    {
+                        if (solid) { Blend(x, y, fill, 1f); continue; }
+                        float px = (x + 0.5f) * inv, py = (y + 0.5f) * inv;
+                        float d = sdf(px, py) * _s;
+                        if (d > 1f) continue;
+                        d = Mathf.Max(d, clip(px, py) * _s);
+                        if (d > 1f) continue;
+                        Blend(x, y, fill, Mathf.Clamp01(0.5f - d));
+                    }
+                });
+            }
+
+            /// <summary>
+            /// The parts of the canvas a shape may touch, as (x0, y0, x1, y1, solid) in its pixels: solid when wholly inside,
+            /// more than <paramref name="inner"/> pixels from the edge. Without culling, the whole canvas at once.
+            /// </summary>
+            void Blocks(Func<float, float, float> dist, float inner, Action<int, int, int, int, bool> paint)
+            {
+                if (!_cull) { paint(0, 0, _pw, _ph, false); return; }
+                float inv = 1f / _s;
+                for (int ty = 0; ty < _ph; ty += Tile)
+                for (int tx = 0; tx < _pw; tx += Tile)
+                {
+                    int tex = Mathf.Min(tx + Tile, _pw), tey = Mathf.Min(ty + Tile, _ph);
+                    float tReach = (tex - tx + tey - ty) * 0.36f + 1.5f;   // half the diagonal, and the soft edge
+                    float dt = dist((tx + tex) * 0.5f * inv, (ty + tey) * 0.5f * inv) * _s;
+                    if (dt > tReach) continue;
+                    if (dt < -tReach - inner - 1f) { paint(tx, ty, tex, tey, true); continue; }
+                    for (int by = ty; by < tey; by += Block)
+                    for (int bx = tx; bx < tex; bx += Block)
+                    {
+                        int ex = Mathf.Min(bx + Block, tex), ey = Mathf.Min(by + Block, tey);
+                        float reach = (ex - bx + ey - by) * 0.36f + 1.5f;
+                        float dc = dist((bx + ex) * 0.5f * inv, (by + ey) * 0.5f * inv) * _s;
+                        if (dc > reach) continue;
+                        paint(bx, by, ex, ey, dc < -reach - inner - 1f);
+                    }
                 }
             }
 
             void Blend(int x, int y, Color c, float a)
             {
                 if (a <= 0f) return;
-                int i = y * W + x;
+                int i = y * _pw + x;
+                if (a >= 1f && c.a >= 1f) { _px[i] = c; return; }   // opaque over anything: just the colour
                 var dst = _px[i];
                 float outA = a * c.a + dst.a * (1f - a * c.a);
                 if (outA <= 0f) return;
@@ -74,7 +135,7 @@ namespace GuildMaster.Visuals
 
             public Sprite ToSprite(string key, Vector2 pivot)
             {
-                var tex = new Texture2D(W, H, TextureFormat.RGBA32, false)
+                var tex = new Texture2D(_pw, _ph, TextureFormat.RGBA32, false)
                 {
                     filterMode = FilterMode.Bilinear,
                     wrapMode = TextureWrapMode.Clamp,
@@ -82,7 +143,7 @@ namespace GuildMaster.Visuals
                 };
                 tex.SetPixels(_px);
                 tex.Apply(false, true);
-                var s = Sprite.Create(tex, new Rect(0, 0, W, H), pivot, PixelsPerUnit, 0, SpriteMeshType.FullRect);
+                var s = Sprite.Create(tex, new Rect(0, 0, _pw, _ph), pivot, PixelsPerUnit * _s, 0, SpriteMeshType.FullRect);
                 s.name = key;
                 s_cache[key] = s;
                 return s;
@@ -119,6 +180,43 @@ namespace GuildMaster.Visuals
                 float t = Mathf.Clamp01(((x - x0) * dx + (y - y0) * dy) / Mathf.Max(1e-4f, dx * dx + dy * dy));
                 float px = x0 + dx * t - x, py = y0 + dy * t - y;
                 return Mathf.Sqrt(px * px + py * py) - r;
+            };
+
+        /// <summary>A polygon (any simple one, corners in order), rounded out by <paramref name="r"/> (P4-114: roofs, gables).</summary>
+        static Func<float, float, float> Poly(float r, params Vector2[] v)
+        {
+            int n = v.Length;
+            var px = new float[n];
+            var py = new float[n];
+            var inv = new float[n];   // 1 / the squared length of the edge ending at each corner
+            for (int i = 0, j = n - 1; i < n; j = i, i++)
+            {
+                px[i] = v[i].x; py[i] = v[i].y;
+                inv[i] = 1f / Mathf.Max(1e-6f, (v[j] - v[i]).sqrMagnitude);
+            }
+            return (x, y) =>
+            {
+                float d = (x - px[0]) * (x - px[0]) + (y - py[0]) * (y - py[0]), s = 1f;
+                for (int i = 0, j = n - 1; i < n; j = i, i++)
+                {
+                    float ex = px[j] - px[i], ey = py[j] - py[i], wx = x - px[i], wy = y - py[i];
+                    float t = Mathf.Clamp01((wx * ex + wy * ey) * inv[i]);
+                    float bx = wx - ex * t, by = wy - ey * t;
+                    d = Mathf.Min(d, bx * bx + by * by);
+                    bool c1 = y >= py[i], c2 = y < py[j], c3 = ex * wy > ey * wx;
+                    if (c1 && c2 && c3 || !c1 && !c2 && !c3) s = -s;
+                }
+                return s * Mathf.Sqrt(d) - r;
+            };
+        }
+
+        /// <summary>An endless row of circles every <paramref name="step"/> along y = <paramref name="cy"/> (scalloped shingles, P4-114).</summary>
+        static Func<float, float, float> CircleRow(float x0, float cy, float step, float r)
+            => (x, y) =>
+            {
+                float lx = x - x0;
+                lx -= step * Mathf.Round(lx / step);
+                return Mathf.Sqrt(lx * lx + (y - cy) * (y - cy)) - r;
             };
 
         static Func<float, float, float> Union(params Func<float, float, float>[] shapes)
@@ -483,294 +581,6 @@ namespace GuildMaster.Visuals
             }
             c.Shape(RoundRect(6, 14, 43, 17, 1f), Hex(0x7A5230), woodInk, 1f);
             c.Shape(RoundRect(57, 14, 90, 17, 1f), Hex(0x7A5230), woodInk, 1f);
-            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
-        }
-
-        // ---------------- Buildings ----------------
-
-        public static Sprite Building(Town.BuildingType type, int tilesW, int tilesH)
-        {
-            string key = $"c_building:{type}:{tilesW}x{tilesH}";
-            if (s_cache.TryGetValue(key, out var cached)) return cached;
-            int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
-            var c = new Canvas(w, h);
-            if (type == Town.BuildingType.TrainingGround) return TrainingYard(c, key);
-            if (type == Town.BuildingType.Watchtower) return Watchtower(c, key);
-            if (type == Town.BuildingType.ArrowTower) return ArrowTower(c, key);
-
-            var roof = type switch
-            {
-                Town.BuildingType.TownHall => Hex(0xD9534F),
-                Town.BuildingType.GuildHall => Hex(0x4A7BD0),
-                Town.BuildingType.Blacksmith => Hex(0x6B6F7A),
-                Town.BuildingType.Apothecary => Hex(0x4DB06B),
-                // The guild's facilities (P4-87): a roof colour each and an emblem on the roof.
-                Town.BuildingType.Armory => Hex(0x9B3B2E),
-                Town.BuildingType.ArmorWorkshop => Hex(0x5B7A99),
-                Town.BuildingType.DiningHall => Hex(0xE08A2E),
-                Town.BuildingType.PoisonLab => Hex(0x6FA83A),
-                Town.BuildingType.RuneForge => Hex(0x7B5BD6),
-                Town.BuildingType.FrostAltar => Hex(0x6FBBE0),
-                Town.BuildingType.Dormitory => Hex(0xA0643A),
-                _ => Hex(0xB9854A),
-            };
-            var wall = Hex(0xF3E6C8);
-            float ink = 3.5f;
-            float roofBottom = h * 0.52f;
-
-            // Walls (lower part), with a darker base strip.
-            var walls = RoundRect(6, 2, w - 6, roofBottom + 8, 5f);
-            c.Shape(walls, wall, Ink, ink);
-            c.ShapeClipped(RoundRect(6, 2, w - 6, 12, 3f), (x, y) => walls(x, y) + ink, Hex(0xD8C7A2));
-
-            // Windows and door.
-            int bays = Mathf.Max(2, tilesW - 1);
-            float bayW = (w - 12f) / bays;
-            float doorX = w * 0.5f;
-            for (int i = 0; i < bays; i++)
-            {
-                float cx = 6 + bayW * (i + 0.5f);
-                if (Mathf.Abs(cx - doorX) < bayW * 0.6f) continue;
-                c.Shape(RoundRect(cx - 8, roofBottom - 26, cx + 8, roofBottom - 8, 4f), Hex(0x9ED8F5), Ink, 2.5f);
-                c.Shape(RoundRect(cx - 1, roofBottom - 25, cx + 1, roofBottom - 9, 0.5f), Ink, Ink, 0f);
-            }
-            c.Shape(RoundRect(doorX - 11, 2, doorX + 11, 34, 8f), Hex(0x9A6236), Ink, 3f);
-            c.Shape(Circle(doorX + 5, 18, 2f), Hex(0xF2C94C), Hex(0xF2C94C), 0f);
-
-            // Roof on top with shingle rows.
-            var roofShape = RoundRect(1, roofBottom, w - 1, h - 2, 7f);
-            c.Shape(roofShape, roof, Ink, ink);
-            for (float y = roofBottom + 10; y < h - 8; y += 11)
-            {
-                float yy = y;
-                c.ShapeClipped(RoundRect(4, yy, w - 4, yy + 3, 1.5f), (x, y2) => roofShape(x, y2) + ink, Darker(roof, 0.8f));
-            }
-            c.ShapeClipped(RoundRect(8, h - 14, w - 8, h - 9, 2f), (x, y) => roofShape(x, y) + ink, Lighter(roof, 0.3f));
-            if (type == Town.BuildingType.Blacksmith)
-                c.Shape(RoundRect(w - 26, h - 34, w - 14, h - 2, 2f), Hex(0x8A8E99), Ink, 2.5f);   // chimney
-            if (type == Town.BuildingType.DiningHall)
-                c.Shape(RoundRect(w - 24, h - 30, w - 13, h - 2, 2f), Hex(0xB98A55), Ink, 2.5f);   // kitchen chimney
-            Emblem(c, type, w * 0.5f, (roofBottom + h) * 0.5f);
-            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
-        }
-
-        /// <summary>A round plaque on a facility's roof (P4-87) showing what it does; nothing for the town's own buildings.</summary>
-        static void Emblem(Canvas c, Town.BuildingType type, float cx, float cy)
-        {
-            if (!Town.FacilityRules.IsFacility(type)) return;
-            const float r = 13f;
-            c.Shape(Circle(cx, cy, r), Hex(0xF6E7C1), Ink, 2.5f);
-            var steel = Hex(0xC9CED8);
-            switch (type)
-            {
-                case Town.BuildingType.Armory: // crossed swords
-                    c.Shape(Segment(cx - 7, cy - 7, cx + 7, cy + 7, 1.8f), steel, Ink, 1.2f);
-                    c.Shape(Segment(cx + 7, cy - 7, cx - 7, cy + 7, 1.8f), steel, Ink, 1.2f);
-                    c.Shape(Segment(cx - 7, cy - 3, cx - 3, cy - 7, 1.4f), Hex(0x8A5A30), Ink, 1f);
-                    c.Shape(Segment(cx + 7, cy - 3, cx + 3, cy - 7, 1.4f), Hex(0x8A5A30), Ink, 1f);
-                    break;
-                case Town.BuildingType.ArmorWorkshop: // shield
-                    c.Shape(Union(RoundRect(cx - 7, cy - 2, cx + 7, cy + 8, 2f), Circle(cx, cy - 2, 7f)), Hex(0x5B7A99), Ink, 2f);
-                    c.Shape(Segment(cx, cy - 7, cx, cy + 6, 1.2f), Hex(0xF2C94C), Hex(0xF2C94C), 0f);
-                    break;
-                case Town.BuildingType.DiningHall: // bowl with steam
-                    c.Shape(Union(Ellipse(cx, cy - 2, 9, 5), RoundRect(cx - 9, cy - 2, cx + 9, cy, 1f)), Hex(0xE8C98A), Ink, 2f);
-                    c.Shape(Segment(cx - 3, cy + 3, cx - 3, cy + 8, 1.1f), Hex(0xBFC6D0), Hex(0xBFC6D0), 0f);
-                    c.Shape(Segment(cx + 3, cy + 3, cx + 3, cy + 8, 1.1f), Hex(0xBFC6D0), Hex(0xBFC6D0), 0f);
-                    break;
-                case Town.BuildingType.PoisonLab: // flask with green brew
-                    c.Shape(Union(Circle(cx, cy - 3, 6.5f), RoundRect(cx - 2.5f, cy, cx + 2.5f, cy + 8, 1f)), Hex(0x8BE04A), Ink, 2f);
-                    c.Shape(Circle(cx - 2, cy - 2, 1.4f), Hex(0xD8FFB0), Hex(0xD8FFB0), 0f);
-                    break;
-                case Town.BuildingType.RuneForge: // rune ring
-                    c.Shape(Circle(cx, cy, 8f), Hex(0xB8A2F5), Ink, 2f);
-                    c.Shape(Circle(cx, cy, 4f), Hex(0xF6E7C1), Ink, 1.5f);
-                    c.Shape(Segment(cx, cy - 8, cx, cy + 8, 1f), Hex(0x4A2E9A), Hex(0x4A2E9A), 0f);
-                    break;
-                case Town.BuildingType.FrostAltar: // snowflake
-                    for (int i = 0; i < 3; i++)
-                    {
-                        float a = i * Mathf.PI / 3f;
-                        float dx = Mathf.Cos(a) * 8f, dy = Mathf.Sin(a) * 8f;
-                        c.Shape(Segment(cx - dx, cy - dy, cx + dx, cy + dy, 1.4f), Hex(0x9ED8F5), Hex(0x2B6E9A), 0.8f);
-                    }
-                    break;
-                case Town.BuildingType.Dormitory: // bed
-                    c.Shape(RoundRect(cx - 9, cy - 5, cx + 9, cy + 1, 2f), Hex(0xD9534F), Ink, 1.5f);
-                    c.Shape(RoundRect(cx - 9, cy - 1, cx - 3, cy + 4, 1.5f), Hex(0xFFF6DA), Ink, 1.5f);
-                    c.Shape(RoundRect(cx - 10, cy - 7, cx - 8, cy + 6, 0.8f), Hex(0x8A5A30), Ink, 1f);
-                    break;
-            }
-        }
-
-        /// <summary>
-        /// What the building looks like inside (seen when the outside fades out): plank floor inside
-        /// thick walls, plus a few pieces of furniture per building type. Null for open yards.
-        /// </summary>
-        public static Sprite BuildingInterior(Town.BuildingType type, int tilesW, int tilesH)
-        {
-            if (type is Town.BuildingType.TrainingGround or Town.BuildingType.Watchtower or Town.BuildingType.ArrowTower) return null;
-            string key = $"c_interior:{type}:{tilesW}x{tilesH}";
-            if (s_cache.TryGetValue(key, out var cached)) return cached;
-            int w = tilesW * PixelsPerUnit, h = tilesH * PixelsPerUnit;
-            var c = new Canvas(w, h);
-            var wallBand = Hex(0xC9B48E);
-            var floor = Hex(0xD9A866);
-            // Outer walls, then the plank floor with board lines.
-            var outer = RoundRect(2, 2, w - 2, h - 2, 6f);
-            c.Shape(outer, wallBand, Ink, 3.5f);
-            var room = RoundRect(12, 12, w - 12, h - 14, 3f);
-            c.Shape(room, floor, Darker(wallBand, 0.7f), 2f);
-            for (float y = 22; y < h - 16; y += 12)
-            {
-                float yy = y;
-                c.ShapeClipped(RoundRect(14, yy, w - 14, yy + 1.5f, 0.5f), (x, y2) => room(x, y2) + 2f, Darker(floor, 0.85f));
-            }
-            // Doorway gap in the front wall.
-            c.Shape(RoundRect(w * 0.5f - 11, 0, w * 0.5f + 11, 14, 2f), floor, floor, 0f);
-
-            float cx = w * 0.5f;
-            switch (type)
-            {
-                case Town.BuildingType.TownHall:
-                    c.Shape(RoundRect(cx - 12, 14, cx + 12, h - 30, 3f), Hex(0xC0392B), Darker(Hex(0xC0392B), 0.6f), 2f);   // carpet
-                    c.Shape(RoundRect(cx - 40, h - 44, cx + 40, h - 28, 4f), Hex(0x8A5A30), Ink, 2.5f);                    // long table
-                    for (int i = -1; i <= 1; i++) c.Shape(Circle(cx + i * 26, h - 52, 5f), Hex(0xB07A44), Ink, 2f);       // chairs
-                    break;
-                case Town.BuildingType.GuildHall:
-                    c.Shape(RoundRect(cx - 30, h - 30, cx + 30, h - 16, 2f), Hex(0xB98A55), Ink, 2.5f);                   // quest board
-                    for (int i = 0; i < 4; i++) c.Shape(RoundRect(cx - 26 + i * 14, h - 27, cx - 16 + i * 14, h - 19, 1f), Hex(0xFFF6DA), Ink, 1f);
-                    c.Shape(RoundRect(18, 30, 58, 42, 3f), Hex(0x8A5A30), Ink, 2.5f);                                      // counter
-                    c.Shape(Circle(w - 40, 48, 11f), Hex(0xA56B3A), Ink, 2.5f);                                            // round table
-                    c.Shape(Circle(w - 58, 48, 4.5f), Hex(0xB07A44), Ink, 2f);
-                    c.Shape(Circle(w - 22, 48, 4.5f), Hex(0xB07A44), Ink, 2f);
-                    break;
-                case Town.BuildingType.Blacksmith:
-                    c.Shape(RoundRect(16, h - 42, 44, h - 18, 4f), Hex(0x6B6F7A), Ink, 2.5f);                              // forge
-                    c.Shape(Ellipse(30, h - 30, 8, 6), Hex(0xFF9F3A), Hex(0xFF6B2A), 2f);                                  // fire
-                    c.Shape(Union(RoundRect(w - 52, 36, w - 20, 44, 2f), RoundRect(w - 42, 24, w - 30, 38, 1f)), Hex(0x4A4E57), Ink, 2f);  // anvil
-                    break;
-                case Town.BuildingType.Apothecary:
-                    c.Shape(RoundRect(14, h - 32, w - 14, h - 20, 2f), Hex(0x8A5A30), Ink, 2f);                            // shelf
-                    var bottles = new[] { Hex(0xE74C3C), Hex(0x3498DB), Hex(0x2ECC71), Hex(0xE74C3C), Hex(0x9B59B6) };
-                    for (int i = 0; i < bottles.Length && 20 + i * 12 < w - 20; i++) c.Shape(Circle(22 + i * 12, h - 26, 4f), bottles[i], Ink, 1.5f);
-                    c.Shape(RoundRect(cx - 18, 26, cx + 18, 36, 2f), Hex(0xA56B3A), Ink, 2f);                              // counter
-                    break;
-                // The guild's facilities (P4-87).
-                case Town.BuildingType.Armory:
-                    c.Shape(RoundRect(16, h - 30, w - 16, h - 22, 2f), Hex(0x8A5A30), Ink, 2f);                            // weapon rack
-                    for (float x = 22; x < w - 18; x += 10) c.Shape(Segment(x, h - 44, x, h - 20, 1.6f), Hex(0xC9CED8), Ink, 1f);
-                    break;
-                case Town.BuildingType.ArmorWorkshop:
-                    for (int i = -1; i <= 1; i += 2)
-                        c.Shape(Union(Circle(cx + i * 18, h - 30, 6f), RoundRect(cx + i * 18 - 7, h - 50, cx + i * 18 + 7, h - 34, 3f)), Hex(0x8C9AAE), Ink, 2f);  // armour stands
-                    break;
-                case Town.BuildingType.DiningHall:
-                    c.Shape(RoundRect(cx - 26, 30, cx + 26, 42, 3f), Hex(0xA56B3A), Ink, 2f);                              // long table
-                    c.Shape(RoundRect(18, h - 34, 44, h - 20, 3f), Hex(0x6B6F7A), Ink, 2f);                                // stove
-                    break;
-                case Town.BuildingType.PoisonLab:
-                    c.Shape(RoundRect(14, h - 32, w - 14, h - 20, 2f), Hex(0x8A5A30), Ink, 2f);                            // shelf
-                    for (int i = 0; 22 + i * 12 < w - 20; i++) c.Shape(Circle(22 + i * 12, h - 26, 4f), Hex(0x8BE04A), Ink, 1.5f);
-                    c.Shape(Circle(cx, 34, 8f), Hex(0x4A4E57), Ink, 2f);                                                    // cauldron
-                    break;
-                case Town.BuildingType.RuneForge:
-                    c.Shape(Circle(cx, h * 0.5f, 16f), Hex(0xB8A2F5), Hex(0x4A2E9A), 2f);                                  // rune circle
-                    c.Shape(Circle(cx, h * 0.5f, 9f), floor, Hex(0x4A2E9A), 1.5f);
-                    break;
-                case Town.BuildingType.FrostAltar:
-                    c.Shape(RoundRect(cx - 14, h * 0.5f - 6, cx + 14, h * 0.5f + 8, 3f), Hex(0x9ED8F5), Hex(0x2B6E9A), 2f);  // altar
-                    break;
-                case Town.BuildingType.Dormitory:
-                    for (float x = 20; x < w - 24; x += 22)
-                    {
-                        c.Shape(RoundRect(x, h - 46, x + 16, h - 18, 3f), Hex(0xD9534F), Ink, 2f);                         // beds
-                        c.Shape(RoundRect(x + 2, h - 26, x + 14, h - 20, 2f), Hex(0xFFF6DA), Ink, 1f);
-                    }
-                    break;
-            }
-            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
-        }
-
-        /// <summary>A stone shaft with battlements, a lookout window and a pennant (P4-13).</summary>
-        static Sprite Watchtower(Canvas c, string key)
-        {
-            int w = c.W, h = c.H;
-            var stone = Hex(0xB9BCC6);
-            float shaftW = w * 0.34f;
-            float cx = w * 0.5f;
-            // Shaft, slightly tapered by drawing a wider base block underneath.
-            c.Shape(RoundRect(cx - shaftW * 0.72f, 2, cx + shaftW * 0.72f, h * 0.22f, 4f), Darker(stone, 0.85f), Ink, 3.5f);
-            var shaft = RoundRect(cx - shaftW, h * 0.16f, cx + shaftW, h * 0.74f, 4f);
-            c.Shape(shaft, stone, Ink, 3.5f);
-            // Stone courses.
-            for (float y = h * 0.24f; y < h * 0.70f; y += 13)
-            {
-                float yy = y;
-                c.ShapeClipped(RoundRect(cx - shaftW, yy, cx + shaftW, yy + 2f, 1f), (x, y2) => shaft(x, y2) + 3.5f, Darker(stone, 0.82f));
-            }
-            // Lookout window.
-            c.Shape(RoundRect(cx - 9, h * 0.46f, cx + 9, h * 0.62f, 7f), Hex(0x2B3242), Ink, 2.5f);
-            // Battlemented top: a wider band with three merlons.
-            var top = RoundRect(cx - shaftW * 1.25f, h * 0.70f, cx + shaftW * 1.25f, h * 0.82f, 3f);
-            c.Shape(top, Lighter(stone, 0.12f), Ink, 3.5f);
-            float merlonW = shaftW * 0.5f;
-            for (int i = -1; i <= 1; i++)
-            {
-                float mx = cx + i * shaftW * 0.8f;
-                c.Shape(RoundRect(mx - merlonW * 0.5f, h * 0.81f, mx + merlonW * 0.5f, h * 0.92f, 2f), Lighter(stone, 0.12f), Ink, 3f);
-            }
-            // Pennant on the middle merlon.
-            c.Shape(RoundRect(cx - 1.5f, h * 0.88f, cx + 1.5f, h - 3, 1f), Hex(0x8A5A30), Ink, 2f);
-            c.Shape(RoundRect(cx + 1.5f, h - 14, cx + 18, h - 4, 2f), Hex(0xD9534F), Ink, 2.5f);
-            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
-        }
-
-        /// <summary>A timber tower on four legs with a railed platform, a peaked roof and an arrow slit (P4-113).</summary>
-        static Sprite ArrowTower(Canvas c, string key)
-        {
-            int w = c.W, h = c.H;
-            var timber = Hex(0xB07A44);
-            float cx = w * 0.5f;
-            float legW = w * 0.06f, spread = w * 0.3f;
-            // Legs, splayed a little, with a cross brace.
-            c.Shape(RoundRect(cx - spread - legW, 2, cx - spread + legW, h * 0.56f, 2f), Darker(timber, 0.85f), Ink, 3f);
-            c.Shape(RoundRect(cx + spread - legW, 2, cx + spread + legW, h * 0.56f, 2f), Darker(timber, 0.85f), Ink, 3f);
-            c.Shape(RoundRect(cx - spread, h * 0.22f, cx + spread, h * 0.27f, 1.5f), Darker(timber, 0.75f), Ink, 2f);
-            // The platform: a plank box with a slit to shoot through.
-            var box = RoundRect(cx - spread * 1.25f, h * 0.48f, cx + spread * 1.25f, h * 0.74f, 3f);
-            c.Shape(box, timber, Ink, 3.5f);
-            for (float x = cx - spread * 1.25f + 10; x < cx + spread * 1.25f - 4; x += 10)
-            {
-                float xx = x;
-                c.ShapeClipped(RoundRect(xx, h * 0.48f, xx + 1.5f, h * 0.74f, 0.5f), (px, py) => box(px, py) + 3.5f, Darker(timber, 0.8f));
-            }
-            c.Shape(RoundRect(cx - 2.5f, h * 0.54f, cx + 2.5f, h * 0.68f, 1.5f), Hex(0x2B2420), Ink, 1.5f);
-            // Peaked roof.
-            c.Shape(RoundRect(cx - spread * 1.4f, h * 0.73f, cx + spread * 1.4f, h * 0.82f, 3f), Hex(0x9B3B2E), Ink, 3f);
-            c.Shape(RoundRect(cx - spread * 0.9f, h * 0.81f, cx + spread * 0.9f, h * 0.9f, 3f), Hex(0x9B3B2E), Ink, 3f);
-            c.Shape(RoundRect(cx - spread * 0.4f, h * 0.89f, cx + spread * 0.4f, h - 4, 3f), Hex(0x9B3B2E), Ink, 3f);
-            return c.ToSprite(key, new Vector2(0.5f, 0.5f));
-        }
-
-        static Sprite TrainingYard(Canvas c, string key)
-        {
-            int w = c.W, h = c.H;
-            var yard = RoundRect(3, 3, w - 3, h - 3, 6f);
-            c.Shape(yard, Hex(0xDDBB82), Hex(0x8A5A30), 4f);
-            // Fence posts along the border and a couple of training dummies.
-            for (float x = 10; x < w - 6; x += 22)
-            {
-                c.Shape(RoundRect(x - 3, 2, x + 3, 12, 2f), Hex(0xB07A44), Ink, 2f);
-                c.Shape(RoundRect(x - 3, h - 12, x + 3, h - 2, 2f), Hex(0xB07A44), Ink, 2f);
-            }
-            for (int i = 0; i < 2; i++)
-            {
-                float cx = w * (0.33f + 0.34f * i), cy = h * 0.45f;
-                c.Shape(RoundRect(cx - 2, cy - 18, cx + 2, cy + 6, 1f), Hex(0x8A5A30), Ink, 1.5f);
-                c.Shape(Ellipse(cx, cy + 4, 9, 11), Hex(0xE8C98A), Ink, 2.5f);
-                c.Shape(Circle(cx, cy + 20, 6), Hex(0xE8C98A), Ink, 2.5f);
-            }
             return c.ToSprite(key, new Vector2(0.5f, 0.5f));
         }
     }

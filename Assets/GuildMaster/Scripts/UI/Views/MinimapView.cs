@@ -156,7 +156,7 @@ namespace GuildMaster.UI
             TileType.Water => CartoonGroundPainter.PaletteOf(region).Water,
             TileType.Mountain => new Color32(0x80, 0x7F, 0x8C, 255),
             TileType.Road => new Color32(0xDE, 0xB4, 0x72, 255),
-            TileType.TownFloor => new Color32(0xD6, 0xCE, 0xC0, 255),
+            TileType.TownFloor => new Color32(0x86, 0xD4, 0x58, 255),   // the town's kept grass (P4-114)
             TileType.Wall => new Color32(0x55, 0x5A, 0x64, 255),
             TileType.Gate => new Color32(0xB5, 0x7C, 0x45, 255),
             _ => new Color32(0, 0, 0, 255),

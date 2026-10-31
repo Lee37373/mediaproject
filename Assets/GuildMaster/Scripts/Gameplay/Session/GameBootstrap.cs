@@ -162,6 +162,10 @@ namespace GuildMaster.Session
             defences.Init(world, treasury, fog);
             Services.Register(defences);
             save.Register(defences);
+            // The town's lamp posts, bushes, flower beds and the like (P4-114): pictures only, set out from the map.
+            var decor = AddSystem<TownDecor>();
+            decor.Init(world, town);
+            Services.Register(decor);
 
             // --- Units, ecosystem, quests ---
             var pool = Services.Get<PoolService>();
