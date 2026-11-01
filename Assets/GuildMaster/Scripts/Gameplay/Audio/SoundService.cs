@@ -10,6 +10,7 @@ using GuildMaster.Notifications;
 using GuildMaster.Player;
 using GuildMaster.Quests;
 using GuildMaster.Recruitment;
+using GuildMaster.Seasons;
 using GuildMaster.Session;
 using GuildMaster.Units;
 using UnityEngine;
@@ -26,7 +27,12 @@ namespace GuildMaster.Audio
         public const string LevelUp = "level_up", Heal = "heal", QuestComplete = "quest_complete";
         public const string RecruitSuccess = "recruit_success", RecruitFail = "recruit_fail", EventCard = "event_card";
         public const string DayStart = "day_start", NightFall = "night_fall";
+        /// <summary>An event card's result (2026-11-01): a success or a good turn, a failure or a bad one, or plain.</summary>
+        public const string CardSuccess = "card_success", CardFail = "card_fail", CardResult = "card_result";
         public const string TownMusic = "bgm_town_loop";
+
+        /// <summary>The season's day or night tune (2026-11-01), e.g. "bgm_winter_night".</summary>
+        public static string Music(Season season, bool day) => $"bgm_{season.ToString().ToLowerInvariant()}_{(day ? "day" : "night")}";
     }
 
     /// <summary>Which sound an event makes, how loud, and how often it may repeat (pure, tested).</summary>
@@ -48,6 +54,28 @@ namespace GuildMaster.Audio
         /// <summary>Gold in jingles up, gold out clinks down; nothing for zero.</summary>
         public static string GoldKey(int amount) => amount > 0 ? SoundKeys.CoinGain : amount < 0 ? SoundKeys.CoinSpend : null;
 
+        /// <summary>The sound of an event card's result: like the recruit talk's, success and failure each have one.</summary>
+        public static string CardKey(CardTone tone) => EventCards.IsGood(tone) ? SoundKeys.CardSuccess
+            : EventCards.IsBad(tone) ? SoundKeys.CardFail : SoundKeys.CardResult;
+
+        /// <summary>The sound a clip is a take of: "hit_sword_v3" → "hit_sword"; other names are their own sound.</summary>
+        public static string TakeOf(string clipName)
+        {
+            if (string.IsNullOrEmpty(clipName)) return clipName;
+            int i = clipName.LastIndexOf("_v", System.StringComparison.Ordinal);
+            if (i <= 0 || i + 2 >= clipName.Length) return clipName;
+            for (int k = i + 2; k < clipName.Length; k++) if (!char.IsDigit(clipName[k])) return clipName;
+            return clipName.Substring(0, i);
+        }
+
+        /// <summary>Day music from 6:00, night music from 20:00: the same edges as the clock's night and the bells.</summary>
+        public const int DayFrom = 6, NightFrom = 20;
+
+        public static bool IsDayHour(int hour) => hour >= DayFrom && hour < NightFrom;
+
+        /// <summary>The tune for this season and hour (user request 2026-11-01: "낮과 밤 계절에 따른 bgm").</summary>
+        public static string MusicKey(Season season, int hour) => SoundKeys.Music(season, IsDayHour(hour));
+
         /// <summary>Morning bells at 6:00, evening bells at 20:00 (the clock's day/night edges).</summary>
         public static string HourKey(int hour) => hour == 6 ? SoundKeys.DayStart : hour == 20 ? SoundKeys.NightFall : null;
 
@@ -60,6 +88,7 @@ namespace GuildMaster.Audio
             SoundKeys.CoinGain or SoundKeys.CoinSpend => 0.35f,
             SoundKeys.Notify => 1.2f,
             SoundKeys.RecruitSuccess or SoundKeys.RecruitFail or SoundKeys.QuestComplete => 1.5f,
+            SoundKeys.CardSuccess or SoundKeys.CardFail or SoundKeys.CardResult => 1.0f,
             _ => 0.15f,
         };
 
@@ -71,6 +100,84 @@ namespace GuildMaster.Audio
             SoundKeys.Click or SoundKeys.Open or SoundKeys.Close => 0.6f,
             _ => 0.85f,
         };
+    }
+
+    /// <summary>
+    /// One tune giving way to the next (user decision 2026-11-01: fade out, a short pause, fade in — two tunes never
+    /// play over each other). Real seconds, so a paused game or x8 speed changes music the same. Pure, tested.
+    /// </summary>
+    public class MusicFader
+    {
+        public const float FadeOutSeconds = 3f, PauseSeconds = 1.5f, FadeInSeconds = 3f;
+
+        enum Phase { Silent, In, Playing, Out, Pause }
+        Phase _phase = Phase.Silent;
+        float _pause;
+
+        /// <summary>The tune sounding now (null in the pause between two tunes).</summary>
+        public string Current { get; private set; }
+        /// <summary>The tune waiting for the current one to fade out.</summary>
+        public string Pending { get; private set; }
+        /// <summary>Volume 0..1 before the player's music volume.</summary>
+        public float Level { get; private set; }
+
+        /// <summary>Asks for a tune. Returns the tune to start right now, or null (it starts later, or is already on).</summary>
+        public string Request(string key, bool instant = false)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+            if (key == Current && Pending == null) return null;
+            if (key == Pending) return null;
+            if (instant || Current == null && _phase != Phase.Pause)
+            {
+                Current = key;
+                Pending = null;
+                Level = instant ? 1f : 0f;
+                _phase = instant ? Phase.Playing : Phase.In;
+                return key;
+            }
+            if (key == Current) // changed its mind while fading out: back up
+            {
+                Pending = null;
+                _phase = Phase.In;
+                return null;
+            }
+            Pending = key;
+            if (_phase != Phase.Pause) _phase = Phase.Out;
+            return null;
+        }
+
+        /// <summary>Moves the fade on. Returns a tune to start now (after the pause), else null.</summary>
+        public string Tick(float dt)
+        {
+            switch (_phase)
+            {
+                case Phase.In:
+                    Level = Mathf.Min(1f, Level + dt / FadeInSeconds);
+                    if (Level >= 1f) _phase = Phase.Playing;
+                    break;
+                case Phase.Out:
+                    Level = Mathf.Max(0f, Level - dt / FadeOutSeconds);
+                    if (Level <= 0f)
+                    {
+                        Current = null;
+                        _pause = PauseSeconds;
+                        _phase = Phase.Pause;
+                    }
+                    break;
+                case Phase.Pause:
+                    _pause -= dt;
+                    if (_pause <= 0f && Pending != null)
+                    {
+                        Current = Pending;
+                        Pending = null;
+                        Level = 0f;
+                        _phase = Phase.In;
+                        return Current;
+                    }
+                    break;
+            }
+            return null;
+        }
     }
 
     /// <summary>Remembers when each sound last played.</summary>
@@ -98,7 +205,9 @@ namespace GuildMaster.Audio
     }
 
     /// <summary>
-    /// Sound effects and the town music (P4-9, 2026-10-31). Clips are the generated set under Resources/Audio; when they
+    /// Sound effects and the music (P4-9, 2026-10-31). The music follows the season and day/night (2026-11-01): eight
+    /// tunes, changed at 6:00, 20:00 and when a season turns by <see cref="MusicFader"/>; the old town loop stands in for
+    /// a missing one. Clips are the generated set under Resources/Audio; when they
     /// are missing the game is simply silent. World sounds only play for what the player can see (fog and camera), with
     /// a minimum gap per sound so fights and x8 speed don't turn into noise. Volumes come from <see cref="GameSettings"/>.
     /// </summary>
@@ -108,16 +217,32 @@ namespace GuildMaster.Audio
         const float MusicLevel = 0.55f;
 
         readonly Dictionary<string, AudioClip> _clips = new();
+        /// <summary>
+        /// Takes of one sound: "hit_sword", "hit_sword_v2", ... (2026-11-01, recorded sounds come in several takes);
+        /// a play picks one at random, so repeated hits don't sound like a machine.
+        /// </summary>
+        readonly Dictionary<string, List<AudioClip>> _takes = new();
         readonly SoundThrottle _throttle = new();
         readonly List<AudioSource> _voices = new();
         AudioSource _music;
+        readonly MusicFader _fader = new();
+        float _musicCheck;
         int _next;
+
+        /// <summary>The tune sounding now (null between two tunes).</summary>
+        public string MusicKey => _fader.Current;
 
         public bool HasClips => _clips.Count > 0;
 
         public void Init()
         {
-            foreach (var clip in Resources.LoadAll<AudioClip>("Audio/Sfx")) _clips[clip.name] = clip;
+            foreach (var clip in Resources.LoadAll<AudioClip>("Audio/Sfx"))
+            {
+                _clips[clip.name] = clip;
+                string key = SoundRules.TakeOf(clip.name);
+                if (!_takes.TryGetValue(key, out var list)) _takes[key] = list = new List<AudioClip>();
+                list.Add(clip);
+            }
             foreach (var clip in Resources.LoadAll<AudioClip>("Audio/Music")) _clips[clip.name] = clip;
             if (FindAnyObjectByType<AudioListener>() == null) gameObject.AddComponent<AudioListener>();
             for (int i = 0; i < Voices; i++)
@@ -132,12 +257,7 @@ namespace GuildMaster.Audio
             _music.loop = true;
             _music.spatialBlend = 0f;
             GameSettings.VolumeChanged += ApplyVolumes;
-            ApplyVolumes();
-            if (_clips.TryGetValue(SoundKeys.TownMusic, out var town))
-            {
-                _music.clip = town;
-                _music.Play();
-            }
+            PickMusic(instant: true);
 
             EventBus.Subscribe<UnitDamagedEvent>(OnDamaged);
             EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
@@ -151,6 +271,7 @@ namespace GuildMaster.Audio
             EventBus.Subscribe<QuestCompletedEvent>(OnQuestCompleted);
             EventBus.Subscribe<RecruitmentEndedEvent>(OnRecruitEnded);
             EventBus.Subscribe<EventCardDrawnEvent>(OnEventCard);
+            EventBus.Subscribe<EventCardResolvedEvent>(OnEventCardResolved);
             EventBus.Subscribe<NotificationPostedEvent>(OnNotification);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
         }
@@ -170,19 +291,50 @@ namespace GuildMaster.Audio
             EventBus.Unsubscribe<QuestCompletedEvent>(OnQuestCompleted);
             EventBus.Unsubscribe<RecruitmentEndedEvent>(OnRecruitEnded);
             EventBus.Unsubscribe<EventCardDrawnEvent>(OnEventCard);
+            EventBus.Unsubscribe<EventCardResolvedEvent>(OnEventCardResolved);
             EventBus.Unsubscribe<NotificationPostedEvent>(OnNotification);
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
         }
 
         void ApplyVolumes()
         {
-            if (_music != null) _music.volume = GameSettings.MusicVolume * MusicLevel;
+            if (_music != null) _music.volume = GameSettings.MusicVolume * MusicLevel * _fader.Level;
+        }
+
+        /// <summary>Asks for the tune of the season and hour now.</summary>
+        void PickMusic(bool instant = false)
+        {
+            int hour = Services.TryGet<GameClock>(out var clock) ? clock.Hour : 8;
+            string want = SoundRules.MusicKey(SeasonService.Now, hour);
+            if (!_clips.ContainsKey(want)) want = SoundKeys.TownMusic;
+            if (!_clips.ContainsKey(want)) return;
+            StartMusic(_fader.Request(want, instant));
+            ApplyVolumes();
+        }
+
+        void StartMusic(string key)
+        {
+            if (key == null || !_clips.TryGetValue(key, out var clip)) return;
+            _music.Stop();
+            _music.clip = clip;
+            _music.Play();
+        }
+
+        void Update()
+        {
+            // A loaded or new game may start in another season or at night: look again now and then.
+            _musicCheck -= Time.unscaledDeltaTime;
+            if (_musicCheck <= 0f) { _musicCheck = 1f; PickMusic(); }
+            StartMusic(_fader.Tick(Time.unscaledDeltaTime));
+            if (_fader.Current == null && _music.isPlaying) _music.Stop();
+            ApplyVolumes();
         }
 
         /// <summary>Plays a clip once (throttled per clip). Combat sounds get a slight random pitch.</summary>
         public void Play(string key, float volume = 1f)
         {
-            if (string.IsNullOrEmpty(key) || !_clips.TryGetValue(key, out var clip)) return;
+            if (string.IsNullOrEmpty(key) || !_takes.TryGetValue(key, out var takes) || takes.Count == 0) return;
+            var clip = takes[Random.Range(0, takes.Count)];
             float sfx = GameSettings.SfxVolume;
             if (sfx <= 0.001f || !_throttle.Allow(key, Time.unscaledTime)) return;
             var src = FreeVoice();
@@ -229,7 +381,12 @@ namespace GuildMaster.Audio
         void OnGold(GoldFlowEvent e) => Play(SoundRules.GoldKey(e.Amount), 0.8f);
         void OnQuestCompleted(QuestCompletedEvent e) => Play(SoundKeys.QuestComplete);
         void OnEventCard(EventCardDrawnEvent e) => Play(SoundKeys.EventCard);
-        void OnHour(HourPassedEvent e) => Play(SoundRules.HourKey(e.Hour), 0.8f);
+        void OnEventCardResolved(EventCardResolvedEvent e) { if (e.Card != null) Play(SoundRules.CardKey(e.Card.Tone)); }
+        void OnHour(HourPassedEvent e)
+        {
+            Play(SoundRules.HourKey(e.Hour), 0.8f);
+            PickMusic(); // 6:00 / 20:00, and the first hour of a new season
+        }
 
         void OnRecruitEnded(RecruitmentEndedEvent e)
         {

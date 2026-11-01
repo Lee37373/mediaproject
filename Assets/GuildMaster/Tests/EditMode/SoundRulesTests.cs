@@ -1,5 +1,7 @@
 using GuildMaster.Adventurers;
 using GuildMaster.Audio;
+using GuildMaster.Incidents;
+using GuildMaster.Seasons;
 using NUnit.Framework;
 
 namespace GuildMaster.Tests
@@ -39,6 +41,68 @@ namespace GuildMaster.Tests
             Assert.That(t.Allow(SoundKeys.HitSword, 10.2f), Is.True);
             Assert.That(t.Allow(SoundKeys.Notify, 0f), Is.True);
             Assert.That(t.Allow(SoundKeys.Notify, 0.5f), Is.False);
+        }
+
+        [Test]
+        public void Music_FollowsTheSeason_AndDayOrNight()
+        {
+            Assert.That(SoundRules.MusicKey(Season.Spring, 6), Is.EqualTo("bgm_spring_day"), "day from the morning bells");
+            Assert.That(SoundRules.MusicKey(Season.Summer, 19), Is.EqualTo("bgm_summer_day"));
+            Assert.That(SoundRules.MusicKey(Season.Autumn, 20), Is.EqualTo("bgm_autumn_night"), "night from the evening bells");
+            Assert.That(SoundRules.MusicKey(Season.Winter, 3), Is.EqualTo("bgm_winter_night"));
+        }
+
+        [Test]
+        public void Music_FadesOut_Pauses_ThenFadesIn_NeverTwoAtOnce()
+        {
+            var f = new MusicFader();
+            Assert.That(f.Request("a", instant: true), Is.EqualTo("a"));
+            Assert.That(f.Level, Is.EqualTo(1f));
+            Assert.That(f.Request("b"), Is.Null, "waits for a to fade out");
+            f.Tick(MusicFader.FadeOutSeconds / 2);
+            Assert.That(f.Current, Is.EqualTo("a"));
+            Assert.That(f.Level, Is.EqualTo(0.5f).Within(0.01f));
+            f.Tick(MusicFader.FadeOutSeconds / 2);
+            Assert.That(f.Current, Is.Null, "silent pause");
+            Assert.That(f.Tick(MusicFader.PauseSeconds / 2), Is.Null);
+            Assert.That(f.Tick(MusicFader.PauseSeconds / 2 + 0.01f), Is.EqualTo("b"), "b starts after the pause");
+            Assert.That(f.Level, Is.EqualTo(0f));
+            f.Tick(MusicFader.FadeInSeconds);
+            Assert.That(f.Level, Is.EqualTo(1f));
+        }
+
+        [Test]
+        public void Music_ChangingItsMind_MidFade()
+        {
+            var f = new MusicFader();
+            f.Request("a", instant: true);
+            f.Request("b");
+            f.Tick(1f);
+            Assert.That(f.Request("a"), Is.Null);
+            float low = f.Level;
+            f.Tick(1f);
+            Assert.That(f.Level, Is.GreaterThan(low), "back up, no pause");
+            Assert.That(f.Pending, Is.Null);
+            Assert.That(f.Request("a"), Is.Null, "already on");
+        }
+
+        [Test]
+        public void Takes_GroupUnderTheirSound()
+        {
+            Assert.That(SoundRules.TakeOf("hit_sword"), Is.EqualTo("hit_sword"));
+            Assert.That(SoundRules.TakeOf("hit_sword_v3"), Is.EqualTo("hit_sword"));
+            Assert.That(SoundRules.TakeOf("bgm_winter_night"), Is.EqualTo("bgm_winter_night"));
+            Assert.That(SoundRules.TakeOf("ui_v"), Is.EqualTo("ui_v"), "no number, not a take");
+        }
+
+        [Test]
+        public void EventCardResults_SoundLikeTheirTone()
+        {
+            Assert.That(SoundRules.CardKey(CardTone.Success), Is.EqualTo(SoundKeys.CardSuccess));
+            Assert.That(SoundRules.CardKey(CardTone.Good), Is.EqualTo(SoundKeys.CardSuccess));
+            Assert.That(SoundRules.CardKey(CardTone.Failure), Is.EqualTo(SoundKeys.CardFail));
+            Assert.That(SoundRules.CardKey(CardTone.Bad), Is.EqualTo(SoundKeys.CardFail));
+            Assert.That(SoundRules.CardKey(CardTone.Neutral), Is.EqualTo(SoundKeys.CardResult));
         }
     }
 }

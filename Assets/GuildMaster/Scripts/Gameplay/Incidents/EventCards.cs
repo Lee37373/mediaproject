@@ -29,6 +29,12 @@ namespace GuildMaster.Incidents
     public enum WandererOffer { None, Plain, Welcomed }
 
     /// <summary>
+    /// How a card's result reads (user request 2026-11-01: success green, failure red, with a sound each). A rolled choice
+    /// succeeds or fails; a sure one is good, bad or neither by what it did.
+    /// </summary>
+    public enum CardTone { Neutral, Success, Failure, Good, Bad }
+
+    /// <summary>
     /// What one result of a choice does. Numbers only — the code applies them (EventCardService); the model, when it
     /// is used, only describes the situation. Text fields are templates: {A}, {B} and with a particle {A이} {A을}
     /// {A와} {A은} (the particle follows the name).
@@ -130,6 +136,10 @@ namespace GuildMaster.Incidents
         public string ResultText;
 
         public string Title => EventCards.Format(Def.Title, A?.Name, B?.Name);
+
+        /// <summary>How the result reads (Neutral until it is resolved).</summary>
+        public CardTone Tone => Resolved && Chosen >= 0 && Chosen < Def.Choices.Count
+            ? EventCards.ToneOf(Def.Choices[Chosen], Succeeded) : CardTone.Neutral;
         public string Label(int i) => EventCards.Format(Def.Choices[i].Label, A?.Name, B?.Name);
     }
 
@@ -266,6 +276,62 @@ namespace GuildMaster.Incidents
             if (c.Failure != null) parts.Add($"성공 확률 {Math.Round(ChanceOf(c, a, b) * 100)}%");
             return string.Join(" · ", parts);
         }
+
+        // ---------------- How a result reads ----------------
+
+        /// <summary>
+        /// What an effect did for the guild, as (good, bad) — both ≥ 0. Gold in, less stress or fatigue, warmer relations
+        /// and standing, better gear, a good rumor and glad feelings count as good; their opposites as bad.
+        /// </summary>
+        public static (float good, float bad) Worth(CardEffect e)
+        {
+            float good = 0f, bad = 0f;
+            void Add(float v) { if (v > 0f) good += v; else bad -= v; }
+            if (e == null) return (0f, 0f);
+            static float Feel(Emotion m) => m switch
+            {
+                Emotion.Happy or Emotion.Excited => 1f,
+                Emotion.Angry or Emotion.Sad or Emotion.Strained => -1f,
+                _ => 0f,
+            };
+            Add(e.Gold / 50f);
+            Add(-(e.StressA + e.StressB) / 5f);
+            Add(-e.StressAll * 3f / 5f);
+            Add(-e.FatigueA / 10f);
+            Add(e.RelationAB / 5f);
+            Add(e.Opinion / 2f);
+            Add(e.ResidentOpinion / 5f);
+            if (e.GearA) good += 2f;
+            Add(e.RumorTone);
+            Add(Feel(e.EmotionA));
+            Add(Feel(e.EmotionB));
+            Add(2f * Feel(e.EmotionAll));
+            return (good, bad);
+        }
+
+        public static CardTone ToneOf(CardChoice c, bool succeeded)
+        {
+            if (c == null) return CardTone.Neutral;
+            if (c.Failure != null) return succeeded ? CardTone.Success : CardTone.Failure;
+            var (good, bad) = Worth(c.Success);
+            // A trade (150G for everyone's nerves) is neither: only a clear gain or a clear loss is coloured.
+            if (good >= 1f && bad >= 1f) return CardTone.Neutral;
+            return good >= 0.5f ? CardTone.Good : bad >= 0.5f ? CardTone.Bad : CardTone.Neutral;
+        }
+
+        /// <summary>The line over the result: "✔ 성공" and the like; empty for a neutral one.</summary>
+        public static string Badge(CardTone t) => t switch
+        {
+            CardTone.Success => "✔ 성공",
+            CardTone.Failure => "✘ 실패",
+            CardTone.Good => "▲ 좋은 결과",
+            CardTone.Bad => "▼ 아쉬운 결과",
+            _ => "",
+        };
+
+        /// <summary>Green for a success or a good result, red for a failure or a bad one.</summary>
+        public static bool IsGood(CardTone t) => t == CardTone.Success || t == CardTone.Good;
+        public static bool IsBad(CardTone t) => t == CardTone.Failure || t == CardTone.Bad;
 
         // ---------------- Text ----------------
 

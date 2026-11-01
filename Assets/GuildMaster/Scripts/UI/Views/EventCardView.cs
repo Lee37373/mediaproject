@@ -24,7 +24,8 @@ namespace GuildMaster.UI
         public override string Title => "사건 카드";
         protected override float RefreshInterval => 0.25f;
 
-        Text _cardTitle, _narration, _cast, _result, _footer;
+        Text _cardTitle, _narration, _cast, _resultHead, _result, _footer;
+        Image _resultBox;
         readonly List<(Button button, Text hint)> _choices = new();
         Button _later, _ok;
         DrawnCard _card;
@@ -55,7 +56,13 @@ namespace GuildMaster.UI
                 _choices.Add((button, hint));
             }
 
-            _result = UIBuilder.Label(body, "", 17, TextAnchor.UpperLeft, UITheme.Good).Size(-1, 70);
+            // The result in a tinted box with a big ✔ 성공 / ✘ 실패 line (2026-11-01): green good, red bad.
+            _resultBox = UIBuilder.Panel(body, "Result", new Color(0f, 0f, 0f, 0f));
+            _resultBox.Size(-1, 96);
+            _resultHead = UIBuilder.Label(_resultBox.transform, "", 22, TextAnchor.UpperLeft, UITheme.Good, FontStyle.Bold);
+            _resultHead.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -6), new Vector2(-24, 30));
+            _result = UIBuilder.Label(_resultBox.transform, "", 17, TextAnchor.UpperLeft);
+            _result.rectTransform.Stretch(12, 12, 38, 6);
             _result.verticalOverflow = VerticalWrapMode.Overflow;
 
             var actions = UIBuilder.Row(body, 36, 10);
@@ -125,8 +132,7 @@ namespace GuildMaster.UI
                     : why != null ? UIBuilder.Colored(why, UITheme.Bad) : odds;
             }
 
-            _result.text = _card.Resolved ? _card.ResultText : "";
-            _result.color = _card.Resolved && _card.Expired ? UITheme.Warn : UITheme.Good;
+            ShowResult();
             _ok.gameObject.SetActive(_card.Resolved);
             _later.gameObject.SetActive(!_card.Resolved);
             if (!_card.Resolved && clock != null)
@@ -135,6 +141,27 @@ namespace GuildMaster.UI
                 _footer.text = $"약 {Mathf.CeilToInt(left)}시간 안에 정하지 않으면 '{_card.Label(_card.Def.Choices.IndexOf(_card.Def.DefaultChoice))}' 쪽으로 흘러갑니다.";
             }
             else _footer.text = "";
+        }
+
+        void ShowResult()
+        {
+            if (!_card.Resolved)
+            {
+                _resultBox.gameObject.SetActive(false);
+                return;
+            }
+            _resultBox.gameObject.SetActive(true);
+            var tone = _card.Tone;
+            Color c = EventCards.IsGood(tone) ? UITheme.Good : EventCards.IsBad(tone) ? UITheme.Bad : UITheme.Text;
+            string head = EventCards.Badge(tone);
+            if (_card.Expired) head = (head.Length > 0 ? head + "  " : "") + UIBuilder.Colored("(시간이 지나 저절로 정해짐)", UITheme.Warn);
+            _resultHead.text = head;
+            _resultHead.color = c;
+            _result.text = _card.ResultText;
+            _result.color = tone == CardTone.Neutral ? UITheme.Text : Color.Lerp(c, Color.white, 0.35f);
+            _resultBox.color = tone == CardTone.Neutral ? new Color(1f, 1f, 1f, 0.05f) : new Color(c.r, c.g, c.b, 0.16f);
+            // No head line for a plain result: the text moves up.
+            _result.rectTransform.Stretch(12, 12, head.Length > 0 ? 38 : 10, 6);
         }
 
         string CastLine()
