@@ -13,8 +13,8 @@ namespace GuildMaster.Adventurers
     /// <summary>
     /// Hunting on the guild's own initiative, with no quest (P4-37). Members gather at the gate,
     /// walk out as a band (user request 2026-09-20), kill what <see cref="FreeHunt.CanTake"/>
-    /// allows and bring the loot home. Anything out of their league is left alone and walked away
-    /// from — but whatever hits them first is still fought.
+    /// allows and bring the loot home. Anything none of them could take is left alone and walked away
+    /// from — but whatever hits one of them is fought by them all (P4-121).
     /// </summary>
     public class FreeHuntState : State<Adventurer>
     {
@@ -23,11 +23,20 @@ namespace GuildMaster.Adventurers
         const float SearchInterval = 0.6f;
         /// <summary>Seconds between "too strong" remarks, so backing off is not a chatterbox.</summary>
         const float BackOffCooldown = 20f;
+        /// <summary>
+        /// Seconds the band walks the leg it turned onto from a monster before it turns from that one again (P4-121: it
+        /// turned every survey, 0.6 s, while the monster stayed in sight — back and forth on the spot).
+        /// </summary>
+        const float BackOffHold = 5f;
+        /// <summary>Cells past a monster's sight the band keeps out of when it would rather not be noticed.</summary>
+        const float AvoidMargin = 3f;
         /// <summary>A known den this close counts as "we are standing in their territory".</summary>
         const float NestNearRadius = 12f;
 
         /// <summary>Surprises on the way to one spot before the band gives up on it and picks another.</summary>
         const int ReconsiderAfterSurprises = 3;
+        /// <summary>Scouting legs before the leader thinks again about a den to make for (one it has just found, say).</summary>
+        const int ScoutLegsPerLook = 3;
 
         float _searchTimer;
         float _roamTimer;
@@ -61,6 +70,23 @@ namespace GuildMaster.Adventurers
         int _correctionsAtAim;
         /// <summary>Times the ground turned out worse than the plan on the way to this spot.</summary>
         int _surprises;
+
+        // ---- Aimed afresh every leg (P4-121) ----
+        /// <summary>The leader's goal — a den or a watchtower — or null while scouting, which has no spot: each leg is picked from where the band is.</summary>
+        Vector2? _goal;
+        /// <summary>The den <see cref="_goal"/> is, looked at again every leg: kept only while the band could still take it.</summary>
+        Nest _goalNest;
+        bool _needGoal;
+        int _scoutLegs;
+        /// <summary>The way the last leg went: scouting goes on that way rather than back and forth.</summary>
+        Vector2 _heading;
+        /// <summary>A spot that went wrong (could not be walked to), kept clear of for a few legs.</summary>
+        Vector2? _avoid;
+        int _avoidLegs;
+        Unit _backedOffFrom;
+        float _backOffUntil;
+        readonly ExplorationRoute.LegView _view = new();
+        static readonly System.Collections.Generic.List<Unit> Nearby = new();
         /// <summary>Legs walked this trip (debug: <see cref="Session.DebugCommands.ExploreReport"/>).</summary>
         public int LegsWalked { get; private set; }
         public Vector2 Leg => _leg;
@@ -82,6 +108,7 @@ namespace GuildMaster.Adventurers
             _crowd.Clear();
             _surprises = 0;
             LegsWalked = 0;
+            ForgetTheWay();
             _correctionsAtAim = Owner.Mover.RouteCorrections;
             // Out here the band plans with what the guild has seen and fixes the route as it learns
             // the ground (P4-64); in town and on quests the walkers keep the old omniscient plan.
@@ -126,6 +153,7 @@ namespace GuildMaster.Adventurers
             _nestNearby = 0;
             _nestHere = null;
             _crowd.Clear();
+            ForgetTheWay();
             _correctionsAtAim = Owner.Mover.RouteCorrections;
             Owner.Mover.UnknownToMe = ExplorationRoute.KnowledgeOf(Services.TryGet<Fog.FogOfWar>(out var fog) ? fog : null);
             CountBand(Owner);
@@ -151,7 +179,7 @@ namespace GuildMaster.Adventurers
         bool IsLeader => _band == null || _band.Leader == Owner;
 
         /// <summary>Worth attacking: one we can handle (P4-43: nothing is spared any more).</summary>
-        bool Huntable(Unit u)
+        internal bool Huntable(Unit u)
             => u is Monster m && m.IsAlive && m.Def != null
                && FreeHunt.CanTake(BandAgainst(m.Def), _bandHp, FoeAgainst(m.Def, m.Stats),
                    FreeHunt.ExpectedEnemies(_enemies, m.Def, _nestNearby) + CrowdOf(m.Def));
@@ -199,8 +227,83 @@ namespace GuildMaster.Adventurers
             return FreeHunt.ExpectedDenCount(intel.SpeciesOf(n), rec.LastCount, since, growth);
         }
 
-        /// <summary>What may be fought at all: our own prey, plus anything that has just hit us.</summary>
-        bool Allowed(Unit u) => Huntable(u) || Owner.WasRecentlyAttackedBy(u);
+        /// <summary>
+        /// What may be fought at all: our own prey, anything that has just hit us, and anything fighting one of ours — the
+        /// rest pitch in (P4-121, user report 2026-11-02: one member fought while the others called it "not one for us"
+        /// and walked off; this filter kept out the comrade rule <see cref="Adventurer.HandleCombat"/> has for it, P4-42).
+        /// </summary>
+        bool Allowed(Unit u) => Huntable(u) || Owner.WasRecentlyAttackedBy(u) || FightingOneOfUs(u);
+
+        /// <summary>
+        /// A monster fighting another guild member, or one a member of our band has taken on — seen, or heard close by (as
+        /// the combat code hears a comrade). Not one that is merely coming at us: that is still walked away from until it
+        /// strikes (P4-37).
+        /// </summary>
+        bool FightingOneOfUs(Unit u)
+        {
+            if (u is not Monster m || !m.IsAlive) return false;
+            bool onAComrade = m.CombatEngagement?.Target is Adventurer { IsGuildMember: true, IsAlive: true } comrade && comrade != Owner;
+            bool takenOn = !onAComrade && TakenOnByTheBand(m);
+            if (!onAComrade && !takenOn) return false;
+            return Owner.CanSee(m) || Owner.HearsFightingAComrade(m)
+                   || takenOn && Adventurer.HearComrades && (m.Position - Owner.Position).sqrMagnitude <= Adventurer.ComradeCryRadius * Adventurer.ComradeCryRadius;
+        }
+
+        /// <summary>One of our band other than us is fighting it.</summary>
+        bool TakenOnByTheBand(Unit m)
+        {
+            if (_band == null) return false;
+            foreach (var member in _band.Members)
+                if (member != Owner && member != null && member.IsAlive && member.Engage.Target == m) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Too strong for every one of the band, each as it judges (a newcomer by itself, P4-99): the band keeps clear of
+        /// it. A priest leading newcomers could take nothing alone and turned the band from slimes its ranger hunts.
+        /// </summary>
+        bool TooStrongForUs(Monster m)
+        {
+            if (Huntable(m)) return false;
+            if (_band == null) return true;
+            foreach (var member in _band.Members)
+                if (member != Owner && member != null && member.IsAlive && member.Fsm.Current == member.FreeHuntState && member.FreeHuntState.Huntable(m))
+                    return false;
+            return true;
+        }
+
+        /// <summary>Whether this member, as it judges, could take on what lives at a known den (with its neighbours that would join, P4-104b).</summary>
+        internal bool CouldTake(GuildIntel intel, Nest n)
+        {
+            var s = intel.SpeciesOf(n);
+            // A region lord's lair is gone to on its quest, not on a whim (P4-83): it is far beyond a den's danger.
+            if (s == null || intel.KnownLordAt(n) != null) return false;
+            // With the known dens next door that would pile in, and in known deep woods only a fight well within
+            // the band's means (P4-104b: bands took a den at a time and died to the zone, or blind in the woods).
+            int foes = FreeHunt.ExpectedEnemies(1, s, ExpectedAt(intel, n)) + AreaRisk.ExtraFoesAround(s, n.WorldPosition, n);
+            float share = AreaRisk.KnownDeep(n.WorldPosition) ? DeepWoodRules.HuntLossShare : 1f;
+            return FreeHunt.CanTake(BandAgainst(s), _bandHp, FoeAgainst(s, FreeHunt.StatsOf(s, n.BirthLevel)), foes, share);
+        }
+
+        /// <summary>A known den with someone in it that none of the band could take on (as <see cref="TooStrongForUs"/>).</summary>
+        bool DenTooStrongForUs(GuildIntel intel, Nest n)
+        {
+            if (ExpectedAt(intel, n) <= 0 || CouldTake(intel, n)) return false;
+            if (_band == null) return true;
+            foreach (var member in _band.Members)
+                if (member != Owner && member != null && member.IsAlive && member.Fsm.Current == member.FreeHuntState && member.FreeHuntState.CouldTake(intel, n))
+                    return false;
+            return true;
+        }
+
+        /// <summary>One of the band other than us is in a fight: the band does not walk off from it.</summary>
+        bool BandFighting()
+        {
+            if (_band == null) return false;
+            foreach (var member in _band.Members)
+                if (member != Owner && member != null && member.IsAlive && member.Engage.Target != null) return true;
+            return false;
+        }
 
         /// <summary>The two filters above as delegates, made once (P5-2).</summary>
         System.Func<Unit, bool> _huntable, _allowed;
@@ -263,28 +366,23 @@ namespace GuildMaster.Adventurers
             }
 
             // Exploring is walked a leg at a time (P4-64, user request 2026-09-23): the band commits
-            // about 18 cells towards its spot, reads the ground it can see, and aims again — and
-            // whenever the terrain it discovers forces the walk to redraw its route, it re-aims at
-            // once instead of trudging on along a plan made of guesses.
-            var spot = Spot(a);
-            if (Reached(a, spot))
+            // about 18 cells, reads the ground it can see, and aims again — and whenever the terrain
+            // it discovers forces the walk to redraw its route, it re-aims at once instead of trudging
+            // on along a plan made of guesses. Every leg is aimed afresh from where the band stands,
+            // what it sees and how it is doing (P4-121, user intent 2026-11-02).
+            if (_goal is { } goal && Reached(a, goal))
             {
-                ClimbTowerAt(a, spot);
-                spot = PickSpot();
-                _surprises = 0;
+                ClimbTowerAt(a, goal);
+                DropGoal();
             }
             bool surprised = a.Mover.RouteCorrections != _correctionsAtAim;
             if (a.Mover.IsMoving && !surprised) return;
             _roamTimer -= dt;
             if (_roamTimer > 0f) return;
             _roamTimer = GameRandom.Shared.Range(1f, 2.5f);
-            if (surprised && ++_surprises >= ReconsiderAfterSurprises)
-            {
-                // The way there keeps turning out worse than it looked: somewhere else, then.
-                spot = PickSpot(spot);
-                _surprises = 0;
-            }
-            AimLeg(a, spot);
+            // The way there keeps turning out worse than it looked: somewhere else, then.
+            if (surprised && ++_surprises >= ReconsiderAfterSurprises) DropGoal(_goal ?? _leg);
+            AimLeg(a);
         }
 
         /// <summary>
@@ -307,25 +405,91 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>
-        /// Walks the next leg towards <paramref name="spot"/> (P4-64). A leg that cannot be reached
-        /// even by guesswork counts as a surprise, so the band tries another heading and eventually
-        /// another spot.
+        /// Walks the next leg (P4-64): towards the goal, or — scouting — whichever way looks best from here (P4-121). Either
+        /// way it is aimed with what the band sees and how it stands now (<see cref="LookAround"/>). A leg that cannot be
+        /// reached even by guesswork counts as a surprise, so the band tries another heading and eventually another goal.
         /// </summary>
-        void AimLeg(Adventurer a, Vector2 spot)
+        void AimLeg(Adventurer a)
         {
             var world = Services.Get<WorldService>();
             float caution = RouteChoice.ForParty(a);
-            _leg = ExplorationRoute.NextLeg(world, a.Mover.UnknownToMe, a.Position, spot, caution, _scouting);
+            var goal = Goal(a);
+            var view = LookAround(a, world);
+            _leg = goal is { } g
+                ? ExplorationRoute.NextLeg(world, a.Mover.UnknownToMe, a.Position, g, caution, _scouting, view)
+                : ExplorationRoute.ScoutLeg(world, a.Mover.UnknownToMe, a.Position, caution, view);
             _correctionsAtAim = a.Mover.RouteCorrections;
+            // Where the band is headed, for a member out of formation to make for (scouting: the leader's leg).
+            if (_band != null && IsLeader)
+            {
+                _band.Spot = goal ?? _leg;
+                _band.HasSpot = true;
+            }
             // The band walks the leader's route (P4-63): its nerve decides how wide of the woods it goes.
-            if (a.Mover.SetDestination(_leg, 1f, caution)) { LegsWalked++; return; }
+            var step = _leg - a.Position;
+            if (step.sqrMagnitude > 1f && a.Mover.SetDestination(_leg, 1f, caution))
+            {
+                LegsWalked++;
+                if (goal == null) _scoutLegs++;
+                _heading = step.normalized;
+                if (_avoidLegs > 0 && --_avoidLegs == 0) _avoid = null;
+                return;
+            }
             // Somewhere else, not the same den again (P4-80: the best den was picked straight back,
             // and the band tried the same unwalkable leg until a scouting roll took it elsewhere).
-            if (++_surprises >= ReconsiderAfterSurprises)
-            {
-                PickSpot(spot);
-                _surprises = 0;
-            }
+            if (++_surprises >= ReconsiderAfterSurprises) DropGoal(goal ?? _leg);
+        }
+
+        /// <summary>
+        /// What the band takes into account for this leg (P4-121): its reach and how worn it is, the way it was going, and
+        /// what to keep clear of — monsters any of it sees that none of it could take (unless one is already fighting one
+        /// of us: that is everyone's fight), dens the guild knows it could not, and a spot that just went wrong.
+        /// </summary>
+        ExplorationRoute.LegView LookAround(Adventurer a, WorldService world)
+        {
+            var v = _view;
+            v.Town = world.TownCenterWorld;
+            v.Reach = _reach;
+            v.Heading = _heading;
+            v.Strain = BandStrain(a);
+            v.Rng = GameRandom.Shared;
+            v.Avoid.Clear();
+            UnitRegistry.Collect(a.Position, a.Stats.SightRadius + FreeHunt.AllyRadius, Nearby);
+            foreach (var u in Nearby)
+                if (u is Monster m && m.IsAlive && SeenByBand(a, m) && TooStrongForUs(m) && !FightingOneOfUs(m))
+                    v.Avoid.Add((m.Position, m.Stats.SightRadius + AvoidMargin));
+            if (Services.TryGet<GuildIntel>(out var intel))
+                foreach (var n in intel.KnownNests)
+                    if (n != _goalNest && Vector2.Distance(n.WorldPosition, a.Position) <= ExplorationRoute.LegLength * 2f + NestNearRadius
+                        && DenTooStrongForUs(intel, n))
+                        v.Avoid.Add((n.WorldPosition, NestNearRadius));
+            if (_avoid is { } spot) v.Avoid.Add((spot, ExplorationRoute.LegLength * 0.6f));
+            return v;
+        }
+
+        /// <summary>In sight of us or of anyone in the band.</summary>
+        bool SeenByBand(Adventurer a, Unit u)
+        {
+            if (a.CanSee(u)) return true;
+            if (_band == null) return false;
+            foreach (var member in _band.Members)
+                if (member != a && member != null && member.IsAlive && member.CanSee(u)) return true;
+            return false;
+        }
+
+        /// <summary>How worn the band is (<see cref="FreeHunt.Strain"/>): its time out, its fullest bag and its most hurt.</summary>
+        float BandStrain(Adventurer a)
+        {
+            int loot = a.Data.LootCount;
+            float hp = a.HpRatio;
+            if (_band != null)
+                foreach (var member in _band.Members)
+                {
+                    if (member == null || !member.IsAlive) continue;
+                    loot = Mathf.Max(loot, member.Data.LootCount);
+                    hp = Mathf.Min(hp, member.HpRatio);
+                }
+            return FreeHunt.Strain(AdvCtx.Clock.TotalHours - _startHour, loot, hp);
         }
 
         /// <summary>
@@ -408,124 +572,131 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>
-        /// Leaves before a monster we cannot handle notices us (user decision). One that is already
-        /// on us is not avoided — <see cref="Adventurer.HandleCombat"/> fights it and
-        /// <see cref="Adventurer.CheckRetreat"/> pulls us out if it goes badly.
+        /// Leaves before a monster none of us could handle notices us (user decision) — once, when it comes into sight and
+        /// the way we are walking leads up to it: the next leg is aimed with it in view (<see cref="LookAround"/>), and walked.
+        /// One already on us is not avoided, nor one fighting any of us, and the band does not leave while one of it is in
+        /// a fight (P4-121, user report 2026-11-02: "not one for us", said over a member's fight) —
+        /// <see cref="Adventurer.HandleCombat"/> fights it and <see cref="Adventurer.CheckRetreat"/> pulls us out if it goes badly.
         /// </summary>
         bool BackOffFromSomethingTooStrong(Adventurer a)
         {
-            if (!IsLeader) return false; // the band turns as one; followers keep formation
+            if (!IsLeader || BandFighting()) return false; // the band turns as one; followers keep formation
             var threat = UnitRegistry.FindNearest(a.Position, a.Stats.SightRadius,
-                u => u is Monster m && m.IsAlive && !Huntable(m) && a.CanSee(u));
+                u => u is Monster m && m.IsAlive && a.CanSee(u) && TooStrongForUs(m) && !FightingOneOfUs(m));
             if (threat == null || a.WasRecentlyAttackedBy(threat)) return false;
-            AimLeg(a, PickSpot(threat.Position));
+            // Just turned from it: the band walks the leg it turned onto (P4-121: it used to turn every survey).
+            if (threat == _backedOffFrom && Time.time < _backOffUntil) return false;
+            // Walking away from it already.
+            if (a.Mover.IsMoving && !LeadsUpTo(a.Position, a.Mover.Destination, threat)) return false;
+            _backedOffFrom = threat;
+            _backOffUntil = Time.time + BackOffHold;
+            // Whatever we were making for lies past it: think again, away from it.
+            if (_goal is { } goal && ExplorationRoute.ClosestPass(a.Position, goal, threat.Position) < threat.Stats.SightRadius + AvoidMargin)
+                DropGoal(threat.Position);
+            AimLeg(a);
             if (Time.time >= _nextBackOffLine)
             {
                 _nextBackOffLine = Time.time + BackOffCooldown;
-                a.Say("저건 우리가 건드릴 상대가 아니야.");
+                a.Say(_band != null && _band.Members.Count >= 2 ? "저건 우리가 건드릴 상대가 아니야." : "저건 나 혼자 건드릴 상대가 아니야.");
             }
             return true;
         }
 
-        /// <summary>Where the band is headed (the leader's choice), or our own when hunting alone.</summary>
-        Vector2 Spot(Adventurer a)
+        /// <summary>A walk from <paramref name="from"/> to <paramref name="to"/> takes us nearer it, and within its notice.</summary>
+        static bool LeadsUpTo(Vector2 from, Vector2 to, Unit threat)
         {
-            if (_band != null && _band.HasSpot) return _band.Spot;
-            return PickSpot();
+            float pass = ExplorationRoute.ClosestPass(from, to, threat.Position);
+            return pass < Vector2.Distance(from, threat.Position) - 1f && pass < threat.Stats.SightRadius + AvoidMargin;
+        }
+
+        /// <summary>A fresh start: no goal, no way taken yet, nothing being kept clear of.</summary>
+        void ForgetTheWay()
+        {
+            _goal = null;
+            _goalNest = null;
+            _needGoal = true;
+            _scoutLegs = 0;
+            _heading = Vector2.zero;
+            _avoid = null;
+            _avoidLegs = 0;
+            _backedOffFrom = null;
+        }
+
+        /// <summary>Gives up the goal (reached, or no longer worth it); the leader thinks again at the next leg, clear of <paramref name="avoid"/>.</summary>
+        void DropGoal(Vector2? avoid = null)
+        {
+            _goal = null;
+            _goalNest = null;
+            _needGoal = true;
+            _surprises = 0;
+            if (avoid == null) return;
+            _avoid = avoid;
+            _avoidLegs = ReconsiderAfterSurprises;
         }
 
         /// <summary>
-        /// Next place to walk: a known den the band can handle, else open country. The den list comes
-        /// from <see cref="GuildIntel"/>, so a hunt only heads for what the guild has actually seen —
-        /// walking into the fog is scouting, not knowledge. Followers never choose; the leader does.
+        /// What this leg makes for: the leader's goal, looked at again every leg (P4-121) — the den picked stays the goal only
+        /// while the band could still take it as it stands now (hurt, fewer, the den grown back), or the leader thinks
+        /// again; while scouting it thinks again every few legs, for a den found on the way. Null while scouting: each
+        /// leg is then picked from where the band is. A member out of formation makes for wherever the band is headed.
         /// </summary>
-        Vector2 PickSpot(Vector2? avoid = null)
+        Vector2? Goal(Adventurer a)
         {
-            if (!IsLeader && _band.HasSpot) return _band.Spot;
+            if (!IsLeader) return _band.HasSpot ? _band.Spot : (Vector2?)null;
+            if (_goalNest != null && !(Services.TryGet<GuildIntel>(out var intel)
+                                       && WorthGoingTo(intel, _goalNest, a, Services.Get<WorldService>().TownCenterWorld, null, out _)))
+                DropGoal();
+            if (_needGoal || _goal == null && _scoutLegs >= ScoutLegsPerLook) ChooseGoal(a);
+            return _goal;
+        }
 
-            var a = Owner;
-            var world = Services.Get<WorldService>();
-            var town = world.TownCenterWorld;
-            var rng = GameRandom.Shared;
-            var chosen = town;
+        /// <summary>
+        /// The leader's choice: a known den the band can handle, else a watchtower to climb, else scouting. The den list
+        /// comes from <see cref="GuildIntel"/>, so a hunt only heads for what the guild has actually seen — walking into
+        /// the fog is scouting, not knowledge.
+        /// </summary>
+        void ChooseGoal(Adventurer a)
+        {
+            _needGoal = false;
+            _scoutLegs = 0;
+            _goal = null;
+            _goalNest = null;
+            var town = Services.Get<WorldService>().TownCenterWorld;
 
             // The best known den this band can take — most EXP for the walk (P4-40) — unless it is
             // the one we are standing at (whatever is left there is out of sight) or we go scouting.
-            bool found = false;
-            if (!rng.Chance(FreeHunt.ScoutChance) && Services.TryGet<GuildIntel>(out var intel))
+            if (!GameRandom.Shared.Chance(FreeHunt.ScoutChance) && Services.TryGet<GuildIntel>(out var intel))
             {
                 float bestScore = 0f;
                 foreach (var n in intel.KnownNests)
                 {
-                    var s = intel.SpeciesOf(n);
-                    int count = ExpectedAt(intel, n);
-                    if (s == null || count <= 0) continue;
-                    // A region lord's lair is gone to on its quest, not on a whim (P4-83): it is far beyond a den's danger.
-                    if (intel.KnownLordAt(n) != null) continue;
-                    if (Vector2.Distance(n.WorldPosition, town) > _reach) continue;
                     if (Vector2.Distance(n.WorldPosition, a.Position) < SpotReached * 2f) continue;
-                    if (avoid != null && Vector2.Distance(n.WorldPosition, avoid.Value) <= _reach * 0.3f) continue;
-                    // With the known dens next door that would pile in, and in known deep woods only a fight well within
-                    // the band's means (P4-104b: bands took a den at a time and died to the zone, or blind in the woods).
-                    int foes = FreeHunt.ExpectedEnemies(1, s, count) + AreaRisk.ExtraFoesAround(s, n.WorldPosition, n);
-                    bool deep = AreaRisk.KnownDeep(n.WorldPosition);
-                    if (deep && Guild.GuildLaws.KeepToTrails) continue; // the guild's rule keeps hunts out of the deep woods (P4-112)
-                    float share = deep ? DeepWoodRules.HuntLossShare : 1f;
-                    if (!FreeHunt.CanTake(BandAgainst(s), _bandHp, FoeAgainst(s, FreeHunt.StatsOf(s, n.BirthLevel)), foes, share)) continue;
-                    float score = FreeHunt.DenScore(s, count, Vector2.Distance(n.WorldPosition, a.Position), n.BirthLevel);
-                    if (score <= bestScore) continue;
+                    if (!WorthGoingTo(intel, n, a, town, _avoid, out float score) || score <= bestScore) continue;
                     bestScore = score;
-                    chosen = n.WorldPosition;
-                    found = true;
+                    _goalNest = n;
+                    _goal = n.WorldPosition;
                 }
             }
+            _scouting = _goalNest == null;
 
             // A ruined watchtower the guild knows and nobody has climbed yet (P4-105c): the scouts make for it first — from its
             // top the land round is seen at once.
-            if (!found && Services.TryGet<Places.PlaceVisits>(out var visits)
-                       && visits.TowerToClimb(a.Position, _reach, avoid, _reach * 0.3f) is { } tower)
-                chosen = tower.WorldPosition;
-            else if (!found)
-            {
-                // Scouting: uniform in distance from town, so the near rings get walked too, and
-                // among the tries the one with the least explored ground around it (P4-64) — the
-                // point of a scouting leg is to put eyes on country nobody has seen.
-                var fog = Services.TryGet<Fog.FogOfWar>(out var f) ? f : null;
-                float bestUnseen = -1f;
-                for (int attempt = 0; attempt < 12; attempt++)
-                {
-                    float angle = rng.Range(0f, Mathf.PI * 2f);
-                    var p = town + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * FreeHunt.ScoutDistance(rng.Value, _reach);
-                    // P4-81: a reach into the outer land can be wider than the map is from the town.
-                    p = new Vector2(Mathf.Clamp(p.x, 2f, world.Grid.Width - 3f), Mathf.Clamp(p.y, 2f, world.Map.SurfaceHeight - 3f));
-                    var cell0 = GridMap.WorldToCell(p);
-                    // An unseen cell is a fine place to walk to; only known-blocked ground is moved off.
-                    if (!ExplorationRoute.Unseen(fog, cell0))
-                    {
-                        if (!world.Grid.TryFindNearestWalkable(cell0, 3, out cell0)) continue;
-                        p = GridMap.CellToWorld(cell0);
-                    }
-                    // Not fog the ground seen round it walls in, though (P4-80).
-                    if (ExplorationRoute.Unseen(fog, cell0) && !ExplorationRoute.OpensOut(world.Grid, a.Mover.UnknownToMe, cell0)) continue;
-                    if (world.Grid.IsInTown(cell0)) continue;
-                    // Not into deep woods it knows of (P4-103): a scout sees a cell or two in there, and is ambushed for it.
-                    if (fog != null && fog.IsExploredRaw(cell0) && world.Grid.IsDeep(cell0)) continue;
-                    if (avoid != null && Vector2.Distance(p, avoid.Value) < _reach * 0.3f) continue;
-                    float unseen = fog == null ? 0f : 1f - fog.ExploredFraction(p, 10f);
-                    if (unseen <= bestUnseen) continue;
-                    bestUnseen = unseen;
-                    chosen = p;
-                    if (unseen >= 0.99f) break; // nothing there is known: no need to look further
-                }
-            }
-            _scouting = !found;
+            if (_scouting && Services.TryGet<Places.PlaceVisits>(out var visits)
+                          && visits.TowerToClimb(a.Position, _reach, _avoid, _reach * 0.3f) is { } tower)
+                _goal = tower.WorldPosition;
+        }
 
-            if (_band != null)
-            {
-                _band.Spot = chosen;
-                _band.HasSpot = true;
-            }
-            return chosen;
+        /// <summary>A known den worth the walk for this band as it stands now, and how much (<see cref="FreeHunt.DenScore"/>).</summary>
+        bool WorthGoingTo(GuildIntel intel, Nest n, Adventurer a, Vector2 town, Vector2? avoid, out float score)
+        {
+            score = 0f;
+            int count = ExpectedAt(intel, n);
+            if (count <= 0 || Vector2.Distance(n.WorldPosition, town) > _reach) return false;
+            if (avoid != null && Vector2.Distance(n.WorldPosition, avoid.Value) <= _reach * 0.3f) return false;
+            if (Guild.GuildLaws.KeepToTrails && AreaRisk.KnownDeep(n.WorldPosition)) return false; // the guild's rule keeps hunts out of the deep woods (P4-112)
+            if (!CouldTake(intel, n)) return false;
+            score = FreeHunt.DenScore(intel.SpeciesOf(n), count, Vector2.Distance(n.WorldPosition, a.Position), n.BirthLevel);
+            return score > 0f;
         }
     }
 }

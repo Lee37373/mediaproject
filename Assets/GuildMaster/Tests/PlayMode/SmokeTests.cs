@@ -4799,6 +4799,85 @@ namespace GuildMaster.Tests
         }
 
         [UnityTest]
+        public IEnumerator AHuntingBand_FightsForItsOwn_AndTurnsFromWhatNoneOfItCanTake_Once()
+        {
+            // P4-121 (user report 2026-11-02): one member fought while the others said "저건 우리가 건드릴 상대가 아니야" and walked
+            // off — the hunt's fight filter kept out the comrade rule — and with that monster in sight the leader drew a new
+            // spot every survey, back and forth on the spot.
+            yield return Boot();
+            var lines = new System.Collections.Generic.List<string>();
+            Action<AdventurerSpeechEvent> heard = e => lines.Add($"{e.Adventurer.Data.name}: {e.Text}");
+            EventBus.Subscribe(heard);
+            DebugCommands.Invulnerable(true, false); // no blow lands, but the monsters still pick their targets
+            try
+            {
+                var master = MasterOnOpenGround();
+                Assert.That(master, Is.Not.Null, "open ground for the test");
+                var p = master.Position + new Vector2(0f, 6f);
+                master.transform.position = p + new Vector2(-14f, 0f);
+                var bands = Services.Get<HuntBandService>();
+                var leader = Roster.Members.First(a => a.Data.cls == AdventurerClass.Warrior);
+                var follower = Roster.Members.First(a => a.Data.cls == AdventurerClass.Ranger);
+                // Just the two of them (P4-51: nobody resting is invited along).
+                foreach (var other in Roster.Members.Where(a => a.IsAlive && a != leader && a != follower)) other.ChangeState(other.RestState);
+                leader.ChangeState(leader.FreeHuntState);
+                follower.ChangeState(follower.FreeHuntState);
+                yield return null;
+                var band = bands.BandOf(leader);
+                Assert.That(bands.BandOf(follower), Is.SameAs(band));
+                band.MusterUntilHour = 0f;
+                yield return null;
+                foreach (var (a, at) in new[] { (leader, p), (follower, p + new Vector2(3f, 0f)) })
+                {
+                    a.Mover.Stop();
+                    a.transform.position = at;
+                }
+
+                // A slime king from the edge of the map comes at them: neither could take it on, and both fight it.
+                var king = SpawnMonster("slime_king", follower.Position + new Vector2(3f, 0f), level: MonsterLevel.BirthLevel(1f));
+                Assert.That(king, Is.Not.Null);
+                Assert.That(leader.FreeHuntState.Huntable(king) || follower.FreeHuntState.Huntable(king), Is.False, "out of their league");
+                bool leaderFought = false, followerFought = false;
+                float farthest = 0f;
+                float until = Time.realtimeSinceStartup + 8f;
+                while (Time.realtimeSinceStartup < until && !(leaderFought && followerFought))
+                {
+                    leaderFought |= leader.Engage.Target == king;
+                    followerFought |= follower.Engage.Target == king;
+                    farthest = Mathf.Max(farthest, Vector2.Distance(leader.Position, follower.Position));
+                    yield return null;
+                }
+                Assert.That((leaderFought, followerFought), Is.EqualTo((true, true)),
+                    $"one's fight is the band's — king on {king.CurrentTarget?.name}, lines: {string.Join(" / ", lines)}");
+                Assert.That(lines.Any(l => l.Contains("건드릴 상대가 아니야")), Is.False, "nobody calls it not theirs: " + string.Join(" / ", lines));
+                Assert.That(farthest, Is.LessThan(PartyTactics.Leash), "and nobody walks off");
+                king.Perish();
+                leader.Engage.Clear();
+                follower.Engage.Clear();
+
+                // Something none of them could take, minding its own business on the way they walk: they turn from it, once.
+                yield return WaitFor(() => leader.Mover.IsMoving && leader.Engage.Target == null, 10f);
+                Assume.That(leader.Mover.IsMoving, "the band walks on");
+                var ahead = (leader.Mover.Destination - leader.Position).normalized;
+                var slime = SpawnMonster("slime", leader.Position + ahead * 6f, level: MonsterLevel.BirthLevel(1f));
+                Assert.That(slime, Is.Not.Null);
+                Assert.That(slime.Def.aggressiveToHumans, Is.False, "it does not start a fight");
+                int legsBefore = leader.FreeHuntState.LegsWalked;
+                float startDistance = Vector2.Distance(leader.Position, slime.Position);
+                yield return new WaitForSeconds(4f);
+                int turns = leader.FreeHuntState.LegsWalked - legsBefore;
+                Assert.That(turns, Is.LessThanOrEqualTo(2), "it turns away once and walks that way, not every survey");
+                Assert.That(Vector2.Distance(leader.Position, slime.Position), Is.GreaterThan(startDistance), "away from it");
+                Assert.That(leader.Engage.Target, Is.Not.EqualTo(slime), "and leaves it alone");
+            }
+            finally
+            {
+                EventBus.Unsubscribe(heard);
+                DebugCommands.Invulnerable(false);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator WithAnEmptyBoard_MembersHuntOnTheirOwn_AndLeaveWhatTheyCannotTakeAlone()
         {
             // P4-37: an empty quest board used to mean standing in the plaza all day.
