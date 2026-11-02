@@ -89,7 +89,10 @@ namespace GuildMaster.Data
                 m.maxHp = hp; m.attack = atk; m.defense = def; m.attackRange = range; m.attackCooldown = cd;
                 m.moveSpeed = speed; m.sightRadius = sight; m.danger = danger;
                 m.aggressiveToHumans = aggressive;
-                m.nestCapacity = cap; m.growthPerHour = growth; m.initialPopulation = initial;
+                // More monsters (user decision 2026-11-02): den size, starting count and breeding ×1.5 (Ecosystem.MonsterAbundance).
+                m.nestCapacity = global::GuildMaster.Ecosystem.MonsterAbundance.Scaled(cap);
+                m.growthPerHour = global::GuildMaster.Ecosystem.MonsterAbundance.ScaledGrowth(growth);
+                m.initialPopulation = Mathf.Min(m.nestCapacity, global::GuildMaster.Ecosystem.MonsterAbundance.Scaled(initial));
                 m.expValue = exp;
                 m.biomes.AddRange(biomes);
                 db.monsters.Add(m);

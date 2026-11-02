@@ -56,6 +56,8 @@ namespace GuildMaster.Ecosystem
         {
             IsLair = true;
             Lord = lord;
+            // A lair keeps the guard count the lords were tuned against (2026-11-02: other dens grew ×1.5).
+            Capacity = MonsterAbundance.Unscaled(Capacity);
             name = $"Nest {NestId} (lair of {lord.id})";
         }
 
