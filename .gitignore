@@ -104,3 +104,6 @@ InitTestScene*.unity*
 
 # Balance measurement runs (P5-1): local CSV output only
 /BalanceLogs/
+
+# Working files from Claude sessions (sound candidates, previews, slides, drafts): not part of the game (user request 2026-11-02)
+/Claude outputs/
