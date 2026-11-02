@@ -230,7 +230,8 @@ namespace GuildMaster.Tests
             foreach (var id in new[] { "slime", "stone_slime", "skull" })
             {
                 var s = M(id);
-                Assert.That(s.nestCapacity, Is.LessThanOrEqualTo(8), $"{id} nest grew in size again");
+                // 2026-11-02 (user decision): every den ×1.5 on purpose (Ecosystem.MonsterAbundance); beyond that is "grew again".
+                Assert.That(s.nestCapacity, Is.LessThanOrEqualTo(GuildMaster.Ecosystem.MonsterAbundance.Scaled(8)), $"{id} nest grew in size again");
                 // Hours from three left (or two in a nest of six) until the den is full again.
                 int pop = s.nestCapacity >= 8 ? 3 : 2, hours = 0;
                 float acc = 0f;

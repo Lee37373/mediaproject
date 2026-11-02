@@ -174,6 +174,8 @@ namespace GuildMaster.Adventurers
             if (Services.TryGet<GuildParties>(out var parties)
                 && (parties.FollowsALeader(a) && HuntBandService.SameFooting(a, parties.PartyOf(a).Leader) && !a.IsNewcomer
                     || parties.OutingUnfinished(a) || parties.MembersGettingReady(a))) { _decisionTimer = 2f; return; }
+            // The alarm bell rung from a watchtower (2026-11-02): the town's members stay in for a while.
+            if (global::GuildMaster.Town.LookoutService.HoldsInTown) { _decisionTimer = 2f; return; }
             a.ChangeState(a.DecidingState);
         }
     }
