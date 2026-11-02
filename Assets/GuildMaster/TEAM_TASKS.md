@@ -2,8 +2,8 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-10-31
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-116**).
+- 마지막 갱신: 2026-11-02
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-118**, P4-116은 H12 몫).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -124,9 +124,10 @@
 | P4-113 | 방어 시설(게임성 제안 H10, 사용자 결정 2026-10-31): 성벽 밖 15칸 안에 화살탑(3레벨, 위협이 되는 몬스터만 자동 사격 — 둥지에서 사는 몬스터는 길드와 싸울 때만)·함정(몬스터만 밟음, 체력 15%·2초 묶음, 숙련 이상은 확률로 피함, 3번 쓰면 골드로 다시 놓기)을 골드·재료로 짓고, 내구도·골드 수리·마을 넓히기 때 반환. 횃불은 뺌(밤 시야 규칙이 없음). 화살탑은 감시탑과 따로(P4-30 주둔은 계속 보류), 길드원은 시설을 지키지 않음 | 이재혁 | 완료 | Town(DefenceRules·ArrowTower·DefenceService 신규, 건설·업그레이드·넓히기), Units(투사체), Data(화살탑), Visuals, UI(건설·건물 창), Save, Tests. 같이 고친 것: Ecosystem(멈춤 중 영역 검사) | fb934c5, 7842898 |
 | P4-114 | 마을 모습 개편(사용자 요청 2026-10-31): 건물을 캐릭터·몬스터 화풍(두꺼운 외곽선·한쪽 그늘·둥근 형태·발밑 그림자)으로 다시 그리고 간판·창·문·소품을 더함, 성벽 안 바닥을 손질한 잔디 + 자갈길·광장으로 | 이재혁 | 완료 | Visuals/CartoonArt·CartoonBuildings·CartoonTownProps(신규), Town/TownDecor·TownDecorRules(신규)·Building·ConstructionService, Player/MapPicker, World/CartoonGroundPainter, Session/GameBootstrap, UI/Views/MinimapView | 09228e7 (배치 클릭 버그 19dd700) |
 | P4-115 | 마을 모습 2(사용자 요청 2026-10-31): 훈련장 안 캐릭터가 안 보이던 것, 성벽을 서 있는 돌벽(총안·모퉁이 탑·성문 탑)으로, 건물 레벨마다 바뀌는 그림, **걸어 들어가는 큰 길드 홀**(사용자 결정: 같은 지도·처음부터 9×8·확대하면 단면·몬스터는 못 들어옴, 안에서 쉬기·어슬렁·카운터·큰 탁자·게시판) | 이재혁 | 완료 | Town/Building·TrainingYardLayout·TownWallView·GuildHallLayout·GuildHallInterior(신규)·TownService, Visuals/CartoonBuildings·CartoonWalls·CartoonGuildHall(신규), Adventurers/TrainState·AdventurerStates·PartyGatherState, Monsters/RaidState, World/GridMap, Guild/GuildLaws, Session/GameBootstrap | 25357a4, 12006e8 |
+| P4-117 | dev/KMS 병합(8cff428까지 — 대화DB·영입 난이도·면담 대화·상납·살림(일손·식비)·관계도·감정 아이콘·주민·마을 대화·사건 카드 F-13·다음 할 일 F-19·사람 리그·전투 효과·사운드): fast-forward, git 충돌 없음(KMS가 c1e5caa에서 푼 15개 파일을 다시 확인 — main 쪽이 빠진 곳 없음). 병합 뒤 PlayMode 실패 4건(원인 3) 고침: **사건 카드가 10·16시에 창을 열어 시계를 잡음** → 테스트용 `EventCardService.Enabled` 추가(테스트 부팅에서 끔, 게임 동작은 그대로), 생성 시간 초과 테스트를 "취소하지 않음"(KMS 2026-09-30)에 맞춤, 다른 마을 습격 테스트의 고블린을 마스터 쪽에서 소환(무작위 방향이면 마을 건물에 가려 못 봄). EditMode 724·PlayMode 84 통과 | 이재혁 | 완료 | Incidents/EventCardService, Tests/PlayMode/SmokeTests·LlmFaultTests | d2400a9 |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
-| P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로 | 미정 | 보류 | Audio(신규) | |
+| P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로. KMS가 구현해 P4-117 병합으로 들어옴(`Audio/SoundService`, `Resources/Audio`, 설정 창 볼륨) | KMS | 완료 | Audio(신규), Resources/Audio, UI/Views/SettingsView | 8cff428 |
 | P4-12 | 대화 묶음 생성과 미리 받기 | 미정 | 보류 | LLM, Adventurers/BanterService | |
 | P4-25 | 전체 코드 점검: 버그 8건 수정과 리팩터링(늑대 울음 버프, 사망자 부활, 귀환 중 후퇴, 안개 속 정보 노출, EventBus 할당 등) | 이재혁 | 완료 | Units/Combat·Skills, Adventurers, Monsters/Monster, UI/Views/InspectorView, Core/EventBus | b3a9183 |
 | P4-24 | 플레이 모드 스모크 테스트(부팅·타이틀·ESC·장비 줍기·마을 줍기·토벌 출발·마을 경비) | 이재혁 | 완료 | Tests/PlayMode(신규) | 67ad896 |
