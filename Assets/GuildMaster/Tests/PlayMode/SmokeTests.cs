@@ -65,6 +65,7 @@ namespace GuildMaster.Tests
             Storytelling.StorytellerService.Enabled = true;
             Seasons.SeasonService.Enabled = true;
             Dilemmas.DilemmaService.Enabled = true;
+            Incidents.EventCardService.Enabled = true;
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
@@ -103,6 +104,8 @@ namespace GuildMaster.Tests
             Seasons.SeasonService.Enabled = false;
             // Nor decision cards (P4-111c): a card's thoughts, gold and visitors would change what a test measures.
             Dilemmas.DilemmaService.Enabled = false;
+            // Nor event cards (F-13): one drawn at 10:00 or 16:00 opens its window, which holds the clock until answered.
+            Incidents.EventCardService.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -1462,10 +1465,27 @@ namespace GuildMaster.Tests
                 Assert.That(village.Candidates, Has.Count.EqualTo(1));
 
                 // Raided where the guild sees it: its people go back in and it posts its defence (it pays, the guild keeps a fee).
-                Assert.That(DebugCommands.RaidVillage(index, "goblin", 3, 9f), Does.Contain("raid of 3"));
+                // From the guild master's side: sight is blocked by the village itself, so raiders coming from behind it
+                // (RaidVillage picks a random side) went unseen once other systems drew on the shared random numbers.
+                Vector2 toMaster = ((Vector2)Services.Get<PlayerAvatar>().transform.position - village.WorldPosition).normalized;
+                var raiders = new System.Collections.Generic.List<Monster>();
+                foreach (float angle in new[] { -25f, 0f, 25f })
+                {
+                    var p = village.WorldPosition + (Vector2)(Quaternion.Euler(0f, 0f, angle) * toMaster) * 9f;
+                    Assert.That(world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(p), 3, out var cell), Is.True, "ground for a raider");
+                    var raider = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(cell));
+                    raider.Setup(goblin, null);
+                    raiders.Add(raider);
+                }
+                Assert.That(Services.Get<Villages.VillageRaids>().LaunchGroup(raiders, village), Is.EqualTo(3), "a raid of 3");
                 yield return WaitFor(() => board.Quests.Any(q => q.IsVillageDefence && q.Village == village) && !villages.CandidatesOut(village).Any(), 10f);
                 var defence = board.Quests.FirstOrDefault(q => q.IsVillageDefence && q.Village == village);
-                Assert.That(defence, Is.Not.Null, "seen attacked: the village asks for help");
+                var raidFog = Services.Get<Fog.FogOfWar>();
+                string raidState = string.Join("; ", Services.Get<Villages.VillageRaids>().Report().Select(r => $"{r.village.Name} raiders {r.raiders} sighted {r.sighted}"))
+                                   + " | goblins " + string.Join(", ", UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Def == goblin && Vector2.Distance(m.Position, village.WorldPosition) < 20f)
+                                       .Select(m => $"{Vector2.Distance(m.Position, village.WorldPosition):0.0} seen {raidFog.IsVisibleRaw(m.Position)} {m.StateLabel}"))
+                                   + $" | master {Vector2.Distance(Services.Get<Player.PlayerAvatar>().transform.position, village.WorldPosition):0.0} away";
+                Assert.That(defence, Is.Not.Null, "seen attacked: the village asks for help — " + raidState);
                 Assert.That((defence.Client, defence.ClientLabel, defence.Species, defence.RequiredCount), Is.EqualTo((QuestClient.Village, village.DisplayName, goblin, 3)));
                 Assert.That(defence.Title, Does.StartWith("[방어]"));
                 Assert.That(defence.FeeGold, Is.EqualTo(QuestPricing.Split(defence.RewardGold + defence.FeeGold).fee));

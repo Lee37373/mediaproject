@@ -33,6 +33,12 @@ namespace GuildMaster.Incidents
     /// </summary>
     public class EventCardService : IDisposable
     {
+        /// <summary>Tests: off deals nothing on the hour (the card window holds the clock until answered).</summary>
+        public static bool Enabled = true;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => Enabled = true;
+
         public const string GoldReasonEvent = "event";
         public const int WelcomedAffinity = 60;
         const int HistorySize = 12;
@@ -79,6 +85,7 @@ namespace GuildMaster.Incidents
 
         void OnHour(HourPassedEvent e)
         {
+            if (!Enabled) return;
             if (e.Day != _day)
             {
                 _day = e.Day;
