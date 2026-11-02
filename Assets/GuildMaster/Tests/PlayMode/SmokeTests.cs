@@ -65,7 +65,6 @@ namespace GuildMaster.Tests
             Storytelling.StorytellerService.Enabled = true;
             Seasons.SeasonService.Enabled = true;
             Dilemmas.DilemmaService.Enabled = true;
-            Incidents.EventCardService.Enabled = true;
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
@@ -104,8 +103,6 @@ namespace GuildMaster.Tests
             Seasons.SeasonService.Enabled = false;
             // Nor decision cards (P4-111c): a card's thoughts, gold and visitors would change what a test measures.
             Dilemmas.DilemmaService.Enabled = false;
-            // Nor event cards (F-13): one drawn at 10:00 or 16:00 opens its window, which holds the clock until answered.
-            Incidents.EventCardService.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -6002,7 +5999,8 @@ namespace GuildMaster.Tests
         /// Decision cards (P4-111c, H3): a card is dealt with its notification and log line; a choice the vault cannot pay is
         /// refused; one made spends its gold and leaves a card to follow, which comes when due; one left unanswered is decided
         /// by its default when its 24 hours are up — fame, the members' thoughts, a notification saying so. Its section saves
-        /// as it is.
+        /// as it is. P4-118: a dealt card opens the window by itself and the game waits until it is closed; what the choice
+        /// came to shows with its colour; a card the event cards brought (the shady trader) raises a member's gear.
         /// </summary>
         [UnityTest]
         public IEnumerator DecisionCards_AreDealt_Decided_FollowedUp_AndDefaultedWhenLeft()
@@ -6016,12 +6014,15 @@ namespace GuildMaster.Tests
                 var treasury = Services.Get<Economy.GuildTreasury>();
                 var rank = Services.Get<Guild.GuildRankService>();
                 var notifications = Services.Get<Notifications.NotificationCenter>();
+                var view = Services.Get<DilemmaView>();
 
                 var invest = cards.Deal(null, "investment");
                 Assert.That(invest, Is.Not.Null);
                 Assert.That(cards.Open, Does.Contain(invest));
                 Assert.That(notifications.Entries.Any(n => n.Title == "결정할 일: 교역로 투자"), Is.True, "told");
                 Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[결정] 교역로 투자")), Is.True, "logged");
+                yield return null;
+                Assert.That(view.Visible && Clock.IsHeld, Is.True, "the card opened its window and the game waits");
 
                 // The vault must hold what a choice costs.
                 int gold = treasury.Gold;
@@ -6032,6 +6033,9 @@ namespace GuildMaster.Tests
                 Assert.That(cards.Choose(invest, 0), Is.True);
                 Assert.That(treasury.Gold, Is.EqualTo(gold - invest.Gold[0]), "paid in");
                 Assert.That(cards.Open.Contains(invest), Is.False, "decided");
+                view.Close();
+                yield return null;
+                Assert.That(Clock.IsHeld, Is.False, "closed: the game goes on");
 
                 // Three days on, the result follows.
                 JumpClockTo(Mathf.Ceil(invest.DealtHour + 72f) - 0.02f); // just before the hour that strikes it (an hour is ten real seconds)
@@ -6039,11 +6043,39 @@ namespace GuildMaster.Tests
                 var result = cards.Open.FirstOrDefault(c => c.Def.Id == "investment_result");
                 Assert.That(result, Is.Not.Null, "the investment's result follows");
                 Assert.That(result.Gold[0], Is.EqualTo(invest.Gold[0]), "on what was put in");
+                yield return null;
+                Assert.That(view.Visible, Is.True, "the follow-up opens the window too");
+                // Chosen in the window: its result shows, coloured by how the roll went.
+                Dilemmas.DilemmaResolvedEvent? told = null;
+                System.Action<Dilemmas.DilemmaResolvedEvent> listen = e => told = e;
+                EventBus.Subscribe(listen);
                 Assert.That(cards.Choose(result, 0), Is.True);
+                EventBus.Unsubscribe(listen);
+                Assert.That(told?.Tone, Is.EqualTo(Dilemmas.DilemmaTone.Success).Or.EqualTo(Dilemmas.DilemmaTone.Failure), "a rolled choice succeeds or fails");
+                Assert.That(cards.History.Last().Tone, Is.EqualTo(told.Value.Tone));
+
+                // A card that came from the event cards: the shady trader's gear is real for the one who needed it most.
+                var trader = cards.Deal(null, "contraband");
+                Assert.That(trader, Is.Not.Null, "someone could wear better gear");
+                var buyer = Roster.Members.First(a => a.Data.id == trader.Actors[0]);
+                Assert.That(Roster.Members.Where(a => a.IsGuildMember && !a.IsVisitor).Min(a => a.Data.gearTier), Is.EqualTo(buyer.Data.gearTier), "the worst-equipped");
+                int tier = buyer.Data.gearTier;
+                treasury.AddGold(trader.Gold[1]);
+                Assert.That(cards.Choose(trader, 1), Is.True);
+                var bought = cards.History.Last();
+                Assert.That(bought.Tone == Dilemmas.DilemmaTone.Success ? buyer.Data.gearTier > tier : buyer.Data.gearTier == tier, Is.True,
+                    $"real gear raises it, a fake does not ({bought.Tone}: {bought.Result})");
+                Assert.That(buyer.Data.memories.Any(m => m.key == "dilemma:contraband"), Is.True, "the one it was about remembers it");
+                view.Close();
+                yield return null;
 
                 // Left alone, a card is decided by its default once its time is up.
                 var refugees = cards.Deal(null, "refugees");
                 Assert.That(refugees, Is.Not.Null);
+                yield return null;
+                view.Close(); // "나중에": the card waits, the game goes on
+                yield return null;
+                Assert.That(Clock.IsHeld, Is.False);
                 rank.AddFame(20, "테스트"); // fame never goes below 0
                 int fame = rank.Fame;
                 JumpClockTo(Mathf.Ceil(refugees.DeadlineHour) - 0.02f);

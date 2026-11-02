@@ -3,10 +3,12 @@ using System.Linq;
 using System.Text;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
+using GuildMaster.Data;
 using GuildMaster.Economy;
 using GuildMaster.Incidents;
 using GuildMaster.Recruitment;
 using GuildMaster.Seasons;
+using GuildMaster.Social;
 using GuildMaster.Storytelling;
 using GuildMaster.Town;
 using GuildMaster.World;
@@ -17,8 +19,8 @@ namespace GuildMaster.Dilemmas
     /// <summary>A decision card was dealt (P4-111c).</summary>
     public struct DilemmaDealtEvent { public Dilemma Card; }
 
-    /// <summary>A decision card was decided: by the guild master, or by the default when the time ran out.</summary>
-    public struct DilemmaResolvedEvent { public Dilemma Card; public int Choice; public bool ByDeadline; public string Result; }
+    /// <summary>A decision card was decided: by the guild master, or by the default when the time ran out. Tone: how the result reads (P4-118).</summary>
+    public struct DilemmaResolvedEvent { public Dilemma Card; public int Choice; public bool ByDeadline; public string Result; public DilemmaTone Tone; }
 
     /// <summary>A dealt card: whom and what it is about, its amounts for the day it came, and when it must be answered.</summary>
     public sealed class Dilemma
@@ -31,7 +33,7 @@ namespace GuildMaster.Dilemmas
         public string Village, Species;
         public float DealtHour, DeadlineHour;
 
-        public string Title => Def.Title;
+        public string Title => Fill(Def.Title);
         public string Text => Fill(Def.Text);
         public string Label(int choice) => Fill(Def.Choices[choice].Label);
         public string Hints(int choice) => DilemmaRules.Hints(Def.Choices[choice].Hints);
@@ -44,6 +46,7 @@ namespace GuildMaster.Dilemmas
         public string Title, Choice, Result;
         public float Hour;
         public bool ByDeadline;
+        public DilemmaTone Tone;
     }
 
     /// <summary>
@@ -52,14 +55,22 @@ namespace GuildMaster.Dilemmas
     /// is cast from what the guild has and knows, never the same one twice in four days. The guild master answers in the
     /// window; one not answered in 24 game hours is decided by its default. A choice may leave a card to follow. Each card's
     /// luck is its own (seeded by the map and the card), so loading a game does not change how it turns out. Saved as "dilemmas".
+    /// P4-118: KMS's event cards are folded in (see <see cref="DilemmaRules"/>); a dealt card opens its window and the game
+    /// waits (<see cref="AutoOpen"/>), and the cast remember how it went.
     /// </summary>
     public class DilemmaService : MonoBehaviour, ISaveable
     {
         /// <summary>Tests: off deals nothing (a card's thoughts and gold would change what a test measures).</summary>
         public static bool Enabled = true;
 
+        /// <summary>
+        /// A dealt card opens the window, which holds the game until it is closed (user decision 2026-11-02). Measurement runs
+        /// that leave the game to itself turn it off; the cards then wait for their deadlines.
+        /// </summary>
+        public static bool AutoOpen = true;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => Enabled = true;
+        static void ResetStatics() => Enabled = AutoOpen = true;
 
         /// <summary>A card due to follow another.</summary>
         sealed class Pending
@@ -221,12 +232,17 @@ namespace GuildMaster.Dilemmas
         {
             _open.Remove(card);
             var effects = new Effects(this, card);
-            card.Def.Choices[choice].Apply?.Invoke(effects);
-            string result = string.Join(" ", effects.Told);
-            _history.Add(new DilemmaRecord { Title = card.Title, Choice = card.Label(choice), Result = result, Hour = Now, ByDeadline = byDeadline });
+            var picked = card.Def.Choices[choice];
+            picked.Apply?.Invoke(effects);
+            string result = string.Join(" ", effects.Told.Concat(effects.Notes));
+            var tone = DilemmaRules.ToneOf(picked, effects.Rolled);
+            _history.Add(new DilemmaRecord { Title = card.Title, Choice = card.Label(choice), Result = result, Hour = Now, ByDeadline = byDeadline, Tone = tone });
             if (_history.Count > DilemmaRules.MaxHistory) _history.RemoveAt(0);
-            Debug.Log($"[Dilemma] #{card.Id} {card.Def.Id} → {choice}{(byDeadline ? " (deadline)" : "")}: {result}");
-            EventBus.Publish(new DilemmaResolvedEvent { Card = card, Choice = choice, ByDeadline = byDeadline, Result = result });
+            // The cast remember it (from the event cards: their talks and counselling bring it up).
+            foreach (var id in card.Actors)
+                if (Member(id) is { } a) AdventurerMemory.Add(a.Data.memories, Now, 1, $"결정 '{card.Title}': {result}", "dilemma:" + card.Def.Id);
+            Debug.Log($"[Dilemma] #{card.Id} {card.Def.Id} → {choice}{(byDeadline ? " (deadline)" : "")} {tone}: {result}");
+            EventBus.Publish(new DilemmaResolvedEvent { Card = card, Choice = choice, ByDeadline = byDeadline, Result = result, Tone = tone });
         }
 
         // ---------------- What the guild has and knows ----------------
@@ -245,6 +261,12 @@ namespace GuildMaster.Dilemmas
 
         IEnumerable<Adventurer> Newcomers() => Members().Where(a => a.Data.level <= DilemmaRules.NewcomerLevel);
         IEnumerable<Adventurer> Mentors() => Members().Where(a => a.Data.level >= DilemmaRules.NewcomerLevel + 4);
+
+        /// <summary>Members who could wear better gear, the worst-equipped first (the shady trader's mark).</summary>
+        IEnumerable<Adventurer> CouldGearUp()
+            => Services.TryGet<GameDatabase>(out var db)
+                ? Members().Where(a => GearShopping.NextGear(a.Data, db) != null).OrderBy(a => a.Data.gearTier).ThenBy(a => a.Data.level)
+                : Enumerable.Empty<Adventurer>();
 
         /// <summary>Standing villages the guild knows, by name.</summary>
         static List<string> KnownVillages()
@@ -266,6 +288,8 @@ namespace GuildMaster.Dilemmas
                 Veteran = members.Any(a => a.Data.level >= DilemmaRules.VeteranLevel),
                 NewcomerAndVeteran = Newcomers().Any() && Mentors().Any(),
                 InTown = members.Any(IsIdleInTown),
+                GearUp = CouldGearUp().Any(),
+                Residents = Services.TryGet<ResidentService>(out var residents) && residents.Residents.Count > 0,
                 Village = KnownVillages().FirstOrDefault(), Species = KnownKinds().FirstOrDefault(),
                 Potions = _treasury.GetStock(DilemmaRules.Potion),
                 GatesWorn = Services.TryGet<GateService>(out var gates) && gates.Gates.Any(g => g.Hp < g.MaxHp * 0.9f),
@@ -295,6 +319,7 @@ namespace GuildMaster.Dilemmas
                 }
                 case DilemmaCast.NewcomerAndVeteran:
                     return new List<Adventurer> { Pick(Newcomers().ToList()), Pick(Mentors().ToList()) };
+                case DilemmaCast.WeakestGear: return new List<Adventurer> { CouldGearUp().First() };
                 default: return new List<Adventurer>();
             }
         }
@@ -309,6 +334,10 @@ namespace GuildMaster.Dilemmas
             readonly Dilemma _card;
             readonly GameRandom _rng;
             public readonly List<string> Told = new();
+            /// <summary>Small print after what was told (who the wanderer is).</summary>
+            public readonly List<string> Notes = new();
+            /// <summary>How a rolled choice went (null: it was not rolled).</summary>
+            public bool? Rolled;
 
             public Effects(DilemmaService s, Dilemma card)
             {
@@ -426,6 +455,61 @@ namespace GuildMaster.Dilemmas
             }
 
             public void Tell(string text) => Told.Add(_card.Fill(text));
+
+            // ---- From KMS's event cards (P4-118) ----
+
+            public int Level(int actor) => Who(actor).FirstOrDefault()?.Data.level ?? 1;
+
+            public void Standing(int amount, string residentId = null)
+            {
+                if (amount == 0 || !Services.TryGet<ResidentService>(out var residents)) return;
+                if (residentId != null) residents.Find(residentId)?.Profile.AddOpinion(amount);
+                else foreach (var r in residents.Residents) r?.Profile.AddOpinion(amount);
+            }
+
+            public void Rumor(string text, int tone = 0)
+            {
+                if (!Services.TryGet<TownTalkService>(out var town)) return;
+                var subjects = _card.Actors.Where(id => _s.Member(id) != null).ToList();
+                var knownBy = new List<string>(subjects);
+                if (Services.TryGet<ResidentService>(out var residents))
+                    foreach (var id in DilemmaRules.Chatterboxes)
+                        if (residents.Find(id) != null) knownBy.Add(id);
+                town.Rumors.Add(_card.Fill(text), _s.Now, knownBy, subjects, guildTone: tone, subjectTone: subjects.Count > 0 ? tone : 0);
+            }
+
+            public void Feel(int actor, Emotion feeling, float hours = 5f)
+            {
+                if (feeling == Emotion.None || !Services.TryGet<EmotionService>(out var emotions)) return;
+                foreach (var a in Who(actor)) emotions.Feel(a.Data.id, feeling, hours, _card.Title);
+            }
+
+            public bool GearUp(int actor)
+            {
+                var a = Who(actor).FirstOrDefault();
+                var item = a != null && Services.TryGet<GameDatabase>(out var db) ? GearShopping.NextGear(a.Data, db) : null;
+                if (item == null) return false;
+                a.Data.gearTier = item.gearTier;
+                a.RecalculateStats();
+                return true;
+            }
+
+            public bool Wanderer(bool welcomed)
+            {
+                var v = Services.TryGet<VisitorService>(out var visitors) ? visitors.SpawnVisitor() : null;
+                if (v == null || v.Data == null) return false;
+                var d = v.Data;
+                // A name to reckon with: above the guild's best, and a rare one.
+                int best = _s.Members().Select(m => m.Data.level).DefaultIfEmpty(1).Max();
+                d.level = Mathf.Max(d.level, best + 1);
+                if (d.grade == AdventurerGrade.Common) d.grade = AdventurerGrade.Rare;
+                v.RecalculateStats(true);
+                if (welcomed) d.recruitAffinity = DilemmaRules.WelcomedAffinity;
+                Notes.Add($"({d.name}, {AdventurerData.ClassLabel(d.cls)} Lv.{d.level})");
+                return true;
+            }
+
+            public void Outcome(bool success) => Rolled = success;
         }
 
         // ---------------- Debug ----------------
@@ -476,6 +560,7 @@ namespace GuildMaster.Dilemmas
             public string title, choice, result;
             public float hour;
             public bool by_deadline;
+            public int tone;
         }
 
         [System.Serializable]
@@ -506,7 +591,8 @@ namespace GuildMaster.Dilemmas
                     id = p.Id, due = p.DueHour, parent_day = p.ParentDay, actors = new List<string>(p.Actors), names = new List<string>(p.Names),
                     gold = p.Gold, village = p.Village, species = p.Species,
                 });
-            foreach (var r in _history) s.history.Add(new SavedRecord { title = r.Title, choice = r.Choice, result = r.Result, hour = r.Hour, by_deadline = r.ByDeadline });
+            foreach (var r in _history)
+                s.history.Add(new SavedRecord { title = r.Title, choice = r.Choice, result = r.Result, hour = r.Hour, by_deadline = r.ByDeadline, tone = (int)r.Tone });
             foreach (var kv in _lastDealt.OrderBy(kv => kv.Key))
             {
                 s.dealt_ids.Add(kv.Key);
@@ -541,7 +627,8 @@ namespace GuildMaster.Dilemmas
                     Gold = p.gold ?? System.Array.Empty<int>(), Village = p.village, Species = p.species,
                 });
             _history.Clear();
-            foreach (var r in s.history) _history.Add(new DilemmaRecord { Title = r.title, Choice = r.choice, Result = r.result, Hour = r.hour, ByDeadline = r.by_deadline });
+            foreach (var r in s.history)
+                _history.Add(new DilemmaRecord { Title = r.title, Choice = r.choice, Result = r.result, Hour = r.hour, ByDeadline = r.by_deadline, Tone = (DilemmaTone)r.tone });
             _lastDealt.Clear();
             for (int i = 0; i < s.dealt_ids.Count && i < s.dealt_hours.Count; i++) _lastDealt[s.dealt_ids[i]] = s.dealt_hours[i];
         }

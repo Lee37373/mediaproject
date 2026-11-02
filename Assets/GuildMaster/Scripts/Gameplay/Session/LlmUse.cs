@@ -26,8 +26,6 @@ namespace GuildMaster
         Proposal,
         /// <summary>Talking a member into a quest nobody takes.</summary>
         Persuasion,
-        /// <summary>The event card's description.</summary>
-        EventCard,
         /// <summary>Tribute talk (상납금, user decision 2026-10-29): what the member says and how much they offer.</summary>
         Tribute,
     }

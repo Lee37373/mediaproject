@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using GuildMaster.Adventurers;
 using GuildMaster.Guide;
-using GuildMaster.Incidents;
 using GuildMaster.Social;
 using GuildMaster.Welfare;
 using NUnit.Framework;
@@ -10,8 +9,8 @@ using NUnit.Framework;
 namespace GuildMaster.Tests
 {
     /// <summary>
-    /// Feelings and the relationship graph (F-10), event cards (F-13) and the "다음 할 일" guide (F-19),
-    /// user request 2026-10-11.
+    /// Feelings and the relationship graph (F-10) and the "다음 할 일" guide (F-19), user request 2026-10-11. The event cards
+    /// (F-13) are decision cards since P4-118: see DilemmaTests.
     /// </summary>
     public class LivelyGuildTests
     {
@@ -95,117 +94,12 @@ namespace GuildMaster.Tests
             Assert.That(RelationGraph.Peek(resident, "a"), Is.EqualTo(12));
         }
 
-        // ---------------- F-13 event cards ----------------
-
-        static CardMember M(string id, int level = 3, float fatigue = 10f, int gear = 0, bool free = true, bool canGear = true)
-            => new() { Id = id, Name = id, Level = level, Fatigue = fatigue, GearTier = gear, Free = free, CanGearUp = canGear };
-
-        static CardContext Ctx(params CardMember[] members) => new()
-        {
-            Members = members.ToList(), Gold = 500, Day = 3, HasResidents = true, HasVisitorRoom = true,
-        };
-
-        static System.Func<float> Fixed(float v) => () => v;
-
-        [Test]
-        public void Cards_ComeAtTheirHours_AtMostTwiceADay_NeverInARaid()
-        {
-            Assert.That(EventCards.ShouldDraw(2, 10, 0, false, false, 0.1f), Is.True);
-            Assert.That(EventCards.ShouldDraw(2, 11, 0, false, false, 0.1f), Is.False, "not a card hour");
-            Assert.That(EventCards.ShouldDraw(2, 16, EventCards.MaxPerDay, false, false, 0.1f), Is.False);
-            Assert.That(EventCards.ShouldDraw(2, 16, 0, true, false, 0.1f), Is.False, "one is waiting");
-            Assert.That(EventCards.ShouldDraw(2, 16, 0, false, true, 0.1f), Is.False, "raid");
-            Assert.That(EventCards.ShouldDraw(2, 16, 0, false, false, 0.9f), Is.False, "the roll");
-            Assert.That(EventCards.ShouldDraw(1, 10, 0, false, false, 0.1f), Is.False, "quiet first morning");
-            Assert.That(EventCards.ShouldDraw(1, 16, 0, false, false, 0.1f), Is.True);
-        }
-
-        [Test]
-        public void EveryCard_HasTwoOrThreeChoices_AndOneDefault()
-        {
-            Assert.That(EventCards.All.Count, Is.GreaterThanOrEqualTo(8));
-            Assert.That(EventCards.All.Select(c => c.Id).Distinct().Count(), Is.EqualTo(EventCards.All.Count));
-            foreach (var card in EventCards.All)
-            {
-                Assert.That(card.Choices.Count, Is.InRange(2, 3), card.Id);
-                Assert.That(card.Choices.Count(c => c.Default), Is.EqualTo(1), card.Id);
-                Assert.That(card.DefaultChoice.Cost, Is.EqualTo(0), card.Id + ": nobody pays for an unanswered card");
-                foreach (var c in card.Choices)
-                {
-                    Assert.That(c.Success?.Result, Is.Not.Null.And.Not.Empty, card.Id + "/" + c.Label);
-                    if (c.Failure != null) Assert.That(c.Failure.Result, Is.Not.Empty, card.Id + "/" + c.Label);
-                }
-            }
-        }
-
-        [Test]
-        public void ADuel_NeedsTwoWhoDoNotGetAlong()
-        {
-            var duel = EventCards.All.First(c => c.Id == "duel");
-            var ctx = Ctx(M("a"), M("b"), M("c"));
-            ctx.Bond = (x, y) => (x, y) is ("a", "b") or ("b", "a") ? -30 : 10;
-            Assert.That(EventCards.TryCast(duel, ctx, Fixed(0f), out var a, out var b), Is.True);
-            Assert.That(new[] { a.Value.Id, b.Value.Id }, Is.EquivalentTo(new[] { "a", "b" }));
-            ctx.Bond = (_, _) => 0;
-            Assert.That(EventCards.TryCast(duel, ctx, Fixed(0f), out _, out _), Is.False, "nobody is at odds");
-            Assert.That(EventCards.DuelChance(5, 3), Is.GreaterThan(EventCards.DuelChance(3, 3)));
-            Assert.That(EventCards.DuelChance(1, 20), Is.EqualTo(0.2f));
-        }
-
-        [Test]
-        public void TheShadyMerchant_PicksWhoCanUseBetterGear()
-        {
-            var shady = EventCards.All.First(c => c.Id == "shady");
-            var ctx = Ctx(M("rich", gear: 2), M("poor", gear: 0), M("maxed", gear: 0, canGear: false));
-            Assert.That(EventCards.TryCast(shady, ctx, Fixed(0f), out var a, out _), Is.True);
-            Assert.That(a.Value.Id, Is.EqualTo("poor"));
-            ctx.Gold = 10;
-            Assert.That(EventCards.TryCast(shady, ctx, Fixed(0f), out _, out _), Is.False, "too poor to be offered");
-        }
-
-        [Test]
-        public void Cards_NeedTheirTown_AndAreNotRepeatedSoon()
-        {
-            var plague = EventCards.All.First(c => c.Id == "plague");
-            var ctx = Ctx(M("a"));
-            ctx.HasResidents = false;
-            Assert.That(EventCards.TryCast(plague, ctx, Fixed(0f), out _, out _), Is.False);
-            ctx.HasResidents = true;
-            ctx.Recent = EventCards.All.Where(c => c.Id != "noble").Select(c => c.Id).ToList();
-            var drawn = EventCards.Draw(ctx, Fixed(0.3f));
-            Assert.That(drawn, Is.Not.Null);
-            Assert.That(drawn.Def.Id, Is.EqualTo("noble"));
-            Assert.That(drawn.Narration, Does.Not.Contain("{"));
-        }
-
-        [Test]
-        public void Choices_SucceedByTheirOdds()
-        {
-            var thief = EventCards.All.First(c => c.Id == "thief");
-            var chase = thief.Choices[0];
-            Assert.That(EventCards.Resolve(chase, M("a"), null, 0.1f).success, Is.True);
-            var (ok, fx) = EventCards.Resolve(chase, M("a"), null, 0.95f);
-            Assert.That(ok, Is.False);
-            Assert.That(fx.Gold, Is.LessThan(0), "the thief got away with it");
-            Assert.That(EventCards.Resolve(thief.DefaultChoice, M("a"), null, 0.99f).success, Is.True, "no odds: always the one result");
-            Assert.That(EventCards.Hint(chase, M("a"), null), Does.Contain("%"));
-            Assert.That(EventCards.CanAfford(EventCards.All.First(c => c.Id == "festival").Choices[0], 10), Is.False);
-        }
-
-        [Test]
-        public void CardText_FillsNamesAndParticles()
-        {
-            Assert.That(EventCards.Format("{A이} {B을} 꺾었다", "카엘", "미라"), Is.EqualTo("카엘이 미라를 꺾었다"));
-            Assert.That(EventCards.Format("{A와} {B은}", "토비", "한스"), Is.EqualTo("토비와 한스는"));
-            Assert.That(EventCards.Format("{A}의 생일", "엘리", null), Is.EqualTo("엘리의 생일"));
-        }
-
         // ---------------- F-19 guide ----------------
 
         [Test]
         public void Guide_StepsInOrder()
         {
-            var done = new HashSet<GuideStep> { GuideStep.PostQuest };
+            var done = new HashSet<GuideStep> { GuideStep.Board };
             Assert.That(GuideRules.Next(done.Contains), Is.EqualTo(GuideStep.TalkVisitor));
             foreach (var s in GuideRules.Order) done.Add(s);
             Assert.That(GuideRules.Next(done.Contains), Is.Null);
@@ -226,7 +120,7 @@ namespace GuildMaster.Tests
             s.Visitors.Add(new GuideSnapshot.Visitor { Id = "v2", Name = "베일", Affinity = -1 });
             var hints = GuideRules.Hints(s);
             Assert.That(hints.Count, Is.EqualTo(GuideRules.MaxHints));
-            Assert.That(hints[0].Action, Is.EqualTo(HintAction.EventCard));
+            Assert.That(hints[0].Action, Is.EqualTo(HintAction.Decision));
             Assert.That(hints.Any(h => h.Action == HintAction.Counsel && h.TargetId == "m1"), Is.True);
             Assert.That(hints.Any(h => h.TargetId == "m2"), Is.False, "calm members need nothing");
             Assert.That(hints.Any(h => h.Action == HintAction.Visitor && h.TargetId == "v1"), Is.True);

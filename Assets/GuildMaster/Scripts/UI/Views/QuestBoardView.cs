@@ -85,7 +85,12 @@ namespace GuildMaster.UI
             return row;
         }
 
-        protected override void OnOpened() => UpdateSummary();
+        protected override void OnOpened()
+        {
+            UpdateSummary();
+            // The guide's first step is a look at the board (P4-118: the guild master posts no quests, P4-82).
+            if (Services.TryGet<Guide.GuideTracker>(out var guide)) guide.Mark(Guide.GuideStep.Board);
+        }
 
         /// <summary>The escort as typed in: reward fields are hourly rates, the escrow covers the maximum hours (gold only, P4-82).</summary>
         QuestDraft BuildDraft()

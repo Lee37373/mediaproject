@@ -1493,6 +1493,7 @@ namespace GuildMaster.Session
         public static string Trial(string species, int pack, int level, string team, int memberLevel, int gear, int rounds = 5, int speed = 3)
         {
             if (s_trial != null && s_trial.Running) return "a trial is running: " + s_trial.Report();
+            GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game between rounds
             var classes = team.ToUpperInvariant().Select(c => c switch
             {
                 'W' => AdventurerClass.Warrior,
@@ -1534,6 +1535,7 @@ namespace GuildMaster.Session
         {
             var probe = WildlifeProbe.Ensure();
             if (probe.Running) return "already running";
+            GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game; cards wait for their deadlines
             probe.Begin(days);
             Services.Get<GameClock>().SetSpeed(speed);
             return $"wildlife run started: {days} game days";
@@ -1545,6 +1547,7 @@ namespace GuildMaster.Session
         {
             var probe = BalanceProbe.Ensure();
             if (probe.Running) return "already running: " + probe.Report();
+            GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game; cards wait for their deadlines
             string name = string.IsNullOrEmpty(label) ? "baseline" : label;
             string path = System.IO.Path.Combine(Application.dataPath, "..", "BalanceLogs", $"{name}.csv");
             path = System.IO.Path.GetFullPath(path);

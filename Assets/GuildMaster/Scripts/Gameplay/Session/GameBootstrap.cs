@@ -439,8 +439,7 @@ namespace GuildMaster.Session
             townTalk.SetResidents(residents);
             // Feelings over heads and the relationship graph (F-10, user request 2026-10-11).
             Services.Register(new Social.EmotionService(clock, roster, residents));
-            // Event cards, 0-2 a day (F-13).
-            Services.Register(new Incidents.EventCardService(clock, roster, treasury, notifications, LlmUse.Gateway(LlmFeature.EventCard, llm)));
+            // KMS's event cards (F-13) are part of the decision cards now (P4-118, DilemmaService below).
             // "다음 할 일" checklist and hints (F-19).
             Services.Register(new Guide.GuideTracker());
 
