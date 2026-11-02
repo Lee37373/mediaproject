@@ -83,6 +83,8 @@ namespace GuildMaster.UI
             RefreshFollowButton();
             // Clicking a building also opens its upgrade window (P4-1).
             if (target is Building b && Services.TryGet<BuildingView>(out var view)) view.ShowBuilding(b);
+            // Clicking a ruined watchtower opens its lookout window (2026-11-02): climb, flare, alarm bell.
+            if (target is World.PlaceSite { Kind: World.PlaceKind.WatchRuin } ruin && Services.TryGet<WatchRuinView>(out var ruinView)) ruinView.ShowRuin(ruin);
             // Clicking the travelling merchant opens its trade window (P4-3).
             if (target is Merchant && Services.TryGet<MerchantView>(out var shop) && !shop.Visible) shop.Open();
         }

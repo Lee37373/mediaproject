@@ -3,6 +3,7 @@ using GuildMaster.Audio;
 using GuildMaster.Core;
 using GuildMaster.Flares;
 using GuildMaster.Fog;
+using GuildMaster.Places;
 using GuildMaster.Player;
 using GuildMaster.Session;
 using GuildMaster.World;
@@ -10,27 +11,28 @@ using UnityEngine;
 
 namespace GuildMaster.Town
 {
-    /// <summary>The guild master went up a watchtower (<see cref="Tower"/>) or came down (null).</summary>
-    public struct LookoutChangedEvent { public Building Tower; }
+    /// <summary>The guild master went up a ruined watchtower (<see cref="Ruin"/>) or came down (null).</summary>
+    public struct LookoutChangedEvent { public PlaceSite Ruin; }
 
-    /// <summary>The alarm bell was rung from a watchtower: <see cref="Called"/> members were called back to town.</summary>
-    public struct AlarmBellRungEvent { public Building Tower; public int Called; }
+    /// <summary>The alarm bell was rung from a ruined watchtower: <see cref="Called"/> members were called back to town.</summary>
+    public struct AlarmBellRungEvent { public PlaceSite Ruin; public int Called; }
 
     /// <summary>
-    /// What the guild master can do at a watchtower (user decision 2026-11-02: "감시탑 같은 오브젝트를 플레이어도 작동" —
-    /// the lookout and the alarm bell). Pure numbers and rules, tested; <see cref="LookoutService"/> does it.
+    /// What the guild master can do up a ruined watchtower (user decisions 2026-11-02: "상호작용이 필요한 감시탑은 폐허
+    /// 감시탑" — the lookout, a flare and the alarm bell; the watchtower the guild builds only widens the town's sight, as
+    /// before). Pure numbers and rules, tested; <see cref="LookoutService"/> does it.
     /// </summary>
     public static class LookoutRules
     {
-        /// <summary>The master's sight up on the tower, over walls (the tower alone sees 14, the master on foot 7).</summary>
-        public const float SightRadius = 22f;
-        /// <summary>Standing this close to the tower's edge counts as being up on it.</summary>
+        /// <summary>The master's sight up the ruin, over walls and trees: what a member sees from it once (the master on foot: 7).</summary>
+        public const float SightRadius = PlaceRules.TowerSightRadius;
+        /// <summary>Standing this close to the ruin counts as being up on it.</summary>
         public const float PostReach = 2.5f;
-        /// <summary>A flare from the tower bursts at most this far from it (cells).</summary>
+        /// <summary>A flare from the ruin bursts at most this far from it (cells).</summary>
         public const float FlareRange = 30f;
-        /// <summary>Seconds between two flares from the tower (combat seconds: they run with the game speed).</summary>
+        /// <summary>Seconds between two flares (combat seconds: they run with the game speed).</summary>
         public const float FlareCooldownSeconds = 40f;
-        /// <summary>Members this far from the town (cells) hear the bell.</summary>
+        /// <summary>Members this far from the town (cells) answer the bell.</summary>
         public const float BellRadius = 70f;
         /// <summary>Game hours those called in stay in town before going out again.</summary>
         public const float BellHoldHours = 3f;
@@ -46,7 +48,7 @@ namespace GuildMaster.Town
 
         /// <summary>
         /// Whether the bell calls this member back: a guild member at its own business (no quest — a contract is kept),
-        /// fit enough to walk home, outside the walls but within <see cref="BellRadius"/>.
+        /// outside the walls but within <see cref="BellRadius"/> of the town.
         /// </summary>
         public static bool Recalls(bool member, bool onQuest, bool atOwnBusiness, bool inTown, float distanceFromTown)
             => member && !onQuest && atOwnBusiness && !inTown && distanceFromTown <= BellRadius;
@@ -56,12 +58,12 @@ namespace GuildMaster.Town
     }
 
     /// <summary>
-    /// The guild master at a watchtower (user decision 2026-11-02). Asked from the tower's window, the master walks to it
-    /// and goes up: while there it sees <see cref="LookoutRules.SightRadius"/> cells round, over walls, can send a flare
-    /// over any spot within <see cref="LookoutRules.FlareRange"/> (it lights the ground and lifts the fog, as a member's
-    /// does) and can ring the alarm bell — members out on their own business come home and stay in town
-    /// <see cref="LookoutRules.BellHoldHours"/> hours. Any move order, the tower falling or the master falling brings it
-    /// down. Made on first use (<see cref="Ensure"/>); not saved — a load finds the master on the ground.
+    /// The guild master up a ruined watchtower (user decisions 2026-11-02). Asked from the ruin's window, the master walks there
+    /// and climbs it: the first climb lifts the fog <see cref="PlaceRules.TowerSightRadius"/> round, as a scout's does (and
+    /// the scouts need not go any more); while up, the master sees that far, can send a flare over any spot within
+    /// <see cref="LookoutRules.FlareRange"/>, and can ring the alarm bell — members out on their own business near the town come
+    /// home and stay in <see cref="LookoutRules.BellHoldHours"/> hours. Any move order or the master falling brings it down.
+    /// Made on first use (<see cref="Ensure"/>); not saved — a load finds the master on the ground.
     /// </summary>
     public class LookoutService : MonoBehaviour
     {
@@ -69,17 +71,17 @@ namespace GuildMaster.Town
 
         public static LookoutService Ensure()
         {
-            if (s_instance == null) s_instance = new GameObject("WatchtowerLookout").AddComponent<LookoutService>();
+            if (s_instance == null) s_instance = new GameObject("RuinLookout").AddComponent<LookoutService>();
             return s_instance;
         }
 
         /// <summary>Members called in by the bell are to stay in town now (read by the town's idle members).</summary>
         public static bool HoldsInTown => s_instance != null && s_instance.BellHolding;
 
-        /// <summary>The tower the master is up on, or null.</summary>
-        public Building Post { get; private set; }
-        /// <summary>The tower the master is walking to, or null.</summary>
-        public Building Heading { get; private set; }
+        /// <summary>The ruin the master is up on, or null.</summary>
+        public PlaceSite Post { get; private set; }
+        /// <summary>The ruin the master is walking to, or null.</summary>
+        public PlaceSite Heading { get; private set; }
 
         PlayerAvatar _avatar;
         VisionSource _vision;
@@ -106,50 +108,55 @@ namespace GuildMaster.Town
 
         PlayerAvatar Master => _avatar != null ? _avatar : _avatar = Services.TryGet<PlayerAvatar>(out var a) ? a : null;
 
+        public static bool IsRuin(PlaceSite p) => p != null && p.Kind == PlaceKind.WatchRuin;
+
         // ---------------- Going up ----------------
 
-        /// <summary>Why the master cannot go up this tower now, or null.</summary>
-        public string CannotGoUp(Building tower)
+        /// <summary>Why the master cannot go up this ruin now, or null.</summary>
+        public string CannotGoUp(PlaceSite ruin)
         {
-            if (tower == null || tower.Type != BuildingType.Watchtower) return "감시탑이 아닙니다.";
-            if (tower.IsDestroyed) return "무너진 감시탑에는 올라갈 수 없습니다.";
+            if (!IsRuin(ruin)) return "폐허 감시탑이 아닙니다.";
             if (Master == null || !Master.IsAlive) return "길드 마스터가 움직일 수 없습니다.";
-            if (Post == tower) return "이미 이 감시탑에서 망을 보고 있습니다.";
+            if (Post == ruin) return "이미 이 감시탑에서 망을 보고 있습니다.";
             return null;
         }
 
-        /// <summary>Sends the master up the tower (walking there first). False when it cannot go.</summary>
-        public bool GoUp(Building tower, out string error)
+        /// <summary>Sends the master up the ruin (walking there first). False when it cannot go.</summary>
+        public bool GoUp(PlaceSite ruin, out string error)
         {
-            error = CannotGoUp(tower);
+            error = CannotGoUp(ruin);
             if (error != null) return false;
-            var avatar = Master;
-            var edge = tower.ClosestPoint(avatar.Position);
-            var away = avatar.Position - edge;
-            var spot = away.sqrMagnitude < 1e-4f ? edge : edge + away.normalized * 0.8f;
-            // MoveTo announces the order, which brings the master down from any other tower first.
-            if (Vector2.Distance(avatar.Position, edge) <= LookoutRules.PostReach)
+            var master = Master;
+            if (Vector2.Distance(master.Position, ruin.WorldPosition) <= LookoutRules.PostReach)
             {
-                Man(tower);
+                Man(ruin);
                 return true;
             }
-            if (!avatar.MoveTo(spot, () => Man(tower), 0.3f))
+            // MoveTo announces the order, which brings the master down from any other ruin first.
+            if (!master.MoveTo(ruin.WorldPosition, () => Man(ruin), 0.8f))
             {
-                error = "감시탑까지 갈 길이 없습니다.";
+                error = "폐허 감시탑까지 갈 길이 없습니다.";
                 return false;
             }
-            Heading = tower;
+            Heading = ruin;
             return true;
         }
 
-        void Man(Building tower)
+        void Man(PlaceSite ruin)
         {
             Heading = null;
-            var avatar = Master;
-            if (tower == null || tower.IsDestroyed || avatar == null || !avatar.IsAlive) return;
-            if (Vector2.Distance(avatar.Position, tower.ClosestPoint(avatar.Position)) > LookoutRules.PostReach + 0.5f) return;
+            var master = Master;
+            if (!IsRuin(ruin) || master == null || !master.IsAlive) return;
+            if (Vector2.Distance(master.Position, ruin.WorldPosition) > LookoutRules.PostReach + 0.5f) return;
             if (Post != null) StandDown(quiet: true);
-            _vision = avatar.GetComponent<VisionSource>();
+            // The first climb shows the land round at once, as a scout's does — and no scout need go any more.
+            bool first = Services.TryGet<PlaceService>(out var places) && !places.IsClimbed(ruin);
+            if (first)
+            {
+                places.MarkClimbed(ruin);
+                if (Services.TryGet<FogOfWar>(out var fog)) fog.Reveal(ruin.WorldPosition, PlaceRules.TowerSightRadius);
+            }
+            _vision = master.GetComponent<VisionSource>();
             if (_vision != null)
             {
                 _savedSight = _vision.SightRadius;
@@ -157,9 +164,9 @@ namespace GuildMaster.Town
                 _vision.SightRadius = Mathf.Max(_savedSight, LookoutRules.SightRadius);
                 _vision.SeesOverWalls = true;
             }
-            Post = tower;
-            Log("길드 마스터가 감시탑에 올라 망을 봅니다.");
-            EventBus.Publish(new LookoutChangedEvent { Tower = tower });
+            Post = ruin;
+            Log(first ? "길드 마스터가 폐허 감시탑에 올라 둘레를 처음으로 살폈습니다." : "길드 마스터가 폐허 감시탑에 올라 망을 봅니다.");
+            EventBus.Publish(new LookoutChangedEvent { Ruin = ruin });
         }
 
         /// <summary>Brings the master down (its sight back to its own).</summary>
@@ -174,8 +181,8 @@ namespace GuildMaster.Town
             }
             _vision = null;
             Post = null;
-            if (!quiet) Log("길드 마스터가 감시탑에서 내려왔습니다.");
-            EventBus.Publish(new LookoutChangedEvent { Tower = null });
+            if (!quiet) Log("길드 마스터가 폐허 감시탑에서 내려왔습니다.");
+            EventBus.Publish(new LookoutChangedEvent { Ruin = null });
         }
 
         void OnMoveOrdered(PlayerMoveOrderedEvent e)
@@ -189,15 +196,8 @@ namespace GuildMaster.Town
         void Update()
         {
             if (Post == null) return;
-            var avatar = Master;
-            if (Post.IsDestroyed)
-            {
-                Log("감시탑이 무너져 길드 마스터가 내려왔습니다.");
-                StandDown(quiet: true);
-                return;
-            }
-            if (avatar == null || !avatar.IsAlive
-                || Vector2.Distance(avatar.Position, Post.ClosestPoint(avatar.Position)) > LookoutRules.PostReach + 1f)
+            var master = Master;
+            if (master == null || !master.IsAlive || Vector2.Distance(master.Position, Post.WorldPosition) > LookoutRules.PostReach + 1f)
                 StandDown();
         }
 
@@ -207,7 +207,7 @@ namespace GuildMaster.Town
 
         public string CannotFlare()
         {
-            if (Post == null) return "감시탑에 올라가 있어야 쏠 수 있습니다.";
+            if (Post == null) return "폐허 감시탑에 올라가 있어야 쏠 수 있습니다.";
             if (!Services.TryGet<FlareService>(out _)) return "조명탄을 쏠 수 없습니다.";
             if (FlareCooldownLeft > 0f) return $"다음 조명탄까지 {LookoutRules.Left(FlareCooldownLeft, "초")}";
             return null;
@@ -227,15 +227,15 @@ namespace GuildMaster.Town
             return true;
         }
 
-        /// <summary>Sends a flare from the tower over <paramref name="at"/> (as far as it reaches).</summary>
+        /// <summary>Sends a flare from the ruin over <paramref name="at"/> (as far as it reaches).</summary>
         public bool FireFlare(Vector2 at, out string error)
         {
             error = CannotFlare();
             if (error != null || !Services.TryGet<FlareService>(out var flares)) return false;
-            var burst = LookoutRules.FlareAim(Post.Center, at);
+            var burst = LookoutRules.FlareAim(Post.WorldPosition, at);
             flares.Fire(Master, burst);
             _flareReadyAt = Time.time + LookoutRules.FlareCooldownSeconds;
-            Log("감시탑에서 조명탄을 쏘아 올렸습니다.");
+            Log("폐허 감시탑에서 조명탄을 쏘아 올렸습니다.");
             return true;
         }
 
@@ -247,12 +247,12 @@ namespace GuildMaster.Town
 
         public string CannotRing()
         {
-            if (Post == null) return "감시탑에 올라가 있어야 칠 수 있습니다.";
+            if (Post == null) return "폐허 감시탑에 올라가 있어야 칠 수 있습니다.";
             if (BellCooldownHoursLeft > 0f) return $"종을 다시 치려면 {LookoutRules.Left(BellCooldownHoursLeft, "시간")}";
             return null;
         }
 
-        /// <summary>Rings the bell: members out on their own business nearby come home and stay a while. How many were called.</summary>
+        /// <summary>Rings the bell: members out on their own business near the town come home and stay a while. How many were called.</summary>
         public int RingBell(out string error)
         {
             error = CannotRing();
@@ -281,7 +281,7 @@ namespace GuildMaster.Town
             Log(called > 0
                 ? $"경종을 울렸습니다! 밖에 있던 길드원 {called}명이 마을로 돌아옵니다. {LookoutRules.BellHoldHours:0}시간 동안 마을을 지킵니다."
                 : $"경종을 울렸습니다. 불러들일 길드원은 없었고, {LookoutRules.BellHoldHours:0}시간 동안 마을의 길드원이 밖으로 나가지 않습니다.");
-            EventBus.Publish(new AlarmBellRungEvent { Tower = Post, Called = called });
+            EventBus.Publish(new AlarmBellRungEvent { Ruin = Post, Called = called });
             return called;
         }
 
