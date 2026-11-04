@@ -62,6 +62,7 @@ namespace GuildMaster.Tests
             GameSettings.PaintGround = true;
             GameSettings.GroundDetail = true;
             Fog.FogOfWar.ShowEverything = false;
+            NameTagLayer.IgnorePointer = false;
             TownQuestPoster.Enabled = true;
             Incidents.IncidentService.Enabled = true;
             Storytelling.StorytellerService.Enabled = true;
@@ -247,9 +248,11 @@ namespace GuildMaster.Tests
             DebugCommands.Invulnerable(true);
             DebugCommands.SpawnNearMaster("goblin", 10, 2f);
             FightCamera.Stop();
+            NameTagLayer.IgnorePointer = true; // the watcher's mouse over a goblin would rightly put its tag first
             Services.Get<CameraControl.CameraController>().JumpTo(master.Position);
-            Camera.main.orthographicSize = 8f;
-            yield return null;
+            Services.Get<CameraControl.CameraController>().SetZoom(8f);
+            // The camera eases to the zoom; tags show only once it is close enough (NameTagLayer hides them far out).
+            yield return WaitFor(() => Camera.main.orthographicSize <= 9f, 5f);
             yield return null;
             var tags = Services.Get<NameTagLayer>();
             var placed = tags.Placed.ToList();
@@ -259,6 +262,7 @@ namespace GuildMaster.Tests
             Assert.That(placed.Count, Is.LessThan(tags.CandidateCount), $"some tags give way ({placed.Count} of {tags.CandidateCount})");
             Assert.That(tags.IsShown(master), Is.True, "the guild master's tag shows over the goblins'");
             DebugCommands.Invulnerable(false);
+            NameTagLayer.IgnorePointer = false;
         }
 
         [UnityTest]

@@ -67,6 +67,8 @@ namespace GuildMaster.UI
         Text _measure;
 
         public bool Enabled => _enabled;
+        /// <summary>Test hook: the real pointer picks out nothing (a watched test run must not depend on where the mouse sits).</summary>
+        public static bool IgnorePointer { get; set; }
         /// <summary>Where this frame's tags went (layer space), for tests.</summary>
         public IReadOnlyList<Rect> Placed => _placed;
         /// <summary>How many units wanted a tag this frame.</summary>
@@ -211,7 +213,7 @@ namespace GuildMaster.UI
             bool hovering = false;
             Vector2 pointer = default;
             var mouse = Mouse.current;
-            if (mouse != null && (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject()))
+            if (mouse != null && !IgnorePointer && (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject()))
             {
                 pointer = cam.ScreenToWorldPoint(mouse.position.ReadValue());
                 hovering = true;
