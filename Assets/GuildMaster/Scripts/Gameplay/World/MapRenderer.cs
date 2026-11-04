@@ -205,7 +205,7 @@ namespace GuildMaster.World
         /// </summary>
         public void RequestGround(RectInt cells)
         {
-            if (_chunkState == null || cells.width <= 0 || cells.height <= 0) return;
+            if (_chunkState == null || cells.width <= 0 || cells.height <= 0 || !Session.GameSettings.GroundDetail) return;
             int x0 = Mathf.Max(0, cells.xMin / ChunkCells - 1), x1 = Mathf.Min(_cw - 1, (cells.xMax - 1) / ChunkCells + 1);
             int y0 = Mathf.Max(0, cells.yMin / ChunkCells - 1), y1 = Mathf.Min(_ch - 1, (cells.yMax - 1) / ChunkCells + 1);
             for (int y = y0; y <= y1; y++)

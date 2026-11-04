@@ -60,6 +60,8 @@ namespace GuildMaster.Tests
             GameSettings.ShowTitle = true;
             MenuState.Reset();
             GameSettings.PaintGround = true;
+            GameSettings.GroundDetail = true;
+            Fog.FogOfWar.ShowEverything = false;
             TownQuestPoster.Enabled = true;
             Incidents.IncidentService.Enabled = true;
             Storytelling.StorytellerService.Enabled = true;
@@ -85,7 +87,11 @@ namespace GuildMaster.Tests
         {
             GameSettings.ShowTitle = showTitle;
             GameSettings.PendingSeed = seed;
-            GameSettings.PaintGround = false; // ~9 s a boot; no test looks at the ground
+            // P4-125: only the low-detail ground (~0.4 s a boot; the full detail is most of a boot), and the fog drawn
+            // nowhere — sight and every fog answer stay as they are — so a watched run shows what the fight camera follows.
+            GameSettings.PaintGround = true;
+            GameSettings.GroundDetail = false;
+            Fog.FogOfWar.ShowEverything = true;
             // No natural disasters (P4-72) unless a test asks: one set off by a chance fight drives dens
             // off and changes the world under tests that measure something else.
             DisasterService.ChanceOverride = 0f;
@@ -228,6 +234,31 @@ namespace GuildMaster.Tests
                 foreach (var a in u.TargetedBy) Assert.That(a.CurrentTarget, Is.SameAs(u), "TargetedBy lists only its attackers");
                 if (u.CurrentTarget != null) Assert.That(u.CurrentTarget.TargetedBy.Contains(u), Is.True, "a target lists its attacker");
             }
+
+            // P4-125: the tests draw no fog, but a monster out of sight is still out of sight to the game.
+            var fog = Services.Get<Fog.FogOfWar>();
+            var unseen = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && !fog.IsVisibleRaw(m.Position)
+                                                                       && m.GetComponent<Fog.FogHideable>() is { IsFogEvaluated: true });
+            Assert.That(fog.IsVisible(unseen.Position) || unseen.GetComponent<Fog.FogHideable>().IsFogVisible, Is.False, "the fog still hides it");
+            Assert.That(unseen.GetComponentsInChildren<Renderer>().Any(r => r.enabled), Is.True, "but it is drawn");
+
+            // P4-123: in a crowd the name tags never overlap; the less important ones give way, the guild master's stays.
+            var master = Services.Get<Player.PlayerAvatar>();
+            DebugCommands.Invulnerable(true);
+            DebugCommands.SpawnNearMaster("goblin", 10, 2f);
+            FightCamera.Stop();
+            Services.Get<CameraControl.CameraController>().JumpTo(master.Position);
+            Camera.main.orthographicSize = 8f;
+            yield return null;
+            yield return null;
+            var tags = Services.Get<NameTagLayer>();
+            var placed = tags.Placed.ToList();
+            for (int i = 0; i < placed.Count; i++)
+            for (int j = i + 1; j < placed.Count; j++)
+                Assert.That(NameTagLayer.Overlaps(placed[i], placed[j]), Is.False, $"tags {i} and {j} overlap");
+            Assert.That(placed.Count, Is.LessThan(tags.CandidateCount), $"some tags give way ({placed.Count} of {tags.CandidateCount})");
+            Assert.That(tags.IsShown(master), Is.True, "the guild master's tag shows over the goblins'");
+            DebugCommands.Invulnerable(false);
         }
 
         [UnityTest]

@@ -108,12 +108,19 @@ namespace GuildMaster.Session
         /// </summary>
         public static bool PaintGround { get; set; } = true;
 
+        /// <summary>
+        /// Paint the full-detail ground chunks where the fog lifts (P4-81). The smoke tests turn it off (P4-125): they
+        /// keep only the low-detail backdrop (~0.4 s a boot), so a watched run shows ground instead of black.
+        /// </summary>
+        public static bool GroundDetail { get; set; } = true;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetSession()
         {
             PendingSeed = 0;
             ShowTitle = true;
             PaintGround = true;
+            GroundDetail = true;
             PendingLoad = null;
             PendingLoadSlot = -1;
             Restoring = null;

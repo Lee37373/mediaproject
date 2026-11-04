@@ -155,13 +155,34 @@ namespace GuildMaster.Fog
             }
         }
 
+        static bool s_showEverything;
+        static int s_displayVersion;
+        int _displayVersion;
+
+        /// <summary>
+        /// Debug, looks only (P4-125: the smoke tests' fight camera follows fights out in the fog and showed black): no
+        /// fog is drawn and nothing is hidden, but sight, exploring, sightings and every <see cref="IsVisible(Vector2Int)"/>
+        /// answer stay as they are — unlike <see cref="Disabled"/>, which the game itself then believes.
+        /// </summary>
+        public static bool ShowEverything
+        {
+            get => s_showEverything;
+            set
+            {
+                if (s_showEverything == value) return;
+                s_showEverything = value;
+                s_displayVersion++;
+                foreach (var h in s_hideables) (h as FogHideable)?.Redraw();
+            }
+        }
+
         public static void Register(IVisionSource s) { if (!s_sources.Contains(s)) s_sources.Add(s); }
         public static void Unregister(IVisionSource s) => s_sources.Remove(s);
         public static void Register(IFogHideable h) { if (!s_hideables.Contains(h)) s_hideables.Add(h); }
         public static void Unregister(IFogHideable h) => s_hideables.Remove(h);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() { s_sources.Clear(); s_hideables.Clear(); }
+        static void ResetStatics() { s_sources.Clear(); s_hideables.Clear(); s_showEverything = false; }
 
         /// <summary>Runtime assets outlive the scene unless destroyed (PlayMode tests boot many times per session).</summary>
         void OnDestroy()
@@ -280,6 +301,11 @@ namespace GuildMaster.Fog
 
             using (s_fadeMarker.Auto())
             {
+                if (_displayVersion != s_displayVersion)
+                {
+                    _displayVersion = s_displayVersion;
+                    _refreshAll = true;
+                }
                 if (_refreshAll)
                 {
                     _refreshAll = false;
@@ -346,7 +372,7 @@ namespace GuildMaster.Fog
             for (int k = _active.Count - 1; k >= 0; k--)
             {
                 int i = _active[k];
-                float target = Disabled || _visibleStamp[i] == _stamp ? 0f : _explored[i] ? _exploredAlpha : 1f;
+                float target = Disabled || s_showEverything || _visibleStamp[i] == _stamp ? 0f : _explored[i] ? _exploredAlpha : 1f;
                 float a = _alpha[i];
                 if (Mathf.Abs(a - target) >= 0.004f)
                 {

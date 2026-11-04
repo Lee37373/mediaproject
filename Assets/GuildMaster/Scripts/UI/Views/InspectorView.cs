@@ -91,6 +91,9 @@ namespace GuildMaster.UI
 
         public void Clear() => Show(null);
 
+        /// <summary>The unit picked, or null (its name tag always shows, P4-123).</summary>
+        public Unit SelectedUnit => _selected as Unit;
+
         void Update()
         {
             HandleClick();
