@@ -19,10 +19,6 @@ namespace GuildMaster.UI
         Building _building;
         Text _header, _current, _next, _cost, _message;
         Button _upgrade, _repair, _demolish;
-        // The watchtower's lookout (2026-11-02): the guild master goes up, sends a flare, rings the alarm bell.
-        Text _lookout;
-        RectTransform _lookoutRow;
-        Button _goUp, _flare, _bell;
 
         protected override void Build(RectTransform body)
         {
@@ -33,15 +29,6 @@ namespace GuildMaster.UI
             _next = UIBuilder.Label(body, "", 15).Size(-1, 44);
             _cost = UIBuilder.Label(body, "", 15).Size(-1, 84);
             _cost.verticalOverflow = VerticalWrapMode.Overflow;
-            _lookout = UIBuilder.Label(body, "", 14, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 40);
-            _lookout.verticalOverflow = VerticalWrapMode.Overflow;
-            _lookoutRow = UIBuilder.Row(body, 38, 6);
-            _goUp = UIBuilder.Button(_lookoutRow, "망보기", OnGoUp, 166, 36, new Color(0.3f, 0.38f, 0.5f), 15);
-            _goUp.Tooltip(() => $"길드 마스터가 감시탑에 올라가 망을 봅니다: 시야 {LookoutRules.SightRadius:0}칸, 성벽 너머까지. 다른 곳으로 움직이면 내려옵니다.");
-            _flare = UIBuilder.Button(_lookoutRow, "조명탄 쏘기", OnFlare, 166, 36, new Color(0.5f, 0.42f, 0.2f), 15);
-            _flare.Tooltip(() => $"감시탑에서 {LookoutRules.FlareRange:0}칸 안의 한 곳을 골라 조명탄을 쏩니다. 그 둘레가 잠시 밝아지고 안개가 걷힙니다. ({LookoutRules.FlareCooldownSeconds:0}초마다)");
-            _bell = UIBuilder.Button(_lookoutRow, "경종 울리기", OnBell, 166, 36, new Color(0.5f, 0.26f, 0.26f), 15);
-            _bell.Tooltip(() => $"마을에서 {LookoutRules.BellRadius:0}칸 안, 의뢰 없이 밖에 나가 있는 길드원을 불러들이고 {LookoutRules.BellHoldHours:0}시간 동안 마을에 머물게 합니다. 의뢰 중인 길드원은 하던 일을 계속합니다. ({LookoutRules.BellCooldownHours:0}시간마다)");
             _upgrade = UIBuilder.Button(body, "업그레이드", OnUpgrade, -1, 42, new Color(0.25f, 0.45f, 0.3f), 17);
             _repair = UIBuilder.Button(body, "수리", OnRepair, -1, 36, new Color(0.3f, 0.38f, 0.5f), 15);
             _repair.Tooltip(() => _building == null ? "" : Services.Get<TownService>().CannotRepairReason(_building) ?? "골드를 들여 내구도를 모두 채웁니다. 무너진 건물은 다시 세워져 제 기능을 되찾습니다.");
@@ -74,11 +61,6 @@ namespace GuildMaster.UI
             var upgrades = Services.Get<UpgradeService>();
             var def = upgrades.Definition(_building);
             _header.text = $"{_building.DisplayName}  Lv.{_building.Level}" + (_building.IsDestroyed ? "  " + UIBuilder.Colored("무너짐", UITheme.Bad) : "");
-            bool watchtower = _building.Type == BuildingType.Watchtower;
-            _lookout.gameObject.SetActive(watchtower);
-            _lookoutRow.gameObject.SetActive(watchtower);
-            _cost.gameObject.SetActive(!watchtower); // the watchtower has no upgrade cost to show: its lookout takes the room
-            if (watchtower) ShowLookout();
             // Repairs (P4-74): any damaged building, a fallen one included.
             var town = Services.Get<TownService>();
             bool damaged = _building.Hp < _building.MaxHp;
@@ -151,56 +133,6 @@ namespace GuildMaster.UI
                 sb.Append("   ").Append(Have(treasury.GetStock(c.itemId), c.count, db.Item(c.itemId)?.displayName ?? c.itemId, ""));
             _cost.text = sb.ToString();
             _upgrade.interactable = upgrades.CannotUpgradeReason(_building) == null;
-        }
-
-        /// <summary>The watchtower's lookout state and its three buttons (2026-11-02).</summary>
-        void ShowLookout()
-        {
-            var lookout = LookoutService.Ensure();
-            bool up = lookout.Post == _building;
-            string status = up ? UIBuilder.Colored($"길드 마스터가 망을 보는 중 (시야 {LookoutRules.SightRadius:0}칸)", UITheme.Good)
-                : lookout.Heading == _building ? "길드 마스터가 감시탑으로 가는 중…"
-                : "길드 마스터가 올라가면 더 멀리 보고, 조명탄과 경종을 쓸 수 있습니다.";
-            if (lookout.BellHolding)
-                status += "\n" + UIBuilder.Colored($"경종: 길드원이 {LookoutRules.Left(lookout.HoldHoursLeft, "시간")} 더 마을에 머뭅니다.", UITheme.Warn);
-            _lookout.text = status;
-            _goUp.SetLabel(up ? "내려오기" : "망보기 (올라가기)");
-            _goUp.interactable = up || lookout.CannotGoUp(_building) == null;
-            _flare.SetLabel(lookout.FlareCooldownLeft > 0f ? $"조명탄 ({LookoutRules.Left(lookout.FlareCooldownLeft, "초")})" : "조명탄 쏘기");
-            _flare.interactable = up && lookout.CannotFlare() == null;
-            _bell.SetLabel(lookout.BellCooldownHoursLeft > 0f ? $"경종 ({LookoutRules.Left(lookout.BellCooldownHoursLeft, "시간")})" : "경종 울리기");
-            _bell.interactable = up && lookout.CannotRing() == null;
-        }
-
-        void OnGoUp()
-        {
-            if (_building == null) return;
-            var lookout = LookoutService.Ensure();
-            if (lookout.Post == _building)
-            {
-                lookout.StandDown();
-                _message.text = "";
-            }
-            else if (lookout.GoUp(_building, out var error))
-                _message.text = UIBuilder.Colored(lookout.Post == _building ? "감시탑에 올라갔습니다." : "길드 마스터가 감시탑으로 향합니다.", UITheme.Good);
-            else
-                _message.text = UIBuilder.Colored(error, UITheme.Bad);
-            Refresh();
-        }
-
-        void OnFlare()
-        {
-            if (LookoutService.Ensure().AimFlare(out var error)) Close(); // the map has to be free to click
-            else _message.text = UIBuilder.Colored(error, UITheme.Bad);
-        }
-
-        void OnBell()
-        {
-            int called = LookoutService.Ensure().RingBell(out var error);
-            _message.text = error != null
-                ? UIBuilder.Colored(error, UITheme.Bad)
-                : UIBuilder.Colored(called > 0 ? $"경종! 길드원 {called}명이 돌아옵니다." : "경종을 울렸습니다.", UITheme.Good);
-            Refresh();
         }
 
         static string Have(int have, int need, string name, string unit)

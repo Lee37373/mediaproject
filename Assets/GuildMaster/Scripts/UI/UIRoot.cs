@@ -130,6 +130,7 @@ namespace GuildMaster.UI
             // Opened from the quest board ("설득") once a quest has stayed untaken (P4-24).
             AddWindow<PersuadeDialogView>(null, null, Key.None, new Vector2(1040, 700));
             AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 450));
+            AddWindow<WatchRuinView>(null, null, Key.None, new Vector2(520, 330)); // the ruined watchtower's lookout (2026-11-02)
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
             // Opened from the inspector and roster [상세] buttons (P4-6).
             AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 700));
