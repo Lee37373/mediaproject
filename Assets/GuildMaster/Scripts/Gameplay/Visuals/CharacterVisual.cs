@@ -62,7 +62,11 @@ namespace GuildMaster.Visuals
         }
 
         /// <summary>Plays the rig's skill swing (no-op for sprite characters).</summary>
-        public void PlaySkill() => _humanRig?.PlaySkill();
+        public void PlaySkill()
+        {
+            if (_humanRig != null) _humanRig.PlaySkill();
+            else if (_rig == null) _skillTime = 0f; // a single picture swells (P4-127)
+        }
 
         // ---- Frame animation (imported art, see ArtLibrary) ----
         CharacterAnimSet _anim;
@@ -120,11 +124,56 @@ namespace GuildMaster.Visuals
             _animTime = 0f;
         }
 
-        /// <summary>Swings once (rigs only; a sprite has no blow to show).</summary>
-        public void PlayAttack() => _rig?.PlayAttack();
+        /// <summary>Swings once: a rig plays its clip, a single picture its drawn-in-code lunge (P4-127, <see cref="SpriteMotion"/>).</summary>
+        public void PlayAttack()
+        {
+            if (_rig != null) _rig.PlayAttack();
+            else _attackTime = 0f;
+        }
 
-        /// <summary>Flinches once (rigs only).</summary>
-        public void PlayHit() => _rig?.PlayHit();
+        /// <summary>Flinches once (a rig's clip, or a single picture's squash).</summary>
+        public void PlayHit()
+        {
+            if (_rig != null) _rig.PlayHit();
+            else if (_attackTime < 0f) _hitTime = 0f; // a blow under way is not broken off by a flinch
+        }
+
+        // ---- Motions drawn in code for single pictures (P4-127) ----
+        float _baseScale = 1f;
+        float _attackTime = -1f, _hitTime = -1f, _skillTime = -1f, _breathPhase;
+
+        /// <summary>The pose of a single picture now (no rig, no person rig); advances the motion clocks.</summary>
+        SpritePose SpritePoseNow(bool moving, float bob)
+        {
+            float dt = Time.deltaTime;
+            var pose = SpritePose.Identity;
+            if (_unit != null && !_unit.IsAlive)
+            {
+                _attackTime = _hitTime = _skillTime = -1f; // a body lies still
+                return pose;
+            }
+            if (_attackTime >= 0f)
+            {
+                pose *= SpriteMotion.Attack(_attackTime, _unit != null && _unit.Stats.IsRanged);
+                _attackTime += dt;
+                if (_attackTime >= SpriteMotion.AttackSeconds) _attackTime = -1f;
+            }
+            if (_hitTime >= 0f)
+            {
+                pose *= SpriteMotion.Hit(_hitTime);
+                _hitTime += dt;
+                if (_hitTime >= SpriteMotion.HitSeconds) _hitTime = -1f;
+            }
+            if (_skillTime >= 0f)
+            {
+                pose *= SpriteMotion.Skill(_skillTime);
+                _skillTime += dt;
+                if (_skillTime >= SpriteMotion.SkillSeconds) _skillTime = -1f;
+            }
+            // Frame-animated art breathes and steps in its own frames.
+            if (_anim == null) pose *= moving ? SpriteMotion.Step(bob / 0.08f) : SpriteMotion.Breath(Time.time, _breathPhase);
+            return pose;
+        }
 
         void TickAnimation(bool moving)
         {
@@ -168,6 +217,9 @@ namespace GuildMaster.Visuals
             _body.forceRenderingOff = false;
             _shadow.forceRenderingOff = false;
             _bodyT.localScale = Vector3.one * scale;
+            _baseScale = scale;
+            _attackTime = _hitTime = _skillTime = -1f;
+            _breathPhase = (GetInstanceID() & 1023) / 1024f;
             _shadow.transform.localScale = new Vector3(scale, 0.45f * scale, 1f);
             _mover = GetComponent<PathFollower>();
             // Anchor feet slightly below the logical position (cell center).
@@ -306,11 +358,22 @@ namespace GuildMaster.Visuals
             {
                 _bodyT.localRotation = Quaternion.Euler(0f, 0f, left ? -80f : 80f);
                 _bodyT.localPosition = new Vector3(left ? 0.3f : -0.3f, -0.12f, 0f);
+                if (_rig == null) _bodyT.localScale = Vector3.one * _baseScale;
+            }
+            else if (_rig == null && !_dying)
+            {
+                // A single picture is moved in code (P4-127): breath, steps, blows, flinches, skills.
+                var pose = SpritePoseNow(moving, bob);
+                float dir = left ? -1f : 1f;
+                _bodyT.localRotation = Quaternion.Euler(0f, 0f, -pose.Tilt * dir);
+                _bodyT.localPosition = new Vector3(pose.Offset.x * dir, -0.3f + bob + pose.Offset.y, 0f);
+                _bodyT.localScale = new Vector3(_baseScale * pose.Scale.x, _baseScale * pose.Scale.y, 1f);
             }
             else
             {
                 _bodyT.localRotation = Quaternion.identity;
                 _bodyT.localPosition = new Vector3(0f, -0.3f + bob, 0f);
+                if (_rig == null) _bodyT.localScale = Vector3.one * _baseScale;
             }
 
             int order = BaseSortingOrder + SortingBoost - Mathf.RoundToInt(transform.position.y * 8f);
