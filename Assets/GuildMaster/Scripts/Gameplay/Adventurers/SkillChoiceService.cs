@@ -29,9 +29,10 @@ namespace GuildMaster.Adventurers
         {
             var a = e.Adventurer;
             if (a == null || !a.IsAlive || a.IsVisitor) return;
-            var candidates = SkillCatalog.Candidates(a.Data.cls, a.Data.skillIds);
-            if (candidates.Count == 0) return; // nothing left for this class
-            var (learn, forget) = SkillCatalog.RuleChoice(a.Data.cls, a.Data.skillIds, candidates);
+            var candidates = SkillCatalog.Candidates(a.Data.cls, a.Data.skillIds, a.Data.level);
+            if (candidates.Count == 0) return; // nothing this level opens is left
+            // P4-126: higher grades open with the level, and each member has its own taste within a grade.
+            var (learn, forget) = SkillCatalog.RuleChoice(a.Data.cls, a.Data.skillIds, candidates, a.Data.level, a.Data.id);
             if (learn != null) Apply(a, learn, forget);
         }
 

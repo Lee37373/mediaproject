@@ -116,6 +116,10 @@ namespace GuildMaster.EditorTools
             "Buff1_Blue", "Buff1_Green", "Buff1_Purple", "Buff1_Red", "Buff1_White", "Buff1_Yellow",
             "MagicCircle1_Blue", "MagicCircle1_Purple", "MagicCircle1_Yellow",
             "Levelup_Yellow", "Heal1", "Heal2", "Smoke", "Explosion_Small", "Whirlwind1",
+            // The adept, master and beast skills (P4-126).
+            "Shield", "Hit10_Red", "Buff2_Red", "Buff3_Yellow", "Booster_ArrowUp", "Booster_Lightning", "Poisoning1", "Poisoning2",
+            "Lightning_Small_Yellow", "Lightning_Small_Blue", "Explosion_Effect_Blue", "Explosion_Effect_Green", "Explosion_Effect_White",
+            "Explosion_Large", "Cloud1", "Cloud2", "Bubble",
         };
 
         static void BuildHumans(CharacterArtCatalog catalog)

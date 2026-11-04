@@ -83,7 +83,7 @@ namespace GuildMaster.Units
             attacker?.BreakStealth(); // hitting someone gives the hiding place away (P4-19)
             if (target == null || !target.IsAlive || !CanReach(attacker, target)) return;
             var rng = GameRandom.Shared;
-            float atk = attacker != null ? attacker.Stats.Attack : 5f;
+            float atk = attacker != null ? attacker.AttackNow : 5f;
             float raw = atk * rng.Range(0.9f, 1.1f);
             bool crit = rng.Chance(CritChance);
             if (crit) raw *= CritMultiplier;

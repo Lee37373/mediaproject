@@ -125,6 +125,17 @@ namespace GuildMaster.Visuals
 
         // ---------------- Spawning ----------------
 
+        /// <summary>
+        /// A skill's own effect (P4-126), played where the guild can see and the camera looks; false when it was not played
+        /// (no pack, unseen, or no such effect) so the caller can draw its plain stand-in instead.
+        /// </summary>
+        public static bool PlayIfSeen(string key, Vector2 at, float scale = 1f)
+        {
+            if (!Active || !Services.TryGet<CasualVfx>(out var vfx)) return false;
+            if (!Seen(at)) return true; // nothing to draw, and no stand-in either
+            return vfx.Play(key, at, scale);
+        }
+
         /// <summary>Plays an effect once at <paramref name="at"/>; returns false when the pack has no such effect.</summary>
         public bool Play(string key, Vector2 at, float scale = 1f)
         {
