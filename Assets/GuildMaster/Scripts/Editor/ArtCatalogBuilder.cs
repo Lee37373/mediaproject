@@ -24,18 +24,24 @@ namespace GuildMaster.EditorTools
             ("s4", "frog"), ("s5", "robot"), ("s6", "skeleton"),
         };
 
-        /// <summary>Casual Monsters PNG/All images → monster art keys (MonsterDefinition.artKey).</summary>
-        static readonly (string file, string key)[] Monsters =
+        /// <summary>
+        /// Casual Monsters PNG/All images → monster art keys (MonsterDefinition.artKey), with the pack's prefab of the same
+        /// monster in parts (P4-128: moved in code, so the weapon swings).
+        /// </summary>
+        static readonly (string file, string key, string parts)[] Monsters =
         {
-            ("goblin/goblin.png", "goblin"), ("goblin/goblin_archer.png", "goblin_archer"),
-            ("goblin_green/goblin_warrior.png", "goblin_warrior"),
-            ("green_slime/slime.png", "slime"), ("green_slime/stone_slime.png", "stone_slime"), ("green_slime/slime_king.png", "slime_king"),
-            ("skull/skull.png", "skull"), ("skull/skull_archer.png", "skull_archer"),
+            ("goblin/goblin.png", "goblin", "goblin"), ("goblin/goblin_archer.png", "goblin_archer", "goblin_archer"),
+            ("goblin_green/goblin_warrior.png", "goblin_warrior", "green_goblin_warrior"),
+            ("green_slime/slime.png", "slime", "green_slime"), ("green_slime/stone_slime.png", "stone_slime", "green_stone_slime"),
+            ("green_slime/slime_king.png", "slime_king", "green_slime_king"),
+            ("skull/skull.png", "skull", "skull"), ("skull/skull_archer.png", "skull_archer", "skull_archer"),
             // Pack bosses (P4-57).
-            ("orange_slime/slime.png", "boss_slime"), ("orange_slime/stone_slime.png", "boss_stone_slime"),
-            ("orange_slime/slime_king.png", "boss_slime_king"), ("skull_posion/skull_warrior.png", "boss_skull"),
-            ("goblin/goblin_warrior.png", "boss_goblin"),
+            ("orange_slime/slime.png", "boss_slime", "slime"), ("orange_slime/stone_slime.png", "boss_stone_slime", "stone_slime"),
+            ("orange_slime/slime_king.png", "boss_slime_king", "slime_king"), ("skull_posion/skull_warrior.png", "boss_skull", "posion_skull_warrior"),
+            ("goblin/goblin_warrior.png", "boss_goblin", "goblin_warrior"),
         };
+
+        const string MonsterPartPrefabs = LayerLab + "2D Characters-CasualMonsters/Prefabs/";
 
         /// <summary>Minimal EnemyMonster prefabs (P4-110): every one a rig, keyed by its name in lower case ("toad_king").</summary>
         const string RigPrefabs = LayerLab + "2D Minimal-EnemyMonster/EnemyMonster 3/Prefabs";
@@ -63,10 +69,11 @@ namespace GuildMaster.EditorTools
                 Sprite[] Anim(string action) => frames.Where(s => s.name.Contains("-" + action + "_")).OrderBy(s => s.name).ToArray();
                 catalog.skins.Add(new CharacterArtCatalog.Skin { name = skin, idle = Anim("idle"), run = Anim("run"), die = Anim("die2") });
             }
-            foreach (var (file, key) in Monsters)
+            foreach (var (file, key, parts) in Monsters)
             {
                 var s = AssetDatabase.LoadAssetAtPath<Sprite>(ArtImportSettings.MonsterImages + file);
-                if (s != null) catalog.monsters.Add(new CharacterArtCatalog.MonsterArt { key = key, sprite = s });
+                var p = AssetDatabase.LoadAssetAtPath<GameObject>(MonsterPartPrefabs + parts + ".prefab");
+                if (s != null) catalog.monsters.Add(new CharacterArtCatalog.MonsterArt { key = key, sprite = s, parts = p });
             }
             if (AssetDatabase.IsValidFolder(RigPrefabs))
             {

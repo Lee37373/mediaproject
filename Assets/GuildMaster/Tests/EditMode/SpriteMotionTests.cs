@@ -50,6 +50,21 @@ namespace GuildMaster.Tests
         }
 
         [Test]
+        public void AWeapon_IsLiftedBack_BroughtDownInFront_AndABowOnlyKicks()
+        {
+            // P4-128: the parts' weapon turns round its grip (degrees counter-clockwise for a picture facing right).
+            float T = SpriteMotion.AttackSeconds;
+            Assert.That(PartPuppet.WeaponAngle(T * 0.28f, false, -1f, false, 0f, 0f, false), Is.GreaterThan(30f), "lifted back with the crouch");
+            Assert.That(PartPuppet.WeaponAngle(T * 0.5f, false, -1f, false, 0f, 0f, false), Is.LessThan(-60f), "brought down in front with the lunge");
+            Assert.That(Mathf.Abs(PartPuppet.WeaponAngle(T - 0.001f, false, -1f, false, 0f, 0f, false)), Is.LessThan(1f), "back where it was");
+            for (float t = 0f; t < T; t += 0.02f)
+                Assert.That(Mathf.Abs(PartPuppet.WeaponAngle(t, true, -1f, false, 0f, 0f, true)), Is.LessThanOrEqualTo(14.01f), "a bow is raised a little, never swung");
+            Assert.That(PartPuppet.WeaponAngle(-1f, false, SpriteMotion.HitSeconds * 0.5f, false, 0f, 0f, false), Is.GreaterThan(8f), "a flinch jerks it");
+            Assert.That(Mathf.Abs(PartPuppet.WeaponAngle(-1f, false, -1f, true, Mathf.PI / 2f, 0f, false)), Is.EqualTo(7f).Within(0.01f), "swings with the step");
+            Assert.That(Mathf.Abs(PartPuppet.WeaponAngle(-1f, false, -1f, false, 0f, 0.7f, false)), Is.LessThanOrEqualTo(3f), "sways a little standing");
+        }
+
+        [Test]
         public void TreesSortWithTheCharacters_SoWhoIsBehindATreeIsBehindIt()
         {
             // A tree on row 100 sits where a unit standing at its trunk would.

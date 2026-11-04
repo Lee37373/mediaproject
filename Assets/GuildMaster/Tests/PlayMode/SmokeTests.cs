@@ -247,6 +247,15 @@ namespace GuildMaster.Tests
             var master = Services.Get<Player.PlayerAvatar>();
             DebugCommands.Invulnerable(true);
             DebugCommands.SpawnNearMaster("goblin", 10, 2f);
+            // Packed round the master so their tags must overlap (where the spawn put them follows the shared random draw).
+            var crowd = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null && m.Def.id == "goblin"
+                                                                     && Vector2.Distance(m.Position, master.Position) <= 8f).Take(10).ToList();
+            for (int i = 0; i < crowd.Count; i++)
+            {
+                crowd[i].Mover.Stop();
+                var at = master.Position + new Vector2(-0.8f + (i % 5) * 0.4f, 0.8f + (i / 5) * 0.35f);
+                crowd[i].transform.position = new Vector3(at.x, at.y, crowd[i].transform.position.z);
+            }
             FightCamera.Stop();
             NameTagLayer.IgnorePointer = true; // the watcher's mouse over a goblin would rightly put its tag first
             Services.Get<CameraControl.CameraController>().JumpTo(master.Position);
@@ -261,6 +270,18 @@ namespace GuildMaster.Tests
                 Assert.That(NameTagLayer.Overlaps(placed[i], placed[j]), Is.False, $"tags {i} and {j} overlap");
             Assert.That(placed.Count, Is.LessThan(tags.CandidateCount), $"some tags give way ({placed.Count} of {tags.CandidateCount})");
             Assert.That(tags.IsShown(master), Is.True, "the guild master's tag shows over the goblins'");
+
+            // P4-128: with the pack imported, a goblin is drawn from its parts and its weapon turns on a blow.
+            if (Visuals.ArtLibrary.MonsterParts("goblin") != null)
+            {
+                var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.Def.id == "goblin" && !m.IsBoss);
+                Assert.That(goblin.Visual.HasPuppet, Is.True, "a pack goblin is drawn in parts");
+                var pivot = goblin.GetComponentsInChildren<Transform>().First(t => t.name == "WeaponPivot");
+                goblin.Visual.PlayAttack();
+                float before = pivot.localEulerAngles.z;
+                yield return WaitFor(() => Mathf.Abs(Mathf.DeltaAngle(pivot.localEulerAngles.z, before)) > 10f, 1f);
+                Assert.That(Mathf.Abs(Mathf.DeltaAngle(pivot.localEulerAngles.z, before)), Is.GreaterThan(10f), "the weapon swings");
+            }
             DebugCommands.Invulnerable(false);
             NameTagLayer.IgnorePointer = false;
         }

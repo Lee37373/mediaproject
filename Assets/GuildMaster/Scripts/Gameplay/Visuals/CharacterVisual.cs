@@ -101,6 +101,7 @@ namespace GuildMaster.Visuals
         public void InitRig(CharacterArtCatalog.MonsterRig art, float scale = 1f)
         {
             if (_rig != null && _rig.Prefab != art.prefab) ReleaseRig();
+            if (_puppet != null) ReleasePuppet();
             InitBody(art.portrait, scale);
             _body.forceRenderingOff = true;
             _shadow.forceRenderingOff = true;
@@ -191,8 +192,36 @@ namespace GuildMaster.Visuals
         public void Init(Sprite sprite, float scale = 1f)
         {
             if (_rig != null) ReleaseRig();
+            if (_puppet != null) ReleasePuppet();
             InitBody(sprite, scale);
         }
+
+        // ---- A single picture in parts (P4-128) ----
+        PartPuppet _puppet;
+        float _stepPhase;
+
+        /// <summary>
+        /// Drawn from the picture's pack prefab in parts (P4-128), so the weapon swings and the legs step; the body keeps the
+        /// picture, never drawn, for what reads one sprite (a fog ghost's copy, the corpse's colour), and its own shadow.
+        /// </summary>
+        public void InitPuppet(GameObject parts, Sprite still, float scale = 1f)
+        {
+            if (_rig != null) ReleaseRig();
+            if (_puppet != null && _puppet.Prefab != parts) ReleasePuppet();
+            InitBody(still, scale);
+            _body.forceRenderingOff = true;
+            if (_puppet == null) _puppet = new PartPuppet(parts, _bodyT, still, _body.sharedMaterial, _body.sortingLayerID);
+            else _puppet.Reset();
+        }
+
+        void ReleasePuppet()
+        {
+            _puppet.Release();
+            _puppet = null;
+        }
+
+        /// <summary>Drawn in parts (<see cref="InitPuppet"/>).</summary>
+        public bool HasPuppet => _puppet != null;
 
         void InitBody(Sprite sprite, float scale)
         {
@@ -354,6 +383,8 @@ namespace GuildMaster.Visuals
             // Animated art has its own motion; single sprites bob while walking.
             float bob = moving && _anim == null && _rig == null ? Mathf.Abs(Mathf.Sin(_bobPhase)) * 0.08f : 0f;
             if (_anim != null) TickAnimation(moving);
+            // The parts follow the same blow and flinch as the whole (read before the pose moves the clocks on).
+            float attackAt = _attackTime, hitAt = _hitTime;
             if (Lying)
             {
                 _bodyT.localRotation = Quaternion.Euler(0f, 0f, left ? -80f : 80f);
@@ -389,6 +420,8 @@ namespace GuildMaster.Visuals
             else shown = Shown(_tint);
             if (_body.color != shown) _body.color = shown;
             _rig?.Tick(moving, _body.flipX, order, shown);
+            _puppet?.Tick(moving, _body.flipX, order, shown, attackAt, _unit != null && _unit.Stats.IsRanged, hitAt, _bobPhase,
+                          still: Lying || _unit != null && !_unit.IsAlive);
         }
     }
 }
