@@ -11,6 +11,8 @@ namespace GuildMaster.Units
         public const float ContactPadding = 0.35f;
         public const float CritChance = 0.1f;
         public const float CritMultiplier = 1.6f;
+        /// <summary>A shooter keeps facing its target this long past its reload (P4-124), so a steady fight never turns it.</summary>
+        public const float RangedFacingSlack = 0.3f;
 
         /// <summary>
         /// Every unit's HP (and every heal) is this many times the listed numbers (P4-42, user
@@ -63,7 +65,10 @@ namespace GuildMaster.Units
             if (Time.time < attacker.NextAttackTime || !InRange(attacker, target) || !HasShot(attacker, target)) return false;
 
             attacker.NextAttackTime = Time.time + attacker.AttackCooldownNow;
-            attacker.Visual?.FaceTowards(target.Position);
+            // A shooter keeps its eyes on the target until the next shot (P4-124: one falling back or kiting turned to walk
+            // and back to shoot, two turns an arrow).
+            if (attacker.Stats.IsRanged) attacker.Visual?.KeepFacing(target, attacker.AttackCooldownNow + RangedFacingSlack);
+            else attacker.Visual?.FaceTowards(target.Position);
             attacker.Visual?.PlayAttack();
 
             if (attacker.Stats.IsRanged && Services.TryGet<ProjectileService>(out var projectiles))

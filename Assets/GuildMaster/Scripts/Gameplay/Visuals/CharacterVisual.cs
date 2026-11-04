@@ -237,9 +237,34 @@ namespace GuildMaster.Visuals
         /// </summary>
         public const float FaceDeadZone = 0.3f;
 
-        /// <summary>Face toward a world x position for a moment (e.g. when attacking).</summary>
-        public void FaceTowards(Vector2 target)
+        /// <summary>
+        /// A walking direction has to hold this long before the sprite turns to it (P4-124: a re-planned path whose first
+        /// step went back a little turned a walker round and back within two frames).
+        /// </summary>
+        public const float WalkTurnDelay = 0.2f;
+
+        Units.Unit _keepFacing;
+        float _keepFacingUntil;
+        float _walkTurnTime;
+
+        /// <summary>
+        /// Keeps facing <paramref name="target"/> (where it is now, as it moves) for <paramref name="seconds"/>, while it
+        /// lives (P4-124: an archer shooting as it fell back turned to walk and back to shoot every arrow). A new call or a
+        /// <see cref="FaceTowards"/> elsewhere replaces it.
+        /// </summary>
+        public void KeepFacing(Units.Unit target, float seconds)
         {
+            _keepFacing = target;
+            _keepFacingUntil = Time.time + seconds;
+            if (target != null) FaceTowards(target.Position, keep: true);
+        }
+
+        /// <summary>Face toward a world x position for a moment (e.g. when attacking).</summary>
+        public void FaceTowards(Vector2 target) => FaceTowards(target, keep: false);
+
+        void FaceTowards(Vector2 target, bool keep)
+        {
+            if (!keep) _keepFacing = null;
             float dx = target.x - transform.position.x;
             if (Mathf.Abs(dx) > FaceDeadZone) _facingLeftOverride = dx < 0f;
             else if (_faceOverrideTimer <= 0f) _facingLeftOverride = _shownLeft;
@@ -250,11 +275,22 @@ namespace GuildMaster.Visuals
         {
             if (_body == null) return;
             bool moving = _mover != null && (_mover.IsMoving || _mover.IsSteering);
+            if (_keepFacing != null)
+            {
+                if (_keepFacing.IsAlive && Time.time < _keepFacingUntil) FaceTowards(_keepFacing.Position, keep: true);
+                else _keepFacing = null;
+            }
+            // A walking direction counts once it has held a moment (P4-124).
+            bool walkLeft = _shownLeft;
+            if (moving && _mover != null && _mover.FacingLeft != _shownLeft)
+            {
+                _walkTurnTime += Time.deltaTime;
+                if (_walkTurnTime >= WalkTurnDelay) walkLeft = _mover.FacingLeft;
+            }
+            else _walkTurnTime = 0f;
             // Looking somewhere on purpose (a blow, a target), else the way it walks — and standing still, the way it
             // last looked (P4-92: after each blow a unit turned back to where it had last walked, twice a swing).
-            bool left = _faceOverrideTimer > 0f ? _facingLeftOverride
-                      : moving && _mover != null ? _mover.FacingLeft
-                      : _shownLeft;
+            bool left = _faceOverrideTimer > 0f ? _facingLeftOverride : walkLeft;
             if (left != _shownLeft) { _shownLeft = left; Turns++; }
             _faceOverrideTimer -= Time.deltaTime;
             if (_humanRig != null) { UpdateRig(moving, left); return; }

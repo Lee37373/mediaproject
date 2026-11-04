@@ -103,18 +103,27 @@ namespace GuildMaster.Session
                     world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(stand + GameRandom.Shared.InsideUnitCircle() * 1.5f), 4, out var cell);
                     members.Add(roster.Recruit(d, World.GridMap.CellToWorld(cell)));
                 }
-                board.TryPostRequest(new QuestDraft
+                // The board posts hunts only for kinds the guild has seen (P4-124: a trial in a new game posted nothing
+                // and its members idled in town).
+                if (Services.TryGet<GuildIntel>(out var intel)) intel.MarkKnown(species);
+                if (!board.TryPostRequest(new QuestDraft
                 {
                     Type = QuestType.Hunt, Species = species, Count = pack, Point = site, HasPoint = true, Radius = QuestBoard.HuntRadius,
                     RewardGold = 100, RewardExp = 10, MaxParty = members.Count,
-                }, QuestClient.Town, out var quest, out _);
+                }, QuestClient.Town, out var quest, out var postError))
+                    Debug.LogWarning($"[Trial] the hunt was not posted: {postError}");
+                // Everyone takes it before anyone sets out (P4-124: the first taker alone counted as party work gathering
+                // in town and walked off towards it before the others had taken it).
+                var takers = new List<Adventurer>();
                 for (int i = 0; i < members.Count; i++)
                 {
                     var a = members[i];
                     if (quest == null || !board.TryAccept(quest, a, invited: i > 0)) continue;
                     a.CurrentQuest = quest;
-                    a.ChangeState(a.TravelState);
+                    takers.Add(a);
                 }
+                if (quest != null && Services.TryGet<PartyService>(out var parties)) parties.IsGathering(quest); // all here: it ends
+                foreach (var a in takers) a.ChangeState(a.TravelState);
 
                 clock.SetSpeed(speed);
                 float startTime = Time.time;
