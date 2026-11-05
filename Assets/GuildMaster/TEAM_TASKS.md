@@ -137,7 +137,7 @@
 | P4-126 | 스킬 추가(사용자 요청 2026-11-04): Cartoon Casual VFX Pack 이펙트로 길드원 직업마다 3개 + 몬스터 8개쯤: 직업마다 숙련(Lv8) 2·고급(Lv15) 1 — 철벽·처형·전투 함성 / 독화살·속박 화살·속사 / 보호막·심판·축복 / 연쇄 번개·서리 고리·운석, 몬스터 독침·흡혈·포자 구름·혀 끌어당기기·광폭화·점액 폭발·눈보라·덮치기(+고블린 전사 전투 함성). 배우기는 등급 + 사람마다 고정 취향(사용자 결정). 새 버프 `Unit.Boons`(공격·받는 피해 감소·방어·흡수막, 저장) | 이재혁 | 완료 | Units/ClassSkills·BeastSkills·Boons(신규)·Skills·Unit·Combat, Adventurers/SkillCatalog·SkillChoiceService, Data/DefaultContent, Visuals/CasualVfx, Editor/ArtCatalogBuilder, Resources/ArtCatalog, Tests/EditMode/SkillLearningTests | 02de03c |
 | P4-127 | 한 장짜리 몬스터(고블린·슬라임·해골 등) 코드로 동작(공격·맞음·스킬·숨쉬기) + 나무를 깊이 순서로 그려 뒤에 선 유닛이 가려지고, 그 나무는 투명해짐(사용자 요청 2026-11-04): 공격(근접 웅크림→달려듦, 원거리 당김→놓음)·맞음·스킬·숨쉬기·걸음을 코드로, 나무는 줄마다 타일맵으로 유닛과 같은 깊이 순서, 길드가 보는 유닛을 가리는 나무는 불투명도 30% | 이재혁 | 완료 | Visuals/CharacterVisual·SpriteMotion(신규), World/MapRenderer·TreeFade(신규) | 818c44e |
 | P4-128 | 한 장짜리 몬스터를 팩의 부위 프리팹으로 그려 무기(손잡이 축)·다리·활을 코드로 움직임(사용자 요청 2026-11-04 "무기가 자연스럽게 움직이게"): 무기는 손잡이를 축으로(들어 올림 +40° → 내려침 −75°), 활은 들고 튕김, 다리는 걸음, 방패는 맞을 때 움찔. 부위 프리팹이 없으면 예전 한 장짜리 | 이재혁 | 완료 | Visuals/PartPuppet(신규)·CharacterVisual·ArtLibrary·CharacterArtCatalog, Monsters/Monster, Editor/ArtCatalogBuilder, Resources/ArtCatalog | 7442f88 |
-| P4-129 | 관전 디렉터·명장면(게임성 제안 H7, 사용자 선택 2026-11-05): 흥미 점수가 높은 사건(군주·드래곤·원수 전투, 구사일생, 침공 방어 등 — 길드가 본 것만)으로 카메라·자막, 길드원 전기 | 이재혁 | 예정 | CameraControl, Session/FightCamera, UI | |
+| P4-129 | 관전 디렉터·명장면(게임성 제안 H7, 사용자 선택 2026-11-05): 흥미 점수가 높은 사건(군주·드래곤·원수 전투, 구사일생, 침공 방어 등 — 길드가 본 것만)으로 카메라·자막, 길드원 전기 | 이재혁 | 진행 중 | CameraControl, Session/FightCamera, UI | |
 | P4-130 | 마을 소식지(F-9, 사용자 선택 2026-11-05): 매일 아침 "어제의 마을 소식" 기사 3~5개, 누르면 그 인물·장소로 | 이재혁 | 예정 | Reports, UI/Views/DailyReportView 옆 | |
 | P4-131 | 관계가 전투에(F-12, 사용자 선택 2026-11-05): 파티 궁합·라이벌·멘토 | 이재혁 | 예정 | Units/Combat, Adventurers/PartyService, Social | |
 | P4-132 | 길드 마스터 지휘(게임성 제안 H6 = F-16, 사용자 선택 2026-11-05): 응원·집결 깃발·후퇴 나팔, 따르는 정도는 관계·충성 | 이재혁 | 예정 | Player, Adventurers, UI | |
@@ -172,12 +172,12 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: 없음
+- **진행 중**: P4-129 H7 관전 디렉터
 - **예정**: P4-129 H7 관전 디렉터 → P4-130 F-9 소식지 → P4-131 F-12 관계·전투 → P4-132 H6 지휘 → P4-133 F-5 의뢰 종류 → P4-134 F-14 주민 부탁 → P5-5 Windows 빌드(맨 마지막)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-128, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
-- **진행 중**: 없음
+- **진행 중**: P4-129 H7 관전 디렉터
 - **예정**: F-4(명성·길드 등급·승리 목표 — P4-106이 흡수, 2026-10-27), F-7(개발용 검증 명령). F-5(의뢰 종류·보상 확장)는 `QuestBoard.cs`를 건드려야 해서 P4-22와 조율이 필요합니다
 - **바뀐 점 알림(2026-10-17, P4-82 완료 c7b8e68)**: 사용자 결정으로 의뢰 구조가 바뀌었습니다. 플레이어는 토벌을 직접 올리지 않고, 우리 마을이 길드가 본 둥지마다 토벌을 올립니다. 보상은 의뢰처가 내고 길드는 20%를 수수료로 받으며, 길드 EXP는 없어졌습니다. **F-8 제안 카드**: 게시판에 없는 둥지에 대한 "다른 의뢰인의 요청"이 되었고, 보상 조절 버튼과 금고 잔액 제한을 없앴습니다(고르기만, `ProposalRules.BuildPool(targets, power, members, rng)`). **P4-59 협상**: 그대로 길드 금고에서 얹습니다. F-5(의뢰 확장)를 할 때는 `QuestClient`·`QuestPricing`·`QuestBoard.TryPostRequest`를 쓰면 됩니다. P4-83(8d091f6)으로 지대 군주 넷을 잡으면 승리 화면이 뜹니다(`AllLordsSlainEvent`) — F-4의 승리 목표는 여기에 얹으면 됩니다
 - **바뀐 점 알림(2026-10-19, P4-87 완료 661026d)**: 사용자 결정으로 **모든 모험가의 공격·방어·최대 체력이 ×0.75로 시작**하고, 성벽 안에 짓는 내실 건물(무기고·방어구 공방·식당 각 3레벨)로 예전 세기까지 돌아옵니다(`Town/FacilityRules`, `AdventurerStats.Compute(…, StatScale)`). 판단의 힘 `AdventurerStats.Power`도 이 배율을 곱하고(`RawPower`가 예전 값), 위험 낮음 요구치는 0.75입니다. 피해 공식은 `Unit.EffectiveDefense`·`Unit.AttackCooldownNow`(방어 감소·둔화 반영)를 씁니다. 정원은 대숙소가 있으면 없어집니다(`GuildRoster.IsFull`·`CountText`)
