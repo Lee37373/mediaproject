@@ -362,6 +362,10 @@ namespace GuildMaster.Session
             var ledger = new Reports.DailyLedger(treasury, clock.Day, clock.HourOfDay);
             Services.Register(ledger);
             save.Register(ledger);
+            // The town newspaper (P4-130, F-9): the day's stories, composed when the ledger closes the day, out the next morning.
+            var news = new Reports.NewsDesk(clock, roster);
+            Services.Register(news);
+            save.Register(news);
             // Stress and its consequences (F-2): demands, walking away from quests, quitting; interview, leave, bonus.
             var welfare = new Welfare.GuildWelfare(clock, roster, treasury, board, notifications);
             Services.Register(welfare);

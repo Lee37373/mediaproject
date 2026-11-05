@@ -23,6 +23,8 @@ namespace GuildMaster.Director
         public Vector2 Position;
         public string Title;
         public string Subtitle;
+        /// <summary>Who or what it was against as the guild saw it ("고블린", the raid's kind), or null (the newspaper, P4-130).</summary>
+        public string FoeName;
         /// <summary>The foe of a big fight, or the member in trouble; its id at the start (pooled units are reused).</summary>
         public Unit Focus;
         public string FocusId;
@@ -149,7 +151,8 @@ namespace GuildMaster.Director
                     Touch(key, HighlightKind.LowHp, HighlightRules.Score(HighlightKind.LowHp), a.Position, a,
                         $"{a.Data.name}, 체력 {pct}%" + (foeName != null ? $" — {foeName}" : ""),
                         new[] { a },
-                        foeName != null ? $"{foeName}{Josa(foeName, "과", "와")} 싸우다 체력 {pct}%까지 몰렸다" : $"싸우다 체력 {pct}%까지 몰렸다");
+                        foeName != null ? $"{foeName}{Josa(foeName, "과", "와")} 싸우다 체력 {pct}%까지 몰렸다" : $"싸우다 체력 {pct}%까지 몰렸다")
+                        .FoeName = foeName;
                 }
             }
 
@@ -169,7 +172,7 @@ namespace GuildMaster.Director
                 string foeLabel = $"{foe.DisplayName}(Lv{foe.Level})";
                 Touch("big:" + foe.UnitId, kind, HighlightRules.Score(kind), centre, foe,
                     $"{names} vs {foeLabel}", fighters,
-                    $"{HighlightRules.Title(kind)}: {foeLabel}{Josa(foe.DisplayName, "과", "와")} 맞섰다");
+                    $"{HighlightRules.Title(kind)}: {foeLabel}{Josa(foe.DisplayName, "과", "와")} 맞섰다").FoeName = foe.DisplayName;
             }
         }
 
@@ -212,7 +215,7 @@ namespace GuildMaster.Director
                     string dir = _raidDirection.TryGetValue(front.RaidId, out var d) ? $"{d}쪽 " : "";
                     Touch("raid:" + front.RaidId, HighlightKind.Raid, HighlightRules.RaidScore(near.Count), centre, null,
                         $"{species} {near.Count}마리가 {dir}성문으로 몰려온다", Near(members, centre),
-                        $"마을 방어전: {dir}성문에서 {species} 무리를 막아섰다");
+                        $"마을 방어전: {dir}성문에서 {species} 무리를 막아섰다").FoeName = species;
                 }
 
             // A horde on the march, where the guild sees it.
@@ -227,7 +230,7 @@ namespace GuildMaster.Director
                     centre /= seen.Count;
                     string species = MostCommon(seen);
                     Touch("horde:" + inc.Id, HighlightKind.Horde, HighlightRules.Score(HighlightKind.Horde), centre, null,
-                        $"{species} {seen.Count}마리가 몰려온다", Near(members, centre), $"대규모 무리({species})와 마주쳤다");
+                        $"{species} {seen.Count}마리가 몰려온다", Near(members, centre), $"대규모 무리({species})와 마주쳤다").FoeName = species;
                 }
 
             // The dragon over the town.
@@ -237,7 +240,8 @@ namespace GuildMaster.Director
                     if (u is not Monster m || !m.IsDragon || !Seen(fog, m)) continue;
                     if ((m.Position - _world.TownCenterWorld).sqrMagnitude > HighlightRules.OverTownRadius * HighlightRules.OverTownRadius) continue;
                     Touch("dragon-town:" + m.UnitId, HighlightKind.DragonOverTown, HighlightRules.Score(HighlightKind.DragonOverTown), m.Position, m,
-                        $"{m.DisplayName}{Josa(m.DisplayName, "이", "가")} 마을 위에 나타났다", Near(members, m.Position, 30f), "마을을 덮친 드래곤을 보았다");
+                        $"{m.DisplayName}{Josa(m.DisplayName, "이", "가")} 마을 위에 나타났다", Near(members, m.Position, 30f), "마을을 덮친 드래곤을 보았다")
+                        .FoeName = m.DisplayName;
                 }
         }
 
@@ -256,7 +260,7 @@ namespace GuildMaster.Director
             Services.TryGet<FogOfWar>(out var fog);
             string by = Seen(fog, e.Killer) ? e.Killer.DisplayName : null;
             Beat("last:" + a.Data.id, HighlightKind.LastStand, a.Position, a, $"{a.Data.name}{Josa(a.Data.name, "이", "가")} 죽음의 문턱에서 버텼다",
-                new[] { a }, by != null ? $"구사일생: {by}의 일격을 버텨 냈다" : "구사일생: 죽음의 문턱에서 살아났다");
+                new[] { a }, by != null ? $"구사일생: {by}의 일격을 버텨 냈다" : "구사일생: 죽음의 문턱에서 살아났다").FoeName = by;
         }
 
         void OnRetreat(AdventurerRetreatedEvent e)
@@ -267,7 +271,7 @@ namespace GuildMaster.Director
             string threat = Seen(fog, e.Threat) ? e.Threat.DisplayName : "적";
             string who = e.WithParty ? $"{a.Data.name} 일행" : a.Data.name;
             Beat("retreat:" + a.Data.id, HighlightKind.Retreat, a.Position, a, $"{who}{Josa(who, "이", "가")} {threat}에게서 물러난다",
-                new[] { a }, $"{threat}에게서 후퇴했다");
+                new[] { a }, $"{threat}에게서 후퇴했다").FoeName = Seen(fog, e.Threat) ? threat : null;
         }
 
         void OnGateBroken(GateBrokenEvent e)
@@ -280,10 +284,11 @@ namespace GuildMaster.Director
 
         void OnRaidSighted(RaidSightedEvent e) => _raidDirection[e.RaidId] = e.Direction;
 
-        void Beat(string key, HighlightKind kind, Vector2 at, Unit focus, string subtitle, IEnumerable<Adventurer> members, string line)
+        Highlight Beat(string key, HighlightKind kind, Vector2 at, Unit focus, string subtitle, IEnumerable<Adventurer> members, string line)
         {
             var h = Touch(key, kind, HighlightRules.Score(kind), at, focus, subtitle, members, line);
             h.ExpiresAt = Time.unscaledTime + HighlightRules.BeatSeconds;
+            return h;
         }
 
         // ---------------- Bookkeeping ----------------

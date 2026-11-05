@@ -1145,6 +1145,18 @@ namespace GuildMaster.Session
             return $"spectator={(on ? "on" : "off")}";
         }
 
+        /// <summary>The town newspaper (P4-130): the stories noted so far today and the latest paper.</summary>
+        public static string News()
+            => Services.TryGet<Reports.NewsDesk>(out var desk) ? desk.Describe() : "no NewsDesk";
+
+        /// <summary>Today's paper so far, out now (its window opens as in the morning).</summary>
+        public static string PrintNews()
+        {
+            if (!Services.TryGet<Reports.NewsDesk>(out var desk)) return "no NewsDesk";
+            var p = desk.PrintNow();
+            return string.Join("\n", p.articles.Select(a => $"[{Reports.NewsRules.Tag(a.kind)} {a.score:0}] {a.headline} — {a.body}"));
+        }
+
         /// <summary>
         /// Testing only (user request 2026-09-23): gives the camera itself sight, so whatever it is
         /// pointed at is in view — monsters included — while the rest of the map keeps its fog. Use
@@ -1509,6 +1521,7 @@ namespace GuildMaster.Session
         {
             if (s_trial != null && s_trial.Running) return "a trial is running: " + s_trial.Report();
             GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game between rounds
+            GuildMaster.Reports.NewsDesk.AutoOpen = false; // P4-130: nor the morning paper
             var classes = team.ToUpperInvariant().Select(c => c switch
             {
                 'W' => AdventurerClass.Warrior,
@@ -1551,6 +1564,7 @@ namespace GuildMaster.Session
             var probe = WildlifeProbe.Ensure();
             if (probe.Running) return "already running";
             GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game; cards wait for their deadlines
+            GuildMaster.Reports.NewsDesk.AutoOpen = false; // P4-130: nor the morning paper
             probe.Begin(days);
             Services.Get<GameClock>().SetSpeed(speed);
             return $"wildlife run started: {days} game days";
@@ -1563,6 +1577,7 @@ namespace GuildMaster.Session
             var probe = BalanceProbe.Ensure();
             if (probe.Running) return "already running: " + probe.Report();
             GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game; cards wait for their deadlines
+            GuildMaster.Reports.NewsDesk.AutoOpen = false; // P4-130: nor the morning paper
             string name = string.IsNullOrEmpty(label) ? "baseline" : label;
             string path = System.IO.Path.Combine(Application.dataPath, "..", "BalanceLogs", $"{name}.csv");
             path = System.IO.Path.GetFullPath(path);

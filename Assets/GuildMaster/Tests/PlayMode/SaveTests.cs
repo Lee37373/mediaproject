@@ -379,6 +379,11 @@ namespace GuildMaster.Tests
             var emotions = Services.Get<Social.EmotionService>();
             emotions.Feel(memberId, Social.Emotion.Excited, 10f, "시험 감정");
             emotions.Book.MarkChanged(memberId, otherId, nowHour, 5);
+            // The town newspaper (P4-130): a paper out and a story on the desk for the next.
+            var news = Services.Get<Reports.NewsDesk>();
+            news.Note(Reports.NewsRules.Festival().On("festival"));
+            var printed = news.Close(clock.Day, Services.Get<Reports.DailyLedger>().Current);
+            news.Note(Reports.NewsRules.Quarrel("시험갑", "시험을").About(memberId, otherId));
 
             var a = Saves.Capture();
             yield return BootFrom(a);
@@ -394,6 +399,10 @@ namespace GuildMaster.Tests
             var loadedEmotions = Services.Get<Social.EmotionService>();
             Assert.That(loadedEmotions.Book.Of(memberId).Any(f => f.Kind == Social.Emotion.Excited && f.Reason == "시험 감정"), Is.True, "the feeling");
             Assert.That(loadedEmotions.Book.ChangedRecently(memberId, otherId, nowHour, 1f, out int sign) && sign > 0, Is.True, "the relationship line");
+            var loadedNews = Services.Get<Reports.NewsDesk>();
+            Assert.That(loadedNews.Latest?.day, Is.EqualTo(printed.day), "the paper");
+            Assert.That(loadedNews.Latest.articles.Select(x => x.headline), Is.EqualTo(printed.articles.Select(x => x.headline)), "its stories");
+            Assert.That(loadedNews.Desk.Any(x => x.kind == Reports.NewsKind.Quarrel && x.people.Contains(otherId)), Is.True, "the story for the next paper");
             // Every nemesis under its own name, at its level, its bounty on it; the friend's grudge kept (P4-109).
             var loadedNemeses = Services.Get<Nemeses.NemesisService>();
             foreach (var (id, name, level, bountyId) in nemeses)

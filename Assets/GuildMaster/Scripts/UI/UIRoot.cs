@@ -108,6 +108,8 @@ namespace GuildMaster.UI
             // Daily accounts: income, spending and events per game day (F-3). Moved off B, which
             // construction (P4-13) already claimed.
             AddWindow<DailyReportView>(menu, "정산 (L)", Key.L, new Vector2(960, 760));
+            // The town newspaper (P4-130): opens by itself each morning; O, the accounts window and its notification.
+            AddWindow<NewspaperView>(null, null, Key.O, new Vector2(920, 800));
             // The wall of the fallen: relics to fetch, memorials (F-6).
             AddWindow<MemorialView>(menu, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
             // The guild's rank and fame (P4-106).

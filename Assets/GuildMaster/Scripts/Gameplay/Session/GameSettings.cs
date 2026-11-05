@@ -21,6 +21,15 @@ namespace GuildMaster.Session
             set { PlayerPrefs.SetInt(RewardFxKey, value ? 1 : 0); PlayerPrefs.Save(); }
         }
 
+        const string NewsKey = "gm.newsEachMorning";
+
+        /// <summary>The town newspaper (P4-130) opens by itself each morning and the game waits while it is open.</summary>
+        public static bool NewsEachMorning
+        {
+            get => PlayerPrefs.GetInt(NewsKey, 1) == 1;
+            set { PlayerPrefs.SetInt(NewsKey, value ? 1 : 0); PlayerPrefs.Save(); }
+        }
+
         public static bool LlmEnabled
         {
             get => PlayerPrefs.GetInt(LlmKey, 1) == 1;

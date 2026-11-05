@@ -68,6 +68,7 @@ namespace GuildMaster.Tests
             Storytelling.StorytellerService.Enabled = true;
             Seasons.SeasonService.Enabled = true;
             Dilemmas.DilemmaService.Enabled = true;
+            Reports.NewsDesk.AutoOpen = true;
             Director.SpectatorCamera.Set(false);
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
@@ -111,6 +112,8 @@ namespace GuildMaster.Tests
             Seasons.SeasonService.Enabled = false;
             // Nor decision cards (P4-111c): a card's thoughts, gold and visitors would change what a test measures.
             Dilemmas.DilemmaService.Enabled = false;
+            // Nor the morning paper (P4-130): its window would hold the game the first time a test runs past 6 o'clock.
+            Reports.NewsDesk.AutoOpen = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -4516,10 +4519,12 @@ namespace GuildMaster.Tests
         /// P4-129 (H7, user decisions 2026-11-05): a seen boss fight is a highlight and a line in the member's chronicle; in
         /// spectator mode the camera goes there with a title card; a member low in the fight is a crisis of its own; moving
         /// the camera by hand takes it back; the boss's fall ends the moment with a result card and a line; turned off,
-        /// the camera is the player's again.
+        /// the camera is the player's again. P4-130 (F-9): the fall is the day's big story in the town newspaper, made when the
+        /// day ends and out the next morning — its window opens by itself and the game waits; a click on the story goes to
+        /// the member and the game goes on.
         /// </summary>
         [UnityTest]
-        public IEnumerator Spectator_GoesToABossFight_CardsIt_WritesTheChronicle_AndGivesTheCameraBack()
+        public IEnumerator Spectator_GoesToABossFight_CardsIt_WritesTheChronicle_GivesTheCameraBack_AndMakesTheNews()
         {
             yield return Boot();
             Services.Get<Legacy.GuildLegacy>().ForcedRoll = 1f; // no last stand
@@ -4587,6 +4592,44 @@ namespace GuildMaster.Tests
                 Director.SpectatorCamera.Set(false);
                 yield return WaitFrames(2);
                 Assert.That(spectator.Shown, Is.Null);
+
+                // P4-130: the fall is on the newspaper's desk.
+                var desk = Services.Get<Reports.NewsDesk>();
+                var story = desk.Desk.FirstOrDefault(s => s.kind == Reports.NewsKind.BigFoeSlain);
+                Assert.That(story, Is.Not.Null, "on the desk: " + desk.Describe());
+                Assert.That(story.people, Does.Contain(member.Data.id));
+                Assert.That(story.body, Does.Contain(member.Data.name));
+                // The day ends: its paper is made, not out before the morning.
+                var view = Services.Get<NewspaperView>();
+                Reports.NewsDesk.AutoOpen = true;
+                var hours = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+                var whole = typeof(GameClock).GetField("_lastWholeHour", BindingFlags.NonPublic | BindingFlags.Instance);
+                int day = Clock.Day;
+                hours.SetValue(Clock, day * 24f - 0.02f);
+                whole.SetValue(Clock, day * 24 - 1);
+                Clock.SetSpeed(1);
+                yield return WaitFor(() => Clock.Day == day + 1, 10f);
+                var paper = desk.Latest;
+                Assert.That(paper?.day, Is.EqualTo(day), "the day's paper: " + desk.Describe());
+                Assert.That(paper.Lead.kind, Is.EqualTo(Reports.NewsKind.BigFoeSlain), string.Join(" / ", paper.articles.Select(s => s.headline)));
+                Assert.That(paper.articles.Count, Is.InRange(1, Reports.NewsRules.MaxArticles));
+                Assert.That(paper.delivered || view.Visible, Is.False, "not out at midnight");
+                // The morning: out, its window open, the game waiting; a notification for it.
+                hours.SetValue(Clock, day * 24f + Reports.NewsRules.DeliveryHour - 0.02f);
+                whole.SetValue(Clock, day * 24 + Reports.NewsRules.DeliveryHour - 1);
+                yield return WaitFor(() => view.Visible, 10f);
+                Assert.That(paper.delivered && view.Visible, Is.True, "out in the morning, its window open");
+                yield return WaitFrames(2);
+                Assert.That(Clock.IsHeld, Is.True, "the game waits");
+                Assert.That(view.Current(), Is.SameAs(paper));
+                Assert.That(Services.Get<Notifications.NotificationCenter>().Entries.Any(n => n.Link.Target == Notifications.NotificationTarget.News), Is.True);
+                // A click on the story: to the member, the paper closed, the game going on.
+                cam.JumpTo(world.TownCenterWorld);
+                view.Go(paper.Lead);
+                yield return WaitFrames(2);
+                Assert.That(view.Visible, Is.False, "closed");
+                Assert.That(Clock.IsHeld, Is.False, "the game goes on");
+                Assert.That(Services.Get<InspectorView>().Selected, Is.SameAs(member), "at the member");
             }
             finally
             {
