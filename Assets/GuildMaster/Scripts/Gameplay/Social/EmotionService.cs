@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using GuildMaster.Adventurers;
 using GuildMaster.Core;
@@ -12,9 +13,9 @@ namespace GuildMaster.Social
     /// Feeds the <see cref="EmotionBook"/> from what happens in the game (F-10, user request 2026-10-11): town talks
     /// (a fight, making up, being comforted), a friend's death or departure, quest results, level-ups, joining, and
     /// counselling. The UI reads <see cref="Of"/> for the icons over heads and <see cref="Book"/> for the relationship
-    /// graph (which lines moved lately). Only listens; it changes nothing in the game.
+    /// graph (which lines moved lately). Only listens; it changes nothing in the game. Saved as "emotions" (P4-119).
     /// </summary>
-    public class EmotionService : IDisposable
+    public class EmotionService : IDisposable, ISaveable
     {
         readonly GameClock _clock;
         readonly GuildRoster _roster;
@@ -179,6 +180,60 @@ namespace GuildMaster.Social
             }
             else if (e.Outcome == CounselOutcome.Walkout)
                 Book.Feel(e.Member.Data.id, Emotion.Angry, Now, EmotionRules.WalkoutAngerHours, "면담에서 마음이 상함");
+        }
+
+        // ---------------- Save (P4-119) ----------------
+
+        [Serializable]
+        class FeelingData
+        {
+            public string id;
+            public int kind;
+            public float since;
+            public float until;
+            public string reason;
+        }
+
+        [Serializable]
+        class ChangeData
+        {
+            public string pair;
+            public float hour;
+            public int delta;
+        }
+
+        [Serializable]
+        class SaveData
+        {
+            public List<FeelingData> feelings = new();
+            public List<ChangeData> changes = new();
+        }
+
+        public string SaveKey => "emotions";
+
+        /// <summary>Feelings that are over are left out (they show nothing and would only be cleared later).</summary>
+        public string Capture()
+        {
+            float now = Now;
+            var s = new SaveData();
+            foreach (var kv in Book.AllFeelings.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                foreach (var f in kv.Value)
+                    if (now < f.Until)
+                        s.feelings.Add(new FeelingData { id = kv.Key, kind = (int)f.Kind, since = f.Since, until = f.Until, reason = f.Reason });
+            foreach (var kv in Book.AllChanges.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                s.changes.Add(new ChangeData { pair = kv.Key, hour = kv.Value.hour, delta = kv.Value.delta });
+            return UnityEngine.JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = UnityEngine.JsonUtility.FromJson<SaveData>(json);
+            Book.Clear();
+            if (s.feelings != null)
+                foreach (var f in s.feelings)
+                    if (Enum.IsDefined(typeof(Emotion), f.kind))
+                        Book.RestoreFeeling(f.id, new Feeling { Kind = (Emotion)f.kind, Since = f.since, Until = f.until, Reason = f.reason });
+            if (s.changes != null) foreach (var c in s.changes) Book.RestoreChange(c.pair, c.hour, c.delta);
         }
 
         static string Ga(string w) => w + MemoryRecorder.Josa(w, "이", "가");

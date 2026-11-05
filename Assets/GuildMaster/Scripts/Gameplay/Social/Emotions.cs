@@ -179,6 +179,33 @@ namespace GuildMaster.Social
             _changes[PairKey(a, b)] = (now, delta);
         }
 
+        // ---------------- Save (P4-119) ----------------
+
+        /// <summary>Everyone's passing feelings, by id (for saving).</summary>
+        public IEnumerable<KeyValuePair<string, List<Feeling>>> AllFeelings => _feelings;
+
+        /// <summary>The last move of every pair, by <see cref="PairKey"/> (for saving).</summary>
+        public IEnumerable<KeyValuePair<string, (float hour, int delta)>> AllChanges => _changes;
+
+        public void Clear()
+        {
+            _feelings.Clear();
+            _changes.Clear();
+        }
+
+        /// <summary>Puts a saved feeling back as it was (its start, end and reason).</summary>
+        public void RestoreFeeling(string id, Feeling f)
+        {
+            if (string.IsNullOrEmpty(id) || f.Kind == Emotion.None) return;
+            if (!_feelings.TryGetValue(id, out var list)) _feelings[id] = list = new List<Feeling>();
+            list.Add(f);
+        }
+
+        public void RestoreChange(string pairKey, float hour, int delta)
+        {
+            if (!string.IsNullOrEmpty(pairKey) && delta != 0) _changes[pairKey] = (hour, delta);
+        }
+
         /// <summary>True when the pair's relationship moved within <paramref name="window"/> game hours; sign of the last move.</summary>
         public bool ChangedRecently(string a, string b, float now, float window, out int sign)
         {

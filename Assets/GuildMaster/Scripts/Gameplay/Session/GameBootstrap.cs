@@ -378,11 +378,17 @@ namespace GuildMaster.Session
             save.Register(living);
             // Economy round 2 (user decision 2026-10-29): clients pay for finished quests, and the guild buys food.
             Services.Register(new CommissionService(treasury));
-            Services.Register(new FoodStore(roster, treasury));
+            var food = new FoodStore(roster, treasury);
+            Services.Register(food);
+            save.Register(food); // P4-119: the KMS systems' state is saved too
             // Tribute talks (상납금, 2026-10-29): who was asked when, and grudges.
-            Services.Register(new TributeService());
+            var tribute = new TributeService();
+            Services.Register(tribute);
+            save.Register(tribute);
             // Residents' odd jobs for small income (일손 돕기, 2026-10-29).
-            Services.Register(new ChoreService(treasury));
+            var chores = new ChoreService(treasury);
+            Services.Register(chores);
+            save.Register(chores);
             // What death leaves behind (F-6): the wall of the fallen, relics to fetch, last stands and the wounds after them.
             var legacy = new Legacy.GuildLegacy(clock, roster, treasury, notifications);
             Services.Register(legacy);
@@ -432,16 +438,22 @@ namespace GuildMaster.Session
             var townTalk = AddSystem<Social.TownTalkService>();
             townTalk.Init(llm, roster, world, visitors, merchant, clock);
             Services.Register(townTalk);
+            save.Register(townTalk);
             // Townsfolk (user request 2026-10-07): six residents who go about their day and talk with everyone in town.
             var residents = AddSystem<Social.ResidentService>();
             residents.Init(town, world);
             Services.Register(residents);
+            save.Register(residents);
             townTalk.SetResidents(residents);
             // Feelings over heads and the relationship graph (F-10, user request 2026-10-11).
-            Services.Register(new Social.EmotionService(clock, roster, residents));
+            var emotions = new Social.EmotionService(clock, roster, residents);
+            Services.Register(emotions);
+            save.Register(emotions);
             // KMS's event cards (F-13) are part of the decision cards now (P4-118, DilemmaService below).
             // "다음 할 일" checklist and hints (F-19).
-            Services.Register(new Guide.GuideTracker());
+            var guide = new Guide.GuideTracker();
+            Services.Register(guide);
+            save.Register(guide);
 
             // --- Camera ---
             var cam = SetupCamera(world);

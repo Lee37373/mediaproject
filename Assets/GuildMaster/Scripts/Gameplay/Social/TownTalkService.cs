@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -88,8 +89,9 @@ namespace GuildMaster.Social
     /// Up to <see cref="MaxConcurrentTalks"/> talks at once. The model writes a talk only when it is idle (and one at a
     /// time); otherwise fixed lines play (user decision 2026-10-07), so the town is never silent. A resident walks over
     /// to the one they talk to first. Next to the older member small talk (BanterService), which it leaves as it is.
+    /// Saved as "town_talk" (P4-119): rumors, pair cooldowns and quarrels to make up.
     /// </summary>
-    public class TownTalkService : MonoBehaviour
+    public class TownTalkService : MonoBehaviour, ISaveable
     {
         public const string MerchantId = "MERCHANT";
         /// <summary>Chances to start a talk per game hour, and the chance each one does.</summary>
@@ -796,5 +798,70 @@ namespace GuildMaster.Social
         }
 
         void OnHour(HourPassedEvent e) => Rumors.Prune(Now);
+
+        // ---------------- Save (P4-119) ----------------
+        // Rumors, who talked lately (the pair cooldown) and the quarrels still to make up. Talks under way are not
+        // saved: everyone is free again after loading.
+
+        [Serializable]
+        class RumorData
+        {
+            public int id;
+            public string text;
+            public List<string> subjects = new();
+            public int guild_tone;
+            public int subject_tone;
+            public float hour;
+            public List<string> known_by = new();
+        }
+
+        [Serializable]
+        class PairData
+        {
+            public string pair;
+            public float hour;
+            public string about;
+        }
+
+        [Serializable]
+        class SaveData
+        {
+            public List<RumorData> rumors = new();
+            public int next_rumor;
+            public List<PairData> talked = new();
+            public List<PairData> fights = new();
+        }
+
+        public string SaveKey => "town_talk";
+
+        public string Capture()
+        {
+            var s = new SaveData { next_rumor = Rumors.NextId };
+            foreach (var r in Rumors.All)
+                s.rumors.Add(new RumorData
+                {
+                    id = r.Id, text = r.Text, subjects = new List<string>(r.Subjects), guild_tone = r.GuildTone,
+                    subject_tone = r.SubjectTone, hour = r.Hour, known_by = r.KnownBy.OrderBy(k => k, StringComparer.Ordinal).ToList(),
+                });
+            foreach (var kv in _pairTalkedAt.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                s.talked.Add(new PairData { pair = kv.Key, hour = kv.Value });
+            foreach (var kv in _fights.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                s.fights.Add(new PairData { pair = kv.Key, hour = kv.Value.hour, about = kv.Value.about });
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            Rumors.Restore(s.rumors?.Select(r => new Rumor
+            {
+                Id = r.id, Text = r.text, Subjects = r.subjects ?? new List<string>(), GuildTone = r.guild_tone,
+                SubjectTone = r.subject_tone, Hour = r.hour, KnownBy = new HashSet<string>(r.known_by ?? new List<string>()),
+            }), s.next_rumor);
+            _pairTalkedAt.Clear();
+            if (s.talked != null) foreach (var p in s.talked) if (!string.IsNullOrEmpty(p.pair)) _pairTalkedAt[p.pair] = p.hour;
+            _fights.Clear();
+            if (s.fights != null) foreach (var p in s.fights) if (!string.IsNullOrEmpty(p.pair)) _fights[p.pair] = (p.hour, p.about);
+        }
     }
 }

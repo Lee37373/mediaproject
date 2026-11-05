@@ -83,8 +83,8 @@ namespace GuildMaster.Economy
         public static int Day(float totalHours) => Mathf.FloorToInt(totalHours / 24f);
     }
 
-    /// <summary>One day's limit and the pay for the odd jobs (2026-10-29).</summary>
-    public class ChoreService
+    /// <summary>One day's limit and the pay for the odd jobs (2026-10-29). Saved as "chores" (P4-119).</summary>
+    public class ChoreService : ISaveable
     {
         readonly GuildTreasury _treasury;
         readonly Dictionary<ChoreKind, int> _lastDay = new();
@@ -121,6 +121,35 @@ namespace GuildMaster.Economy
             if (Services.TryGet<Session.GameLog>(out var log))
                 log.Add($"길드 마스터가 {ChoreRules.Resident(k)}의 {ChoreRules.Title(k)}를 도왔습니다 ({ChoreRules.Grade(score)}, {pay}G).");
             return (pay, opinion);
+        }
+
+        // ---------------- Save (P4-119) ----------------
+
+        [Serializable]
+        class SaveData
+        {
+            /// <summary>Per <see cref="ChoreRules.All"/>: the day the job was last done, -1 = never.</summary>
+            public int[] last_day;
+            public int earned;
+            public int done;
+        }
+
+        public string SaveKey => "chores";
+
+        public string Capture() => JsonUtility.ToJson(new SaveData
+        {
+            last_day = ChoreRules.All.Select(k => _lastDay.TryGetValue(k, out var d) ? d : -1).ToArray(),
+            earned = Earned, done = Done,
+        });
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _lastDay.Clear();
+            for (int i = 0; i < ChoreRules.All.Length && s.last_day != null && i < s.last_day.Length; i++)
+                if (s.last_day[i] >= 0) _lastDay[ChoreRules.All[i]] = s.last_day[i];
+            Earned = s.earned;
+            Done = s.done;
         }
     }
 

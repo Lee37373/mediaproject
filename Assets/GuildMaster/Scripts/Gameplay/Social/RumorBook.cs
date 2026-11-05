@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -88,5 +89,17 @@ namespace GuildMaster.Social
         }
 
         public void Prune(float now) => _rumors.RemoveAll(r => now - r.Hour > LifetimeHours);
+
+        /// <summary>The id the next rumor gets (for saving).</summary>
+        public int NextId => _nextId;
+
+        /// <summary>Puts saved rumors back (P4-119), replacing the ones there.</summary>
+        public void Restore(IEnumerable<Rumor> rumors, int nextId)
+        {
+            _rumors.Clear();
+            if (rumors != null) _rumors.AddRange(rumors.Where(r => r != null && !string.IsNullOrWhiteSpace(r.Text)));
+            while (_rumors.Count > Capacity) _rumors.RemoveAt(0);
+            _nextId = Math.Max(nextId, _rumors.Count == 0 ? 1 : _rumors.Max(r => r.Id) + 1);
+        }
     }
 }

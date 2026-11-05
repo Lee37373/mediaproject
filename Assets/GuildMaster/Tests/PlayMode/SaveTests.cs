@@ -359,10 +359,41 @@ namespace GuildMaster.Tests
             var nemeses = Services.Get<Nemeses.NemesisService>().Living.Select(n => (n.UnitId, n.Name, n.Monster.Level, bounty: n.Bounty?.Quest?.Id)).ToList();
             Assert.That(nemeses.Any(n => n.UnitId == named.UnitId), Is.True, "the nemesis lives on");
             Assert.That(named.Bounty?.Quest, Is.Not.Null, "with its bounty up");
+            // The KMS systems (P4-119): food, a tribute talk that left a grudge, a chore done today, a guide step, a
+            // resident's opinion and feeling, a rumor, a feeling over a head and a relationship line that just moved.
+            float nowHour = clock.TotalHours;
+            string memberId = roster[0].Data.id, otherId = roster[1].Data.id;
+            Services.Get<Economy.FoodStore>().SetFood(37);
+            var tribute = Services.Get<Economy.TributeService>();
+            tribute.Begin(roster[0], nowHour);
+            tribute.Finish(roster[0], 25, 2, nowHour);
+            var chores = Services.Get<Economy.ChoreService>();
+            chores.Begin(Economy.ChoreKind.Herbs, nowHour);
+            chores.Complete(Economy.ChoreKind.Herbs, 0.8f);
+            Services.Get<Guide.GuideTracker>().Mark(Guide.GuideStep.Board);
+            var hans = Services.Get<Social.ResidentService>().Find("RES_hans").Profile;
+            hans.AddOpinion(17);
+            hans.AddFeeling(memberId, 12);
+            int hansOpinion = hans.GuildOpinion;
+            Services.Get<Social.TownTalkService>().Rumors.Add("시험 소문: 길드원이 빵을 다 먹었다", nowHour, new[] { "RES_elly" }, new[] { memberId }, 1, -1);
+            var emotions = Services.Get<Social.EmotionService>();
+            emotions.Feel(memberId, Social.Emotion.Excited, 10f, "시험 감정");
+            emotions.Book.MarkChanged(memberId, otherId, nowHour, 5);
 
             var a = Saves.Capture();
             yield return BootFrom(a);
             AssertSameSections(a, _afterBoot);
+            // The KMS systems' state is back (P4-119), not the boot defaults.
+            Assert.That(Services.Get<Economy.FoodStore>().Food, Is.EqualTo(37), "food");
+            Assert.That(Services.Get<Economy.TributeService>().Grudge(Services.Get<Adventurers.GuildRoster>().Members[0], nowHour), Is.EqualTo(2), "the tribute grudge");
+            Assert.That(Services.Get<Economy.ChoreService>().CanDo(Economy.ChoreKind.Herbs, nowHour, 12f).Ok, Is.False, "today's chore done");
+            Assert.That(Services.Get<Guide.GuideTracker>().IsDone(Guide.GuideStep.Board), Is.True, "the guide step");
+            var loadedHans = Services.Get<Social.ResidentService>().Find("RES_hans").Profile;
+            Assert.That((loadedHans.GuildOpinion, loadedHans.FeelingToward(memberId)), Is.EqualTo((hansOpinion, 12)), "Hans' opinion and feeling");
+            Assert.That(Services.Get<Social.TownTalkService>().Rumors.All.Any(r => r.Text.StartsWith("시험 소문") && r.KnownBy.Contains("RES_elly")), Is.True, "the rumor");
+            var loadedEmotions = Services.Get<Social.EmotionService>();
+            Assert.That(loadedEmotions.Book.Of(memberId).Any(f => f.Kind == Social.Emotion.Excited && f.Reason == "시험 감정"), Is.True, "the feeling");
+            Assert.That(loadedEmotions.Book.ChangedRecently(memberId, otherId, nowHour, 1f, out int sign) && sign > 0, Is.True, "the relationship line");
             // Every nemesis under its own name, at its level, its bounty on it; the friend's grudge kept (P4-109).
             var loadedNemeses = Services.Get<Nemeses.NemesisService>();
             foreach (var (id, name, level, bountyId) in nemeses)
