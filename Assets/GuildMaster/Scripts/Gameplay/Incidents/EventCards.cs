@@ -333,6 +333,95 @@ namespace GuildMaster.Incidents
         public static bool IsGood(CardTone t) => t == CardTone.Success || t == CardTone.Good;
         public static bool IsBad(CardTone t) => t == CardTone.Failure || t == CardTone.Bad;
 
+        // ---------------- What a choice leads to, shown as chips (2026-11-05, UI round) ----------------
+
+        /// <summary>Most direction chips shown under one choice (the rest is left out).</summary>
+        public const int MaxChips = 5;
+
+        /// <summary>
+        /// Which way a choice moves things — "골드 ▲▲", "평판 ▼", "성공: 골드 ▲" — the direction only (as the decision cards
+        /// show it, user decision 2026-10-30), never the amount. With a roll, what both outcomes share is shown once and what
+        /// differs carries "성공:"/"실패:". Sign: +1 good for the guild, -1 bad.
+        /// </summary>
+        public static List<(string text, int sign)> Directions(CardChoice c, string nameA, string nameB, Func<string, string> residentName = null)
+        {
+            var result = new List<(string text, int sign)>();
+            if (c == null) return result;
+            var win = Moves(c.Success, nameA, nameB, residentName);
+            if (c.Failure == null)
+            {
+                foreach (var m in win) result.Add((m.what + " " + m.arrow, m.sign));
+            }
+            else
+            {
+                var lose = Moves(c.Failure, nameA, nameB, residentName);
+                foreach (var m in win)
+                {
+                    bool same = lose.Exists(x => x.what == m.what && x.arrow == m.arrow);
+                    result.Add(((same ? "" : "성공: ") + m.what + " " + m.arrow, m.sign));
+                }
+                foreach (var m in lose)
+                    if (!win.Exists(x => x.what == m.what && x.arrow == m.arrow)) result.Add(("실패: " + m.what + " " + m.arrow, m.sign));
+                if (lose.Count == 0) result.Add(("실패: 얻는 것 없음", 0));
+            }
+            if (result.Count > MaxChips) result.RemoveRange(MaxChips, result.Count - MaxChips);
+            return result;
+        }
+
+        /// <summary>What a result actually did, with the numbers ("골드 +80", "토비 호감 −6"): shown once it has happened.</summary>
+        public static List<(string text, int sign)> Changes(CardChoice c, CardEffect e, string nameA, string nameB, Func<string, string> residentName = null)
+        {
+            var result = new List<(string text, int sign)>();
+            if (e == null) return result;
+            string A = string.IsNullOrEmpty(nameA) ? "길드원" : nameA, B = string.IsNullOrEmpty(nameB) ? "상대" : nameB;
+            static string Num(float v) => v > 0f ? $"+{v:0}" : $"−{-v:0}";
+            void Add(string what, float v, bool goodWhenUp)
+            {
+                if (Math.Abs(v) < 0.5f) return;
+                result.Add(($"{what} {Num(v)}", (v > 0f) == goodWhenUp ? 1 : -1));
+            }
+            Add("골드", e.Gold - (c?.Cost ?? 0), true);
+            Add("스트레스(전원)", e.StressAll, false);
+            Add($"{A} 스트레스", e.StressA, false);
+            Add($"{B} 스트레스", e.StressB, false);
+            Add($"{A} 피로", e.FatigueA, false);
+            Add($"{A}·{B} 사이", e.RelationAB, true);
+            Add("평판", e.Opinion, true);
+            if (!string.IsNullOrEmpty(e.ResidentId)) Add($"{residentName?.Invoke(e.ResidentId) ?? "주민"} 호감", e.ResidentOpinion, true);
+            if (e.GearA) result.Add(($"{A} 장비 한 단계 ▲", 1));
+            if (e.RumorTone != 0) result.Add((e.RumorTone > 0 ? "좋은 소문" : "나쁜 소문", e.RumorTone > 0 ? 1 : -1));
+            if (e.Wanderer != WandererOffer.None) result.Add(("방문자가 옴", 1));
+            return result;
+        }
+
+        /// <summary>A stress change at least this big shows a double arrow (▲▲ / ▼▼); fatigue needs 20, a bond 15.</summary>
+        public const int BigStress = 10;
+
+        static List<(string what, string arrow, int sign)> Moves(CardEffect e, string nameA, string nameB, Func<string, string> residentName)
+        {
+            var list = new List<(string what, string arrow, int sign)>();
+            if (e == null) return list;
+            string A = string.IsNullOrEmpty(nameA) ? "길드원" : nameA, B = string.IsNullOrEmpty(nameB) ? "상대" : nameB;
+            void Move(string what, float v, bool goodWhenUp, bool big = false)
+            {
+                if (Math.Abs(v) < 0.01f) return;
+                bool up = v > 0f;
+                list.Add((what, up ? (big ? "▲▲" : "▲") : (big ? "▼▼" : "▼"), up == goodWhenUp ? 1 : -1));
+            }
+            Move("골드", e.Gold, true, Math.Abs(e.Gold) >= 100);
+            Move("스트레스(전원)", e.StressAll, false, Math.Abs(e.StressAll) >= BigStress);
+            Move($"{A} 스트레스", e.StressA, false, Math.Abs(e.StressA) >= BigStress);
+            Move($"{B} 스트레스", e.StressB, false, Math.Abs(e.StressB) >= BigStress);
+            Move($"{A} 피로", e.FatigueA, false, Math.Abs(e.FatigueA) >= 20);
+            Move($"{A}·{B} 사이", e.RelationAB, true, Math.Abs(e.RelationAB) >= 15);
+            Move("평판", e.Opinion, true);
+            if (!string.IsNullOrEmpty(e.ResidentId)) Move($"{residentName?.Invoke(e.ResidentId) ?? "주민"} 호감", e.ResidentOpinion, true, Math.Abs(e.ResidentOpinion) >= 15);
+            if (e.GearA) list.Add(($"{A} 장비", "▲", 1));
+            if (e.RumorTone != 0) list.Add(("소문", e.RumorTone > 0 ? "▲" : "▼", e.RumorTone > 0 ? 1 : -1));
+            if (e.Wanderer != WandererOffer.None) list.Add(("방문자", "▲", 1));
+            return list;
+        }
+
         // ---------------- Text ----------------
 
         /// <summary>Fills {A} {B} and the name-dependent particles {A이} {A을} {A와} {A은} (same for B).</summary>
