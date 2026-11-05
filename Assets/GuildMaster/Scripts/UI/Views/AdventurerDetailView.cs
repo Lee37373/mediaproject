@@ -21,12 +21,13 @@ namespace GuildMaster.UI
     {
         const int DialoguePreview = 4;
         const int MemoryPreview = 5;
+        const int ChroniclePreview = 4;
 
         public override string Title => "모험가 상세";
         protected override float RefreshInterval => 0.25f;
 
         Adventurer _who;
-        Text _header, _stats, _gear, _record, _thought, _mood, _memories, _relations, _dialogue;
+        Text _header, _stats, _gear, _record, _thought, _mood, _memories, _relations, _dialogue, _chronicle;
         RectTransform _traitRow, _skillRow;
         readonly List<Text> _skillLabels = new();
 
@@ -44,6 +45,9 @@ namespace GuildMaster.UI
             _gear = Block(left, 72);
             Section(left, "전적");
             _record = Block(left, 72);
+            // Its great moments (P4-129): the latest few lines of its chronicle.
+            Section(left, "전기");
+            _chronicle = Block(left, 96);
             var buttons = UIBuilder.Row(left, 34);
             UIBuilder.Button(buttons, "추적", FocusCamera, 90, 32, null, 15);
             UIBuilder.Button(buttons, "대화 기록 전체", OpenDialogueLog, 140, 32, null, 15);
@@ -199,6 +203,9 @@ namespace GuildMaster.UI
                 $"EXP {d.exp}/{d.ExpToNextLevel}  {Bar(100f * d.exp / Mathf.Max(1, d.ExpToNextLevel))}\n" +
                 $"처치 {d.kills} · 완료한 의뢰 {d.questsCompleted}\n" +
                 UIBuilder.Colored($"기억 {d.memories.Count}개 · 대화 {d.dialogue.Count}줄", UITheme.TextMuted);
+            _chronicle.text = d.chronicle.Count == 0 ? UIBuilder.Colored("아직 명장면이 없습니다. 큰 적과의 싸움·위기·마을 방어에 나서면 기록됩니다.", UITheme.TextMuted)
+                : string.Join("\n", d.chronicle.Skip(Mathf.Max(0, d.chronicle.Count - ChroniclePreview)).Select(c => c.Format()))
+                  + (d.chronicle.Count > ChroniclePreview ? "\n" + UIBuilder.Colored($"(모두 {d.chronicle.Count}줄)", UITheme.TextMuted) : "");
 
             for (int i = 0; i < _skillLabels.Count && i < a.Skills.Count; i++)
             {

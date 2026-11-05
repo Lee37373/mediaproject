@@ -77,6 +77,7 @@ namespace GuildMaster.UI
             bool minimap = Services.TryGet<MinimapView>(out var mm) && mm.IsShown;
             var clock = Services.Get<GameClock>();
             Line(sb, "M", "미니맵", minimap ? "켬" : "끔", minimap, null);
+            Line(sb, "C", "관전 모드(볼 만한 장면으로 카메라)", Director.SpectatorCamera.On ? "켬" : "끔", Director.SpectatorCamera.On, null);
             Line(sb, $"Space · 1~{GameClock.SpeedScales.Length - 1}", "일시정지 · 속도",
                  clock.SpeedIndex == 0 ? "정지" : $"x{GameClock.SpeedScales[clock.SpeedIndex]:0}", false, null);
             // Keep this in step with the AddWindow hotkeys in UIRoot.

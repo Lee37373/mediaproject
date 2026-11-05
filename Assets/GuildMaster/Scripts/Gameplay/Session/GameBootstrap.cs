@@ -458,6 +458,13 @@ namespace GuildMaster.Session
             // --- Camera ---
             var cam = SetupCamera(world);
             Services.Register(cam);
+            // The spectator director (P4-129, H7): the moments worth watching, and the camera mode that goes to them.
+            var highlights = AddSystem<Director.HighlightService>();
+            highlights.Init(clock, roster, world);
+            Services.Register(highlights);
+            var spectator = AddSystem<Director.SpectatorCamera>();
+            spectator.Init(highlights);
+            Services.Register(spectator);
 
             // --- Player ---
             var avatar = PlayerAvatar.Create(world.TownCenterWorld + new Vector2(0f, -2f), Balance.playerMoveSpeed, Balance.playerSightRadius);
@@ -540,7 +547,7 @@ namespace GuildMaster.Session
             controller.Configure(world.WorldBounds, Balance.cameraMinZoom, Balance.cameraMaxZoom, Balance.cameraPanSpeed);
             // Looking into a ruin's dungeon (P4-85), the camera keeps to it.
             controller.AreaBounds = world.UndergroundBoundsAt;
-            controller.JumpTo(world.TownCenterWorld);
+            controller.JumpTo(world.TownCenterWorld, byPlayer: false);
             return controller;
         }
 

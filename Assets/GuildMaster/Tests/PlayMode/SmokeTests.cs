@@ -68,6 +68,7 @@ namespace GuildMaster.Tests
             Storytelling.StorytellerService.Enabled = true;
             Seasons.SeasonService.Enabled = true;
             Dilemmas.DilemmaService.Enabled = true;
+            Director.SpectatorCamera.Set(false);
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
@@ -115,6 +116,12 @@ namespace GuildMaster.Tests
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
             yield return null;
             yield return null;
+        }
+
+        /// <summary>Waits this many frames.</summary>
+        static IEnumerator WaitFrames(int frames)
+        {
+            for (int i = 0; i < frames; i++) yield return null;
         }
 
         /// <summary>Waits (real time) until the condition holds or the timeout passes.</summary>
@@ -4503,6 +4510,89 @@ namespace GuildMaster.Tests
             int change = BanterRules.FriendlyChange(x.Data.values == y.Data.values, false) * BreakRules.SocialTalkFactor;
             Assert.That((Relationships.Get(x, y) - xy, Relationships.Get(y, x) - yx), Is.EqualTo((change, change)));
             Assert.That(y.Data.thoughts.Any(t => t.id == ThoughtRules.Chat.Id), Is.True, "a pleasant chat");
+        }
+
+        /// <summary>
+        /// P4-129 (H7, user decisions 2026-11-05): a seen boss fight is a highlight and a line in the member's chronicle; in
+        /// spectator mode the camera goes there with a title card; a member low in the fight is a crisis of its own; moving
+        /// the camera by hand takes it back; the boss's fall ends the moment with a result card and a line; turned off,
+        /// the camera is the player's again.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Spectator_GoesToABossFight_CardsIt_WritesTheChronicle_AndGivesTheCameraBack()
+        {
+            yield return Boot();
+            Services.Get<Legacy.GuildLegacy>().ForcedRoll = 1f; // no last stand
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            var cards = new System.Collections.Generic.List<Director.SpectatorCardEvent>();
+            Action<Director.SpectatorCardEvent> onCard = e => cards.Add(e);
+            EventBus.Subscribe(onCard);
+            try
+            {
+                var fog = Services.Get<Fog.FogOfWar>();
+                var world = Services.Get<World.WorldService>();
+                var cam = Services.Get<CameraControl.CameraController>();
+                var highlights = Services.Get<Director.HighlightService>();
+                var spectator = Services.Get<Director.SpectatorCamera>();
+                var member = Roster.Members.First(a => a.IsAlive);
+                Assert.That(world.Grid.TryFindNearestWalkable(world.Map.TownCenter + new Vector2Int(0, -32), 6, out var cell), Is.True);
+                var spot = World.GridMap.CellToWorld(cell);
+                member.Mover.Stop();
+                member.transform.position = spot;
+                var boss = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, spot + new Vector2(1.5f, 0f));
+                boss.Setup(Services.Get<EcosystemManager>().Species.First(s => s.id == "goblin"), null, boss: true);
+                yield return WaitFor(() => fog.IsVisibleRaw(boss.Position), 5f);
+                Assert.That(fog.IsVisibleRaw(boss.Position), Is.True, "the guild sees it");
+                Clock.SetSpeed(0); // the world stands still: only what the test does happens
+
+                // Blows exchanged: a boss fight.
+                Unit.GuildInvulnerable = false;
+                member.ReceiveDamage(1f, boss, false);
+                Unit.GuildInvulnerable = true;
+                boss.ReceiveDamage(1f, member, false);
+                Director.SpectatorCamera.Set(true);
+                highlights.Scan();
+                var fight = highlights.Active.FirstOrDefault(h => h.Kind == Director.HighlightKind.Boss);
+                Assert.That(fight, Is.Not.Null, "a boss fight: " + highlights.Describe());
+                Assert.That(fight.Members, Does.Contain(member));
+                Assert.That(member.Data.chronicle.Any(c => c.text.StartsWith("우두머리와의 싸움")), Is.True, "in the chronicle");
+                yield return WaitFrames(5);
+                Assert.That(spectator.Shown, Is.SameAs(fight), "the camera shows it");
+                Assert.That(cam.FollowTarget != null && Vector2.Distance(cam.FollowTarget.position, fight.Position) < 0.5f, Is.True, "and follows it");
+                Assert.That(cards.Any(c => c.Title == "우두머리와의 싸움" && !c.Result), Is.True, "with its title card");
+
+                // Low in the fight: a crisis too (the camera stays on the boss for now — not enough better to cut in).
+                Unit.GuildInvulnerable = false;
+                member.ReceiveDamage(member.Hp - member.Stats.MaxHp * 0.2f, boss, false);
+                Unit.GuildInvulnerable = true;
+                highlights.Scan();
+                Assert.That(highlights.Active.Any(h => h.Kind == Director.HighlightKind.LowHp && h.Members.Contains(member)), Is.True, "a crisis");
+                Assert.That(member.Data.chronicle.Any(c => c.text.Contains("체력 20%")), Is.True, member.Data.chronicle.Count > 0 ? member.Data.chronicle.Last().text : "none");
+                yield return WaitFrames(3);
+                Assert.That(spectator.Shown, Is.SameAs(fight), "held on the fight");
+
+                // The player moves the camera: hands off.
+                cam.JumpTo(world.TownCenterWorld);
+                yield return WaitFrames(3);
+                Assert.That(spectator.HandsOff(cam), Is.True);
+                Assert.That(cam.FollowTarget, Is.Null, "the camera is let go");
+
+                // The boss falls: the moment ends with its result.
+                boss.ReceiveDamage(boss.Hp + 9999f, member, false);
+                highlights.Scan();
+                Assert.That(fight.Ended && fight.Outcome != null, Is.True, "ended with a result");
+                Assert.That(member.Data.chronicle.Any(c => c.text.EndsWith("쓰러뜨렸다")), Is.True, "the fall in the chronicle");
+                Assert.That(cards.Any(c => c.Result), Is.True, "a result card");
+
+                Director.SpectatorCamera.Set(false);
+                yield return WaitFrames(2);
+                Assert.That(spectator.Shown, Is.Null);
+            }
+            finally
+            {
+                EventBus.Unsubscribe(onCard);
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+            }
         }
 
         /// <summary>

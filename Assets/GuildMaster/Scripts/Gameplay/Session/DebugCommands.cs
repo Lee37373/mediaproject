@@ -1130,6 +1130,21 @@ namespace GuildMaster.Session
             return $"watchFights={(on ? "on" : "off")}";
         }
 
+        /// <summary>The spectator director (P4-129): the moments going on, what the camera shows, and the mode.</summary>
+        public static string Highlights()
+        {
+            if (!Services.TryGet<Director.HighlightService>(out var h)) return "no HighlightService";
+            var shown = Services.TryGet<Director.SpectatorCamera>(out var s) ? s.Shown : null;
+            return $"spectator={(Director.SpectatorCamera.On ? "on" : "off")} shown={(shown != null ? shown.Title + " " + shown.Subtitle : "none")} started={h.Started}\n{h.Describe()}";
+        }
+
+        /// <summary>Spectator mode on/off (C in play).</summary>
+        public static string Spectate(bool on)
+        {
+            Director.SpectatorCamera.Set(on);
+            return $"spectator={(on ? "on" : "off")}";
+        }
+
         /// <summary>
         /// Testing only (user request 2026-09-23): gives the camera itself sight, so whatever it is
         /// pointed at is in view — monsters included — while the rest of the map keeps its fog. Use

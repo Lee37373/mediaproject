@@ -13,6 +13,9 @@ using UnityEngine;
 
 namespace GuildMaster.Legacy
 {
+    /// <summary>A member held on at 1 HP after a lethal blow (P4-129: the spectator director shows it).</summary>
+    public struct LastStandEvent { public Adventurer Adventurer; public Unit Killer; }
+
     /// <summary>
     /// What death leaves behind (F-6). Keeps a record of every member who fell, follows what they dropped
     /// (the relics: brought home by a member, taken by a monster, or rotted away), lets the guild master hold a
@@ -453,6 +456,7 @@ namespace GuildMaster.Legacy
             a.Say(LegacyTexts.LastStandLine(GameRandom.Shared));
             _center?.Post(NotificationKind.Warning, LegacyTexts.LastStandTitle, LegacyTexts.LastStandNotice(d.name, by, LegacyRules.WoundedHours),
                 "laststand:" + d.id, NotificationLink.Management(d.id));
+            EventBus.Publish(new LastStandEvent { Adventurer = a, Killer = killer });
             return true;
         }
 

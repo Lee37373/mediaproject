@@ -43,6 +43,8 @@ namespace GuildMaster.CameraControl
 
         public Camera Camera => _cam;
         public Transform FollowTarget => _follow;
+        /// <summary>Real time the player last moved the camera by hand (keys or drag) — the spectator director waits after it (P4-129).</summary>
+        public float LastManualInput { get; private set; } = -999f;
 
         void Awake()
         {
@@ -62,9 +64,10 @@ namespace GuildMaster.CameraControl
             _targetZoom = Mathf.Clamp(_cam.orthographicSize, minZoom, maxZoom);
         }
 
-        public void JumpTo(Vector2 pos)
+        public void JumpTo(Vector2 pos, bool byPlayer = true)
         {
             _basePosition = new Vector3(pos.x, pos.y, transform.position.z);
+            if (byPlayer) LastManualInput = Time.unscaledTime; // the minimap, a notification: the player chose where to look
             Clamp();
         }
 
@@ -132,6 +135,7 @@ namespace GuildMaster.CameraControl
             if (move != Vector2.zero)
             {
                 _follow = null;
+                LastManualInput = Time.unscaledTime;
                 float zoomFactor = _cam.orthographicSize / 10f;
                 _basePosition += (Vector3)(move.normalized * panSpeed * zoomFactor * dt);
             }
@@ -152,15 +156,21 @@ namespace GuildMaster.CameraControl
                     if (!_leftDragged && (screen - _leftPressScreen).magnitude >= ClickDragThreshold)
                     {
                         _leftDragged = true;
+                        LastManualInput = Time.unscaledTime;
                         _follow = null;
                     }
-                    if (_leftDragged) _basePosition += _dragOriginWorld - ScreenToWorld(screen);
+                    if (_leftDragged)
+                    {
+                        _basePosition += _dragOriginWorld - ScreenToWorld(screen);
+                        LastManualInput = Time.unscaledTime;
+                    }
                 }
 
                 // Middle-mouse drag pan.
                 if (mouse.middleButton.wasPressedThisFrame && !pointerOverUI)
                 {
                     _dragging = true;
+                    LastManualInput = Time.unscaledTime;
                     _follow = null;
                     _dragOriginWorld = ScreenToWorld(mouse.position.ReadValue());
                 }
@@ -169,6 +179,7 @@ namespace GuildMaster.CameraControl
                 {
                     var now = ScreenToWorld(mouse.position.ReadValue());
                     _basePosition += _dragOriginWorld - now;
+                    LastManualInput = Time.unscaledTime;
                 }
 
                 // Zoom toward cursor.

@@ -133,7 +133,7 @@ namespace GuildMaster.UI
             AddWindow<WatchRuinView>(null, null, Key.None, new Vector2(520, 330)); // the ruined watchtower's lookout (2026-11-02)
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
             // Opened from the inspector and roster [상세] buttons (P4-6).
-            AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 700));
+            AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 800)); // 700 → 800: 전기 (P4-129)
             AddWindow<MemberCareView>(null, null, Key.None, new Vector2(640, 760)); // 700 → 760: 상납 요구 row (2026-10-29)
             // Counselling by conversation (user request 2026-10-01), opened from the care window's 면담 button.
             AddWindow<CounselDialogView>(null, null, Key.None, new Vector2(980, 620));
@@ -144,6 +144,7 @@ namespace GuildMaster.UI
 
             BuildBanner();
             HudLayer.gameObject.AddComponent<RaidBannerView>().Build(HudLayer);
+            HudLayer.gameObject.AddComponent<SpectatorCardView>().Build(HudLayer); // P4-129: the spectator mode's title cards
             // Coins to the gold and the rank banner (P4-106 H8), above the windows.
             HudLayer.gameObject.AddComponent<RewardFxLayer>().Build(HudLayer);
             // Toasts for new notifications on the right edge, above the windows (F-1).
@@ -273,6 +274,7 @@ namespace GuildMaster.UI
 
             foreach (var (key, panel) in _hotkeys)
                 if (kb[key].wasPressedThisFrame) Focus(panel);
+            if (kb.cKey.wasPressedThisFrame) Director.SpectatorCamera.Set(!Director.SpectatorCamera.On); // P4-129: spectator mode
 
             if (kb.escapeKey.wasPressedThisFrame && !(Services.TryGet<MapPicker>(out var picker) && picker.IsPicking))
             {

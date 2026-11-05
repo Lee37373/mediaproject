@@ -21,6 +21,7 @@ namespace GuildMaster.UI
         Text _monsters;
         Text _extra;
         Button[] _speedButtons;
+        Button _spectate;
         float _timer;
         /// <summary>The gold as shown: it rolls towards the treasury's (P4-106 H8), less what is still flying in.</summary>
         float _shownGold = -1f;
@@ -54,6 +55,9 @@ namespace GuildMaster.UI
                 string label = idx == 0 ? "II" : $"x{GameClock.SpeedScales[idx]:0}";
                 _speedButtons[i] = UIBuilder.Button(bar.transform, label, () => Services.Get<GameClock>().SetSpeed(idx), 46, 32, null, 14);
             }
+            // P4-129: spectator mode (C) — the camera goes to the moments worth watching.
+            _spectate = UIBuilder.Button(bar.transform, "관전", () => Director.SpectatorCamera.Set(!Director.SpectatorCamera.On), 56, 32, null, 14);
+            _spectate.Tooltip(() => Director.SpectatorCamera.On ? "관전 모드 켜짐 (C): 카메라가 큰 싸움·위기·마을 방어를 찾아갑니다. 카메라를 움직이면 잠깐 멈춥니다." : "관전 모드 (C): 카메라가 볼 만한 장면을 찾아다닙니다.");
             UIBuilder.Rect(bar.transform, "Spacer").Size(-1, -1, 1);
             // 2026-10-31: an icon before each resource when the UI skin is present (none without it).
             UISkin.LayoutIcon(bar.transform, "gold");
@@ -83,6 +87,7 @@ namespace GuildMaster.UI
             _time.text = season + clock.FormatTime() + (clock.IsNight ? " ☾" : " ☀") + (clock.IsHeld ? UIBuilder.Colored(" 정지 중", UITheme.TextMuted) : "");
             for (int i = 0; i < _speedButtons.Length; i++)
                 _speedButtons[i].GetComponentInChildren<Text>().color = i == clock.SpeedIndex ? UITheme.Accent : UITheme.TextMuted;
+            _spectate.GetComponentInChildren<Text>().color = Director.SpectatorCamera.On ? UITheme.Good : UITheme.TextMuted;
 
             var t = Services.Get<GuildTreasury>();
             _gold.text = $"{UIBuilder.Colored("골드", UITheme.Accent)} {t.Gold:N0}";
