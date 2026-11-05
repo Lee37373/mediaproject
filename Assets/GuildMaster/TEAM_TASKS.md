@@ -3,7 +3,7 @@
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
 - 마지막 갱신: 2026-11-05
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-122**, P4-116은 H12 몫).
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-129**, P4-116은 H12 몫 — 다른 팀원).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -127,7 +127,7 @@
 | P4-117 | dev/KMS 병합(8cff428까지 — 대화DB·영입 난이도·면담 대화·상납·살림(일손·식비)·관계도·감정 아이콘·주민·마을 대화·사건 카드 F-13·다음 할 일 F-19·사람 리그·전투 효과·사운드): fast-forward, git 충돌 없음(KMS가 c1e5caa에서 푼 15개 파일을 다시 확인 — main 쪽이 빠진 곳 없음). 병합 뒤 PlayMode 실패 4건(원인 3) 고침: **사건 카드가 10·16시에 창을 열어 시계를 잡음** → 테스트용 `EventCardService.Enabled` 추가(테스트 부팅에서 끔, 게임 동작은 그대로), 생성 시간 초과 테스트를 "취소하지 않음"(KMS 2026-09-30)에 맞춤, 다른 마을 습격 테스트의 고블린을 마스터 쪽에서 소환(무작위 방향이면 마을 건물에 가려 못 봄). EditMode 724·PlayMode 84 통과. 후속(사용자 결정 2026-11-02): **`Claude outputs/`를 git에서 뺌**(`.gitignore`, 게임에 안 쓰는 작업 파일 299개·19MB) — ⚠ KMS: 이 커밋을 pull하면 git이 그 폴더의 추적 파일을 지웁니다. 필요하면 pull 전에 다른 곳에 복사하거나, 뒤에 `git checkout 8cff428 -- "Claude outputs"`로 되살리세요(다시 추적되지는 않음) | 이재혁 | 완료 | Incidents/EventCardService, Tests/PlayMode/SmokeTests·LlmFaultTests, .gitignore | d2400a9 |
 | P4-118 | **결정 카드와 사건 카드 합치기**(사용자 결정 2026-11-02): 하나의 카드 시스템으로 — 결정 카드(`Dilemmas/`)를 바탕으로 사건 카드(F-13)를 옮김. 나오면 창이 저절로 열리고 게임이 멈춤(메뉴·대화창이 열려 있으면 알림만), 시각·빈도·기한은 결정 카드 규칙(9·17시·스토리텔러 확률·열린 카드 2장·24시간), 겹치는 5장(결투·떠돌이·잔치·도둑·수상한 거래)은 한 장으로 합치고 사건 카드에만 있는 5장(귀족·역병·생일·토비·의기투합)은 옮김, 결과는 방향만 + 성공·실패 연출(초록·빨강·소리). `Incidents/EventCard*`·`EventCardView`는 없앰. 같이: 안내(F-19) 첫 단계 "의뢰 올리기" → 게시판 살펴보기(플레이어는 의뢰를 안 올림, P4-82). ⚠ KMS: 사건 카드 코드(`Incidents/EventCards`·`EventCardService`·`EventCardView`)는 지웠습니다 — 카드는 이제 `Dilemmas/DilemmaRules`에 있고(결정 카드와 같은 형식), 창은 `DilemmaView`(J)입니다. EditMode 717·PlayMode 84 | 이재혁 | 완료 | Dilemmas/*, Incidents/EventCard*(삭제), UI/Views/DilemmaView·EventCardView(삭제)·QuestBoardView·GuideView, Guide/*, Audio/SoundService, Session/DebugCommands·LlmUse(EventCard 없앰)·GameBootstrap, Editor/DilemmaDebugMenu(EventCardDebugMenu 대신) | a73c707 |
 | P4-116 | 메타 진행(게임성 제안 H12 — 판이 끝나면 유산 점수·판을 넘는 해금·명예의 전당, 로그라이트 요소). 사용자 결정 2026-11-05: **다른 팀원이 개발**(이재혁 쪽은 손대지 않음. ❓ 해금 목록·쉬워지는 해금 허용·점수 매기는 시점은 맡은 사람이 정함 — 지금 승리는 S등급 뒤 "계속하기"로 끝없이 이어 하고, 판을 스스로 끝내는 버튼은 없음) | 다른 팀원(이름 미정) | 예정 | 새 게임 설정(UI/Views/TitleView), Session/GameOverService, UI/Views/VictoryView·GameOverView, Legacy, Bestiary | |
-| P4-119 | KMS 시스템 상태 저장(식량·주민 호감·평판·소문·감정·상납 앙금·일손·안내) — 사용자 결정 2026-11-02: **개발 마지막에**(빌드 전) | 이재혁 | 진행 중 | Economy/FoodStore·Tribute·Chores, Social/*, Guide/* | |
+| P4-119 | KMS 시스템 상태 저장(식량·주민 호감·평판·소문·감정·상납 앙금·일손·안내) — 사용자 결정 2026-11-02: **개발 마지막에**(빌드 전) | 이재혁 | 완료 | Economy/FoodStore·Tribute·Chores, Social/TownTalkService·ResidentService·EmotionService, Guide/GuideTracker — 저장 섹션 `food`·`tribute`·`chores`·`town_talk`·`residents`·`emotions`·`guide`. **KMS 참고**: 이 시스템에 새 상태를 더하면 그 클래스의 `Capture`·`Restore`에도 넣어 주세요 | a4da9e6 |
 | P4-120 | dev/KMS 병합(1802efe "감시탑 수정" — **감시탑 망보기**: 길드 마스터가 올라가 시야 22칸·성벽 너머, 조명탄 30칸 안 40초마다, 경종으로 자기 일 하던 길드원을 불러들이고 3시간 마을에 머물게 함(8시간마다) / **몬스터 ×1.5**: 둥지 크기·시작 개체·번식 1.5배, 지대 군주 거처는 예전 크기): git 충돌 없음(병합 커밋), main의 P4-118과 겹치는 파일 없음. URP·ProjectSettings 값(셰이더 사전 필터·입력 액션 미리 불러오기·정적 배칭)은 KMS 쪽 Unity가 바꾼 그대로. EditMode 722·PlayMode 84 통과, 플레이에서 올라가기·조명탄·경종·이동하면 내려오기·건물 창 확인 | 이재혁 | 완료 | Town/WatchtowerLookout(신규), Ecosystem/MonsterAbundance(신규)·Nest, Data/DefaultContent, Adventurers/AdventurerStates, UI/Views/BuildingView, Editor/LookoutDebugMenu(신규), Tests/EditMode/LookoutTests(신규)·FreeHuntTests | fb8f7c0 |
 | P4-121 | 초반 문제(사용자 보고 2026-11-02): ① 동료 한 명이 싸우는데 나머지는 "저건 우리가 건드릴 상대가 아니야"라며 돕지 않고 떠남 → 자율 사냥도 다른 길드원과 싸우는·무리원이 맞붙은 몬스터와 싸움, 무리 중 아무도 못 이기는 것만 피하고 무리원이 싸우는 중엔 안 떠남, 같은 몬스터로 5초 안에 다시 안 돌아섬 ② 탐험 경로가 이상함(정찰 지점을 마을 둘레에서 무작위로 뽑아 마을을 가로질러 왔다 갔다, 강한 몬스터가 보이면 0.6초마다 다시 뽑음) → 사용자 의도대로 **매 구간 지금 시야·파티 상태로 다시 정함**(`ExplorationRoute.ScoutLeg`: 안 본 땅·직전 방향·마을 돌아감·못 이길 몬스터/둥지 피함·지칠수록 마을 쪽). EditMode 728·PlayMode 85 통과(새 PlayMode 테스트는 예전 코드에서 그 대사로 실패) | 이재혁 | 완료 | Adventurers/FreeHuntState·ExplorationRoute·FreeHunt, Tests/EditMode/ExplorationTests·FreeHuntTests, Tests/PlayMode/SmokeTests | 05492cd |
 | P4-122 | dev/KMS 병합(b5788b3 "감시탑, 폐허 감시탑 수" — 망보기를 짓는 감시탑에서 **폐허 감시탑**으로 옮김: 폐허를 클릭하면 망보기 창, 첫 오름에 둘레 안개가 걷힘, 짓는 감시탑은 마을 시야만): git 충돌 없음(병합 커밋), dev/KMS에 빠진 `WatchRuinView.cs.meta`는 따로 커밋. EditMode 728·PlayMode 85 통과, 플레이에서 폐허 창·올라가기(첫 오름 안개)·조명탄·경종·이동하면 내려오기 확인 | 이재혁 | 완료 | Town/WatchtowerLookout, UI/Views/WatchRuinView(신규)·BuildingView·InspectorView·UIRoot, Editor/LookoutDebugMenu | 5bb8bef, 4609860 |
@@ -166,9 +166,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-119 KMS 시스템 상태 저장
+- **진행 중**: 없음
 - **예정**: P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-128, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
