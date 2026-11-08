@@ -4324,6 +4324,156 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-131 (F-12, user decisions 2026-11-08: friends and foes, rivals, mentors; small numbers, shown by lines and effects;
+        /// party making looks at the whole party): two friends fighting side by side hit 10% harder and two foes in each other's
+        /// way 10% softer, and the foes have words once it is over; two rivals race for kills — the one behind holds on longer,
+        /// and the race leaves a thought and a tally each; a mentor near a kill makes the pupil's EXP count more; and a party is
+        /// not made with one who is a foe of someone already going, however much the leader likes it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Bonds_FriendsLift_FoesDrag_RivalsRace_AMentorTeaches_AndAPartyKeepsFoesApart()
+        {
+            yield return Boot();
+            var bonds = Services.Get<BondService>();
+            var m = Roster.Members.Where(a => a.IsAlive && a.IsGuildMember && !a.IsVisitor).ToList();
+            Assert.That(m.Count, Is.GreaterThanOrEqualTo(4));
+            void Feel(Adventurer from, Adventurer to, int v) => Relationships.Add(from, to, v - Relationships.Get(from, to), "test");
+            void Both(Adventurer a, Adventurer b, int v) { Feel(a, b, v); Feel(b, a, v); }
+            foreach (var a in m) foreach (var b in m) if (a != b) Feel(a, b, 0);
+            void Place(Adventurer a, Vector2 at)
+            {
+                a.ChangeState(a.IdleState);
+                a.Mover.Stop();
+                a.Mover.Warp(at);
+            }
+            var master = MasterOnOpenGround();
+            Assert.That(master, Is.Not.Null);
+            var p = master.Position + new Vector2(0f, 6f);
+            ClearHomelessOf("slime");
+            EmptyNestsNear(p, 20f); // nothing else to fight but what the test brings
+            var said = new System.Collections.Generic.List<string>();
+            Action<AdventurerSpeechEvent> onSay = e => said.Add($"{e.Adventurer.Data.name}: {e.Text}");
+            RivalRaceEvent? race = null;
+            Action<RivalRaceEvent> onRace = e => race = e;
+            EventBus.Subscribe(onSay);
+            EventBus.Subscribe(onRace);
+            Unit.GuildInvulnerable = true;
+            BondService.Certain = true;
+            try
+            {
+                // ---- Friends beside each other, foes in each other's way ----
+                var (f1, f2, e1, e2) = (m[0], m[1], m[2], m[3]);
+                Both(f1, f2, 60);
+                Feel(e1, e2, -60); // one of them hostile is enough
+                var dummy = SpawnMonster("slime", p, level: 30);
+                Place(f1, p + new Vector2(-1f, 0f));
+                Place(f2, p + new Vector2(-1f, 1f));
+                Place(e1, p + new Vector2(1f, 0f));
+                Place(e2, p + new Vector2(1f, 1f));
+                foreach (var a in new[] { f1, f2, e1, e2 }) a.Engage.SetTarget(dummy);
+                yield return WaitFor(() => f1.BondAttack > 0f && f2.BondAttack > 0f && e1.BondAttack < 0f && e2.BondAttack < 0f, 3f);
+                Assert.That((f1.BondAttack, f2.BondAttack), Is.EqualTo((BondRules.FriendShare, BondRules.FriendShare)), "friends side by side");
+                Assert.That((e1.BondAttack, e2.BondAttack), Is.EqualTo((-BondRules.FoeShare, -BondRules.FoeShare)), "foes in each other's way, both");
+                Assert.That(f1.AttackNow, Is.EqualTo(f1.Stats.Attack * (1f + f1.Boons.Attack + BondRules.FriendShare)).Within(0.01f), "it is in the blows");
+                Assert.That(said.Any(s => s.StartsWith(f1.Data.name + ":") && s.Contains(f2.Data.name)), Is.True, "a word to the friend: " + string.Join(" / ", said));
+
+                // The fight over: no bonus, and the foes have words.
+                dummy.ReceiveDamage(dummy.Hp + 1e6f, null, false);
+                foreach (var a in new[] { f1, f2, e1, e2 }) a.Engage.Clear();
+                var quarrels = Enumerable.Range(0, 3).SelectMany(i => new[] { BondRules.Quarrel(e1.Data.name, i).first, BondRules.Quarrel(e2.Data.name, i).first }).ToList();
+                yield return WaitFor(() => said.Any(s => quarrels.Any(q => s.EndsWith(": " + q))), 10f);
+                Assert.That(said.Any(s => quarrels.Any(q => s.EndsWith(": " + q))), Is.True,
+                    $"words after the fight (fighting: {e1.Data.name} {e1.Engage.Target?.name}, {e2.Data.name} {e2.Engage.Target?.name}): " + string.Join(" / ", said));
+                Assert.That((f1.BondAttack, e1.BondAttack), Is.EqualTo((0f, 0f)), "out of the fight, nothing");
+
+                // ---- Rivals race for kills ----
+                Both(f1, f2, -20);
+                f2.Data.level = f1.Data.level;
+                f2.RecalculateStats();
+                Assert.That(BondService.BondsOf(f1, m).Single(b => b.other == f2).kinds, Is.EquivalentTo(new[] { BondKind.Rival }));
+                var big = SpawnMonster("slime", p, level: 30);
+                Place(f1, p + new Vector2(-1f, 0f));
+                Place(f2, p + new Vector2(1f, 0f));
+                f1.Engage.SetTarget(big);
+                f2.Engage.SetTarget(big);
+                yield return new WaitForSeconds(0.4f);
+                float calm = f1.RetreatThreshold;
+                void Kill(Adventurer k)
+                {
+                    var s = SpawnMonster("slime", k.Position + new Vector2(0.6f, 0f));
+                    for (int i = 0; i < 60 && s.IsAlive; i++) Combat.ApplyHit(k, s);
+                    Assert.That(s.IsAlive, Is.False, $"{k.Data.name} took one");
+                }
+                Kill(f1);
+                Kill(f2);
+                Kill(f2);
+                yield return new WaitForSeconds(0.4f);
+                Assert.That((bonds.IsBehind(f1), bonds.IsBehind(f2)), Is.EqualTo((true, false)), "one kill down");
+                Assert.That(f1.RetreatThreshold, Is.EqualTo(BondRules.RetreatWhenBehind(calm)).Within(1e-4f), "it holds on longer");
+                var behindLines = Enumerable.Range(0, 3).Select(i => $"{f1.Data.name}: {BondRules.BehindLine(f2.Data.name, i)}").ToList();
+                var aheadLines = Enumerable.Range(0, 3).Select(i => $"{f2.Data.name}: {BondRules.AheadLine(f1.Data.name, i)}").ToList();
+                yield return WaitFor(() => said.Any(behindLines.Contains), 4f);
+                Assert.That(said.Any(aheadLines.Contains) && said.Any(behindLines.Contains), Is.True, "the one ahead says so, the one behind will not have it: " + string.Join(" / ", said));
+                // Far apart, the race is over: two kills to one.
+                f1.Engage.Clear();
+                Place(f1, p + new Vector2(0f, 40f));
+                yield return WaitFor(() => race.HasValue, 3f);
+                Assert.That(race.HasValue && race.Value.Winner == f2 && race.Value.Loser == f1 && race.Value.WinnerKills == 2 && race.Value.LoserKills == 1, Is.True, "f2 won it");
+                Assert.That(f2.Data.thoughts.Any(t => t.id == ThoughtRules.RivalBeaten.Id && t.about == f1.Data.id), Is.True);
+                Assert.That(f1.Data.thoughts.Any(t => t.id == ThoughtRules.RivalLostTo.Id && t.about == f2.Data.id), Is.True);
+                Assert.That((BondService.Record(f2, f1), BondService.Record(f1, f2)), Is.EqualTo(((1, 0), (0, 1))), "the tally");
+                Assert.That(bonds.IsBehind(f1), Is.False);
+                big.ReceiveDamage(big.Hp + 1e6f, null, false);
+
+                // ---- A mentor near a kill ----
+                var (pupil, mentor) = (e1, e2);
+                Both(pupil, mentor, 20);
+                pupil.Data.level = 1;
+                mentor.Data.level = 1 + BondRules.MentorLevelGap + 5; // room for the pupil's level-up from the kill
+                pupil.RecalculateStats();
+                mentor.RecalculateStats();
+                Place(pupil, p + new Vector2(0f, -4f));
+                Place(mentor, p + new Vector2(2f, -4f));
+                pupil.Data.thoughts.RemoveAll(t => t.id == ThoughtRules.Mentored.Id);
+                Kill(pupil);
+                Assert.That(pupil.Data.thoughts.Any(t => t.id == ThoughtRules.Mentored.Id && t.about == mentor.Data.id), Is.True, "learnt from it");
+                Assert.That((bonds.MentorNear(pupil), bonds.Mentored(pupil, 100)), Is.EqualTo((mentor, 115)));
+                Place(mentor, p + new Vector2(0f, 30f));
+                Assert.That((bonds.MentorNear(pupil), bonds.Mentored(pupil, 100)), Is.EqualTo(((Adventurer)null, 100)), "not from afar");
+
+                // ---- A party keeps foes apart ----
+                var plaza = Services.Get<World.WorldService>().TownCenterWorld;
+                foreach (var a in m) foreach (var b in m) if (a != b) Feel(a, b, 0);
+                var (leader, friend, other, away) = (m[0], m[1], m[2], m[3]);
+                Both(leader, friend, 60);
+                Feel(leader, other, 30);
+                foreach (var a in m) Place(a, plaza + new Vector2(m.IndexOf(a), 0f));
+                away.ChangeState(away.RestState); // not free: only `other` can be asked
+                MakeKnown(Services.Get<EcosystemManager>().Species.First(s => s.id == "slime"));
+                var board = Services.Get<QuestBoard>();
+                var quest = board.FindById(DebugCommands.PostHunt("slime", 6, 80, 20, party: 3));
+                Assert.That(quest, Is.Not.Null);
+                // On the quest without its accepted event (that would set the party gathering going and fill the slots).
+                quest.AddAssignee(leader);
+                quest.AddAssignee(friend);
+                var parties = Services.Get<PartyService>();
+                Assert.That(parties.PickCandidates(quest, leader), Is.EqualTo(new[] { other }), "with nothing against anyone going, it is asked");
+                Feel(other, friend, BondRules.FoeAt);
+                Assert.That(parties.PickCandidates(quest, leader), Is.Empty, "a foe of one already going is not, however much the leader likes it");
+                Feel(other, friend, 0);
+                Feel(friend, other, BondRules.FoeAt);
+                Assert.That(parties.PickCandidates(quest, leader), Is.Empty, "nor when the hate is the other way");
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = false;
+                BondService.Certain = false;
+                EventBus.Unsubscribe(onSay);
+                EventBus.Unsubscribe(onRace);
+            }
+        }
+
+        /// <summary>
         /// P4-104d (user decisions 2026-10-24·25: breaks down to the extreme, a berserker goes for comrades too): a combat inspiration
         /// raises attack and a training one EXP; a spree throws gold away at the guild; a fistfight bruises but never below its floor
         /// and leaves the two on worse terms; a berserker goes for a comrade, who turns on it, until it comes to; quitting leaves the

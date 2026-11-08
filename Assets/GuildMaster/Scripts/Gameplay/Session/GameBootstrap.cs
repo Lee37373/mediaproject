@@ -343,6 +343,10 @@ namespace GuildMaster.Session
             Services.Register(new RelationshipRecorder());
             Services.Register(banter);
             save.Register(banter);
+            // Feelings in a fight (P4-131, F-12): friends beside, foes in the way, rivals' races, mentors near a kill.
+            var bonds = AddSystem<BondService>();
+            bonds.Init(roster, clock, Seed);
+            Services.Register(bonds);
             // Camps out in the wild (P4-66): campfires, the watch, raiders drawn by the light, talk at the fire.
             var camps = AddSystem<CampService>();
             camps.Init(clock, world, pool, roster);

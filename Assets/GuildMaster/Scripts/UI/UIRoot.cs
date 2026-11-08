@@ -136,7 +136,7 @@ namespace GuildMaster.UI
             AddWindow<WatchRuinView>(null, null, Key.None, new Vector2(520, 300)); // the ruined watchtower's lookout (2026-11-02)
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
             // Opened from the inspector and roster [상세] buttons (P4-6).
-            AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 800)); // 700 → 800: 전기 (P4-129)
+            AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 880)); // 700 → 800: 전기 (P4-129), → 880: 궁합 (P4-131)
             AddWindow<MemberCareView>(null, null, Key.None, new Vector2(640, 760)); // 700 → 760: 상납 요구 row (2026-10-29)
             // Counselling by conversation (user request 2026-10-01), opened from the care window's 면담 button.
             AddWindow<CounselDialogView>(null, null, Key.None, new Vector2(980, 620));

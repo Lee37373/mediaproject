@@ -52,6 +52,8 @@ namespace GuildMaster.Adventurers
         public List<Director.ChronicleEntry> chronicle = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>
         public List<RelationEntry> relations = new();
+        /// <summary>Races for kills won and lost against each rival (P4-131).</summary>
+        public List<RivalRecord> rivalry = new();
         /// <summary>Conversation history (recruit talks, small talk), see DialogueLog.</summary>
         public List<DialogueLine> dialogue = new();
         /// <summary>Recruitment talk state kept between talks (-1 = never talked).</summary>

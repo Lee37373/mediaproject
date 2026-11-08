@@ -862,6 +862,26 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        /// <summary>Who is what to whom in a fight (P4-131): bonds, the attack share on now, behind a rival, race records.</summary>
+        public static string Bonds()
+        {
+            var r = Services.Get<GuildRoster>().Members;
+            Services.TryGet<BondService>(out var bonds);
+            var sb = new StringBuilder();
+            foreach (var a in r)
+            {
+                if (a?.Data == null || a.IsVisitor) continue;
+                sb.Append($"{a.Data.name} Lv{a.Data.level} 공격몫 {a.BondAttack:+0.00;-0.00;0}{(bonds != null && bonds.IsBehind(a) ? " (라이벌에게 지는 중)" : "")}: ");
+                foreach (var (o, kinds) in BondService.BondsOf(a, r))
+                {
+                    var (won, lost) = BondService.Record(a, o);
+                    sb.Append($"{o.Data.name}[{string.Join("·", kinds.Select(BondRules.Label))}{(won + lost > 0 ? $" {won}승{lost}패" : "")}]  ");
+                }
+                sb.AppendLine();
+            }
+            return sb.ToString();
+        }
+
         /// <summary>Deals damage to roster member #index (no attacker). For death checks.</summary>
         public static string Hurt(int index, float amount)
         {

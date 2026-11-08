@@ -52,10 +52,17 @@ namespace GuildMaster.Adventurers
 
         /// <summary>Hp ratio below which the adventurer retreats (traits can modify).</summary>
         public float RetreatThreshold
-            => (Traits?.RetreatThreshold ?? 0.35f)
-               // Fighting a kind it fears (a quirk, P4-104e): it pulls out sooner.
-               + (Data != null && Data.quirks.Count > 0 && Engage?.Target is Monster m && m.Def != null && QuirkRules.Fears(Data.quirks, m.Def.id)
-                   ? QuirkRules.FearRetreatShift : 0f);
+        {
+            get
+            {
+                float t = (Traits?.RetreatThreshold ?? 0.35f)
+                          // Fighting a kind it fears (a quirk, P4-104e): it pulls out sooner.
+                          + (Data != null && Data.quirks.Count > 0 && Engage?.Target is Monster m && m.Def != null && QuirkRules.Fears(Data.quirks, m.Def.id)
+                              ? QuirkRules.FearRetreatShift : 0f);
+                // Behind its rival in a race for kills (P4-131): it holds on longer.
+                return Services.TryGet<BondService>(out var bonds) && bonds.IsBehind(this) ? BondRules.RetreatWhenBehind(t) : t;
+            }
+        }
 
         internal TownIdleState IdleState;
         internal DecidingState DecidingState;
@@ -806,13 +813,16 @@ namespace GuildMaster.Adventurers
         {
             Data.kills++;
             foreach (var s in loot) Data.AddLoot(s.itemId, s.count);
-            GainExp(exp); // the victim's own level counts (user decision 2026-09-22)
+            GainExp(Mentored(this, exp)); // the victim's own level counts (user decision 2026-09-22)
             // Everyone fighting alongside gets the full EXP too (P4-40, user report 2026-09-21:
             // "levelling is too slow"). Parties focus one target, so the last hit is luck, and a
             // priest that heals the whole fight never landed one at all — Lv1 after three days.
             UnitRegistry.Collect(Position, ExpShareRadius, u => u != this && u is Adventurer m && m.IsGuildMember, s_expShare);
-            foreach (var u in s_expShare) ((Adventurer)u).GainExp(exp);
+            foreach (var u in s_expShare) ((Adventurer)u).GainExp(Mentored((Adventurer)u, exp));
         }
+
+        /// <summary>A kill's EXP with a mentor close by: a little more (P4-131).</summary>
+        static int Mentored(Adventurer a, int exp) => Services.TryGet<BondService>(out var bonds) ? bonds.Mentored(a, exp) : exp;
 
         // ---------------- Save (P5-4) ----------------
 

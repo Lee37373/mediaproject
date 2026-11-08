@@ -91,8 +91,13 @@ namespace GuildMaster.Units
         public Boons Boons { get; } = new();
         /// <summary>Defence as blows meet it (broken armour taken off, a blessing added).</summary>
         public float EffectiveDefense => Stats.Defense * (1f - Afflictions.ArmorBreak) * (1f + Boons.Defense);
-        /// <summary>Attack as blows land (a battle cry or frenzy added, P4-126).</summary>
-        public float AttackNow => Stats.Attack * (1f + Boons.Attack);
+        /// <summary>Attack as blows land (a battle cry or frenzy added, P4-126; a friend beside it or a foe in its way, P4-131).</summary>
+        public float AttackNow => Stats.Attack * Mathf.Max(0.1f, 1f + Boons.Attack + BondAttack);
+        /// <summary>
+        /// Share added to the attack by who fights beside it (P4-131: a friend +, a foe −), set by
+        /// <see cref="Adventurers.BondService"/> while it fights; 0 otherwise. Not saved (worked out again each moment).
+        /// </summary>
+        public float BondAttack { get; internal set; }
         /// <summary>Seconds between attacks as they are now (a chill draws them out).</summary>
         public float AttackCooldownNow => Stats.AttackCooldown / Mathf.Max(0.1f, 1f - Afflictions.Slow);
 
