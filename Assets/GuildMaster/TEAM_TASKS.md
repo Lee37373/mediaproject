@@ -142,7 +142,7 @@
 | P4-131 | 관계가 전투에(F-12, 사용자 선택 2026-11-05): 파티 궁합·라이벌·멘토. 사용자 결정 2026-11-08: 궁합(친구·앙숙)·라이벌·멘토 셋 다, 보너스 작게, 파티 짜기는 파티원끼리도 봄, 상세 창 + 전투 연출. 구현: `Adventurers/BondRules`·`BondService`(친구 +10%·앙숙 −10%·말다툼·라이벌 처치 경쟁·스승 EXP ×1.15), `Unit.BondAttack`, `AdventurerData.rivalry`, 상세 창 "궁합", `DebugCommands.Bonds()` | 이재혁 | 완료 | Adventurers/BondRules·BondService·PartyService·Adventurer, Units/Unit, UI/Views/AdventurerDetailView | 02466f3 |
 | P4-132 | 길드 마스터 지휘(게임성 제안 H6 = F-16, 사용자 선택 2026-11-05): 응원·집결 깃발·후퇴 나팔, 따르는 정도는 관계·충성. 사용자 결정 2026-11-08: 응원·집결 깃발·후퇴 나팔·집중 공격 넷, 지휘력 게이지, 마스터 근처만, 따름은 기분·특성 확률. 구현: `Commands/`(CommandRules·MasterCommands·RallyFlag), `Unit.CheerAttack`, `Adventurer.OrderTarget·RetreatOnOrder`, DefendState 깃발, UI/Views/CommandBarView(키 5~8), 저장 `commands`, `DebugCommands.Orders()` | 이재혁 | 완료 | Commands(신규), Units/Unit, Adventurers/Adventurer·DefendState·DefenseCoordinator·ThoughtRules, UI/Views/CommandBarView(신규)·KeyHelpView, UIRoot | 8bc8a4d |
 | P4-133 | 의뢰 종류 확장(F-5, 사용자 선택 2026-11-05): 정찰·채집·배달, 아이템 보상 — 의뢰처는 마을·의뢰인(P4-82 그대로). 사용자 결정 2026-11-08: 채집·전리품 납품·배달(정찰은 안 함), 의뢰처는 다른 마을·의뢰인 제안 카드, 아이템 보상은 희귀한 것까지, 맡은 길드원의 짐으로. 구현: `Quests/ErrandRules`·`ErrandOffers`·`ErrandPoster`(다른 마을이 냄, 저장 `errands`)·`DeliveryParcels`, `QuestType.Gather·Collect·Deliver`, 다른 마을·의뢰인의 모든 의뢰에 아이템 하나(덤, 가장 많이 한 사람 짐 — `Adventurers/QuestRewardItems`), 제안 카드에 심부름(토벌 먼저), `DebugCommands.Errands()`·`PostErrand()`. **KMS 참고**: `QuestBoard.TryPostRequest`에 `destination` 인자, 제안 카드 `ProposalTarget`·`ProposalPlan`에 필드 추가 | 이재혁 | 완료 | Quests(신규: ErrandRules·ErrandOffers·ErrandPoster·DeliveryParcels)·QuestBoard·Quest, Adventurers/AdventurerStates·AdventurerLooting·QuestRewardItems(신규)·Decisions, Places/PlaceVisits, Proposals, UI/Views/QuestBoardView·QuestProposalView | 2c53852 |
-| P4-134 | 주민 부탁과 마을 평판(F-14, 사용자 선택 2026-11-05): 주민의 작은 부탁(F-5 종류를 씀), 보답 할인, 마을 평판 → 방문자 | 이재혁 | 예정 | Social/ResidentService, Quests, Recruitment | |
+| P4-134 | 주민 부탁과 마을 평판(F-14, 사용자 선택 2026-11-05): 주민의 작은 부탁(F-5 종류를 씀), 보답 할인, 마을 평판 → 방문자. 사용자 결정 2026-11-08: 주민에게 직접(머리 위 "!" → 부탁 창 → 창고 물건을 건네거나 길드원을 골라 보냄), 보답은 부탁마다 한 번 + 그 주민 평판 단계별 상시 혜택, 마을 평판은 방문자 시작 호감, 실패만 평판이 깎임 | 이재혁 | 진행 중 | Social/ResidentService, Quests, Recruitment | |
 | P4-135 | dev/KMS 7a2ec7f 병합(길드원 창 파티 보드형·사건 카드 창 디자인·대사). 사용자 결정 2026-11-08: 사건 카드 두 파일은 main대로 지우고(P4-118) KMS 디자인(방향·수치 칩, 남은 시간 막대, 인물 칩, 내용 크기 창)은 결정 카드 창(J)으로 옮김, UIRoot는 양쪽 다, WatchRuinView.cs.meta는 main GUID. **KMS에게 알림**: `EventCards.cs`·`EventCardView.cs`·`EventCardChipTests.cs`는 지워졌으니 다음에 main을 받을 때 다시 살리지 마세요 — 칩 함수는 `UI/Framework/UIChips`(Chip·SetChip·SetSignChip·Fill·SetFill), 방향·수치 칩은 `Dilemmas/DilemmaChips`·`DilemmaChangeLog`, 테스트는 `DilemmaChipTests`. 병합 뒤 드러난 기존 버그(광폭이 끝난 동료를 계속 때림)도 고침 | 이재혁 | 완료 | UI/Views/DilemmaView·RosterView, UI/Framework/UIChips, UIRoot, Dilemmas, Adventurers/Adventurer(HandleCombat), Social/TalkBank·TownTalkService | 병합 05ef4f0, 버그 a8eafcc, 디자인 5e2a3ff |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
@@ -173,8 +173,8 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: 없음
-- **예정**: P4-134 F-14 주민 부탁 → P5-5 Windows 빌드(맨 마지막)
+- **진행 중**: P4-134 F-14 주민 부탁
+- **예정**: P5-5 Windows 빌드(맨 마지막)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-133, P4-135, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
