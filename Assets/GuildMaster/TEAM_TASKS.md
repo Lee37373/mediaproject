@@ -143,7 +143,7 @@
 | P4-132 | 길드 마스터 지휘(게임성 제안 H6 = F-16, 사용자 선택 2026-11-05): 응원·집결 깃발·후퇴 나팔, 따르는 정도는 관계·충성 | 이재혁 | 예정 | Player, Adventurers, UI | |
 | P4-133 | 의뢰 종류 확장(F-5, 사용자 선택 2026-11-05): 정찰·채집·배달, 아이템 보상 — 의뢰처는 마을·의뢰인(P4-82 그대로) | 이재혁 | 예정 | Quests/QuestBoard, Town/TownQuestPoster | |
 | P4-134 | 주민 부탁과 마을 평판(F-14, 사용자 선택 2026-11-05): 주민의 작은 부탁(F-5 종류를 씀), 보답 할인, 마을 평판 → 방문자 | 이재혁 | 예정 | Social/ResidentService, Quests, Recruitment | |
-| P4-135 | dev/KMS 7a2ec7f 병합(길드원 창 파티 보드형·사건 카드 창 디자인·대사). 사용자 결정 2026-11-08: 사건 카드 두 파일은 main대로 지우고(P4-118) KMS 디자인(방향·수치 칩, 남은 시간 막대, 인물 칩, 내용 크기 창)은 결정 카드 창(J)으로 옮김, UIRoot는 양쪽 다, WatchRuinView.cs.meta는 main GUID | 이재혁 | 진행 중 | UI/Views/DilemmaView·RosterView, UIRoot, Dilemmas, Social/TalkBank·TownTalkService | |
+| P4-135 | dev/KMS 7a2ec7f 병합(길드원 창 파티 보드형·사건 카드 창 디자인·대사). 사용자 결정 2026-11-08: 사건 카드 두 파일은 main대로 지우고(P4-118) KMS 디자인(방향·수치 칩, 남은 시간 막대, 인물 칩, 내용 크기 창)은 결정 카드 창(J)으로 옮김, UIRoot는 양쪽 다, WatchRuinView.cs.meta는 main GUID. **KMS에게 알림**: `EventCards.cs`·`EventCardView.cs`·`EventCardChipTests.cs`는 지워졌으니 다음에 main을 받을 때 다시 살리지 마세요 — 칩 함수는 `UI/Framework/UIChips`(Chip·SetChip·SetSignChip·Fill·SetFill), 방향·수치 칩은 `Dilemmas/DilemmaChips`·`DilemmaChangeLog`, 테스트는 `DilemmaChipTests`. 병합 뒤 드러난 기존 버그(광폭이 끝난 동료를 계속 때림)도 고침 | 이재혁 | 완료 | UI/Views/DilemmaView·RosterView, UI/Framework/UIChips, UIRoot, Dilemmas, Adventurers/Adventurer(HandleCombat), Social/TalkBank·TownTalkService | 병합 05ef4f0, 버그 a8eafcc, 디자인 5e2a3ff |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로. KMS가 구현해 P4-117 병합으로 들어옴(`Audio/SoundService`, `Resources/Audio`, 설정 창 볼륨) | KMS | 완료 | Audio(신규), Resources/Audio, UI/Views/SettingsView | 8cff428 |
@@ -173,9 +173,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P4-135 dev/KMS 병합 → P4-131 F-12 관계·전투
+- **진행 중**: P4-131 F-12 관계·전투
 - **예정**: P4-132 H6 지휘 → P4-133 F-5 의뢰 종류 → P4-134 F-14 주민 부탁 → P5-5 Windows 빌드(맨 마지막)
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-130, P5-1 ~ P5-4 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-130, P4-135, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
