@@ -91,13 +91,28 @@ namespace GuildMaster.Units
         public Boons Boons { get; } = new();
         /// <summary>Defence as blows meet it (broken armour taken off, a blessing added).</summary>
         public float EffectiveDefense => Stats.Defense * (1f - Afflictions.ArmorBreak) * (1f + Boons.Defense);
-        /// <summary>Attack as blows land (a battle cry or frenzy added, P4-126; a friend beside it or a foe in its way, P4-131).</summary>
-        public float AttackNow => Stats.Attack * Mathf.Max(0.1f, 1f + Boons.Attack + BondAttack);
+        /// <summary>
+        /// Attack as blows land (a battle cry or frenzy added, P4-126; a friend beside it or a foe in its way, P4-131; the guild
+        /// master's cheer, P4-132).
+        /// </summary>
+        public float AttackNow => Stats.Attack * Mathf.Max(0.1f, 1f + Boons.Attack + BondAttack + CheerAttack);
         /// <summary>
         /// Share added to the attack by who fights beside it (P4-131: a friend +, a foe −), set by
         /// <see cref="Adventurers.BondService"/> while it fights; 0 otherwise. Not saved (worked out again each moment).
         /// </summary>
         public float BondAttack { get; internal set; }
+
+        float _cheer, _cheerUntil;
+        /// <summary>
+        /// Share added to the attack by the guild master's cheer (P4-132), apart from the skills' boons (the strongest of those
+        /// counts, and a battle cry would have swallowed it). Not saved: it lasts seconds.
+        /// </summary>
+        public float CheerAttack => Time.time < _cheerUntil ? _cheer : 0f;
+        public void Cheer(float share, float seconds)
+        {
+            _cheer = Mathf.Max(0f, share);
+            _cheerUntil = Time.time + Mathf.Max(0f, seconds);
+        }
         /// <summary>Seconds between attacks as they are now (a chill draws them out).</summary>
         public float AttackCooldownNow => Stats.AttackCooldown / Mathf.Max(0.1f, 1f - Afflictions.Slow);
 
@@ -268,6 +283,7 @@ namespace GuildMaster.Units
             StunnedUntil = 0f;
             _speedBuffUntil = 0f;
             _knockUntil = 0f;
+            _cheerUntil = 0f;
             Afflictions.Clear();
             Boons.Clear();
             if (Visual != null) Visual.StatusTint = Color.white;

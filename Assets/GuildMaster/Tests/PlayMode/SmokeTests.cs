@@ -4474,6 +4474,175 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-132 (H6, user decisions 2026-11-08): the guild master's orders. Nobody near, nothing spent; a cheer lifts the
+        /// fighters' attack, costs its share of the gauge and waits out its cooldown; a focus order sends them at a monster
+        /// that was no threat to them; the horn sends them running home and keeps them out of the next raid's defence; the
+        /// flag will not go far out, stands in town, and the raid's other defenders hold it instead of their gate; the
+        /// gauge and the flag come back from a save.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Orders_ACheerLifts_AFocusSendsThemAtOne_TheHornSendsThemHome_AndTheFlagHoldsTheTown()
+        {
+            yield return Boot();
+            var orders = Services.Get<Commands.MasterCommands>();
+            Assert.That(UnityEngine.Object.FindFirstObjectByType<CommandBarView>(), Is.Not.Null, "the bar is up");
+            var m = Roster.Members.Where(a => a.IsAlive && a.IsGuildMember && !a.IsVisitor).ToList();
+            Assert.That(m.Count, Is.GreaterThanOrEqualTo(4));
+            // Well out of town, so the ones left in town are out of earshot (the reach is 12 cells).
+            var spot = OpenGrassOutsideTown(35f, 70f);
+            Assume.That(spot, Is.Not.Null, "open grass out of town");
+            var master = Services.Get<PlayerAvatar>();
+            master.Mover.Stop();
+            master.Mover.Warp(spot.Value);
+            var p = spot.Value + new Vector2(0f, 3f);
+            ClearHomelessOf("slime");
+            EmptyNestsNear(p, 20f);
+            Commands.MasterCommandEvent? given = null;
+            Action<Commands.MasterCommandEvent> onGiven = e => given = e;
+            EventBus.Subscribe(onGiven);
+            Unit.GuildInvulnerable = true;
+            Commands.MasterCommands.Certain = true;
+            try
+            {
+                orders.SetPower(Commands.CommandRules.MaxPower);
+                orders.ResetCooldowns();
+                // ---- Nobody near: refused, nothing spent ----
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Cheer, null, out var why), Is.False);
+                Assert.That(why, Does.Contain("싸우는 길드원이 없습니다"));
+                Assert.That(orders.Power, Is.EqualTo(Commands.CommandRules.MaxPower).Within(0.5f), "nothing spent");
+
+                // ---- Three of them fighting by the master ----
+                var field = m.Take(3).ToList();
+                var stay = m.Skip(3).ToList();
+                var dummy = SpawnMonster("slime", p, level: 30);
+                var other = SpawnMonster("slime", p + new Vector2(3f, 0f), level: 30);
+                for (int i = 0; i < field.Count; i++)
+                {
+                    var a = field[i];
+                    a.ChangeState(a.ReturnState); // on its way home: it fights what it meets
+                    a.Mover.Stop();
+                    a.Mover.Warp(p + new Vector2(-1.5f + i * 1.5f, -1f));
+                    a.Engage.SetTarget(dummy);
+                }
+                yield return WaitFor(() => field.All(a => a.InTheThickOfIt), 3f);
+                // The fog looks round every tenth of a second: the master just stepped out here.
+                var fogNow = Services.Get<Fog.FogOfWar>();
+                yield return WaitFor(() => fogNow.IsVisibleRaw(other.Position), 3f);
+
+                // ---- The cheer ----
+                float before = orders.Power;
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Cheer, null, out var cheered), Is.True, cheered);
+                Assert.That(given.HasValue && given.Value.Heard == 3 && given.Value.Followed == 3, Is.True, cheered);
+                Assert.That(cheered, Is.EqualTo("응원: 3명 모두 힘을 냈습니다."));
+                foreach (var a in field)
+                {
+                    Assert.That(a.CheerAttack, Is.EqualTo(Commands.CommandRules.CheerShare), a.Data.name);
+                    Assert.That(a.AttackNow, Is.EqualTo(a.Stats.Attack * (1f + a.Boons.Attack + a.BondAttack + Commands.CommandRules.CheerShare)).Within(0.01f));
+                    Assert.That(a.Data.thoughts.Any(t => t.id == ThoughtRules.Cheered.Id), Is.True, "taken to heart");
+                }
+                Assert.That(orders.Power, Is.EqualTo(before - Commands.CommandRules.Cost(Commands.MasterCommand.Cheer)).Within(0.5f));
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Cheer, null, out var again), Is.False);
+                Assert.That(again, Does.Contain("뒤에 다시"), "its cooldown");
+
+                // ---- The focus: the fight over, they go for one that was no threat to them ----
+                dummy.ReceiveDamage(dummy.Hp + 1e6f, null, false);
+                foreach (var a in field) a.Engage.Clear();
+                yield return null;
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Focus, p + new Vector2(-4f, -3f), out var nothing), Is.False);
+                Assert.That(nothing, Does.Contain("몬스터가 없습니다"));
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Focus, other.Position + new Vector2(0.3f, 0f), out var focused), Is.True,
+                            $"{focused} (at {other.Position - master.Position} from the master, seen {fogNow.IsVisibleRaw(other.Position)})");
+                Assert.That(field.All(a => a.OrderedTarget == other && a.CalledTarget == other), Is.True);
+                yield return new WaitForSeconds(1f);
+                Assert.That(field.All(a => a.Engage.Target == other), Is.True,
+                            "on it: " + string.Join(", ", field.Select(a => $"{a.Data.name} {a.StateLabel} {a.Engage.Target?.name}")));
+
+                // ---- The horn ----
+                float now = Services.Get<GameClock>().TotalHours;
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Retreat, null, out var horn), Is.True, horn);
+                foreach (var a in field)
+                {
+                    Assert.That(a.Fsm.Current == a.ReturnState && a.ReturnState.Retreating, Is.True, $"{a.Data.name} runs home: {a.StateLabel}");
+                    Assert.That(a.OrderedTarget, Is.Null, "the focus is off");
+                    Assert.That(a.HeldHomeUntilHour, Is.GreaterThan(now));
+                }
+                other.ReceiveDamage(other.Hp + 1e6f, null, false);
+                // Home already (at the counter): only the horn keeps them from the next call to arms.
+                var door = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+                foreach (var a in field) { a.Mover.Stop(); a.Mover.Warp(door); }
+                yield return WaitFor(() => field.All(a => a.Fsm.Current == a.VisitState), 3f);
+                Assert.That(field.All(a => a.Fsm.Current == a.VisitState), Is.True, "at the guild: " + string.Join(", ", field.Select(a => a.StateLabel)));
+
+                // ---- The flag: not far out, then in town ----
+                Assert.That(orders.Power, Is.LessThan(Commands.CommandRules.Cost(Commands.MasterCommand.Rally)), "three orders took most of a full gauge");
+                orders.SetPower(Commands.CommandRules.MaxPower);
+                var town = Services.Get<World.WorldService>();
+                master.Mover.Stop();
+                master.Mover.Warp(town.TownCenterWorld + new Vector2(60f, 0f));
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Rally, null, out var tooFar), Is.False);
+                Assert.That(tooFar, Does.Contain("성벽"));
+                // Not under a roof: the walk-in guild hall is in town, but a flag in it would be seen by nobody.
+                var townSvc = Services.Get<Town.TownService>();
+                var hall = townSvc.Get(Town.BuildingType.GuildHall).Footprint;
+                master.Mover.Warp(World.GridMap.CellToWorld(new Vector2Int(hall.x + hall.width / 2, hall.y + hall.height / 2)));
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Rally, null, out var indoors), Is.False);
+                Assert.That(indoors, Does.Contain("건물 안"));
+                bool UnderARoof(Vector2Int c)
+                {
+                    foreach (var b in townSvc.Buildings) if (b != null && b.Footprint.Contains(c)) return true;
+                    return false;
+                }
+                var c0 = World.GridMap.WorldToCell(town.TownCenterWorld);
+                var open = Enumerable.Range(0, 12).SelectMany(r => Enumerable.Range(-r, 2 * r + 1).SelectMany(dx => Enumerable.Range(-r, 2 * r + 1).Select(dy => c0 + new Vector2Int(dx, dy))))
+                                     .First(c => town.Grid.IsWalkable(c) && town.Grid.IsInTown(c) && !UnderARoof(c));
+                var flagAt = World.GridMap.CellToWorld(open);
+                master.Mover.Warp(flagAt);
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Rally, null, out var planted), Is.True, planted);
+                Assert.That(orders.HasFlag && Vector2.Distance(orders.FlagPosition, flagAt) < 0.01f, Is.True);
+
+                // ---- A raid: the horn keeps the three out of it, the others hold the flag ----
+                foreach (var a in stay) { a.ChangeState(a.IdleState); a.Mover.Stop(); }
+                var waves = Services.Get<Town.WaveManager>();
+                var nest = Services.Get<EcosystemManager>().Nests.FirstOrDefault(n => n.Species.canRaid && !n.IsEmpty);
+                Assume.That(nest, Is.Not.Null, "a raid-capable nest");
+                var gate = Services.Get<Town.GateService>().Gates.First();
+                waves.Launch(nest);
+                foreach (var r in nest.Members.Where(r => r != null && r.IsAlive && r.DefaultStateOverride != null))
+                {
+                    r.Mover.Stop();
+                    r.transform.position = gate.OutsidePoint + (Vector2)gate.Outward * 4f;
+                }
+                yield return WaitFor(() => waves.RaidSighted, 8f);
+                Assert.That(waves.RaidSighted, Is.True);
+                yield return new WaitForSeconds(1.5f);
+                foreach (var a in field)
+                    Assert.That(a.Fsm.Current, Is.Not.EqualTo(a.DefendState), $"{a.Data.name} was called home by the horn");
+                var defenders = stay.Where(a => a.Fsm.Current == a.DefendState).ToList();
+                Assert.That(defenders, Is.Not.Empty, "the others defend: " + string.Join(", ", stay.Select(a => a.StateLabel)));
+                foreach (var a in defenders) Assert.That(orders.FlagFor(a), Is.EqualTo((Vector2?)flagAt), $"{a.Data.name} heeds the flag");
+                yield return WaitFor(() => defenders.All(a => !a.IsAlive || a.Fsm.Current != a.DefendState || Vector2.Distance(a.Position, flagAt) < 3.5f), 10f);
+                Assert.That(defenders.All(a => !a.IsAlive || a.Fsm.Current != a.DefendState || Vector2.Distance(a.Position, flagAt) < 3.5f), Is.True,
+                            "under the flag: " + string.Join(", ", defenders.Select(a => $"{a.Data.name} {Vector2.Distance(a.Position, flagAt):0.0}")));
+
+                // ---- Saved and back ----
+                orders.SetPower(42f);
+                string json = orders.Capture();
+                orders.ClearFlag();
+                orders.SetPower(0f);
+                orders.Restore(json, null);
+                Assert.That(orders.Power, Is.EqualTo(42f).Within(0.01f));
+                Assert.That(orders.HasFlag && Vector2.Distance(orders.FlagPosition, flagAt) < 0.01f, Is.True, "the flag stands again");
+                Assert.That(orders.HoursToReady(Commands.MasterCommand.Retreat), Is.GreaterThan(0f), "and the horn is still cooling");
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = false;
+                Commands.MasterCommands.Certain = false;
+                EventBus.Unsubscribe(onGiven);
+            }
+        }
+
+        /// <summary>
         /// P4-104d (user decisions 2026-10-24·25: breaks down to the extreme, a berserker goes for comrades too): a combat inspiration
         /// raises attack and a training one EXP; a spree throws gold away at the guild; a fistfight bruises but never below its floor
         /// and leaves the two on worse terms; a berserker goes for a comrade, who turns on it, until it comes to; quitting leaves the

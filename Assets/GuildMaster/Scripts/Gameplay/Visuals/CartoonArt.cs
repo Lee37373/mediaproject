@@ -436,6 +436,32 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.3f));
         }
 
+        /// <summary>
+        /// The guild master's rally flag (P4-132): a pole with the guild's purple swallowtail, a gold band and a gold knob. Two
+        /// frames of the cloth in the wind; the pivot is the pole's foot.
+        /// </summary>
+        public static Sprite RallyFlag(int frame)
+        {
+            frame = Mathf.Abs(frame) % 2;
+            string key = "c_rallyflag:" + frame;
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            const int W = 40, H = 64;
+            const float x = 9f, foot = 4f, top = 60f;
+            var c = new Canvas(W, H);
+            var shadow = new Color(0f, 0f, 0f, 0.22f);
+            c.Shape(Ellipse(x + 2f, foot, 7f, 2.4f), shadow, shadow, 0f);
+            c.Shape(Segment(x, foot, x, top - 2f, 1.5f), Timber, Ink, 1.2f);
+            float lift = frame == 0 ? 0f : 2.5f, tail = frame == 0 ? 0f : -1.5f;
+            var cloth = Poly(1f, new Vector2(x + 1.5f, top - 4f), new Vector2(x + 27f + tail, top - 3f - lift),
+                             new Vector2(x + 27f + tail, top - 29f - lift), new Vector2(x + 16f, top - 22f - lift * 0.5f),
+                             new Vector2(x + 1.5f, top - 28f));
+            c.Shape(cloth, Hex(0x6B3FA0), Ink, 2f);
+            c.ShapeClipped(RoundRect(x, top - 17f - lift * 0.5f, x + 32f, top - 12f - lift * 0.5f, 0f), cloth, Gold);
+            c.ShapeClipped(RoundRect(x + 18f, 0f, x + 32f, H, 0f), cloth, ShadeTint);
+            c.Shape(Circle(x, top - 1f, 2.8f), Gold, Ink, 1.2f);
+            return c.ToSprite(key, new Vector2(x / W, foot / H));
+        }
+
         /// <summary>One frame of a campfire flame (P4-66): a teardrop of orange with a yellow heart.</summary>
         public static Sprite Flame(int frame)
         {

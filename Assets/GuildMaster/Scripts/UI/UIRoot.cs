@@ -84,6 +84,8 @@ namespace GuildMaster.UI
             Services.Register(inspector);
             // "다음 할 일" checklist and hints (F-19), under the windows.
             HudLayer.gameObject.AddComponent<GuideView>().Build(HudLayer);
+            // The guild master's orders and their gauge (P4-132), bottom centre, under the windows.
+            HudLayer.gameObject.AddComponent<CommandBarView>().Build(HudLayer);
 
             // The next rank's conditions (P4-106), under the side menu and beneath the windows.
             const float MenuHeight = 684f; // fifteen buttons of 40 with 6 between (P4-112: the guild's rules; 2026-10-31 merge: 살림, 관계도)

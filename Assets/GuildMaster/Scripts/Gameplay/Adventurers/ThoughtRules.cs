@@ -164,6 +164,8 @@ namespace GuildMaster.Adventurers
         // A race for kills with a rival (P4-131, F-12).
         public static readonly ThoughtDef RivalBeaten = D("rival_beaten", "{0}보다 많이 잡았다", 3f, 12f, ThoughtTone.People, 1, "(이번엔 내가 이겼어.)");
         public static readonly ThoughtDef RivalLostTo = D("rival_lost_to", "{0}에게 처치 경쟁에서 졌다", -3f, 12f, ThoughtTone.People, 1, "(다음엔 안 져.)");
+        // The guild master's cheer, taken to heart (P4-132): a member in better spirits follows the next order more readily.
+        public static readonly ThoughtDef Cheered = D("cheered", "길드 마스터가 곁에서 응원해 주었다", 3f, 12f, ThoughtTone.Loyalty, 1, "(마스터가 보고 있어.)");
         // Against its nature, and its fears (P4-104e).
         public static readonly ThoughtDef Crowded = D("crowded", "사람이 너무 많아 불편하다", -4f, 0f);
         public static readonly ThoughtDef Lonely = D("lonely", "혼자라 쓸쓸하다", -3f, 0f);
@@ -184,7 +186,7 @@ namespace GuildMaster.Adventurers
             DecisionPleased, DecisionDispleased, DuelWon, DuelLost, Cherished, TabPaid, Accused, KeptOn, Mentored, TownFeast, CubCared, CubSold,
             WarmLodge, ColdLodge, Thirsty,
             Talked, Bonus, Ignored, FriendLeft,
-            HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival, RivalBeaten, RivalLostTo, Crowded, Lonely, WantsRest, Idle, Afraid,
+            HeavyHeart, Worn, Hurt, Wounded, InDebt, OnLeave, WithFriend, WithRival, RivalBeaten, RivalLostTo, Cheered, Crowded, Lonely, WantsRest, Idle, Afraid,
             LawsLiked, LawsDisliked, Holiday,
         };
 

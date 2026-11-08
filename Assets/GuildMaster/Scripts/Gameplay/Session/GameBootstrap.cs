@@ -512,6 +512,11 @@ namespace GuildMaster.Session
             dilemmas.Init(clock, roster, treasury, world, Seed);
             Services.Register(dilemmas);
             save.Register(dilemmas);
+            // The guild master's orders (P4-132, H6): a cheer, a focus, a rally flag, a retreat horn — one gauge for all.
+            var orders = AddSystem<Commands.MasterCommands>();
+            orders.Init(avatar, clock, roster, town, Seed);
+            Services.Register(orders);
+            save.Register(orders);
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());
 
             // --- Presentation / input ---

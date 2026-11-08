@@ -882,6 +882,71 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        // ---------------- The guild master's orders (P4-132) ----------------
+
+        /// <summary>The command gauge, each order's cooldown, the flag, and who near the master would hear (real values).</summary>
+        public static string Orders()
+        {
+            var orders = Services.Get<Commands.MasterCommands>();
+            var sb = new StringBuilder();
+            sb.AppendLine($"지휘력 {orders.Power:0.0}/{Commands.CommandRules.MaxPower:0}  깃발 {(orders.HasFlag ? $"{orders.FlagPosition} ({orders.FlagHoursLeft:0.0}시간)" : "없음")}");
+            foreach (var c in Commands.CommandRules.All)
+                sb.AppendLine($"  {Commands.CommandRules.Label(c)}: 비용 {Commands.CommandRules.Cost(c):0}, 남은 쿨 {orders.HoursToReady(c):0.00}시간, 지금 {orders.Check(c)}");
+            var me = orders.MasterPosition;
+            foreach (var a in Services.Get<GuildRoster>().Members)
+            {
+                if (a?.Data == null || a.IsVisitor || !a.IsAlive) continue;
+                float d = Vector2.Distance(a.Position, me);
+                if (d > Commands.CommandRules.Reach) continue;
+                float mood = ThoughtRecorder.MoodOf(a);
+                sb.Append($"  {a.Data.name} {d:0.0}칸 {a.StateLabel} 기분 {mood:0} 응원 {a.CheerAttack:0.00} 표적 {(a.OrderedTarget != null ? a.OrderedTarget.DisplayName : "-")} 따름(");
+                sb.Append(string.Join(" ", Commands.CommandRules.All.Select(c => $"{Commands.CommandRules.Label(c)} {Commands.CommandRules.ObeyChance(c, mood, a.Data.traitIds, a.Data.values):0%}")));
+                sb.AppendLine(")");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Gives an order as the bar does ("cheer", "focus", "rally", "retreat"); a focus order goes for the monster nearest
+        /// (x, y), or without a point for the nearest one the guild sees within the master's reach. free = the gauge and the
+        /// cooldown are filled first.
+        /// </summary>
+        public static string Order(string kind, bool free = true, float x = float.NaN, float y = float.NaN)
+        {
+            var orders = Services.Get<Commands.MasterCommands>();
+            var c = kind.ToLowerInvariant() switch
+            {
+                "cheer" or "응원" => Commands.MasterCommand.Cheer,
+                "focus" or "집중" => Commands.MasterCommand.Focus,
+                "rally" or "flag" or "깃발" => Commands.MasterCommand.Rally,
+                _ => Commands.MasterCommand.Retreat,
+            };
+            if (free)
+            {
+                orders.SetPower(Commands.CommandRules.MaxPower);
+                orders.ResetCooldowns();
+            }
+            Vector2? at = null;
+            if (!float.IsNaN(x)) at = new Vector2(x, y);
+            else if (c == Commands.MasterCommand.Focus)
+            {
+                Services.TryGet<GuildMaster.Fog.FogOfWar>(out var fog);
+                var m = UnitRegistry.FindNearest(orders.MasterPosition, Commands.CommandRules.Reach,
+                    u => u is Monster mo && mo.IsAlive && (fog == null || fog.IsVisibleRaw(mo.Position)));
+                if (m != null) at = m.Position;
+            }
+            bool ok = orders.TryIssue(c, at, out var message);
+            return (ok ? "OK " : "NO ") + message;
+        }
+
+        /// <summary>Sets the command gauge.</summary>
+        public static string OrderPower(float power)
+        {
+            var orders = Services.Get<Commands.MasterCommands>();
+            orders.SetPower(power);
+            return $"지휘력 {orders.Power:0}";
+        }
+
         /// <summary>Deals damage to roster member #index (no attacker). For death checks.</summary>
         public static string Hurt(int index, float amount)
         {
