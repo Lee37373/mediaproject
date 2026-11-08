@@ -17,7 +17,7 @@ namespace GuildMaster.Proposals
     {
         /// <summary>Unique per target ("hunt:slime"): two plans never share a key unless they are the same target.</summary>
         public string Key;
-        /// <summary>Always Hunt (escorts need the guild master to walk along, so they are not proposed).</summary>
+        /// <summary>A hunt, or an errand (P4-133: gather, collect, deliver). Escorts need the guild master to walk along, so they are not proposed.</summary>
         public QuestType Type;
         /// <summary>The species' danger.</summary>
         public DangerLevel Danger;
@@ -37,6 +37,18 @@ namespace GuildMaster.Proposals
         public object Den;
         /// <summary>A region lord's lair with its lord (P4-83): one kill, weighed against the lord's own requirement.</summary>
         public bool IsLord;
+
+        // ---- Errands (P4-133) ----
+        /// <summary>Gather/Collect: the item to bring in, its name and worth.</summary>
+        public string ItemId;
+        public string ItemName;
+        public int ItemValue;
+        /// <summary>Collect: the part per kill its kind drops.</summary>
+        public float PerKill;
+        /// <summary>Gather/Collect: the most that can be asked (what the known spots or the den give).</summary>
+        public int Supply;
+        /// <summary>Deliver: the village (a <c>Villages.Village</c>) the goods go to (handed back untouched; null in tests).</summary>
+        public object Destination;
     }
 
     /// <summary>One candidate quest on the proposal list: what would be posted, and how it is described.</summary>
@@ -57,6 +69,10 @@ namespace GuildMaster.Proposals
         public string Title;
         public string Pitch;
         public bool FromLlm;
+        /// <summary>The item the patron pays besides the gold (P4-133), shown on the card.</summary>
+        public ItemStack RewardItem;
+        /// <summary>Deliver: what is carried.</summary>
+        public string GoodsName;
 
         public int MemberGold => QuestPricing.Split(RewardGold).members;
         public int FeeGold => QuestPricing.Split(RewardGold).fee;
@@ -128,17 +144,27 @@ namespace GuildMaster.Proposals
             return maxParty;
         }
 
+        /// <summary>Items an errand asks for by style (P4-133): fewer for the safe card, more for the bold.</summary>
+        public static int ErrandCount(ProposalStyle style) => style switch
+        {
+            ProposalStyle.Safe => 3,
+            ProposalStyle.Balanced => 5,
+            _ => 7,
+        };
+
         // ---------------- Plans ----------------
 
-        static ProposalPlan MakePlan(ProposalTarget t, ProposalStyle style, float power, int maxParty)
+        /// <summary>The plan for this target in this style, or null when there is not enough to ask for (an errand).</summary>
+        static ProposalPlan MakePlan(ProposalTarget t, ProposalStyle style, float power, int maxParty, GameRandom rng)
         {
-            if (t.IsLord) return MakeLordPlan(t, style, power, maxParty);
+            if (t.IsLord) return WithReward(MakeLordPlan(t, style, power, maxParty), t, rng);
+            if (ErrandRules.IsErrand(t.Type)) return MakeErrandPlan(t, style, power, maxParty, rng);
             // Never ask for more than the guild has seen, when it has seen any.
             int count = t.Type == QuestType.Hunt ? QuestPricing.HuntCount(t.Observed, HuntCount(style)) : 1;
             var danger = EffectiveDanger(t.Type, t.Danger, count);
             int party = PartyFor(style, power, danger, maxParty);
             int gold = RewardGold(t.Type, danger, count, t.Distance, style);
-            return new ProposalPlan
+            return WithReward(new ProposalPlan
             {
                 Target = t,
                 Style = style,
@@ -148,7 +174,57 @@ namespace GuildMaster.Proposals
                 RewardGold = gold,
                 RewardExp = RewardExp(gold),
                 Risk = QuestRisk.Label(QuestRisk.Margin(power, party, danger)),
+            }, t, rng);
+        }
+
+        /// <summary>A patron pays an item besides the gold (P4-133), picked for the card so it shows.</summary>
+        static ProposalPlan WithReward(ProposalPlan p, ProposalTarget t, GameRandom rng)
+        {
+            p.RewardItem = ErrandRules.PickReward(p.Danger, t.Distance, rng);
+            return p;
+        }
+
+        /// <summary>
+        /// An errand (P4-133): so many ore or herbs, a den's parts (the hunt it takes rates it), or goods to a village — priced by
+        /// <see cref="ErrandRules"/>, by style. Null when the spots or the den give too few for the style's count.
+        /// </summary>
+        static ProposalPlan MakeErrandPlan(ProposalTarget t, ProposalStyle style, float power, int maxParty, GameRandom rng)
+        {
+            float factor = StyleFactor(style);
+            int count = 1, gold;
+            var danger = t.Danger;
+            switch (t.Type)
+            {
+                case QuestType.Gather:
+                    count = ErrandRules.Count(ErrandCount(style), t.Supply);
+                    if (count <= 0) return null;
+                    gold = ErrandRules.GatherGold(t.ItemValue, count, danger, t.Distance, factor);
+                    break;
+                case QuestType.Collect:
+                    count = ErrandRules.Count(ErrandCount(style), t.Supply);
+                    if (count <= 0) return null;
+                    int kills = ErrandRules.CollectKills(count, t.PerKill);
+                    danger = EffectiveDanger(QuestType.Hunt, t.Danger, kills);
+                    gold = ErrandRules.CollectGold(danger, kills, t.ItemValue, count, t.Distance, factor);
+                    break;
+                default:
+                    gold = ErrandRules.DeliverGold(danger, t.Distance, factor);
+                    break;
+            }
+            int party = PartyFor(style, power, danger, Mathf.Min(maxParty, ErrandRules.PartyFor(t.Type, danger)));
+            var plan = new ProposalPlan
+            {
+                Target = t,
+                Style = style,
+                Danger = danger,
+                Count = count,
+                Party = party,
+                RewardGold = gold,
+                RewardExp = ErrandRules.Exp(t.Type, gold),
+                Risk = QuestRisk.Label(QuestRisk.Margin(power, party, danger)),
+                GoodsName = t.Type == QuestType.Deliver ? ErrandRules.PickGoods(rng) : null,
             };
+            return WithReward(plan, t, rng);
         }
 
         /// <summary>A region lord (P4-83): one kill, priced like its lair, weighed against the lord's own requirement.</summary>
@@ -184,8 +260,8 @@ namespace GuildMaster.Proposals
             foreach (var t in targets)
             foreach (var style in Styles)
             {
-                var plan = MakePlan(t, style, power, t.IsLord ? lordParty : maxParty);
-                if (plan.Risk == QuestRisk.Reckless) continue;
+                var plan = MakePlan(t, style, power, t.IsLord ? lordParty : maxParty, rng);
+                if (plan == null || plan.Risk == QuestRisk.Reckless) continue;
                 all.Add(plan);
             }
             var pool = Select(all, PoolSize, rng);
@@ -199,9 +275,12 @@ namespace GuildMaster.Proposals
         /// </summary>
         public static List<ProposalPlan> Select(IReadOnlyList<ProposalPlan> plans, int n, GameRandom rng = null)
         {
+            // Hunts first (P4-133): the cards are how a den the guild master took down comes back (P4-82), so the errands only
+            // fill what is left.
             var remaining = plans
                 .Select(p => (plan: p, order: p.Target.Distance + (rng != null ? rng.Range(0f, 25f) : 0f)))
-                .OrderBy(x => x.order)
+                .OrderBy(x => ErrandRules.IsErrand(x.plan.Target.Type) ? 1 : 0)
+                .ThenBy(x => x.order)
                 .Select(x => x.plan)
                 .ToList();
             var result = new List<ProposalPlan>();
@@ -237,7 +316,7 @@ namespace GuildMaster.Proposals
         /// <summary>The quest the plan stands for, ready for <c>QuestBoard.TryPost</c>.</summary>
         public static QuestDraft ToDraft(ProposalPlan p) => new()
         {
-            Type = QuestType.Hunt,
+            Type = ErrandRules.IsErrand(p.Target.Type) ? p.Target.Type : QuestType.Hunt,
             Species = p.Target.Source as MonsterDefinition,
             HasPoint = true,
             Point = p.Target.Point,
@@ -245,7 +324,10 @@ namespace GuildMaster.Proposals
             RewardExp = p.RewardExp,
             MaxParty = p.Party,
             Count = p.Count,
-            Radius = QuestBoard.HuntRadius,
+            Radius = p.Target.Type == QuestType.Deliver ? ErrandRules.DeliverReach : p.Target.Type == QuestType.Gather ? 6f : QuestBoard.HuntRadius,
+            ItemId = p.Target.ItemId,
+            GoodsName = p.GoodsName,
+            RewardItem = p.RewardItem,
         };
     }
 }

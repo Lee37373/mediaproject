@@ -253,7 +253,7 @@ namespace GuildMaster.Session
             save.Register(ghosts);
 
             var board = AddSystem<QuestBoard>();
-            board.Init(treasury, eco, clock);
+            board.Init(treasury, eco, clock, Seed);
             Services.Register(board);
             save.Register(board);
             AddSystem<QuestAreaMarkers>().Init();
@@ -261,6 +261,11 @@ namespace GuildMaster.Session
             var townQuests = new TownQuestPoster(board, intel, eco, clock, world);
             Services.Register(townQuests);
             save.Register(townQuests);
+            // The other villages' errands (P4-133): goods to carry, ore or herbs to gather, a den's parts — paid in gold and an item.
+            var errands = new ErrandPoster(board, villages, clock, Seed);
+            Services.Register(errands);
+            save.Register(errands);
+            AddSystem<DeliveryParcels>().Init();
 
             // Natural disasters (P4-72): set off by monsters' skills, dealt with through town quests.
             var disasters = AddSystem<Disasters.DisasterService>();

@@ -80,6 +80,10 @@ namespace GuildMaster.Session
                 ? $"의뢰 달성: {e.Quest.Title} (수수료 {e.Quest.FeeGold}G 받음)"
                 : $"의뢰 달성: {e.Quest.Title}", LogCategory.Quest));
             EventBus.Subscribe<QuestRewardPaidEvent>(e => Add($"{e.Taker.TakerName}에게 보상 지급: {e.Gold}G, {e.Exp}EXP", LogCategory.Quest));
+            // P4-133: the item besides the gold, to the one who did most.
+            EventBus.Subscribe<Adventurers.QuestItemRewardedEvent>(e => Add(
+                $"{e.Member.Data.name}에게 보상 아이템: {Quests.ErrandRules.ItemCount(Quests.Quest.ItemName(e.ItemId), e.Count)}" + (string.IsNullOrEmpty(e.How) ? "" : $" — {e.How}"),
+                LogCategory.Quest));
             EventBus.Subscribe<QuestClosedEvent>(e =>
             {
                 string refund = e.Quest.FundedByClient ? "" : " (보상 환불)";

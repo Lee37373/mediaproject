@@ -462,6 +462,25 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(x / W, foot / H));
         }
 
+        /// <summary>
+        /// A delivery's parcel on its carrier's back (P4-133): a wrapped box tied with string, a tag on it. The pivot is the
+        /// box's bottom middle.
+        /// </summary>
+        public static Sprite Parcel()
+        {
+            const string key = "c_parcel";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(22, 20);
+            var paper = Hex(0xC8925A);
+            var string_ = Hex(0xF1E3C0);
+            c.Shape(RoundRect(2, 2, 20, 17, 2f), paper, Ink, 1.6f);
+            c.Shape(RoundRect(2, 9, 20, 11, 0f), string_, Darker(string_, 0.7f), 0.6f);
+            c.Shape(RoundRect(10, 2, 12, 17, 0f), string_, Darker(string_, 0.7f), 0.6f);
+            c.Shape(Circle(11, 10, 2.2f), string_, Darker(string_, 0.6f), 0.8f);
+            c.Shape(RoundRect(14, 12, 18.5f, 15.5f, 0.8f), Hex(0xF4E9C9), Ink, 0.8f);
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
         /// <summary>One frame of a campfire flame (P4-66): a teardrop of orange with a yellow heart.</summary>
         public static Sprite Flame(int frame)
         {

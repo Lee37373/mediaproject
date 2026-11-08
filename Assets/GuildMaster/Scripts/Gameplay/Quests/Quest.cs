@@ -5,9 +5,12 @@ using UnityEngine;
 
 namespace GuildMaster.Quests
 {
-    /// <summary><see cref="Disaster"/>: dealing with a natural disaster, posted by the town (P4-72).</summary>
-    /// <summary>Saved by number: new kinds go at the end (Treasure: the dragon's hoard, P4-93).</summary>
-    public enum QuestType { Hunt, Escort, Defend, Disaster, Treasure }
+    /// <summary>
+    /// <see cref="Disaster"/>: dealing with a natural disaster, posted by the town (P4-72). Saved by number: new kinds go at
+    /// the end (Treasure: the dragon's hoard, P4-93; the errands P4-133: <see cref="Gather"/> ore or herbs from the known
+    /// spots, <see cref="Collect"/> a monster's part, <see cref="Deliver"/> goods to another village — <see cref="ErrandRules"/>).
+    /// </summary>
+    public enum QuestType { Hunt, Escort, Defend, Disaster, Treasure, Gather, Collect, Deliver }
     public enum QuestStatus { Open, InProgress, Completed, TurnedIn, Cancelled, Failed }
 
     /// <summary>
@@ -45,6 +48,12 @@ namespace GuildMaster.Quests
         public int MaxParty;
         /// <summary>Escort only: maximum paid hours (reward fields hold hourly rate × hours).</summary>
         public int Hours;
+        /// <summary>Gather/Collect (P4-133): the item to bring in; <see cref="Count"/> is how many.</summary>
+        public string ItemId;
+        /// <summary>Deliver (P4-133): what is carried (words only).</summary>
+        public string GoodsName;
+        /// <summary>An item the client pays besides the gold (P4-133), or none (the board picks one for a village or a patron).</summary>
+        public ItemStack RewardItem;
     }
 
     public class Quest
@@ -136,6 +145,71 @@ namespace GuildMaster.Quests
         /// <summary>Cells (or cores) the workers have dealt with so far.</summary>
         public int Worked { get; internal set; }
 
+        // ---- Errands (P4-133) ----
+        /// <summary>Gather/Collect: the item brought in (iron ore, herbs, a monster's part); <see cref="Progress"/> counts it.</summary>
+        public string ItemId { get; }
+        /// <summary>Deliver: the village the goods go to (for a village's own errand also its client, <see cref="Village"/>).</summary>
+        public Villages.Village Destination { get; internal set; }
+        /// <summary>Deliver: what is carried (words only).</summary>
+        public string GoodsName { get; }
+        /// <summary>Deliver: the goods have left town with the takers; should every one of them fall or leave, the goods are lost.</summary>
+        public bool GoodsOut { get; internal set; }
+        /// <summary>The item the client pays besides the gold (P4-133, user decision: rare ones too), to the one who did most.</summary>
+        public ItemStack RewardItem { get; internal set; }
+        public bool HasRewardItem => !string.IsNullOrEmpty(RewardItem.itemId) && RewardItem.count > 0;
+        /// <summary>Settled short (the den gone before all the parts came in): the pay is cut to what was brought, no item.</summary>
+        public bool SettledShort { get; private set; }
+        /// <summary>Collect: when the guild learned its den was gone (−1: not yet) — the parts lying there may still be picked up for a while.</summary>
+        public float DenGoneAtHour { get; internal set; } = -1f;
+        /// <summary>Who gets the item (the most done, chosen when the work is done), and whether it was handed over.</summary>
+        string _itemFor;
+        bool _itemGiven;
+        public string ItemTakerId => _itemFor;
+
+        /// <summary>The display name of an item, or its id.</summary>
+        public static string ItemName(string id)
+            => Core.Services.TryGet<GameDatabase>(out var db) && db.Item(id) is { } item ? item.displayName : id;
+
+        public string ItemLabel => ItemName(ItemId);
+
+        /// <summary>"2등급 장비", "체력 물약 x3": the item besides the gold, or empty.</summary>
+        public string RewardItemLabel => HasRewardItem ? ErrandRules.ItemCount(ItemName(RewardItem.itemId), RewardItem.count) : "";
+
+        /// <summary>Cuts what is paid to the share of the parts brought in (the client keeps the rest, and its item).</summary>
+        internal void SettleShort(float share)
+        {
+            share = Mathf.Clamp01(share);
+            SettledShort = true;
+            PayGold = Mathf.RoundToInt(RewardGold * share);
+            PayExp = Mathf.RoundToInt(RewardExp * share);
+            FeeGold = Mathf.RoundToInt(FeeGold * share);
+        }
+
+        /// <summary>The one who did most gets the item (the first of them on a tie): chosen when the work is done.</summary>
+        internal void ChooseItemTaker()
+        {
+            _itemFor = null;
+            if (!HasRewardItem || SettledShort || _assignees.Count == 0) return;
+            int best = -1;
+            foreach (var a in _assignees)
+            {
+                _contribution.TryGetValue(a.TakerId, out var c);
+                if (c <= best) continue;
+                best = c;
+                _itemFor = a.TakerId;
+            }
+        }
+
+        /// <summary>Hands the item over to its taker as it reports (once).</summary>
+        public bool TryTakeRewardItem(IQuestTaker t, out ItemStack item)
+        {
+            item = default;
+            if (t == null || _itemGiven || _itemFor == null || _itemFor != t.TakerId || !HasRewardItem) return false;
+            _itemGiven = true;
+            item = RewardItem;
+            return true;
+        }
+
         // ---- Escort (P3-4a) ----
         public int MaxHours { get; }
         /// <summary>Paid escort time so far (game hours outside town with an escort nearby).</summary>
@@ -184,6 +258,9 @@ namespace GuildMaster.Quests
             PayExp = RewardExp;
             PostedAtHour = postedAtHour;
             Status = QuestStatus.Open;
+            ItemId = d.ItemId;
+            GoodsName = d.GoodsName;
+            RewardItem = d.RewardItem;
         }
 
         public string Title => Type switch
@@ -198,6 +275,9 @@ namespace GuildMaster.Quests
             QuestType.Disaster when Disaster != null
                 => $"{Disaster.Name} {Disasters.DisasterRules.WorkName(Disaster.Kind)} ({QuestBoard.DescribeArea(Point)}, 마을 의뢰)",
             QuestType.Treasure => $"[드래곤 둥지] 보물 회수 ({QuestBoard.DescribeArea(Point)})",
+            QuestType.Gather => $"[채집] {ErrandRules.ItemCount(ItemLabel, RequiredCount)} ({QuestBoard.DescribeArea(Point)})",
+            QuestType.Collect => $"[납품] {ErrandRules.ItemCount(ItemLabel, RequiredCount)} · {Species?.displayName} ({QuestBoard.DescribeArea(Point)})",
+            QuestType.Deliver => $"[배달] {GoodsName} → {Destination?.DisplayName ?? "다른 마을"} ({QuestBoard.DescribeArea(Point)})",
             _ => Id,
         };
 
@@ -209,6 +289,9 @@ namespace GuildMaster.Quests
             // Only the guild's own work: how much is left out there is not known (P4-72 information rule).
             QuestType.Disaster => Worked > 0 ? $"{Worked}곳 처리" : "작업 전",
             QuestType.Treasure => Status == QuestStatus.Completed ? "보물을 챙김" : "둥지로",
+            QuestType.Gather or QuestType.Collect => $"{Progress}/{RequiredCount}개" + (SettledShort ? " (모자람)" : ""),
+            QuestType.Deliver => Status is QuestStatus.Completed or QuestStatus.TurnedIn ? "전달함"
+                               : Status == QuestStatus.Failed ? "전하지 못함" : GoodsOut ? "짐을 들고 가는 중" : "출발 전",
             _ => "",
         };
 
@@ -335,6 +418,17 @@ namespace GuildMaster.Quests
             public List<string> payout_ids = new();
             public List<int> payout_gold = new();
             public List<int> payout_exp = new();
+            // Errands (P4-133).
+            public string item_id;
+            public string goods;
+            public bool goods_out;
+            public int destination = -1;
+            public string reward_item;
+            public int reward_item_count;
+            public bool settled_short;
+            public string item_for;
+            public bool item_given;
+            public float den_gone = -1f;
         }
 
         internal QuestSave CaptureSave(IReadOnlyList<Nest> nests)
@@ -348,6 +442,9 @@ namespace GuildMaster.Quests
                 village = Village != null ? Village.Id : -1, village_defence = IsVillageDefence, incident = Incident != null ? Incident.Id : -1,
                 disaster = Disaster != null ? Disaster.Id : -1, worked = Worked, max_hours = MaxHours, escort_hours = EscortHours,
                 escort_left = EscortLeftTown, pay_gold = PayGold, pay_exp = PayExp,
+                item_id = ItemId, goods = GoodsName, goods_out = GoodsOut, destination = Destination != null ? Destination.Id : -1,
+                reward_item = RewardItem.itemId, reward_item_count = RewardItem.count, settled_short = SettledShort,
+                item_for = _itemFor, item_given = _itemGiven, den_gone = DenGoneAtHour,
             };
             foreach (var a in _assignees) s.assignees.Add(a.TakerId);
             var ids = new List<string>(_contribution.Keys);
@@ -393,6 +490,14 @@ namespace GuildMaster.Quests
             EscortLeftTown = s.escort_left;
             PayGold = s.pay_gold;
             PayExp = s.pay_exp;
+            ItemId = string.IsNullOrEmpty(s.item_id) ? null : s.item_id;
+            GoodsName = string.IsNullOrEmpty(s.goods) ? null : s.goods;
+            GoodsOut = s.goods_out;
+            RewardItem = string.IsNullOrEmpty(s.reward_item) ? default : new ItemStack(s.reward_item, s.reward_item_count);
+            SettledShort = s.settled_short;
+            _itemFor = string.IsNullOrEmpty(s.item_for) ? null : s.item_for;
+            _itemGiven = s.item_given;
+            DenGoneAtHour = s.den_gone;
             for (int i = 0; i < s.contribution_ids.Count && i < s.contribution.Count; i++) _contribution[s.contribution_ids[i]] = s.contribution[i];
             for (int i = 0; i < s.payout_ids.Count && i < s.payout_gold.Count && i < s.payout_exp.Count; i++)
                 _payouts[s.payout_ids[i]] = (s.payout_gold[i], s.payout_exp[i]);
@@ -403,6 +508,7 @@ namespace GuildMaster.Quests
             foreach (var id in s.assignees) if (ctx.Find<IQuestTaker>(id) is { } t) _assignees.Add(t);
             if (s.disaster >= 0) Disaster = ctx.Find<Disasters.Disaster>(Disasters.Disaster.SaveKeyOf(s.disaster));
             if (s.village >= 0) Village = ctx.Find<Villages.Village>(Villages.Village.SaveKeyOf(s.village));
+            if (s.destination >= 0) Destination = ctx.Find<Villages.Village>(Villages.Village.SaveKeyOf(s.destination));
             if (s.incident >= 0) Incident = ctx.Find<Incidents.Incident>(Incidents.Incident.SaveKeyOf(s.incident));
         }
     }

@@ -184,6 +184,50 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        // ---------------- Errands (P4-133) ----------------
+
+        /// <summary>
+        /// The errands on the board (kind, client, progress, item besides the gold and who gets it), what each village would do
+        /// now and why, and what the guild could be asked (spots, dens, villages).
+        /// </summary>
+        public static string Errands(bool checkNow = false)
+        {
+            var poster = Services.Get<ErrandPoster>();
+            var sb = new StringBuilder();
+            if (checkNow) sb.AppendLine($"checked now: +{poster.Check()}");
+            sb.AppendLine($"errands posted {poster.Posted} (enabled {ErrandPoster.Enabled})");
+            foreach (var q in Services.Get<QuestBoard>().Quests.Where(q => ErrandRules.IsErrand(q.Type) || q.HasRewardItem))
+                sb.AppendLine($"  {q.Id} {q.Type} [{q.ClientLabel}] {q.Title} {q.Status} {q.ProgressText} pay {q.RewardGold}G+fee {q.FeeGold}G /{q.RewardExp}EXP " +
+                              $"item {(q.HasRewardItem ? q.RewardItemLabel : "-")}{(q.ItemTakerId != null ? " → " + q.ItemTakerId : "")} party {q.Assignees.Count}/{q.MaxParty} " +
+                              $"{Quest.DangerLabel(q.Danger)}{(q.Type == QuestType.Deliver ? $" to {q.Destination?.DisplayName} goods out {q.GoodsOut}" : "")}");
+            var villages = Services.Get<Villages.VillageService>();
+            foreach (var v in villages.Villages)
+                sb.AppendLine($"  village #{v.Id} {v.DisplayName}: {poster.SkipReason(v) ?? "may ask"}");
+            foreach (var kind in new[] { World.PlaceKind.OreVein, World.PlaceKind.HerbPatch })
+                sb.AppendLine(ErrandOffers.TryGather(kind, out var g) ? $"  gather {g.ItemId}: supply {g.Supply} at {QuestBoard.DescribeArea(g.Point)}" : $"  gather {kind}: no known spot ready");
+            foreach (var c in ErrandOffers.Collects())
+                sb.AppendLine($"  collect {c.Entry.item.displayName} from {c.Species.displayName} @{QuestBoard.DescribeArea(c.Den.WorldPosition)}: {c.PerKill:0.00}/kill, supply {c.Supply}");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// A village asks an errand now: <paramref name="kind"/> "deliver", "gather", "collect" (empty: any it can), village by
+        /// index in the list (-1: the nearest the guild knows). The village need not be known (<paramref name="makeKnown"/>).
+        /// </summary>
+        public static string PostErrand(string kind = "", int village = -1, bool makeKnown = true)
+        {
+            var villages = Services.Get<Villages.VillageService>();
+            var town = Services.Get<World.WorldService>().TownCenterWorld;
+            var v = village >= 0 && village < villages.Villages.Count ? villages.Villages[village]
+                  : villages.Villages.Where(x => !x.IsDestroyed && (x.Known || makeKnown)).OrderBy(x => Vector2.Distance(x.WorldPosition, town)).FirstOrDefault();
+            if (v == null) return "no village";
+            if (makeKnown) v.Known = true;
+            QuestType? type = kind switch { "deliver" => QuestType.Deliver, "gather" => QuestType.Gather, "collect" => QuestType.Collect, _ => null };
+            var q = Services.Get<ErrandPoster>().PostFor(v, type, out var error);
+            return q != null ? $"{q.Id} {q.Title} pay {q.RewardGold}G+fee {q.FeeGold}G /{q.RewardExp}EXP item {q.RewardItemLabel} party {q.MaxParty} {Quest.DangerLabel(q.Danger)}"
+                             : $"{v.DisplayName}: {error}";
+        }
+
         // ---------------- Sudden incidents (P4-85) ----------------
 
         /// <summary>Every incident, real values: kind, where it is and where the rumour put it, the quest, time left, how it ended.</summary>

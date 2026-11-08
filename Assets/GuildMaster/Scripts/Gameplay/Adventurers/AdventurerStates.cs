@@ -53,8 +53,10 @@ namespace GuildMaster.Adventurers
         public static Vector2 QuestDestination(Adventurer a, Quest q)
         {
             var grid = Services.Get<WorldService>().Grid;
-            var cell = GridMap.WorldToCell(q.Point);
-            if (Standable(grid, cell)) return q.Point;
+            // A gathering errand goes to the spot nearest it (P4-133), not the one the client named.
+            var point = q.Type == QuestType.Gather && GatherSpotFor(a, q, out _) is { } spot ? PlaceVisitState.SpotBeside(spot, a) : q.Point;
+            var cell = GridMap.WorldToCell(point);
+            if (Standable(grid, cell)) return point;
             // Also off snow and cracks (P4-72): they are walls one only crosses with no way round.
             for (int r = 1; r <= 6; r++)
             for (int dy = -r; dy <= r; dy++)
@@ -64,10 +66,20 @@ namespace GuildMaster.Adventurers
                 var c = new Vector2Int(cell.x + dx, cell.y + dy);
                 if (Standable(grid, c)) return GridMap.CellToWorld(c);
             }
-            return q.Point;
+            return point;
         }
 
         static bool Standable(GridMap grid, Vector2Int c) => grid.IsWalkable(c) && !Hazards.Blocks(grid.HazardAt(c));
+
+        /// <summary>The kind of spot a gathering errand digs at (P4-133).</summary>
+        public static PlaceKind GatherKind(Quest q) => q.ItemId == ErrandRules.Ore ? PlaceKind.OreVein : PlaceKind.HerbPatch;
+
+        /// <summary>Where this member's gathering errand goes next (<see cref="Places.PlaceVisits.ErrandSpot"/>), or null.</summary>
+        public static PlaceSite GatherSpotFor(Adventurer a, Quest q, out bool ready)
+        {
+            ready = false;
+            return q != null && q.Type == QuestType.Gather && Services.TryGet<Places.PlaceVisits>(out var visits) ? visits.ErrandSpot(a, GatherKind(q), out ready) : null;
+        }
 
         /// <summary>Seconds between the checks for making camp (P4-66).</summary>
         public const float CampCheckInterval = 0.5f;
@@ -357,6 +369,8 @@ namespace GuildMaster.Adventurers
         {
             var a = Owner;
             if (!AdvCtx.QuestStillValid(a) || a.CheckRetreat()) return;
+            // A delivery's goods are on the road once a taker steps out of town with them (P4-133).
+            if (a.CurrentQuest.Type == QuestType.Deliver && !a.CurrentQuest.GoodsOut && !AdvCtx.Town.IsInTown(a.Position)) a.CurrentQuest.GoodsOut = true;
             if (a.HandleCombat(dt)) return;
             if (a.Looting.Tick(dt, a.WithinPartyLeash)) return;
             if (AdvCtx.TryNightCamp(a, ref _campCheck, dt)) return;
@@ -403,8 +417,15 @@ namespace GuildMaster.Adventurers
         float _formationRepath;
         float _campCheck;
 
-        public override string Label => Owner != null && Owner.CurrentQuest is { Type: QuestType.Treasure } ? "보물 털기"
-                                      : Owner != null && Owner.CurrentQuest is { Type: QuestType.Disaster } ? "재해 대응" : "사냥 중";
+        public override string Label => Owner?.CurrentQuest?.Type switch
+        {
+            QuestType.Treasure => "보물 털기",
+            QuestType.Disaster => "재해 대응",
+            QuestType.Gather => _gatherSpot != null && _gatherHours > 0f ? (_gatherSpot.Kind == PlaceKind.OreVein ? "광석 캐는 중" : "약초 따는 중") : "채집하러 가는 중",
+            QuestType.Collect => "납품할 것 모으는 중",
+            QuestType.Deliver => "배달 중",
+            _ => "사냥 중",
+        };
 
         public override void Enter()
         {
@@ -413,10 +434,15 @@ namespace GuildMaster.Adventurers
             _workTimer = 0f;
         }
 
-        public override void Exit() => Owner.Mover.SpeedMultiplier = 1f;
+        public override void Exit()
+        {
+            Owner.Mover.SpeedMultiplier = 1f;
+            // Off the errand's spot (home, a camp, a fight's retreat): the next look picks the spot again.
+            ReleaseGatherSpot(Owner);
+        }
 
         Vector2 Area => Owner.CurrentQuest.Point;
-        float AreaRadius => Owner.CurrentQuest.Type == QuestType.Hunt ? Owner.CurrentQuest.Radius : NestRoamRadius;
+        float AreaRadius => ErrandRules.IsHuntLike(Owner.CurrentQuest.Type) ? Owner.CurrentQuest.Radius : NestRoamRadius;
 
         /// <summary>
         /// Heroic drive hunt (P4-18), once per quest: after hitting a target that has at least two
@@ -454,7 +480,7 @@ namespace GuildMaster.Adventurers
             if (!IsQuestTarget(u)) return false;
             var q = Owner.CurrentQuest;
             // Particular monsters are fought wherever they show up (they do not keep to the rumour's circle).
-            return q.Type != QuestType.Hunt || q.HuntsParticularMonsters || Vector2.Distance(u.Position, q.Point) <= q.Radius + AreaSlack;
+            return !ErrandRules.IsHuntLike(q.Type) || q.HuntsParticularMonsters || Vector2.Distance(u.Position, q.Point) <= q.Radius + AreaSlack;
         }
 
         public override void Tick(float dt)
@@ -475,6 +501,17 @@ namespace GuildMaster.Adventurers
             if (a.CurrentQuest.Type == QuestType.Treasure)
             {
                 RaidTheHoard(a, dt);
+                return;
+            }
+            // Errands (P4-133): dig at the spots the guild knows, or walk the goods to the village's door.
+            if (a.CurrentQuest.Type == QuestType.Gather)
+            {
+                GatherForTheErrand(a, dt);
+                return;
+            }
+            if (a.CurrentQuest.Type == QuestType.Deliver)
+            {
+                DeliverTheGoods(a, dt);
                 return;
             }
             // A ruin whose way down the guild has found (P4-85): down and through the halls to the treasure.
@@ -524,6 +561,115 @@ namespace GuildMaster.Adventurers
             var world = Services.Get<WorldService>();
             if (world.Grid.TryRandomWalkableNear(GridMap.WorldToCell(Area), Mathf.RoundToInt(AreaRadius), GameRandom.Shared, out var cell))
                 a.Mover.SetDestination(GridMap.CellToWorld(cell));
+        }
+
+        // ---------------- Errands (P4-133) ----------------
+
+        PlaceSite _gatherSpot;
+        Vector2 _gatherAt;
+        float _gatherHours, _gatherFx, _gatherRepick;
+        bool _waitingForRegrowth;
+
+        /// <summary>The spot this member's gathering errand digs at, or walks or waits to (other gatherers leave it alone).</summary>
+        public PlaceSite GatherSpot => _gatherSpot;
+
+        void ReleaseGatherSpot(Adventurer a)
+        {
+            if (_gatherSpot != null && Services.TryGet<Places.PlaceVisits>(out var visits)) visits.Release(_gatherSpot, a);
+            _gatherSpot = null;
+            _gatherHours = 0f;
+            _waitingForRegrowth = false;
+        }
+
+        /// <summary>
+        /// A gathering errand (P4-133): the leader goes to the nearest known spot of its kind with something on it (the party
+        /// guarding round it), digs the spot's hours (<see cref="Places.PlaceRules.GatherHours"/>) and hands what it gives to the
+        /// errand — anything over it keeps to sell. Every spot picked clean, it waits by the one that grows back soonest, looking
+        /// again now and then. The errand is done when all have come in.
+        /// </summary>
+        void GatherForTheErrand(Adventurer a, float dt)
+        {
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out _)) return;
+                if (party.PaceLeader(a)) return;
+            }
+            if (!Services.TryGet<Places.PlaceVisits>(out var visits) || !Services.TryGet<Places.PlaceService>(out var places)) return;
+            var q = a.CurrentQuest;
+            _gatherRepick -= dt;
+            // Picked clean on the way (someone was quicker), or waiting and it is time to look again.
+            bool lost = _gatherSpot != null && !places.IsReady(_gatherSpot) && !_waitingForRegrowth;
+            if (_gatherSpot == null || lost || _waitingForRegrowth && _gatherRepick <= 0f)
+            {
+                _gatherRepick = 2f;
+                var before = _gatherSpot;
+                bool wasWaiting = _waitingForRegrowth;
+                ReleaseGatherSpot(a);
+                var spot = AdvCtx.GatherSpotFor(a, q, out bool ready);
+                if (spot == null)
+                {
+                    AdvCtx.Board.FailErrand(q, ErrandRules.NothingLeftReason);
+                    return;
+                }
+                _gatherSpot = spot;
+                _waitingForRegrowth = !ready;
+                visits.Claim(spot, a);
+                _gatherAt = PlaceVisitState.SpotBeside(spot, a);
+                if (_waitingForRegrowth && !(wasWaiting && before == spot)) a.Say(ErrandRules.WaitForRegrowLine);
+            }
+            if (Vector2.Distance(a.Position, _gatherAt) > 1.2f)
+            {
+                if (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, _gatherAt) > 0.6f)
+                    if (!a.Mover.SetDestination(_gatherAt, 0.5f, RouteChoice.ForParty(a))) ReleaseGatherSpot(a);
+                return;
+            }
+            if (a.Mover.IsMoving) a.Mover.Stop();
+            if (_waitingForRegrowth) return; // by the spot until it (or another) has something again
+            a.Visual?.FaceTowards(_gatherSpot.WorldPosition);
+            _gatherFx -= dt;
+            if (_gatherFx <= 0f && Services.TryGet<Visuals.FxService>(out var fx))
+            {
+                _gatherFx = GameRandom.Shared.Range(0.6f, 1.2f);
+                var c = _gatherSpot.Kind == PlaceKind.OreVein ? new Color(0.75f, 0.75f, 0.8f) : new Color(0.55f, 0.85f, 0.4f);
+                fx.Spark(Vector2.MoveTowards(a.Position, _gatherSpot.WorldPosition, 0.5f) + new Vector2(0f, 0.2f), c, 0.4f, 0.15f);
+            }
+            _gatherHours += dt / Mathf.Max(0.01f, AdvCtx.Clock.RealSecondsPerGameHour);
+            if (_gatherHours < Places.PlaceRules.GatherHours) return;
+            int got = visits.Harvest(a, _gatherSpot);
+            ReleaseGatherSpot(a);
+            if (got <= 0) return;
+            int taken = AdvCtx.Board.TryCollect(q, a, q.ItemId, got);
+            if (got > taken) a.Data.AddLoot(q.ItemId, got - taken);
+            a.Say(ErrandRules.GatheredLine(q.ItemLabel, got, q.Progress, q.RequiredCount));
+        }
+
+        /// <summary>
+        /// A delivery (P4-133): the party walks the goods to the village's doorstep and hands them over. A village seen in ruins
+        /// on the way (or found so at its door) cannot take them: the errand fails.
+        /// </summary>
+        void DeliverTheGoods(Adventurer a, float dt)
+        {
+            if (Services.TryGet<PartyTactics>(out var party))
+            {
+                if (party.Follow(a, ref _formationRepath, dt, out _)) return;
+                if (party.PaceLeader(a)) return;
+            }
+            var q = a.CurrentQuest;
+            var v = q.Destination;
+            if (v == null || v.SeenRuined)
+            {
+                if (v != null) a.Say("마을이... 무너져 버렸어.");
+                AdvCtx.Board.FailErrand(q, ErrandRules.DestinationFellReason);
+                return;
+            }
+            var door = v.Doorstep;
+            if (Vector2.Distance(a.Position, door) <= ErrandRules.DeliverReach)
+            {
+                if (v.IsDestroyed) { a.Say("마을이... 무너져 버렸어."); AdvCtx.Board.FailErrand(q, ErrandRules.DestinationFellReason); return; }
+                if (AdvCtx.Board.DeliverGoods(q, a)) a.Say(ErrandRules.DeliveredLine);
+                return;
+            }
+            if (!a.Mover.IsMoving || Vector2.Distance(a.Mover.Destination, door) > 1f) a.Mover.SetDestination(door, 0.6f, RouteChoice.ForParty(a));
         }
 
         // ---------------- Ruins (P4-85) ----------------
@@ -988,6 +1134,8 @@ namespace GuildMaster.Adventurers
                         a.Data.gold += gold;
                         a.Say($"보상 {gold}G, {exp}EXP 받았다!");
                     }
+                    // The item besides the gold is its own (P4-133, user decision: the pack of the one who did most), not the party's.
+                    if (q.TryTakeRewardItem(a, out var item)) QuestRewardItems.Give(a, q, item, trade);
                 }
                 else if (!q.IsActive) a.CurrentQuest = null;
             }

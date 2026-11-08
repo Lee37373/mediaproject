@@ -384,6 +384,11 @@ namespace GuildMaster.Tests
             news.Note(Reports.NewsRules.Festival().On("festival"));
             var printed = news.Close(clock.Day, Services.Get<Reports.DailyLedger>().Current);
             news.Note(Reports.NewsRules.Quarrel("시험갑", "시험을").About(memberId, otherId));
+            // A village's errand (P4-133): goods to its door, with the item it pays besides the gold.
+            var errand = Services.Get<Quests.ErrandPoster>().PostFor(villages.Villages[0], Quests.QuestType.Deliver, out var errandError);
+            Assert.That(errand, Is.Not.Null, errandError);
+            var errandSaved = (errand.Id, errand.GoodsName, errand.RewardItem.itemId, errand.RewardItem.count, errand.RewardGold);
+            quests = board.Quests.Count;
 
             var a = Saves.Capture();
             yield return BootFrom(a);
@@ -403,6 +408,12 @@ namespace GuildMaster.Tests
             Assert.That(loadedNews.Latest?.day, Is.EqualTo(printed.day), "the paper");
             Assert.That(loadedNews.Latest.articles.Select(x => x.headline), Is.EqualTo(printed.articles.Select(x => x.headline)), "its stories");
             Assert.That(loadedNews.Desk.Any(x => x.kind == Reports.NewsKind.Quarrel && x.people.Contains(otherId)), Is.True, "the story for the next paper");
+            var loadedErrand = Services.Get<Quests.QuestBoard>().FindById(errandSaved.Id);
+            Assert.That(loadedErrand, Is.Not.Null, "the village's errand");
+            Assert.That((loadedErrand.Type, loadedErrand.GoodsName, loadedErrand.RewardItem.itemId, loadedErrand.RewardItem.count, loadedErrand.RewardGold),
+                Is.EqualTo((Quests.QuestType.Deliver, errandSaved.GoodsName, errandSaved.itemId, errandSaved.count, errandSaved.RewardGold)), "its goods and pay");
+            Assert.That((loadedErrand.Destination, loadedErrand.Village), Is.EqualTo((Services.Get<Villages.VillageService>().Villages[0], Services.Get<Villages.VillageService>().Villages[0])),
+                "to the village that asked");
             // Every nemesis under its own name, at its level, its bounty on it; the friend's grudge kept (P4-109).
             var loadedNemeses = Services.Get<Nemeses.NemesisService>();
             foreach (var (id, name, level, bountyId) in nemeses)

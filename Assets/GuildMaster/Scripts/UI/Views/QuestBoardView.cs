@@ -205,7 +205,9 @@ namespace GuildMaster.UI
                 // last: with the den it names it is the longest part, and the line is cut where it runs out.
                 string client = UIBuilder.Colored(q.ClientLabel, q.FundedByClient ? UITheme.Text : UITheme.Warn);
                 string fee = q.FundedByClient ? $" · {UIBuilder.Colored($"수수료 {q.FeeGold}G", UITheme.Accent)}" : " (예치)";
-                _detail.text = $"{client} · 보상 {q.RewardGold}G / {q.RewardExp}EXP{fee} · 인원 {q.Assignees.Count}/{q.MaxParty} ({members}) · 진행 {q.ProgressText}";
+                // The item a village or a patron pays besides the gold (P4-133), to the one who does most.
+                string item = q.HasRewardItem ? " + " + UIBuilder.Colored(q.RewardItemLabel, UITheme.Exp) : "";
+                _detail.text = $"{client} · 보상 {q.RewardGold}G / {q.RewardExp}EXP{item}{fee} · 인원 {q.Assignees.Count}/{q.MaxParty} ({members}) · 진행 {q.ProgressText}";
                 // A client's quest comes down only while untaken, a disaster or the dragon never (QuestBoard.CanTakeDown); the guild's escort ends any time.
                 bool canTakeDown = QuestBoard.CanTakeDown(q);
                 _cancel.gameObject.SetActive(canTakeDown);

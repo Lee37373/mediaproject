@@ -102,6 +102,8 @@ namespace GuildMaster.Tests
             // Nor the town's own hunts (P4-82) unless a test asks: they would fill the board and pull members
             // off the quests a test posts itself.
             TownQuestPoster.Enabled = false;
+            // Nor the villages' errands (P4-133): they would pull members off the quests a test posts itself.
+            ErrandPoster.Enabled = false;
             // Nor sudden incidents (P4-85): a rare monster out of nowhere fights whatever it meets.
             Incidents.IncidentService.Enabled = false;
             // Nor nemeses (P4-109): a member's death or retreat would rename and grow the monster a test is about.
@@ -912,14 +914,14 @@ namespace GuildMaster.Tests
                 var proposals = Services.Get<Proposals.QuestProposalService>();
                 Assert.That(proposals.Reroll(out var why), Is.True, why);
                 yield return WaitFor(() => !proposals.Generating, 5f);
-                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[0]), Is.False, "a den on the board is not offered");
-                var card = proposals.Current.FirstOrDefault(p => p.Target.Den == dens[1]);
+                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[0] && p.Target.Type == QuestType.Hunt), Is.False, "a den on the board is not offered");
+                var card = proposals.Current.FirstOrDefault(p => p.Target.Den == dens[1] && p.Target.Type == QuestType.Hunt);
                 Assert.That(card, Is.Not.Null, $"a card for the den taken down ({proposals.EmptyReason})");
                 Assert.That(proposals.Choose(card, out var message), Is.True, message);
                 var patron = board.Quests.First(q => q.IsActive && q.TargetNest == dens[1]);
                 Assert.That(patron.Client, Is.EqualTo(QuestClient.Patron));
                 Assert.That(patron.RewardGold + patron.FeeGold, Is.EqualTo(card.RewardGold));
-                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[1]), Is.False, "the other cards on that den go with it");
+                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[1] && p.Target.Type == QuestType.Hunt), Is.False, "the other cards on that den go with it");
                 Assert.That(escrow, Is.EqualTo(0), "the client pays, and a den taken down refunds nothing");
 
                 // Taken: not the guild master's to take down. Done: the guild gets its fee.
@@ -1609,6 +1611,170 @@ namespace GuildMaster.Tests
                 Assert.That((risen.IsDestroyed, risen.Known, villages.Villages.Count, villages.Standing.Count()), Is.EqualTo((false, false, 9, 8)));
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+        }
+
+        /// <summary>
+        /// P4-133 (F-5, user decision 2026-11-08): a village the guild knows asks errands — ore dug at a spot the guild found, a
+        /// den's parts picked up off the kills, goods walked to its door — paying gold and an item besides, which goes into the
+        /// pack of the one who did most (gear better than its own it puts on). Goods whose last carrier falls are lost. A patron
+        /// card can ask the same.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Errands_ADigAPartsHuntAndADelivery_PayTheOneWhoDidMostAnItem()
+        {
+            yield return Boot();
+            var board = Services.Get<QuestBoard>();
+            var errands = Services.Get<ErrandPoster>();
+            var villages = Services.Get<Villages.VillageService>();
+            var places = Services.Get<Places.PlaceService>();
+            var world = Services.Get<World.WorldService>();
+            var intel = Services.Get<GuildIntel>();
+            var eco = Services.Get<EcosystemManager>();
+            var avatar = Services.Get<PlayerAvatar>();
+            var door = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+            var town = world.TownCenterWorld;
+            var village = villages.Villages.Where(v => v.Inner).OrderBy(v => Vector2.Distance(v.WorldPosition, town)).First();
+            village.Known = true;
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            var rewarded = new System.Collections.Generic.List<QuestItemRewardedEvent>();
+            Action<QuestItemRewardedEvent> onItem = e => rewarded.Add(e);
+            EventBus.Subscribe(onItem);
+            try
+            {
+                Clock.SetSpeed(3);
+                // Nobody else free in town: no invitations, so each errand is one member's.
+                var members = Roster.Members.Where(a => a.IsAlive).ToList();
+                Assume.That(members.Count, Is.GreaterThanOrEqualTo(3));
+                foreach (var a in members) { a.Data.fatigue = 100f; a.Mover.Stop(); a.ChangeState(a.RestState); }
+                IEnumerator SendOut(Adventurer a, Quest q, Vector2 near)
+                {
+                    // The rest stay in bed (the fast clock rests them quickly): nobody free to be asked along.
+                    foreach (var o in members.Where(o => o != a && o.IsAlive && o.CurrentQuest == null && o.Fsm.Current != o.RestState))
+                    {
+                        o.Data.fatigue = 100f;
+                        o.Mover.Stop();
+                        o.ChangeState(o.RestState);
+                    }
+                    foreach (var o in members.Where(o => o != a && o.CurrentQuest == null)) o.Data.fatigue = 100f;
+                    a.Data.fatigue = 0f;
+                    Assert.That(board.TryAccept(q, a), Is.True, $"{a.Data.name} takes {q.Title}");
+                    a.CurrentQuest = q;
+                    Assert.That(world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(near), 4, out var c), Is.True);
+                    a.Mover.Stop();
+                    a.transform.position = World.GridMap.CellToWorld(c);
+                    a.ChangeState(a.TravelState);
+                    yield return null;
+                }
+                IEnumerator BringHome(Adventurer a, Quest q)
+                {
+                    yield return WaitFor(() => a.Fsm.Current == a.ReturnState || q.Status == QuestStatus.TurnedIn, 5f);
+                    a.Mover.Stop();
+                    a.transform.position = door;
+                    yield return WaitFor(() => q.Status == QuestStatus.TurnedIn, 20f);
+                    Assert.That(q.Status, Is.EqualTo(QuestStatus.TurnedIn), $"{q.Title} reported ({a.StateLabel})");
+                }
+
+                // ---- A dig: the vein nearest town, found; the village asks ore of it. ----
+                var vein = places.All.Where(p => p.Kind == World.PlaceKind.OreVein).OrderBy(p => Vector2.Distance(p.WorldPosition, town)).First();
+                Services.Get<Fog.FogOfWar>().Reveal(vein.WorldPosition, 3f);
+                yield return WaitFor(() => places.IsKnown(vein), 5f);
+                Assert.That(places.IsKnown(vein), Is.True, "the guild found the vein");
+                var dig = errands.PostFor(village, QuestType.Gather, out var error);
+                Assert.That(dig, Is.Not.Null, error);
+                Assert.That((dig.Type, dig.Client, dig.Village, dig.ItemId, dig.RequiredCount), Is.EqualTo((QuestType.Gather, QuestClient.Village, village, ErrandRules.Ore, 2)),
+                    "one vein known: as much as it gives at the least");
+                Assert.That(dig.HasRewardItem, Is.True, "a village pays an item besides the gold");
+                Assert.That(dig.Title, Does.StartWith("[채집]"));
+                dig.RewardItem = new ItemStack("gear_t3", 1);
+                var digger = members[0];
+                int tierBefore = digger.Data.gearTier;
+                Assume.That(tierBefore, Is.LessThan(3));
+                yield return SendOut(digger, dig, vein.WorldPosition + Vector2.right * 2f);
+                yield return WaitFor(() => digger.HuntState.GatherSpot == vein, 10f);
+                Assert.That(digger.HuntState.GatherSpot, Is.EqualTo(vein), $"at the vein ({digger.StateLabel})");
+                yield return WaitFor(() => dig.Status != QuestStatus.InProgress, 30f);
+                Assert.That((dig.Status, dig.Progress), Is.EqualTo((QuestStatus.Completed, 2)), $"dug ({digger.StateLabel}, {dig.ProgressText})");
+                Assert.That(places.IsReady(vein), Is.False, "picked clean");
+                Assert.That(dig.ItemTakerId, Is.EqualTo(digger.Data.id));
+                yield return BringHome(digger, dig);
+                Assert.That(rewarded.Any(e => e.Member == digger && e.ItemId == "gear_t3"), Is.True, "the item, to the one who did it");
+                Assert.That(digger.Data.gearTier, Is.EqualTo(3), "better gear: put on");
+
+                // ---- A den's parts: slimes by town, seen occupied; three jellies picked up off the kills. ----
+                var den = eco.Nests.Where(n => n.Species.id == "slime" && n.Population >= 4 && !world.Grid.IsInTown(n.Cell))
+                                  .OrderBy(n => Vector2.Distance(n.WorldPosition, town)).FirstOrDefault();
+                Assume.That(den, Is.Not.Null, "a slime den by town");
+                avatar.Mover.Stop();
+                world.Grid.TryFindNearestWalkable(den.Cell, 4, out var stand);
+                avatar.transform.position = World.GridMap.CellToWorld(stand);
+                yield return WaitFor(() => intel.KnownNests.Contains(den) && intel.Get(den).LastCount > 0 && intel.SpeciesOf(den) == den.Species, 10f);
+                var offer = ErrandOffers.Collects().FirstOrDefault(c => c.Den == den);
+                Assert.That(offer.Den, Is.EqualTo(den), "a den seen occupied, whose kind drops a part");
+                Assert.That(offer.Entry.item.id, Is.EqualTo("slime_jelly"));
+                Assert.That(ErrandOffers.CollectDraft(offer, 2, 1f, out var partsDraft), Is.True);
+                Assert.That(board.TryPostRequest(partsDraft, QuestClient.Village, out var parts, out error, den, village), Is.True, error);
+                Assert.That((parts.TargetNest, parts.RequiredCount, parts.Title.StartsWith("[납품]")), Is.EqualTo((den, 2, true)));
+                parts.RewardItem = new ItemStack(Incidents.IncidentRules.RelicId, 1);
+                // Nothing else about: an untargetable member and a hostile monster in sight never fight, and it would not loot.
+                foreach (var m in UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Def != den.Species && Vector2.Distance(m.Position, den.WorldPosition) < 30f).ToList())
+                    m.Perish();
+                var hunter = members.Where(m => m != digger).OrderByDescending(m => m.Stats.Attack).First();
+                yield return SendOut(hunter, parts, den.WorldPosition);
+                yield return WaitFor(() => parts.Status != QuestStatus.InProgress, 90f);
+                Assert.That((parts.Status, parts.Progress), Is.EqualTo((QuestStatus.Completed, 2)),
+                    $"brought in ({hunter.StateLabel}, {parts.ProgressText}, pack jelly {hunter.Data.loot.Where(s => s.itemId == "slime_jelly").Sum(s => s.count)}, " +
+                    $"den {den.Population} left, jelly on the ground {Services.Get<GroundItemService>().Items.Count(i => i.Item != null && i.Item.id == "slime_jelly")}, " +
+                    $"hostile near: {string.Join(", ", UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.IsHostileTo(hunter) && Vector2.Distance(m.Position, hunter.Position) < 15f).Select(m => m.Def.id))})");
+                yield return BringHome(hunter, parts);
+                Assert.That(rewarded.Any(e => e.Member == hunter && e.ItemId == Incidents.IncidentRules.RelicId), Is.True);
+
+                // ---- Goods to its door: on the road with a parcel on the back, handed over. ----
+                var road = errands.PostFor(village, QuestType.Deliver, out error);
+                Assert.That(road, Is.Not.Null, error);
+                Assert.That((road.Destination, road.Title.StartsWith("[배달]"), road.ProgressText), Is.EqualTo((village, true, "출발 전")));
+                var carrier = members.First(m => m != digger && m != hunter);
+                yield return SendOut(carrier, road, village.Doorstep + Vector2.down * 8f);
+                yield return WaitFor(() => road.GoodsOut, 3f);
+                Assert.That(road.GoodsOut, Is.True, "out of town with the goods");
+                yield return null;
+                Assert.That(DeliveryParcels.CarrierOf(road), Is.EqualTo(carrier));
+                Assert.That(carrier.transform.Find("Parcel"), Is.Not.Null, "a parcel on its back");
+                yield return WaitFor(() => road.Status != QuestStatus.InProgress, 20f);
+                Assert.That(road.Status, Is.EqualTo(QuestStatus.Completed), $"handed over ({carrier.StateLabel}, {Vector2.Distance(carrier.Position, village.Doorstep):0.0} from the door)");
+                yield return null;
+                Assert.That(carrier.transform.Find("Parcel"), Is.Null, "the parcel is gone with the goods");
+
+                // Goods whose last carrier falls on the road are lost.
+                var lost = errands.PostFor(village, QuestType.Deliver, out error);
+                Assert.That(lost, Is.Not.Null, error);
+                string reason = null;
+                Action<QuestClosedEvent> onClosed = e => { if (e.Quest == lost) reason = e.Reason; };
+                EventBus.Subscribe(onClosed);
+                yield return SendOut(members[0], lost, village.Doorstep + Vector2.down * 30f);
+                yield return WaitFor(() => lost.GoodsOut, 3f);
+                board.RemoveTakerEverywhere(members[0]);
+                EventBus.Unsubscribe(onClosed);
+                Assert.That((lost.Status, reason), Is.EqualTo((QuestStatus.Failed, ErrandRules.GoodsLostReason)));
+
+                // ---- The cards: a patron asks the same, from what the guild knows. ----
+                var proposals = Services.Get<Proposals.QuestProposalService>();
+                var targets = (System.Collections.Generic.List<Proposals.ProposalTarget>)typeof(Proposals.QuestProposalService)
+                    .GetMethod("BuildTargets", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(proposals, null);
+                Assert.That(targets.Any(t => t.Type == QuestType.Deliver && t.Destination == (object)village), Is.True, "goods to the village it knows");
+                Assert.That(targets.Any(t => t.Type == QuestType.Collect && t.Den == (object)den), Is.True, "the den's parts");
+                var pool = Proposals.ProposalRules.BuildPool(targets.Where(t => t.Type == QuestType.Deliver).ToList(), 50f, 4);
+                Assert.That(pool, Is.Not.Empty);
+                Assert.That(proposals.Choose(pool[0], out var message), Is.True, message);
+                var patron = board.Quests.Last();
+                Assert.That((patron.Type, patron.Client, patron.Destination, patron.RewardItem.itemId), Is.EqualTo((QuestType.Deliver, QuestClient.Patron, village, pool[0].RewardItem.itemId)));
+                Assert.That(patron.ClientLabel, Is.EqualTo("의뢰인"));
+                Assert.That(DebugCommands.Errands(), Does.Contain(patron.Id));
+            }
+            finally
+            {
+                EventBus.Unsubscribe(onItem);
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+            }
         }
 
         /// <summary>

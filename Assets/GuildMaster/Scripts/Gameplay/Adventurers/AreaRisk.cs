@@ -71,7 +71,7 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public static float QuestFactor(Quest q)
         {
-            if (q == null || q.Type != QuestType.Hunt || q.Species == null || q.Incident != null || QuestRisk.IsBossWork(q)) return 1f;
+            if (q == null || !ErrandRules.IsHuntLike(q.Type) || q.Species == null || q.Incident != null || QuestRisk.IsBossWork(q)) return 1f;
             float f = CrowdFactor(ExtraFoesAround(q.Species, q.Point, q.TargetNest), q.RequiredCount);
             if (KnownDeep(q.Point)) f *= DeepWoodRules.QuestFactor;
             return f;
@@ -80,7 +80,7 @@ namespace GuildMaster.Adventurers
         /// <summary>Why <see cref="QuestFactor"/> is above one, in words for the board (null = nothing to say).</summary>
         public static string Warning(Quest q)
         {
-            if (q == null || q.Type != QuestType.Hunt || q.Species == null || q.Incident != null || QuestRisk.IsBossWork(q)) return null;
+            if (q == null || !ErrandRules.IsHuntLike(q.Type) || q.Species == null || q.Incident != null || QuestRisk.IsBossWork(q)) return null;
             bool crowd = ExtraFoesAround(q.Species, q.Point, q.TargetNest) > 0, deep = KnownDeep(q.Point);
             if (!crowd && !deep) return null;
             string near = $"주변 {q.Species.displayName} 둥지 합세";
