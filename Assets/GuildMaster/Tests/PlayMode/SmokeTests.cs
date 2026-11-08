@@ -104,6 +104,8 @@ namespace GuildMaster.Tests
             TownQuestPoster.Enabled = false;
             // Nor the villages' errands (P4-133): they would pull members off the quests a test posts itself.
             ErrandPoster.Enabled = false;
+            // Nor the residents' requests (P4-134): a test makes a resident ask what it is about.
+            Social.ResidentRequests.Enabled = false;
             // Nor sudden incidents (P4-85): a rare monster out of nowhere fights whatever it meets.
             Incidents.IncidentService.Enabled = false;
             // Nor nemeses (P4-109): a member's death or retreat would rename and grow the monster a test is about.
@@ -1775,6 +1777,185 @@ namespace GuildMaster.Tests
                 EventBus.Unsubscribe(onItem);
                 Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
             }
+        }
+
+        /// <summary>
+        /// P4-134 (F-14, user decision 2026-11-08): residents ask the guild master directly. Hans' ore handed over from the stock
+        /// (his thanks into the stock, his opinion up); Mari's herbs dug by the one member sent — a resident's quest, no fee,
+        /// nobody else takes it up — done when they come in; Elly's basket failed when its carrier gave up (opinion down); the
+        /// child's tale told on the spot; a request left alone lapses with nothing lost. The favours follow the opinions
+        /// (crafting time, food, tax), and the town's opinion is what a new visitor heard. Clicking a resident with a request
+        /// opens its window.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ResidentRequests_HandedOverSentFailedTold_AndTheTownsWordReachesVisitors()
+        {
+            yield return Boot();
+            var requests = Services.Get<Social.ResidentRequests>();
+            var residents = Services.Get<Social.ResidentService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var board = Services.Get<QuestBoard>();
+            var places = Services.Get<Places.PlaceService>();
+            var world = Services.Get<World.WorldService>();
+            var door = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+            var town = world.TownCenterWorld;
+            var hans = residents.Find("RES_hans");
+            var mari = residents.Find("RES_mari");
+            var elly = residents.Find("RES_elly");
+            var toby = residents.Find("RES_toby");
+            var bartol = residents.Find("RES_bartol");
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                Clock.SetSpeed(3);
+                var members = Roster.Members.Where(a => a.IsAlive).ToList();
+                Assume.That(members.Count, Is.GreaterThanOrEqualTo(3));
+                // Everyone in bed in town (at leisure, too tired to wander off): the one sent is rested first.
+                void AllToBed()
+                {
+                    foreach (var a in members.Where(a => a.IsAlive && a.CurrentQuest == null))
+                    {
+                        a.Data.fatigue = 100f;
+                        a.Mover.Stop();
+                        a.transform.position = door;
+                        a.ChangeState(a.RestState);
+                    }
+                }
+                AllToBed();
+                yield return null;
+
+                // ---- Hans' ore, handed over from the stock ----
+                treasury.AddStock(ErrandRules.Ore, 6);
+                var ore = requests.Ask(hans, Social.RequestKind.Goods, out var error);
+                Assert.That(ore, Is.Not.Null, error);
+                Assert.That((ore.ItemId, ore.Status, requests.ActiveOf("RES_hans")), Is.EqualTo((ErrandRules.Ore, Social.RequestStatus.Open, ore)));
+                Assert.That(ore.Count, Is.InRange(3, 5));
+                Assert.That(requests.AskLine(ore), Does.Contain("철광석"));
+                // Clicking him opens his request.
+                var view = Services.Get<ResidentRequestView>();
+                Services.Get<InspectorView>().Show(hans);
+                Assert.That(view.Visible, Is.True, "his request window opened");
+                view.Close();
+                int gearBefore = treasury.GetStock(ErrandRules.Gear(1));
+                int hansBefore = hans.Profile.GuildOpinion;
+                Assert.That(requests.TryHandOver(ore, out error), Is.True, error);
+                Assert.That((ore.Status, treasury.GetStock(ErrandRules.Ore), treasury.GetStock(ErrandRules.Gear(1)), hans.Profile.GuildOpinion),
+                    Is.EqualTo((Social.RequestStatus.Done, 6 - ore.Count, gearBefore + 1, hansBefore + Social.ResidentRequestRules.OpinionWon)), "handed over, thanked with gear");
+                Assert.That(requests.TryHandOver(ore, out _), Is.False, "once");
+
+                // ---- Mari's herbs, dug by one member ----
+                var patch = places.All.Where(p => p.Kind == World.PlaceKind.HerbPatch).OrderBy(p => Vector2.Distance(p.WorldPosition, town)).First();
+                Services.Get<Fog.FogOfWar>().Reveal(patch.WorldPosition, 3f);
+                yield return WaitFor(() => places.IsKnown(patch), 5f);
+                treasury.TryRemoveStock(ErrandRules.Herb, treasury.GetStock(ErrandRules.Herb));
+                var herbs = requests.Ask(mari, Social.RequestKind.Goods, out error);
+                Assert.That(herbs, Is.Not.Null, error);
+                Assert.That(herbs.ItemId, Is.EqualTo(ErrandRules.Herb));
+                herbs.Count = ErrandRules.MinCount; // one harvest fills it
+                Assert.That(requests.CannotHandOverReason(herbs), Does.Contain("모자랍니다"), "none in the stock");
+                var digger = members[0];
+                digger.Data.fatigue = 0f;
+                var candidates = requests.Candidates(herbs);
+                Assert.That(candidates.Select(c => c.Member), Does.Contain(digger), "a rested member in town can go");
+                Assert.That(candidates.All(c => !string.IsNullOrEmpty(c.Risk)), Is.True, "each with the errand's risk");
+                int mariBefore = mari.Profile.GuildOpinion, potionsBefore = treasury.GetStock(ErrandRules.Potion);
+                Assert.That(requests.TrySend(herbs, digger, out error), Is.True, error);
+                var dig = board.FindById(herbs.QuestId);
+                Assert.That(dig, Is.Not.Null);
+                Assert.That((dig.Type, dig.Client, dig.ResidentId, dig.FeeGold, dig.MaxParty, dig.HasRewardItem, dig.IsAssigned(digger), dig.RequiredCount),
+                    Is.EqualTo((QuestType.Gather, QuestClient.Resident, "RES_mari", 0, 1, false, true, 2)), "a resident's quest: one member, no fee");
+                Assert.That(dig.Title, Does.StartWith("[마리의 부탁]"));
+                Assert.That(dig.ClientLabel, Is.EqualTo("약초상 마리"));
+                Assert.That(board.AvailableFor(members[1]).Contains(dig), Is.False, "nobody else takes it up");
+                Assert.That(herbs.Status, Is.EqualTo(Social.RequestStatus.Underway));
+                Assert.That(world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(patch.WorldPosition + Vector2.right * 2f), 4, out var near), Is.True);
+                digger.Mover.Stop();
+                digger.transform.position = World.GridMap.CellToWorld(near);
+                digger.ChangeState(digger.TravelState);
+                yield return WaitFor(() => herbs.Status != Social.RequestStatus.Underway, 40f);
+                Assert.That((herbs.Status, dig.Progress), Is.EqualTo((Social.RequestStatus.Done, 2)), $"picked ({digger.StateLabel}, {dig.ProgressText})");
+                Assert.That((mari.Profile.GuildOpinion, treasury.GetStock(ErrandRules.Potion)),
+                    Is.EqualTo((mariBefore + Social.ResidentRequestRules.OpinionWon, potionsBefore + Social.ResidentRequestRules.HerbalistPotions)), "thanked with potions");
+                Assert.That(mari.Profile.FeelingToward(digger.Data.id), Is.EqualTo(Social.ResidentRequestRules.FeelingForHelper), "she likes the one who did it");
+                int paid = -1;
+                Action<QuestRewardPaidEvent> onPaid = e => { if (e.Quest == dig) paid = e.Gold; };
+                EventBus.Subscribe(onPaid);
+                yield return WaitFor(() => digger.Fsm.Current == digger.ReturnState || dig.Status == QuestStatus.TurnedIn, 5f);
+                digger.Mover.Stop();
+                digger.transform.position = door;
+                yield return WaitFor(() => dig.Status == QuestStatus.TurnedIn, 20f);
+                EventBus.Unsubscribe(onPaid);
+                Assert.That((dig.Status, paid), Is.EqualTo((QuestStatus.TurnedIn, dig.RewardGold)), "she pays the member the whole of it");
+
+                // ---- Elly's basket: its carrier gives up, the request failed ----
+                var village = Services.Get<Villages.VillageService>().Villages.Where(v => v.Inner).OrderBy(v => Vector2.Distance(v.WorldPosition, town)).First();
+                village.Known = true;
+                var basket = requests.Ask(elly, Social.RequestKind.Delivery, out error);
+                Assert.That(basket, Is.Not.Null, error);
+                Assert.That(requests.WhatText(basket), Does.Contain(village.DisplayName));
+                AllToBed();
+                var carrier = members[1];
+                carrier.Data.fatigue = 0f;
+                int ellyBefore = elly.Profile.GuildOpinion;
+                Assert.That(requests.TrySend(basket, carrier, out error), Is.True, error);
+                var road = board.FindById(basket.QuestId);
+                string reason = null;
+                Action<QuestClosedEvent> onClosed = e => { if (e.Quest == road) reason = e.Reason; };
+                EventBus.Subscribe(onClosed);
+                board.RemoveTakerEverywhere(carrier);
+                EventBus.Unsubscribe(onClosed);
+                Assert.That((road.Status, reason, basket.Status, elly.Profile.GuildOpinion),
+                    Is.EqualTo((QuestStatus.Failed, Social.ResidentRequestRules.GaveUpReason, Social.RequestStatus.Failed, ellyBefore - Social.ResidentRequestRules.OpinionLost)), "failed: opinion down");
+                carrier.CurrentQuest = null;
+
+                // ---- The child's tale, told on the spot ----
+                AllToBed();
+                var tale = requests.Ask(toby, Social.RequestKind.Story, out error);
+                Assert.That(tale, Is.Not.Null, error);
+                var teller = requests.Candidates(tale).First().Member;
+                int tobyBefore = toby.Profile.GuildOpinion, stoneBefore = treasury.Stock.Values.Sum();
+                Assert.That(requests.TrySend(tale, teller, out error), Is.True, error);
+                Assert.That((tale.Status, tale.MemberName, toby.Profile.GuildOpinion), Is.EqualTo((Social.RequestStatus.Done, teller.Data.name, tobyBefore + 10)));
+                Assert.That(treasury.Stock.Values.Sum(), Is.GreaterThan(stoneBefore), "something he found, into the stock");
+
+                // ---- Left alone, a request lapses: nothing lost ----
+                treasury.AddStock("slime_jelly", 4);
+                var left = requests.Ask(bartol, null, out error);
+                Assert.That(left, Is.Not.Null, error);
+                int bartolBefore = bartol.Profile.GuildOpinion;
+                left.DeadlineHour = Clock.TotalHours - 0.01f;
+                requests.Check();
+                Assert.That((left.Status, bartol.Profile.GuildOpinion), Is.EqualTo((Social.RequestStatus.Lapsed, bartolBefore)));
+                Assert.That((requests.Done, requests.Failed), Is.EqualTo((3, 1)));
+
+                // ---- The favours ----
+                var crafting = Services.Get<Economy.CraftingService>();
+                var potion = Services.Get<GameDatabase>().recipes.First(r => r.id == "potion");
+                mari.Profile.GuildOpinion = 0;
+                float slow = crafting.EffectiveHours(potion);
+                mari.Profile.GuildOpinion = 75;
+                Assert.That(crafting.EffectiveHours(potion) / slow, Is.EqualTo(0.7f).Within(1e-4f), "the apothecary −30%");
+                elly.Profile.GuildOpinion = 50;
+                Assert.That(Economy.FoodStore.PriceNow(Economy.FoodRules.SmallSize), Is.EqualTo(Social.ResidentRequestRules.Cut(Economy.FoodRules.Price(Economy.FoodRules.SmallSize), 0.2f)));
+                int gold = treasury.Gold;
+                Assert.That(Services.Get<Economy.FoodStore>().TryBuy(Economy.FoodRules.SmallSize), Is.True);
+                Assert.That(gold - treasury.Gold, Is.EqualTo(Economy.FoodStore.PriceNow(Economy.FoodRules.SmallSize)), "the baker's price paid");
+                bartol.Profile.GuildOpinion = 25;
+                Assert.That(Social.ResidentPerks.TaxBonus, Is.EqualTo(0.1f).Within(1e-5f));
+
+                // ---- The town's word on the guild reaches a new visitor ----
+                foreach (var r in residents.Residents) r.Profile.GuildOpinion = 50;
+                Assert.That(requests.VisitorWordNow, Is.EqualTo(6 + Social.ResidentRequestRules.ChildBrag(2)));
+                var visitor = Services.Get<Recruitment.VisitorService>().SpawnVisitor();
+                int start = Recruitment.RecruitmentSession.InitialAffinity(visitor.Traits, Recruitment.RecruitmentSession.LevelsAboveGuild(visitor));
+                Assert.That(visitor.Data.recruitAffinity, Is.EqualTo(Mathf.Clamp(start + requests.VisitorWordNow, 0, 100)), "heard well of the guild");
+                foreach (var r in residents.Residents) r.Profile.GuildOpinion = -60;
+                var sour = Services.Get<Recruitment.VisitorService>().SpawnVisitor();
+                int sourStart = Recruitment.RecruitmentSession.InitialAffinity(sour.Traits, Recruitment.RecruitmentSession.LevelsAboveGuild(sour));
+                Assert.That(sour.Data.recruitAffinity, Is.EqualTo(Mathf.Clamp(sourStart - 10, 0, 100)), "heard badly of it");
+                Assert.That(DebugCommands.Requests(), Does.Contain("RES_toby"));
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
 
         /// <summary>

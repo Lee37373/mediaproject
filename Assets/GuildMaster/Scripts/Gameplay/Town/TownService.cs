@@ -178,7 +178,8 @@ namespace GuildMaster.Town
         public int RepairCost(Building b)
         {
             float perHp = Core.Services.TryGet<Session.GameBalance>(out var balance) ? balance.buildingRepairGoldPerHp : 0.5f;
-            return b == null ? 0 : Mathf.CeilToInt((b.MaxHp - b.Hp) * perHp);
+            // The smith's favour (P4-134): −10% a step.
+            return b == null ? 0 : Social.ResidentRequestRules.Cut(Mathf.CeilToInt((b.MaxHp - b.Hp) * perHp), Social.ResidentPerks.BuildingRepairCut);
         }
 
         /// <summary>Why this building cannot be repaired now (shown on the button), or null.</summary>

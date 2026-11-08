@@ -99,6 +99,15 @@ namespace GuildMaster.UI
                     else paper.BringToFront();
                     break;
                 }
+                case NotificationTarget.Resident:
+                {
+                    // The resident and its request window (P4-134).
+                    if (!Services.TryGet<Social.ResidentService>(out var residents) || residents.Find(link.Id) is not { } who) break;
+                    if (Services.TryGet<CameraController>(out var camera)) camera.JumpTo(who.Position);
+                    if (Services.TryGet<InspectorView>(out var inspector)) inspector.Show(who);
+                    if (Services.TryGet<ResidentRequestView>(out var request)) request.Show(who);
+                    break;
+                }
             }
         }
 

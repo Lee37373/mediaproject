@@ -388,6 +388,15 @@ namespace GuildMaster.Tests
             var errand = Services.Get<Quests.ErrandPoster>().PostFor(villages.Villages[0], Quests.QuestType.Deliver, out var errandError);
             Assert.That(errand, Is.Not.Null, errandError);
             var errandSaved = (errand.Id, errand.GoodsName, errand.RewardItem.itemId, errand.RewardItem.count, errand.RewardGold);
+            // A resident's request (P4-134): Hans asks ore the stock has; and Elly's goods to a village, a resident's quest.
+            Services.Get<Economy.GuildTreasury>().AddStock(Quests.ErrandRules.Ore, 5);
+            var requests = Services.Get<Social.ResidentRequests>();
+            var hansAsks = requests.Ask(Services.Get<Social.ResidentService>().Find("RES_hans"), Social.RequestKind.Goods, out var askError);
+            Assert.That(hansAsks, Is.Not.Null, askError);
+            var askSaved = (hansAsks.Id, hansAsks.ItemId, hansAsks.Count, hansAsks.DeadlineHour);
+            Assert.That(board.TryPostRequest(Quests.ErrandOffers.DeliverDraft(villages.Villages[0], "빵 바구니", 0.5f), Quests.QuestClient.Resident, out var residentQuest, out var residentError,
+                                             null, null, false, villages.Villages[0], "RES_elly"), Is.True, residentError);
+            Assert.That((residentQuest.FeeGold, residentQuest.HasRewardItem, residentQuest.Title.StartsWith("[엘리의 부탁]")), Is.EqualTo((0, false, true)), "no fee, no item, by who asked");
             quests = board.Quests.Count;
 
             var a = Saves.Capture();
@@ -414,6 +423,13 @@ namespace GuildMaster.Tests
                 Is.EqualTo((Quests.QuestType.Deliver, errandSaved.GoodsName, errandSaved.itemId, errandSaved.count, errandSaved.RewardGold)), "its goods and pay");
             Assert.That((loadedErrand.Destination, loadedErrand.Village), Is.EqualTo((Services.Get<Villages.VillageService>().Villages[0], Services.Get<Villages.VillageService>().Villages[0])),
                 "to the village that asked");
+            var loadedAsk = Services.Get<Social.ResidentRequests>().Find(askSaved.Id);
+            Assert.That(loadedAsk, Is.Not.Null, "Hans' request");
+            Assert.That((loadedAsk.Status, loadedAsk.ResidentId, loadedAsk.ItemId, loadedAsk.Count, loadedAsk.DeadlineHour),
+                Is.EqualTo((Social.RequestStatus.Open, "RES_hans", askSaved.ItemId, askSaved.Count, askSaved.DeadlineHour)), "still open, the same things");
+            var loadedResidentQuest = Services.Get<Quests.QuestBoard>().FindById(residentQuest.Id);
+            Assert.That((loadedResidentQuest?.Client, loadedResidentQuest?.ResidentId, loadedResidentQuest?.Title.StartsWith("[엘리의 부탁]")),
+                Is.EqualTo(((Quests.QuestClient?)Quests.QuestClient.Resident, "RES_elly", (bool?)true)), "Elly's quest, by who asked");
             // Every nemesis under its own name, at its level, its bounty on it; the friend's grudge kept (P4-109).
             var loadedNemeses = Services.Get<Nemeses.NemesisService>();
             foreach (var (id, name, level, bountyId) in nemeses)

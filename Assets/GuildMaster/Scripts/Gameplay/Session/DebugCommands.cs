@@ -228,6 +228,84 @@ namespace GuildMaster.Session
                              : $"{v.DisplayName}: {error}";
         }
 
+        // ---------------- Residents' requests (P4-134) ----------------
+
+        static Social.Resident ResidentAt(string who)
+        {
+            var residents = Services.Get<Social.ResidentService>().Residents;
+            if (int.TryParse(who, out int i)) return i >= 0 && i < residents.Count ? residents[i] : null;
+            string low = who?.ToLowerInvariant();
+            return residents.FirstOrDefault(r => r != null && (r.Profile.Id == who || r.Profile.Id.ToLowerInvariant() == "res_" + low || r.Profile.Name == who
+                                                               || r.Profile.Job.ToString().ToLowerInvariant() == low));
+        }
+
+        /// <summary>
+        /// The residents (opinion, favour step and what it does, why each would not ask now), the town's opinion and what a
+        /// visitor arriving now would hear, every request kept (kind, what, status, hours left, quest, member) and who could go.
+        /// </summary>
+        public static string Requests(bool checkNow = false)
+        {
+            var svc = Services.Get<Social.ResidentRequests>();
+            var sb = new StringBuilder();
+            if (checkNow) sb.AppendLine($"checked now: {(svc.Check() is { } made ? "#" + made.Id : "none")}");
+            sb.AppendLine($"requests done {svc.Done} failed {svc.Failed} (enabled {Social.ResidentRequests.Enabled}); town opinion {svc.TownOpinion} → visitor word {svc.VisitorWordNow} (last {svc.LastVisitorWord})");
+            foreach (var r in Services.Get<Social.ResidentService>().Residents)
+            {
+                int tier = Social.ResidentRequestRules.Tier(r.Profile.GuildOpinion);
+                sb.AppendLine($"  {r.Profile.Id} {r.Profile.Name} ({r.Profile.Job}) opinion {r.Profile.GuildOpinion} tier {tier}{(tier > 0 ? ": " + Social.ResidentRequestRules.FavourText(r.Profile.Job, tier) : "")} — {svc.SkipReason(r) ?? "may ask"}");
+            }
+            foreach (var q in svc.All)
+            {
+                string plan = q.IsOpen && q.Kind != Social.RequestKind.Story ? " plan " + (svc.Plan(q, out var d, out _, out _, out _) ?? $"ok {d.RewardGold}G/{d.RewardExp}EXP") : "";
+                string stock = q.Kind == Social.RequestKind.Goods ? $" stock {Services.Get<GuildTreasury>().GetStock(q.ItemId)}/{q.Count}" : "";
+                string who = q.IsOpen ? " candidates " + string.Join(",", svc.Candidates(q).Select(c => c.Member.Data.name + (c.Risk != "" ? ":" + c.Risk : ""))) : "";
+                sb.AppendLine($"  #{q.Id} {q.ResidentId} {q.Kind} {svc.WhatText(q)} {q.Status} left {svc.HoursLeft(q):0.0}h quest {q.QuestId ?? "-"} member {q.MemberName ?? "-"}{stock}{plan}{who}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>A resident (index, id, name or job) asks now: <paramref name="kind"/> "goods", "deliver", "story" (empty: any it asks).</summary>
+        public static string Ask(string who, string kind = "")
+        {
+            var r = ResidentAt(who);
+            if (r == null) return "no resident " + who;
+            Social.RequestKind? k = kind switch { "goods" => Social.RequestKind.Goods, "deliver" => Social.RequestKind.Delivery, "story" => Social.RequestKind.Story, _ => null };
+            var svc = Services.Get<Social.ResidentRequests>();
+            var made = svc.Ask(r, k, out var error);
+            return made != null ? $"#{made.Id} {r.Profile.Name}: {svc.WhatText(made)} — \"{svc.AskLine(made)}\"" : $"{r.Profile.Name}: {error}";
+        }
+
+        /// <summary>Hands request #id's things over from the stock (<paramref name="fill"/>: puts them in the stock first).</summary>
+        public static string HandOver(int id, bool fill = false)
+        {
+            var svc = Services.Get<Social.ResidentRequests>();
+            var r = svc.Find(id);
+            if (r == null) return "no request " + id;
+            if (fill && r.Kind == Social.RequestKind.Goods) Services.Get<GuildTreasury>().AddStock(r.ItemId, r.Count);
+            return svc.TryHandOver(r, out var error) ? Requests() : error;
+        }
+
+        /// <summary>Sends member (roster index; -1: the first candidate) on request #id.</summary>
+        public static string SendOn(int id, int member = -1)
+        {
+            var svc = Services.Get<Social.ResidentRequests>();
+            var r = svc.Find(id);
+            if (r == null) return "no request " + id;
+            var members = Services.Get<GuildRoster>().Members;
+            var m = member >= 0 && member < members.Count ? members[member] : svc.Candidates(r).Select(c => c.Member).FirstOrDefault();
+            if (m == null) return "nobody to send";
+            return svc.TrySend(r, m, out var error) ? $"{m.Data.name} → #{id} quest {r.QuestId ?? "(told)"}" : error;
+        }
+
+        /// <summary>Sets a resident's (index, id, name or job) opinion of the guild; "all" sets every one.</summary>
+        public static string Opinion(string who, int value)
+        {
+            var residents = Services.Get<Social.ResidentService>().Residents;
+            var targets = who == "all" ? residents.ToList() : new List<Social.Resident> { ResidentAt(who) };
+            foreach (var r in targets.Where(r => r != null)) r.Profile.GuildOpinion = Mathf.Clamp(value, Social.ResidentProfile.Min, Social.ResidentProfile.Max);
+            return Requests();
+        }
+
         // ---------------- Sudden incidents (P4-85) ----------------
 
         /// <summary>Every incident, real values: kind, where it is and where the rumour put it, the quest, time left, how it ended.</summary>

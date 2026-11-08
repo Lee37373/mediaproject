@@ -253,17 +253,19 @@ namespace GuildMaster.Quests
         /// treasury. <paramref name="target"/> is the den a hunt is for (else the one the guild saw in its area).
         /// </summary>
         public bool TryPostRequest(QuestDraft draft, QuestClient client, out Quest quest, out string error, Nest target = null,
-                                   Villages.Village village = null, bool villageDefence = false, Villages.Village destination = null)
+                                   Villages.Village village = null, bool villageDefence = false, Villages.Village destination = null,
+                                   string resident = null)
         {
             quest = null;
             error = client == QuestClient.Guild ? "의뢰처가 없습니다."
                   : client == QuestClient.Village && (village == null || village.IsDestroyed) ? "의뢰처 마을이 없습니다."
+                  : client == QuestClient.Resident && string.IsNullOrEmpty(resident) ? "부탁한 주민이 없습니다."
                   // A delivery goes to a village standing (P4-133): a village's own errand comes to itself.
                   : draft.Type == QuestType.Deliver && (destination ?? village) is not { IsDestroyed: false } ? "배달할 마을이 없습니다."
                   : Validate(draft, client);
             if (error != null) return false;
             quest = PostRequest(draft, client, target, null, village, villageDefence, null,
-                                draft.Type == QuestType.Deliver ? destination ?? village : null);
+                                draft.Type == QuestType.Deliver ? destination ?? village : null, resident);
             return true;
         }
 
@@ -318,14 +320,15 @@ namespace GuildMaster.Quests
 
         Quest PostRequest(QuestDraft draft, QuestClient client, Nest target, Disasters.Disaster disaster = null,
                           Villages.Village village = null, bool villageDefence = false, Incidents.Incident incident = null,
-                          Villages.Village destination = null)
+                          Villages.Village destination = null, string resident = null)
         {
-            var (members, fee) = QuestPricing.Split(draft.RewardGold);
+            // A resident pays its member all of it: the guild is thanked by the resident itself (P4-134).
+            var (members, fee) = client == QuestClient.Resident ? (Mathf.Max(0, draft.RewardGold), 0) : QuestPricing.Split(draft.RewardGold);
             draft.RewardGold = members;
             return Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours)
             {
                 Client = client, FeeGold = fee, Disaster = disaster, Village = village, IsVillageDefence = villageDefence, Incident = incident,
-                Destination = destination,
+                Destination = destination, ResidentId = resident,
             }, target);
         }
 
@@ -530,7 +533,7 @@ namespace GuildMaster.Quests
         /// one — so the rest of a party joins by invitation, not by walking up to the board.
         /// </summary>
         public IEnumerable<Quest> AvailableFor(IQuestTaker t)
-            => _quests.Where(q => q.Status == QuestStatus.Open && q.Assignees.Count == 0);
+            => _quests.Where(q => q.Status == QuestStatus.Open && q.Assignees.Count == 0 && q.Client != QuestClient.Resident);
 
         public Quest FindById(string id) => _quests.FirstOrDefault(q => q.Id == id);
 
@@ -560,6 +563,9 @@ namespace GuildMaster.Quests
             EventBus.Publish(new QuestAbandonedEvent { Quest = q, Taker = t });
             // The last one carrying the goods fell or left out there (P4-133): the goods are gone with them.
             if (lost) Close(q, QuestStatus.Failed, refund: true, ErrandRules.GoodsLostReason);
+            // A resident's request was given to this one member (P4-134): it gave up or fell, so the request failed.
+            else if (q.Client == QuestClient.Resident && q.IsActive && q.Assignees.Count == 0)
+                Close(q, QuestStatus.Failed, refund: true, Social.ResidentRequestRules.GaveUpReason);
         }
 
         /// <summary>Called when an assignee reports at the guild. Returns true if a reward was paid.</summary>

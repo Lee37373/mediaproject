@@ -67,10 +67,16 @@ namespace GuildMaster.Economy
         public bool TryBuy(int portions)
         {
             if (portions <= 0) return false;
-            if (!_treasury.TrySpendGold(FoodRules.Price(portions), GoldReason.Food)) return false;
+            if (!_treasury.TrySpendGold(PriceNow(portions), GoldReason.Food)) return false;
             Food += portions;
             return true;
         }
+
+        /// <summary>What the bakery asks for these portions now: the price less the baker's favour (P4-134: −10% a step).</summary>
+        public static int PriceNow(int portions) => Social.ResidentRequestRules.Cut(FoodRules.Price(portions), Social.ResidentPerks.FoodCut);
+
+        /// <summary>Food given to the guild (a resident's thanks, P4-134).</summary>
+        public void Add(int portions) => Food += Mathf.Max(0, portions);
 
         /// <summary>For tests and debug: sets the stock.</summary>
         public void SetFood(int food) => Food = Mathf.Max(0, food);

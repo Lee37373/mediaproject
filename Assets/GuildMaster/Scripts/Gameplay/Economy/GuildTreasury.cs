@@ -48,6 +48,8 @@ namespace GuildMaster.Economy
         public const string SideJob = "sidejob";
         /// <summary>Food bought for the guild (2026-10-29).</summary>
         public const string Food = "food";
+        /// <summary>A resident's thanks for a request (P4-134), counted with the odd jobs.</summary>
+        public const string Favor = "favor";
     }
 
     /// <summary>
@@ -112,7 +114,8 @@ namespace GuildMaster.Economy
 
         void OnDay(DayPassedEvent e)
         {
-            int tax = Mathf.RoundToInt(DailyTax * (1f - TaxCutToday));
+            // The chief's favour (P4-134): +10% a step.
+            int tax = Mathf.RoundToInt(DailyTax * (1f - TaxCutToday) * (1f + Social.ResidentPerks.TaxBonus));
             TaxCutToday = 0f;
             if (tax > 0) AddGold(tax, GoldReason.Tax);
         }

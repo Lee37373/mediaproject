@@ -33,6 +33,12 @@ namespace GuildMaster.Social
 
         public Resident Find(string id) => _residents.Find(r => r != null && r.Profile.Id == id);
 
+        /// <summary>The resident of this trade, or null.</summary>
+        public Resident OfJob(ResidentJob job) => _residents.Find(r => r != null && r.Profile.Job == job);
+
+        /// <summary>The step of this trade's standing favour (P4-134): by its resident's opinion of the guild.</summary>
+        public int TierOf(ResidentJob job) => OfJob(job) is { } r ? ResidentRequestRules.Tier(r.Profile.GuildOpinion) : 0;
+
         static Vector2 Workplace(ResidentJob job, TownService town, WorldService world)
         {
             BuildingType? at = job switch

@@ -10,7 +10,7 @@ namespace GuildMaster.Notifications
     public enum NotificationKind { Info, Success, Quest, Warning, Danger }
 
     /// <summary>Where clicking a notification leads. The UI layer decides how to open each target.</summary>
-    public enum NotificationTarget { None, QuestBoard, Negotiation, Roster, Adventurer, Location, Report, Management, Proposals, Memorial, GuildRank, Bestiary, Dilemmas, News }
+    public enum NotificationTarget { None, QuestBoard, Negotiation, Roster, Adventurer, Location, Report, Management, Proposals, Memorial, GuildRank, Bestiary, Dilemmas, News, Resident }
 
     /// <summary>A pointer from a notification to something in the game (data only, so Gameplay needs no UI types).</summary>
     public readonly struct NotificationLink
@@ -54,6 +54,8 @@ namespace GuildMaster.Notifications
         public static NotificationLink Memorial(int recordId) => new(NotificationTarget.Memorial, recordId.ToString(CultureInfo.InvariantCulture), default);
         /// <summary>The town newspaper of this day (P4-130).</summary>
         public static NotificationLink News(int day) => new(NotificationTarget.News, day.ToString(CultureInfo.InvariantCulture), default);
+        /// <summary>A resident and its request window (P4-134).</summary>
+        public static NotificationLink Resident(string residentId) => new(NotificationTarget.Resident, residentId, default);
     }
 
     public class Notification

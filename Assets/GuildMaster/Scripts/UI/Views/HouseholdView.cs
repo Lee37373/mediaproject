@@ -17,9 +17,43 @@ namespace GuildMaster.UI
         public override string Title => "살림";
         protected override float RefreshInterval => 0.5f;
 
-        Text _food, _foodMessage, _commissions, _choreInfo;
+        Text _food, _foodMessage, _commissions, _choreInfo, _townLine;
         Button _buySmall, _buyBulk;
         readonly System.Collections.Generic.Dictionary<ChoreKind, Button> _chores = new();
+        readonly System.Collections.Generic.List<(Text label, Button open)> _residentRows = new();
+
+        void OpenResident(int index)
+        {
+            if (!Services.TryGet<Social.ResidentService>(out var residents) || index >= residents.Residents.Count) return;
+            if (Services.TryGet<ResidentRequestView>(out var view)) view.Show(residents.Residents[index]);
+        }
+
+        /// <summary>Each resident's opinion, favour and request (P4-134), and what the town's opinion tells new visitors.</summary>
+        void RefreshResidents()
+        {
+            if (!Services.TryGet<Social.ResidentService>(out var residents) || !Services.TryGet<Social.ResidentRequests>(out var requests)) return;
+            int town = requests.TownOpinion;
+            _townLine.text = $"마을 평판 {town} ({Social.ResidentRequestRules.TownOpinionLabel(town)}) · 새 방문자 시작 호감 {Signed(requests.VisitorWordNow)} · " +
+                             $"부탁 해결 {requests.Done}건, 실패 {requests.Failed}건 · 평판 {string.Join("·", Social.ResidentRequestRules.TierAt)}마다 단골 혜택 10%씩";
+            for (int i = 0; i < _residentRows.Count; i++)
+            {
+                var (label, open) = _residentRows[i];
+                bool on = i < residents.Residents.Count;
+                label.transform.parent.gameObject.SetActive(on);
+                if (!on) continue;
+                var p = residents.Residents[i].Profile;
+                int tier = Social.ResidentRequestRules.Tier(p.GuildOpinion);
+                string favour = tier > 0 ? UIBuilder.Colored(Social.ResidentRequestRules.FavourText(p.Job, tier), UITheme.Good) : UIBuilder.Colored("혜택 없음", UITheme.TextMuted);
+                var q = requests.ActiveOf(p.Id);
+                string ask = q == null ? "" : q.IsOpen
+                    ? "  " + UIBuilder.Colored($"! {requests.WhatText(q)} ({requests.HoursLeft(q):0}시간)", UITheme.Warn)
+                    : "  " + UIBuilder.Colored($"… {q.MemberName} 하는 중", UITheme.Exp);
+                label.text = $"{p.Name} {UIBuilder.Colored(p.JobLabel, UITheme.TextMuted)} {Signed(p.GuildOpinion)} · {favour}{ask}";
+                open.SetLabel(q != null && q.IsOpen ? "들어주기" : "보기");
+            }
+        }
+
+        static string Signed(int v) => v > 0 ? "+" + v : v.ToString();
 
         protected override void Build(RectTransform body)
         {
@@ -49,6 +83,22 @@ namespace GuildMaster.UI
             }
             _choreInfo = UIBuilder.Label(chores.transform, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 22);
 
+            // The residents' standing favours and requests (P4-134): one line each, click to open a request.
+            UIBuilder.Label(body, "주민 평판·부탁", 18, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 26);
+            var residents = UIBuilder.Panel(body, "Residents", UITheme.PanelBgLight);
+            residents.Size(-1, 214);
+            UIBuilder.VLayout(residents, 2, 8);
+            _townLine = UIBuilder.Label(residents.transform, "", 14, TextAnchor.MiddleLeft, UITheme.TextMuted).Size(-1, 22);
+            for (int i = 0; i < 6; i++)
+            {
+                int index = i;
+                var line = UIBuilder.Row(residents.transform, 28, 8);
+                var label = UIBuilder.Label(line, "", 14).Size(-1, 26, 1, 0);
+                label.verticalOverflow = VerticalWrapMode.Overflow;
+                var open = UIBuilder.Button(line, "부탁 보기", () => OpenResident(index), 96, 26, null, 13);
+                _residentRows.Add((label, open));
+            }
+
             UIBuilder.Label(body, "의뢰 대금", 18, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 26);
             var list = UIBuilder.Panel(body, "Commissions", UITheme.PanelBgLight);
             list.Size(-1, -1, -1, 1);
@@ -76,6 +126,7 @@ namespace GuildMaster.UI
 
         protected override void Refresh()
         {
+            RefreshResidents();
             if (Services.TryGet<ChoreService>(out var chores) && Services.TryGet<GameClock>(out var now))
             {
                 foreach (var kv in _chores)
@@ -96,8 +147,12 @@ namespace GuildMaster.UI
                              UIBuilder.Colored($"약 {days}일치", color) + "\n" +
                              UIBuilder.Colored($"모자라면 못 먹은 길드원의 스트레스 +{FoodRules.HungerStress:0}, 피로 +{FoodRules.HungerFatigue:0}. 밥값(1인 10G)은 그대로 길드에 들어옵니다.", UITheme.TextMuted);
                 bool can = Services.TryGet<GuildTreasury>(out var t);
-                _buySmall.interactable = can && t.Gold >= FoodRules.Price(FoodRules.SmallSize);
-                _buyBulk.interactable = can && t.Gold >= FoodRules.Price(FoodRules.BulkSize);
+                // The baker's favour (P4-134) is in the price.
+                int small = FoodStore.PriceNow(FoodRules.SmallSize), bulk = FoodStore.PriceNow(FoodRules.BulkSize);
+                _buySmall.SetLabel($"{FoodRules.SmallSize}개 사기 ({small}G)");
+                _buyBulk.SetLabel($"{FoodRules.BulkSize}개 사기 ({bulk}G)");
+                _buySmall.interactable = can && t.Gold >= small;
+                _buyBulk.interactable = can && t.Gold >= bulk;
             }
 
             var sb = new StringBuilder();

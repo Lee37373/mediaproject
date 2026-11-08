@@ -20,9 +20,11 @@ namespace GuildMaster.Quests
     /// Every client but the guild pays the whole reward and the guild keeps a fee (<see cref="QuestPricing"/>).
     /// <see cref="Village"/>: another village (P4-84) — hunts on the dens by it, and its defence when the guild sees it attacked.
     /// <see cref="Incident"/>: whoever a sudden incident troubles (P4-85, <see cref="Quest.Incident"/> names them).
+    /// <see cref="Resident"/>: one of our townsfolk, whose request the guild master gave one member (P4-134,
+    /// <see cref="Quest.ResidentId"/>): no fee — the resident thanks the guild itself — and nobody else takes it up.
     /// New clients go at the end: saves keep the number.
     /// </summary>
-    public enum QuestClient { Guild, Town, Patron, Village, Incident }
+    public enum QuestClient { Guild, Town, Patron, Village, Incident, Resident }
 
     /// <summary>Anyone who can take quests (adventurers).</summary>
     public interface IQuestTaker
@@ -102,6 +104,7 @@ namespace GuildMaster.Quests
 
         public string ClientLabel => Client == QuestClient.Village && Village != null ? Village.DisplayName
                                    : Client == QuestClient.Incident && Incident != null ? Incidents.IncidentRules.ClientName(Incident.Kind)
+                                   : Client == QuestClient.Resident && ResidentProfile != null ? Social.ResidentRequestRules.Who(ResidentProfile)
                                    : ClientName(Client);
 
         public static string ClientName(QuestClient c) => c switch
@@ -109,8 +112,16 @@ namespace GuildMaster.Quests
             QuestClient.Guild => "길드",
             QuestClient.Town => "우리 마을",
             QuestClient.Village => "다른 마을",
+            QuestClient.Resident => "주민",
             _ => "의뢰인",
         };
+
+        // ---- A resident's request (P4-134) ----
+        /// <summary>The resident who asked it (<see cref="QuestClient.Resident"/>), else null.</summary>
+        public string ResidentId { get; internal set; }
+
+        Social.ResidentProfile ResidentProfile
+            => ResidentId != null && Core.Services.TryGet<Social.ResidentService>(out var residents) ? residents.Find(ResidentId)?.Profile : null;
 
         // ---- Other villages (P4-84) ----
         /// <summary>The village that posted and pays for it (<see cref="QuestClient.Village"/>), else null.</summary>
@@ -263,7 +274,24 @@ namespace GuildMaster.Quests
             RewardItem = d.RewardItem;
         }
 
-        public string Title => Type switch
+        public string Title => Client == QuestClient.Resident ? ResidentTitle : BaseTitle;
+
+        /// <summary>"[한스의 부탁] 철광석 x4 (마을 북쪽 12칸)": a resident's request goes by who asked it (P4-134).</summary>
+        string ResidentTitle
+        {
+            get
+            {
+                string who = $"[{ResidentProfile?.Name ?? "주민"}의 부탁]";
+                return Type switch
+                {
+                    QuestType.Deliver => $"{who} {GoodsName} → {Destination?.DisplayName ?? "다른 마을"} ({QuestBoard.DescribeArea(Point)})",
+                    QuestType.Collect => $"{who} {ErrandRules.ItemCount(ItemLabel, RequiredCount)} · {Species?.displayName} ({QuestBoard.DescribeArea(Point)})",
+                    _ => $"{who} {ErrandRules.ItemCount(ItemLabel, RequiredCount)} 채집 ({QuestBoard.DescribeArea(Point)})",
+                };
+            }
+        }
+
+        string BaseTitle => Type switch
         {
             QuestType.Hunt when Incident != null => Incidents.IncidentRules.QuestTitle(this),
             QuestType.Hunt when IsVillageDefence && Village != null => $"[방어] {Village.DisplayName} 습격 {Species?.displayName} x{RequiredCount} ({QuestBoard.DescribeArea(Point)})",
@@ -429,6 +457,8 @@ namespace GuildMaster.Quests
             public string item_for;
             public bool item_given;
             public float den_gone = -1f;
+            // A resident's request (P4-134).
+            public string resident;
         }
 
         internal QuestSave CaptureSave(IReadOnlyList<Nest> nests)
@@ -444,7 +474,7 @@ namespace GuildMaster.Quests
                 escort_left = EscortLeftTown, pay_gold = PayGold, pay_exp = PayExp,
                 item_id = ItemId, goods = GoodsName, goods_out = GoodsOut, destination = Destination != null ? Destination.Id : -1,
                 reward_item = RewardItem.itemId, reward_item_count = RewardItem.count, settled_short = SettledShort,
-                item_for = _itemFor, item_given = _itemGiven, den_gone = DenGoneAtHour,
+                item_for = _itemFor, item_given = _itemGiven, den_gone = DenGoneAtHour, resident = ResidentId,
             };
             foreach (var a in _assignees) s.assignees.Add(a.TakerId);
             var ids = new List<string>(_contribution.Keys);
@@ -498,6 +528,7 @@ namespace GuildMaster.Quests
             _itemFor = string.IsNullOrEmpty(s.item_for) ? null : s.item_for;
             _itemGiven = s.item_given;
             DenGoneAtHour = s.den_gone;
+            ResidentId = string.IsNullOrEmpty(s.resident) ? null : s.resident;
             for (int i = 0; i < s.contribution_ids.Count && i < s.contribution.Count; i++) _contribution[s.contribution_ids[i]] = s.contribution[i];
             for (int i = 0; i < s.payout_ids.Count && i < s.payout_gold.Count && i < s.payout_exp.Count; i++)
                 _payouts[s.payout_ids[i]] = (s.payout_gold[i], s.payout_exp[i]);

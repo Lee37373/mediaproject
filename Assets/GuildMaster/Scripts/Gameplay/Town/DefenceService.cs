@@ -113,7 +113,8 @@ namespace GuildMaster.Town
         }
 
         /// <summary>Gold to set every spent trap again.</summary>
-        public int RearmCost => SpentCount * DefenceRules.TrapRearmGold;
+        /// <summary>Gold to rearm the spent traps, less the guard's favour (P4-134: −10% a step).</summary>
+        public int RearmCost => Social.ResidentRequestRules.Cut(SpentCount * DefenceRules.TrapRearmGold, Social.ResidentPerks.GateRepairCut);
 
         /// <summary>Sets every spent trap again for gold. False (and why) when there are none or the gold is short.</summary>
         public bool TryRearmAll(out string error)

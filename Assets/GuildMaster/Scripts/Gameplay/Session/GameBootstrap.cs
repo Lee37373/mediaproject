@@ -458,6 +458,11 @@ namespace GuildMaster.Session
             Services.Register(residents);
             save.Register(residents);
             townTalk.SetResidents(residents);
+            // The residents' requests and the town's word on the guild (P4-134, F-14): asked of the guild master directly,
+            // thanked once and with a standing favour of their trade; new visitors hear what the town thinks.
+            var residentRequests = new Social.ResidentRequests(board, residents, roster, treasury, clock, Seed);
+            Services.Register(residentRequests);
+            save.Register(residentRequests);
             // Feelings over heads and the relationship graph (F-10, user request 2026-10-11).
             var emotions = new Social.EmotionService(clock, roster, residents);
             Services.Register(emotions);

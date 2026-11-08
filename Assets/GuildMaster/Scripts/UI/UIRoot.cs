@@ -54,6 +54,8 @@ namespace GuildMaster.UI
             nameTags.Build(UIBuilder.Rect(WorldLayer, "NameTags").Stretch());
             // Feelings beside heads (F-10), under the speech bubbles.
             WorldLayer.gameObject.AddComponent<EmotionIconLayer>().Build(UIBuilder.Rect(WorldLayer, "Emotions").Stretch());
+            // Residents' requests (P4-134): a "!" on the other side of the head.
+            WorldLayer.gameObject.AddComponent<RequestMarkLayer>().Build(UIBuilder.Rect(WorldLayer, "RequestMarks").Stretch());
             var bubbles = WorldLayer.gameObject.AddComponent<SpeechBubbleLayer>();
             bubbles.Build(UIBuilder.Rect(WorldLayer, "Bubbles").Stretch());
             // Town talks (user request 2026-10-01): bubbles for people who are not adventurers (the merchant).
@@ -101,7 +103,9 @@ namespace GuildMaster.UI
             AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1200, 680)); // 2026-11-05: party board
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
             // Food and quest payments (economy round 2, 2026-10-29).
-            AddWindow<HouseholdView>(menu, "살림 (U)", Key.U, new Vector2(820, 740));
+            AddWindow<HouseholdView>(menu, "살림 (U)", Key.U, new Vector2(820, 900)); // P4-134: the residents' standing and requests
+            // A resident's request (P4-134): opened by clicking the resident or its notification.
+            AddWindow<ResidentRequestView>(null, null, Key.None, new Vector2(760, 640));
             // Residents' odd jobs as minigames (일손 돕기, 2026-10-29), opened from the household window.
             AddWindow<ChoreView>(null, null, Key.None, new Vector2(820, 560));
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
