@@ -2,8 +2,8 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-11-05
-- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-135**, P4-116은 H12 몫 — 다른 팀원).
+- 마지막 갱신: 2026-11-08
+- 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-136**, P4-116은 H12 몫 — 다른 팀원).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
 ## 사용 규칙
@@ -139,10 +139,11 @@
 | P4-128 | 한 장짜리 몬스터를 팩의 부위 프리팹으로 그려 무기(손잡이 축)·다리·활을 코드로 움직임(사용자 요청 2026-11-04 "무기가 자연스럽게 움직이게"): 무기는 손잡이를 축으로(들어 올림 +40° → 내려침 −75°), 활은 들고 튕김, 다리는 걸음, 방패는 맞을 때 움찔. 부위 프리팹이 없으면 예전 한 장짜리 | 이재혁 | 완료 | Visuals/PartPuppet(신규)·CharacterVisual·ArtLibrary·CharacterArtCatalog, Monsters/Monster, Editor/ArtCatalogBuilder, Resources/ArtCatalog | 7442f88 |
 | P4-129 | 관전 디렉터·명장면(게임성 제안 H7, 사용자 선택 2026-11-05): 흥미 점수가 높은 사건(군주·드래곤·원수 전투, 구사일생, 침공 방어 등 — 길드가 본 것만)으로 카메라·자막, 길드원 전기 | 이재혁 | 완료 | Director/(신규: HighlightRules·HighlightService·SpectatorCamera), CameraControl/CameraController(`LastManualInput`), UI/Views/SpectatorCardView(신규)·HudView("관전" 버튼)·AdventurerDetailView("전기"), AdventurerData.chronicle. **KMS 참고**: `Legacy/GuildLegacy.TryLastStand`가 `LastStandEvent`를 발행하도록 한 줄 추가 | a7e3d5f |
 | P4-130 | 마을 소식지(F-9, 사용자 선택 2026-11-05): 매일 아침 6시 "어제의 마을 소식" 기사 3~5개(사건 전부에서 점수순, 쓰인 문장만), 창이 저절로 열리고 게임이 멈춤, 누르면 그 인물·장소로 | 이재혁 | 완료 | Reports/NewsDesk·NewsRules(신규), UI/Views/NewspaperView(신규, O)·DailyReportView("소식지" 버튼), Director/HighlightService(`Highlight.FoeName`), Notifications(`NotificationTarget.News` — enum 끝에 추가). **KMS 참고**: 마을 대화(`TownTalkEvent`의 다툼·화해·다독임)도 기사가 됨 | 048cb0c |
-| P4-131 | 관계가 전투에(F-12, 사용자 선택 2026-11-05): 파티 궁합·라이벌·멘토 | 이재혁 | 예정 | Units/Combat, Adventurers/PartyService, Social | |
+| P4-131 | 관계가 전투에(F-12, 사용자 선택 2026-11-05): 파티 궁합·라이벌·멘토. 사용자 결정 2026-11-08: 궁합(친구·앙숙)·라이벌·멘토 셋 다, 보너스 작게, 파티 짜기는 파티원끼리도 봄, 상세 창 + 전투 연출 | 이재혁 | 진행 중 | Units/Combat, Adventurers/PartyService, Social | |
 | P4-132 | 길드 마스터 지휘(게임성 제안 H6 = F-16, 사용자 선택 2026-11-05): 응원·집결 깃발·후퇴 나팔, 따르는 정도는 관계·충성 | 이재혁 | 예정 | Player, Adventurers, UI | |
 | P4-133 | 의뢰 종류 확장(F-5, 사용자 선택 2026-11-05): 정찰·채집·배달, 아이템 보상 — 의뢰처는 마을·의뢰인(P4-82 그대로) | 이재혁 | 예정 | Quests/QuestBoard, Town/TownQuestPoster | |
 | P4-134 | 주민 부탁과 마을 평판(F-14, 사용자 선택 2026-11-05): 주민의 작은 부탁(F-5 종류를 씀), 보답 할인, 마을 평판 → 방문자 | 이재혁 | 예정 | Social/ResidentService, Quests, Recruitment | |
+| P4-135 | dev/KMS 7a2ec7f 병합(길드원 창 파티 보드형·사건 카드 창 디자인·대사). 사용자 결정 2026-11-08: 사건 카드 두 파일은 main대로 지우고(P4-118) KMS 디자인(방향·수치 칩, 남은 시간 막대, 인물 칩, 내용 크기 창)은 결정 카드 창(J)으로 옮김, UIRoot는 양쪽 다, WatchRuinView.cs.meta는 main GUID | 이재혁 | 진행 중 | UI/Views/DilemmaView·RosterView, UIRoot, Dilemmas, Social/TalkBank·TownTalkService | |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로) | 이재혁 | 예정 | 빌드 설정 | |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로. KMS가 구현해 P4-117 병합으로 들어옴(`Audio/SoundService`, `Resources/Audio`, 설정 창 볼륨) | KMS | 완료 | Audio(신규), Resources/Audio, UI/Views/SettingsView | 8cff428 |
@@ -172,8 +173,8 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: 없음
-- **예정**: P4-131 F-12 관계·전투 → P4-132 H6 지휘 → P4-133 F-5 의뢰 종류 → P4-134 F-14 주민 부탁 → P5-5 Windows 빌드(맨 마지막)
+- **진행 중**: P4-135 dev/KMS 병합 → P4-131 F-12 관계·전투
+- **예정**: P4-132 H6 지휘 → P4-133 F-5 의뢰 종류 → P4-134 F-14 주민 부탁 → P5-5 Windows 빌드(맨 마지막)
 - **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-130, P5-1 ~ P5-4 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
