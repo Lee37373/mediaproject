@@ -211,24 +211,8 @@ namespace GuildMaster.Dilemmas
 
         // ---------------- Words ----------------
 
-        public static string HintText(DilemmaHint h) => h switch
-        {
-            DilemmaHint.GoldUp => "골드 ↑",
-            DilemmaHint.GoldDown => "골드 ↓",
-            DilemmaHint.MoodUp => "기분 ↑",
-            DilemmaHint.MoodDown => "기분 ↓",
-            DilemmaHint.FameUp => "명성 ↑",
-            DilemmaHint.FameDown => "명성 ↓",
-            DilemmaHint.StockUp => "물자 ↑",
-            DilemmaHint.StockDown => "물자 ↓",
-            DilemmaHint.Growth => "성장",
-            DilemmaHint.Tired => "피로",
-            DilemmaHint.Risk => "운에 맡김",
-            DilemmaHint.Later => "나중에 무슨 일이",
-            DilemmaHint.Leaving => "누군가 떠날 수도",
-            DilemmaHint.TownUp => "주민 평판 ↑",
-            _ => "주민 평판 ↓",
-        };
+        /// <summary>A hint's words (the window shows them as chips, <see cref="DilemmaChips"/>).</summary>
+        public static string HintText(DilemmaHint h) => DilemmaChips.Of(h).Text;
 
         public static string Hints(IReadOnlyList<DilemmaHint> hints) => hints.Count == 0 ? "변화 없음" : string.Join(" · ", hints.Select(HintText));
 

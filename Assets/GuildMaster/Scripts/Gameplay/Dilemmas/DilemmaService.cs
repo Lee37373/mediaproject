@@ -19,8 +19,19 @@ namespace GuildMaster.Dilemmas
     /// <summary>A decision card was dealt (P4-111c).</summary>
     public struct DilemmaDealtEvent { public Dilemma Card; }
 
-    /// <summary>A decision card was decided: by the guild master, or by the default when the time ran out. Tone: how the result reads (P4-118).</summary>
-    public struct DilemmaResolvedEvent { public Dilemma Card; public int Choice; public bool ByDeadline; public string Result; public DilemmaTone Tone; }
+    /// <summary>
+    /// A decision card was decided: by the guild master, or by the default when the time ran out. Tone: how the result reads
+    /// (P4-118). Changes: what it actually did, with the numbers (P4-135, the window's chips).
+    /// </summary>
+    public struct DilemmaResolvedEvent
+    {
+        public Dilemma Card;
+        public int Choice;
+        public bool ByDeadline;
+        public string Result;
+        public DilemmaTone Tone;
+        public IReadOnlyList<DilemmaChip> Changes;
+    }
 
     /// <summary>A dealt card: whom and what it is about, its amounts for the day it came, and when it must be answered.</summary>
     public sealed class Dilemma
@@ -241,8 +252,9 @@ namespace GuildMaster.Dilemmas
             // The cast remember it (from the event cards: their talks and counselling bring it up).
             foreach (var id in card.Actors)
                 if (Member(id) is { } a) AdventurerMemory.Add(a.Data.memories, Now, 1, $"결정 '{card.Title}': {result}", "dilemma:" + card.Def.Id);
-            Debug.Log($"[Dilemma] #{card.Id} {card.Def.Id} → {choice}{(byDeadline ? " (deadline)" : "")} {tone}: {result}");
-            EventBus.Publish(new DilemmaResolvedEvent { Card = card, Choice = choice, ByDeadline = byDeadline, Result = result, Tone = tone });
+            var changes = effects.Changes.Chips();
+            Debug.Log($"[Dilemma] #{card.Id} {card.Def.Id} → {choice}{(byDeadline ? " (deadline)" : "")} {tone}: {result} [{string.Join(", ", changes)}]");
+            EventBus.Publish(new DilemmaResolvedEvent { Card = card, Choice = choice, ByDeadline = byDeadline, Result = result, Tone = tone, Changes = changes });
         }
 
         // ---------------- What the guild has and knows ----------------
@@ -338,6 +350,8 @@ namespace GuildMaster.Dilemmas
             public readonly List<string> Notes = new();
             /// <summary>How a rolled choice went (null: it was not rolled).</summary>
             public bool? Rolled;
+            /// <summary>What it actually did, for the window's chips (P4-135).</summary>
+            public readonly DilemmaChangeLog Changes = new();
 
             public Effects(DilemmaService s, Dilemma card)
             {
@@ -354,62 +368,112 @@ namespace GuildMaster.Dilemmas
                 return a == null ? Enumerable.Empty<Adventurer>() : new[] { a };
             }
 
+            /// <summary>Whose change a chip names: the member's, or "(전원)" / <paramref name="all"/> for everyone's.</summary>
+            string Whose(int actor, string what, string all = "전원")
+                => actor < 0 ? $"{what}({all})" : $"{(actor < _card.Names.Count ? _card.Names[actor] : "길드원")} {what}";
+
             public int G(int index) => index >= 0 && index < _card.Gold.Length ? _card.Gold[index] : 0;
             public bool Chance(float p) => _rng.Value < p;
 
             public void Gold(int amount)
             {
                 var t = _s._treasury;
-                if (amount > 0) t.AddGold(amount, GoldReason.Decision);
-                else if (amount < 0) t.TrySpendGold(Mathf.Min(-amount, t.Gold), GoldReason.Decision);
+                if (amount > 0)
+                {
+                    t.AddGold(amount, GoldReason.Decision);
+                    Changes.Add("골드", amount);
+                }
+                else if (amount < 0)
+                {
+                    int spent = Mathf.Min(-amount, t.Gold);
+                    if (t.TrySpendGold(spent, GoldReason.Decision)) Changes.Add("골드", -spent);
+                }
             }
 
             public void Stock(string itemId, int count)
             {
                 var t = _s._treasury;
-                if (count > 0) t.AddStock(itemId, count);
-                else if (count < 0) t.TryRemoveStock(itemId, Mathf.Min(-count, t.GetStock(itemId)));
+                int moved = 0;
+                if (count > 0)
+                {
+                    t.AddStock(itemId, count);
+                    moved = count;
+                }
+                else if (count < 0)
+                {
+                    int taken = Mathf.Min(-count, t.GetStock(itemId));
+                    if (taken > 0 && t.TryRemoveStock(itemId, taken)) moved = -taken;
+                }
+                string name = Services.TryGet<GameDatabase>(out var db) ? db.Item(itemId)?.displayName : null;
+                Changes.Add(string.IsNullOrEmpty(name) ? "물자" : name, moved);
             }
 
             public void Think(int actor, ThoughtDef def, int about = -1)
             {
                 string aboutId = about >= 0 && about < _card.Actors.Count ? _card.Actors[about] : null;
                 string name = about >= 0 && about < _card.Names.Count ? _card.Names[about] : null;
-                foreach (var a in Who(actor).ToList()) ThoughtRecorder.Give(a, def, aboutId, name);
+                var who = Who(actor).ToList();
+                foreach (var a in who) ThoughtRecorder.Give(a, def, aboutId, name);
+                if (who.Count > 0) Changes.Add(Whose(actor, "기분"), def.Mood);
             }
 
             public void ThinkOthers(ThoughtDef def)
             {
-                foreach (var a in _s.Members().Where(a => !_card.Actors.Contains(a.Data.id)).ToList()) ThoughtRecorder.Give(a, def);
+                var others = _s.Members().Where(a => !_card.Actors.Contains(a.Data.id)).ToList();
+                foreach (var a in others) ThoughtRecorder.Give(a, def);
+                if (others.Count > 0) Changes.Add("기분(다른 길드원)", def.Mood);
             }
 
             public void Stress(int actor, float amount)
             {
-                foreach (var a in Who(actor)) a.Data.stress = Mathf.Clamp(a.Data.stress + amount, 0f, 100f);
+                bool any = false;
+                foreach (var a in Who(actor))
+                {
+                    a.Data.stress = Mathf.Clamp(a.Data.stress + amount, 0f, 100f);
+                    any = true;
+                }
+                if (any) Changes.Add(Whose(actor, "스트레스"), amount, goodWhenUp: false);
             }
 
             /// <summary>Everyone's (-1) here means those idle in town: the ones the work was asked of.</summary>
             public void Fatigue(int actor, float amount)
             {
+                bool any = false;
                 foreach (var a in Who(actor).Where(a => actor >= 0 || _s.IsIdleInTown(a)))
+                {
                     a.Data.fatigue = Mathf.Clamp(a.Data.fatigue + amount, 0f, 100f);
+                    any = true;
+                }
+                if (any) Changes.Add(Whose(actor, "피로", "마을"), amount, goodWhenUp: false);
             }
 
             public void Fame(int amount)
             {
-                if (amount != 0 && Services.TryGet<Guild.GuildRankService>(out var rank)) rank.AddFame(amount, $"결정: {_card.Title}");
+                if (amount != 0 && Services.TryGet<Guild.GuildRankService>(out var rank))
+                {
+                    rank.AddFame(amount, $"결정: {_card.Title}");
+                    Changes.Add("명성", amount);
+                }
             }
 
             public void Relate(int a, int b, int delta)
             {
                 var from = Who(a).FirstOrDefault();
                 var to = Who(b).FirstOrDefault();
-                if (from != null && to != null) Relationships.Add(from, to, delta, "길드의 결정");
+                if (from == null || to == null) return;
+                Relationships.Add(from, to, delta, "길드의 결정");
+                Changes.Bond(from.Data.name, to.Data.name, delta);
             }
 
             public void Exp(int actor, int amount)
             {
-                foreach (var a in Who(actor)) a.GainExp(amount);
+                bool any = false;
+                foreach (var a in Who(actor))
+                {
+                    a.GainExp(amount);
+                    any = true;
+                }
+                if (any) Changes.Add(Whose(actor, "경험치"), amount);
             }
 
             public void Depart(int actor, string notice)
@@ -418,31 +482,49 @@ namespace GuildMaster.Dilemmas
                 if (a == null) return;
                 string text = _card.Fill(notice);
                 Told.Add(text);
+                Changes.Mark($"{a.Data.name} 떠남", -1);
                 if (Services.TryGet<Welfare.GuildWelfare>(out var welfare)) welfare.Release(a, text);
                 else _s._roster.Dismiss(a);
             }
 
-            public bool Visitor() => Services.TryGet<VisitorService>(out var v) && v.SpawnVisitor() != null;
+            public bool Visitor()
+            {
+                bool came = Services.TryGet<VisitorService>(out var v) && v.SpawnVisitor() != null;
+                if (came) Changes.Mark("방문자가 옴", 1);
+                return came;
+            }
 
-            public bool RuinRumour() => Rumour(Services.TryGet<IncidentService>(out var i) ? i.StartRuin() : null);
+            public bool RuinRumour() => Rumour(Services.TryGet<IncidentService>(out var i) ? i.StartRuin() : null, "유적 소문");
 
-            public bool RareRumour() => Rumour(Services.TryGet<IncidentService>(out var i) ? i.StartRareMonster() : null);
+            public bool RareRumour() => Rumour(Services.TryGet<IncidentService>(out var i) ? i.StartRareMonster() : null, "희귀 몬스터 소문");
 
             /// <summary>The word comes now, with the card (not an hour or two later as a rumour would).</summary>
-            bool Rumour(Incident incident)
+            bool Rumour(Incident incident, string chip)
             {
                 if (incident == null) return false;
                 incident.RumourAtHour = _s.Now;
+                Changes.Mark(chip, 1);
                 return true;
             }
 
             public void RepairGates()
             {
                 if (!Services.TryGet<GateService>(out var gates)) return;
-                foreach (var g in gates.Gates) if (g.Hp < g.MaxHp) g.RepairFull();
+                bool any = false;
+                foreach (var g in gates.Gates)
+                    if (g.Hp < g.MaxHp)
+                    {
+                        g.RepairFull();
+                        any = true;
+                    }
+                if (any) Changes.Mark("성문 수리", 1);
             }
 
-            public void CutTax(float share) => _s._treasury.CutTodaysTax(share);
+            public void CutTax(float share)
+            {
+                _s._treasury.CutTodaysTax(share);
+                if (share > 0f) Changes.Mark($"오늘 세금 −{Mathf.RoundToInt(share * 100f)}%", -1);
+            }
 
             public void FollowUp(string id, float hours)
             {
@@ -463,8 +545,18 @@ namespace GuildMaster.Dilemmas
             public void Standing(int amount, string residentId = null)
             {
                 if (amount == 0 || !Services.TryGet<ResidentService>(out var residents)) return;
-                if (residentId != null) residents.Find(residentId)?.Profile.AddOpinion(amount);
-                else foreach (var r in residents.Residents) r?.Profile.AddOpinion(amount);
+                if (residentId != null)
+                {
+                    var r = residents.Find(residentId);
+                    if (r == null) return;
+                    r.Profile.AddOpinion(amount);
+                    Changes.Add($"{r.Profile.Name} 호감", amount);
+                }
+                else
+                {
+                    foreach (var r in residents.Residents) r?.Profile.AddOpinion(amount);
+                    Changes.Add("주민 평판", amount);
+                }
             }
 
             public void Rumor(string text, int tone = 0)
@@ -476,6 +568,7 @@ namespace GuildMaster.Dilemmas
                     foreach (var id in DilemmaRules.Chatterboxes)
                         if (residents.Find(id) != null) knownBy.Add(id);
                 town.Rumors.Add(_card.Fill(text), _s.Now, knownBy, subjects, guildTone: tone, subjectTone: subjects.Count > 0 ? tone : 0);
+                Changes.Mark(tone > 0 ? "좋은 소문" : tone < 0 ? "나쁜 소문" : "소문이 돎", tone);
             }
 
             public void Feel(int actor, Emotion feeling, float hours = 5f)
@@ -491,6 +584,7 @@ namespace GuildMaster.Dilemmas
                 if (item == null) return false;
                 a.Data.gearTier = item.gearTier;
                 a.RecalculateStats();
+                Changes.Mark($"{a.Data.name} 장비 ▲", 1);
                 return true;
             }
 
@@ -506,6 +600,7 @@ namespace GuildMaster.Dilemmas
                 v.RecalculateStats(true);
                 if (welcomed) d.recruitAffinity = DilemmaRules.WelcomedAffinity;
                 Notes.Add($"({d.name}, {AdventurerData.ClassLabel(d.cls)} Lv.{d.level})");
+                Changes.Mark("떠돌이 고수가 옴", 1);
                 return true;
             }
 

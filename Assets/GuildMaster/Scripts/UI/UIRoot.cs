@@ -117,7 +117,8 @@ namespace GuildMaster.UI
             // The bestiary (P4-107).
             AddWindow<BestiaryView>(menu, "몬스터 도감 (K)", Key.K, new Vector2(1000, 640));
             // Decision cards (P4-111c).
-            AddWindow<DilemmaView>(menu, "결정 (J)", Key.J, new Vector2(900, 820)); // P4-118: opens by itself on a new card
+            // P4-118: opens by itself on a new card. P4-135: as tall as what it shows (up to 820), KMS's card width.
+            AddWindow<DilemmaView>(menu, "결정 (J)", Key.J, new Vector2(760, 820));
             // The guild's rules (P4-112, H2).
             AddWindow<GuildLawView>(menu, "길드 규칙 (P)", Key.P, new Vector2(980, 760));
             // Who gets along with whom, and how everyone feels (F-10). G went to the guild rank at the 2026-10-31 merge.

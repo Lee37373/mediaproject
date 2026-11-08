@@ -6309,8 +6309,15 @@ namespace GuildMaster.Tests
                 Assert.That(cards.CannotChoose(invest, 0), Is.Not.Null, "nothing in the vault");
                 Assert.That(cards.Choose(invest, 0), Is.False);
                 treasury.AddGold(gold);
+                Dilemmas.DilemmaResolvedEvent? paid = null;
+                System.Action<Dilemmas.DilemmaResolvedEvent> onPaid = e => paid = e;
+                EventBus.Subscribe(onPaid);
                 Assert.That(cards.Choose(invest, 0), Is.True);
+                EventBus.Unsubscribe(onPaid);
                 Assert.That(treasury.Gold, Is.EqualTo(gold - invest.Gold[0]), "paid in");
+                // P4-135: what it did, with the numbers, for the window's chips.
+                Assert.That(paid?.Changes?.Any(c => c.Text == $"골드 −{invest.Gold[0]}" && c.Sign < 0), Is.True,
+                    "the gold it took shows: " + string.Join(", ", paid?.Changes ?? new System.Collections.Generic.List<Dilemmas.DilemmaChip>()));
                 Assert.That(cards.Open.Contains(invest), Is.False, "decided");
                 view.Close();
                 yield return null;
