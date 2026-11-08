@@ -445,9 +445,12 @@ namespace GuildMaster.Social
             var outcome = TownTalkRules.RollOutcome(p.Kind, ctx, GameRandom.Shared.Value);
             var sideA = TalkSide.Of(p.A);
             var sideB = TalkSide.Of(p.B);
+            var world = World();
+            _bank.NowSeason = Seasons.SeasonService.Now.ToString();
+            _bank.NowNight = world.Night;
             var script = PickEitherWay(p, ref outcome, ref sideA, ref sideB);
             if (script == null) return false;
-            var lines = TalkBank.Render(script, sideA, sideB, p.Rumor?.Text);
+            var lines = TalkBank.Render(script, sideA, sideB, p.Rumor?.Text, world, () => GameRandom.Shared.Value);
             if (lines.Count < 2) return false;
             if (!string.IsNullOrEmpty(script.about)) p.Detail = script.about;
             _recentScripts.Add(script.id);
@@ -457,6 +460,35 @@ namespace GuildMaster.Social
             FixedTalks--; // Play counted it as a fixed talk
             Debug.Log($"[TOWN-TALK] script {script.id} ({p.A.Name}:{sideA.Register}/{sideA.Values} → {p.B.Name}:{sideB.Register}/{sideB.Values})");
             return true;
+        }
+
+        /// <summary>
+        /// The world's words for a talk (2026-11-02): the season, whether it is night, a kind of monster the guild has seen and
+        /// what it drops, and a place the guild knows — so the same script reads differently through the game.
+        /// </summary>
+        static TalkWorld World()
+        {
+            var w = TalkWorld.Default;
+            var rng = GameRandom.Shared;
+            w.Season = Seasons.SeasonRules.Name(Seasons.SeasonService.Now);
+            if (Services.TryGet<GameClock>(out var clock)) w.Night = clock.Hour >= 20 || clock.Hour < 6;
+            if (Services.TryGet<Bestiary.BestiaryService>(out var bestiary))
+            {
+                var seen = bestiary.Seen.Where(m => m != null && !m.isRegionLord && !string.IsNullOrEmpty(m.displayName)).ToList();
+                if (seen.Count > 0)
+                {
+                    var m = seen[rng.Range(0, seen.Count)];
+                    w.Monster = m.displayName;
+                    var drops = m.loot.Where(l => l?.item != null && !string.IsNullOrEmpty(l.item.displayName)).ToList();
+                    if (drops.Count > 0) w.Loot = drops[rng.Range(0, drops.Count)].item.displayName;
+                }
+            }
+            if (Services.TryGet<Places.PlaceService>(out var places))
+            {
+                var known = places.Known().ToList();
+                if (known.Count > 0) w.Place = known[rng.Range(0, known.Count)].Name();
+            }
+            return w;
         }
 
         /// <summary>

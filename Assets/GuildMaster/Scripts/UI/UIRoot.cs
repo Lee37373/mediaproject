@@ -96,7 +96,7 @@ namespace GuildMaster.UI
             UIBuilder.VLayout(menu, 6, 0);
 
             AddWindow<QuestBoardView>(menu, "의뢰 게시판 (Q)", Key.Q, new Vector2(1180, 680));
-            AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1000, 560));
+            AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1200, 680)); // 2026-11-05: party board
             AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
             // Food and quest payments (economy round 2, 2026-10-29).
             AddWindow<HouseholdView>(menu, "살림 (U)", Key.U, new Vector2(820, 740));
@@ -132,7 +132,7 @@ namespace GuildMaster.UI
             // Opened from the quest board ("설득") once a quest has stayed untaken (P4-24).
             AddWindow<PersuadeDialogView>(null, null, Key.None, new Vector2(1040, 700));
             AddWindow<BuildingView>(null, null, Key.None, new Vector2(560, 450));
-            AddWindow<WatchRuinView>(null, null, Key.None, new Vector2(520, 330)); // the ruined watchtower's lookout (2026-11-02)
+            AddWindow<WatchRuinView>(null, null, Key.None, new Vector2(520, 300)); // the ruined watchtower's lookout (2026-11-02)
             AddWindow<DialogueLogView>(null, null, Key.None, new Vector2(760, 560));
             // Opened from the inspector and roster [상세] buttons (P4-6).
             AddWindow<AdventurerDetailView>(null, null, Key.None, new Vector2(1080, 800)); // 700 → 800: 전기 (P4-129)

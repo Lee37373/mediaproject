@@ -16,6 +16,28 @@ namespace GuildMaster.Social
         public string t;
         /// <summary>The line for a member or visitor: warm / formal / curt / haughty (NpcVoice.Register).</summary>
         public string w, f, c, h;
+        /// <summary>Other ways of saying the same line (2026-11-02, more variety): one of the line and these is picked each time.</summary>
+        public TalkAltDto[] alt;
+    }
+
+    /// <summary>Another wording of a line (same meaning, so the talk still hangs together).</summary>
+    [Serializable]
+    public class TalkAltDto
+    {
+        public string t, w, f, c, h;
+    }
+
+    /// <summary>
+    /// What the world is like at the moment of a talk (2026-11-02): fills {season}, {monster}, {loot} and {place} so one
+    /// script reads differently through the game.
+    /// </summary>
+    public struct TalkWorld
+    {
+        public string Season, Monster, Loot, Place;
+        public bool Night;
+
+        /// <summary>What a talk says when the guild knows nothing yet (the slimes by the town are always there).</summary>
+        public static TalkWorld Default => new() { Season = "봄", Monster = "슬라임", Loot = "슬라임 젤", Place = "숲" };
     }
 
     /// <summary>A written four-line town talk and when it fits.</summary>
@@ -33,6 +55,10 @@ namespace GuildMaster.Social
         public string resA, resB;
         /// <summary>What a quarrel was about (kept for making up later).</summary>
         public string about;
+        /// <summary>Only in this season ("Spring", "Summer", "Autumn", "Winter"; empty = any) — favoured then (2026-11-02).</summary>
+        public string season;
+        /// <summary>Only at this time ("day" 6–20 h, "night"; empty = any).</summary>
+        public string time;
         public int weight = 1;
         public TalkLineDto[] lines;
     }
@@ -89,6 +115,10 @@ namespace GuildMaster.Social
         readonly List<Entry> _entries = new();
 
         public int Count => _entries.Count;
+
+        /// <summary>The season and time of day now, for scripts written for one (null: every script fits).</summary>
+        public string NowSeason;
+        public bool? NowNight;
         public IEnumerable<TalkScriptDto> Scripts { get { foreach (var e in _entries) yield return e.Dto; } }
 
         public static TalkBank FromJson(params string[] jsons)
@@ -142,11 +172,21 @@ namespace GuildMaster.Social
             return string.IsNullOrEmpty(values) || values == side.Values;
         }
 
+        /// <summary>Whether a script written for a season or time of day fits now (null now: anything goes).</summary>
+        public static bool WhenFits(TalkScriptDto s, string nowSeason, bool? nowNight)
+        {
+            if (!string.IsNullOrEmpty(s.season) && nowSeason != null && s.season != nowSeason) return false;
+            if (!string.IsNullOrEmpty(s.time) && nowNight.HasValue && (s.time == "night") != nowNight.Value) return false;
+            return true;
+        }
+
         /// <summary>How likely this script is for the pair (0 = it does not fit).</summary>
         public static float Weight(TalkScriptDto s, TalkSide a, TalkSide b)
         {
             if (!SideFits(s.a, s.valueA, s.resA, a) || !SideFits(s.b, s.valueB, s.resB, b)) return 0f;
             float w = Math.Max(1, s.weight);
+            // Written for this season or time of day: it comes up more then (it never comes up otherwise, WhenFits).
+            if (!string.IsNullOrEmpty(s.season) || !string.IsNullOrEmpty(s.time)) w *= SpecificBonus;
             if (!string.IsNullOrEmpty(s.valueA) || !string.IsNullOrEmpty(s.resA)) w *= SpecificBonus;
             if (!string.IsNullOrEmpty(s.valueB) || !string.IsNullOrEmpty(s.resB)) w *= SpecificBonus;
             return w;
@@ -163,6 +203,7 @@ namespace GuildMaster.Social
             foreach (var e in _entries)
             {
                 if (e.Kind != kind || e.Outcome != outcome) continue;
+                if (!WhenFits(e.Dto, NowSeason, NowNight)) continue;
                 float w = Weight(e.Dto, a, b);
                 if (w <= 0f) continue;
                 if (recent != null && recent.Contains(e.Dto.id)) stale.Add((e.Dto, w));
@@ -185,17 +226,31 @@ namespace GuildMaster.Social
 
         /// <summary>The line as this speaker says it.</summary>
         public static string LineFor(TalkLineDto line, TalkSide speaker)
+            => line == null ? "" : Voice(line.t, line.w, line.f, line.c, line.h, speaker);
+
+        /// <summary>The line or one of its other wordings (<see cref="TalkLineDto.alt"/>), as this speaker says it.</summary>
+        public static string LineFor(TalkLineDto line, TalkSide speaker, Func<float> roll)
         {
             if (line == null) return "";
-            if (speaker.Kind == TalkerKind.Resident || speaker.Kind == TalkerKind.Merchant) return FirstOf(line.t, line.w);
+            int n = line.alt?.Length ?? 0;
+            int i = n == 0 || roll == null ? 0 : Math.Min(n, (int)(Mathf.Clamp01(roll()) * (n + 1)));
+            if (i == 0) return LineFor(line, speaker);
+            var a = line.alt[i - 1];
+            string text = a == null ? "" : Voice(a.t, a.w, a.f, a.c, a.h, speaker);
+            return string.IsNullOrEmpty(text) ? LineFor(line, speaker) : text;
+        }
+
+        static string Voice(string t, string w, string f, string c, string h, TalkSide speaker)
+        {
+            if (speaker.Kind == TalkerKind.Resident || speaker.Kind == TalkerKind.Merchant) return FirstOf(t, w);
             string byLevel = speaker.Register switch
             {
-                NpcVoice.Register.Formal => line.f,
-                NpcVoice.Register.Curt => line.c,
-                NpcVoice.Register.Haughty => line.h,
-                _ => line.w,
+                NpcVoice.Register.Formal => f,
+                NpcVoice.Register.Curt => c,
+                NpcVoice.Register.Haughty => h,
+                _ => w,
             };
-            return FirstOf(byLevel, line.w, line.t);
+            return FirstOf(byLevel, w, t);
         }
 
         static string FirstOf(params string[] options)
@@ -222,15 +277,42 @@ namespace GuildMaster.Social
             return s.Replace("{rumor}", (rumor ?? "").Trim().TrimEnd('.', ' '));
         }
 
+        /// <summary>Fills the world's words (2026-11-02): {season}, {monster}, {loot}, {place}, with the particles that follow them.</summary>
+        public static string FillWorld(string text, TalkWorld world)
+        {
+            if (string.IsNullOrEmpty(text) || text.IndexOf('{') < 0) return text ?? "";
+            var d = TalkWorld.Default;
+            var s = text;
+            foreach (var (key, raw, fallback) in new[]
+                     {
+                         ("season", world.Season, d.Season), ("monster", world.Monster, d.Monster),
+                         ("loot", world.Loot, d.Loot), ("place", world.Place, d.Place),
+                     })
+            {
+                string n = string.IsNullOrEmpty(raw) ? fallback : raw;
+                s = s.Replace("{" + key + "이}", n + MemoryRecorder.Josa(n, "이", "가"))
+                     .Replace("{" + key + "을}", n + MemoryRecorder.Josa(n, "을", "를"))
+                     .Replace("{" + key + "와}", n + MemoryRecorder.Josa(n, "과", "와"))
+                     .Replace("{" + key + "은}", n + MemoryRecorder.Josa(n, "은", "는"))
+                     .Replace("{" + key + "으로}", n + MemoryRecorder.Josa(n, "으로", "로"))
+                     .Replace("{" + key + "}", n);
+            }
+            return s;
+        }
+
         /// <summary>The script as lines to play: (0 = A speaks, 1 = B speaks, text).</summary>
         public static List<(int speaker, string text)> Render(TalkScriptDto script, TalkSide a, TalkSide b, string rumor)
+            => Render(script, a, b, rumor, TalkWorld.Default, null);
+
+        /// <summary>As above, with the world's words filled and each line's wording picked by <paramref name="roll"/> (null: the first).</summary>
+        public static List<(int speaker, string text)> Render(TalkScriptDto script, TalkSide a, TalkSide b, string rumor, TalkWorld world, Func<float> roll)
         {
             var result = new List<(int, string)>();
             if (script?.lines == null) return result;
             foreach (var line in script.lines)
             {
                 int who = line.s == "B" ? 1 : 0;
-                string text = Fill(LineFor(line, who == 0 ? a : b), a.Name, b.Name, rumor);
+                string text = FillWorld(Fill(LineFor(line, who == 0 ? a : b, roll), a.Name, b.Name, rumor), world);
                 if (!string.IsNullOrWhiteSpace(text)) result.Add((who, text));
             }
             return result;
