@@ -4410,6 +4410,15 @@ namespace GuildMaster.Tests
                 Unit.GuildInvulnerable = false;
                 Clock.SetSpeed(1);
             }
+            // P4-135: the fight ends with the break — the ones who had stopped the berserker went on hitting it (their engagement
+            // ran on) and shot it dead walking out on the quest below. Nobody is in a break from here: no blow between members.
+            var friendlyFire = new System.Collections.Generic.List<string>();
+            Action<UnitDamagedEvent> onFriendlyHit = e =>
+            {
+                if (e.Target is Adventurer v && e.Source is Adventurer k && !k.IsHostileTo(v) && friendlyFire.Count < 5)
+                    friendlyFire.Add($"{k.Data.name} → {v.Data.name}");
+            };
+            EventBus.Subscribe(onFriendlyHit);
 
             // Quitting at the worst: gone from the roster.
             var leaver = m[3];
@@ -4427,7 +4436,9 @@ namespace GuildMaster.Tests
             Assert.That(takers.Count, Is.GreaterThanOrEqualTo(2), "a party to walk off from: "
                 + string.Join(", ", Roster.Members.Select(a => $"{a.Data.name} {a.StateLabel} hp={a.HpRatio:0.00} q={a.CurrentQuest?.Id} alive={a.IsAlive}")));
             Clock.SetSpeed(2);
-            yield return WaitFor(() => takers.All(a => !town.IsInTown(a.Position)), 20f);
+            yield return WaitFor(() => takers.All(a => a == null || !a.IsAlive || !town.IsInTown(a.Position)), 20f);
+            EventBus.Unsubscribe(onFriendlyHit);
+            Assert.That(friendlyFire, Is.Empty, "no member hits a comrade once the break is over");
             var quitter = takers[takers.Count - 1];
             Assert.That(breaks.TryBreak(quitter, BreakSeverity.Minor, BreakKind.Sabotage), Is.True);
             Assert.That((quitter.StateLabel, quest.IsAssigned(quitter), quitter.CurrentQuest == null), Is.EqualTo(("따라다니는 중", false, true)),

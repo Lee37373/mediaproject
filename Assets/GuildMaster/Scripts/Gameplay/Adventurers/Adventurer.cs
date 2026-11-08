@@ -463,6 +463,9 @@ namespace GuildMaster.Adventurers
             Engage.CandidateFilter = extra == null ? threat : _anyFilter ??= IsAnyCandidate;
             Engage.SearchRadius = Mathf.Max(Stats.SightRadius, ComradeCryRadius);
 
+            // A comrade fought only while it was berserk (or in the fistfight): once it comes to, it is a comrade again and the
+            // fight is off — the engagement used to run on, and the one who had stopped a berserker shot it dead on the way out.
+            if (Engage.Target != null && !IsHostileTo(Engage.Target)) Engage.Clear();
             // Optional zone (town defense): drop targets outside it instead of chasing them.
             if (Engage.Target != null && allowed != null && !allowed(Engage.Target)) Engage.Clear();
             // A chase that pulls a member away from its party is called off (P4-38).
