@@ -531,5 +531,168 @@ namespace GuildMaster.Tests
             Assert.That(SaveService.Delete(0), Is.True);
             Assert.That(SaveService.Peek(0).Exists, Is.False);
         }
+
+        // ---------------- P6-1: the question window and the exit warning ----------------
+
+        static IEnumerator PressKey(UnityEngine.InputSystem.Key key)
+        {
+            var kb = UnityEngine.InputSystem.Keyboard.current ?? UnityEngine.InputSystem.InputSystem.AddDevice<UnityEngine.InputSystem.Keyboard>();
+            if (!kb.enabled) UnityEngine.InputSystem.InputSystem.EnableDevice(kb);
+            // A queued key can be dropped when the editor changes focus: queue it again until it is really down.
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                UnityEngine.InputSystem.InputSystem.QueueStateEvent(kb, new UnityEngine.InputSystem.LowLevel.KeyboardState(key));
+                yield return null;
+                if (kb[key].isPressed) break;
+            }
+            yield return null;
+            UnityEngine.InputSystem.InputSystem.QueueStateEvent(kb, new UnityEngine.InputSystem.LowLevel.KeyboardState());
+            yield return null;
+        }
+
+        /// <summary>Lets this many game hours pass at the top speed (real-time capped).</summary>
+        static IEnumerator Play(float hours)
+        {
+            var clock = Services.Get<GameClock>();
+            clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+            float start = clock.TotalHours, end = Time.realtimeSinceStartup + 20f;
+            while (clock.TotalHours < start + hours && Time.realtimeSinceStartup < end) yield return null;
+            clock.SetSpeed(1);
+        }
+
+        /// <summary>
+        /// P6-1 (user decisions 2026-11-09) in one boot: leaving asks only with unsaved game time and holds the clock while
+        /// asking; ESC cancels and Enter takes the first button through the keyboard; a game never saved picks a slot and the
+        /// save leaves, a saved one saves into its own slot; overwriting, deleting, loading during play, demolishing and
+        /// dismissing all ask in the same window.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ExitWarning_AsksOnlyWithUnsavedTime_AndDestructiveActionsAskInOneWindow()
+        {
+            bool dilemmas = Dilemmas.DilemmaService.Enabled;
+            Dilemmas.DilemmaService.Enabled = false; // a card's window would hold the clock under the test
+            // Keys must reach the game even when the editor window is not focused (as SmokeTests.SetUp does).
+            var input = UnityEngine.InputSystem.InputSystem.settings;
+            var background = input.backgroundBehavior;
+            var editorInput = input.editorInputBehaviorInPlayMode;
+            input.backgroundBehavior = UnityEngine.InputSystem.InputSettings.BackgroundBehavior.IgnoreFocus;
+            input.editorInputBehaviorInPlayMode = UnityEngine.InputSystem.InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+            try
+            {
+                BootNow();
+                yield return null;
+                yield return null;
+                var dialog = Services.Get<ConfirmDialog>();
+                var clock = Services.Get<GameClock>();
+                var view = Object.FindFirstObjectByType<SaveLoadView>();
+                Assert.That(Saves.CleanAtHours, Is.EqualTo(Services.Get<GameBalance>().startHour).Within(0.01f), "a fresh game counts from its first hour");
+
+                yield return Play(0.5f);
+                string lost = ExitGuard.UnsavedText();
+                Assert.That(lost, Does.Contain("저장한 적이 없습니다"), "a fresh game counts from its start");
+                int left = 0;
+                ExitGuard.Request("타이틀로 나갈까요?", () => left++);
+                Assert.That(dialog.IsOpen, Is.True, "unsaved time: it asks");
+                Assert.That(dialog.ButtonsText, Is.EqualTo("저장하고 나가기… | 저장하지 않고 나가기 | 취소"));
+                Assert.That(clock.IsHeld && MenuState.IsOpen, Is.True, "the clock and the shortcuts wait for the answer");
+                float held = clock.TotalHours;
+                yield return null;
+                yield return null;
+                Assert.That(clock.TotalHours, Is.EqualTo(held), "no time passes while asking");
+                yield return PressKey(UnityEngine.InputSystem.Key.Escape);
+                Assert.That(dialog.IsOpen || left > 0, Is.False, "ESC cancels and stays");
+                Assert.That(clock.IsHeld || MenuState.IsOpen, Is.False, "and lets go of the clock");
+
+                // Never saved: "save and leave" opens the slots; closing them leaves nothing behind.
+                ExitGuard.Request("타이틀로 나갈까요?", () => left++);
+                dialog.Accept();
+                Assert.That(view.IsOpen, Is.True, "a game never saved picks a slot");
+                view.Hide();
+                Assert.That(left, Is.Zero, "closing the slots calls leaving off");
+                ExitGuard.Request("타이틀로 나갈까요?", () => left++);
+                dialog.Accept();
+                var onSave = typeof(SaveLoadView).GetMethod("OnSave", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                onSave.Invoke(view, new object[] { 0 });
+                Assert.That(left, Is.EqualTo(1), "saving into an empty slot leaves at once");
+                Assert.That(view.IsOpen, Is.False);
+                Assert.That(Saves.CurrentSlot, Is.EqualTo(0));
+                Assert.That(ExitGuard.UnsavedText(), Is.Null, "just saved: nothing to lose");
+                ExitGuard.Request("게임을 끝낼까요?", () => left++);
+                Assert.That(dialog.IsOpen, Is.False, "nothing to lose: no question");
+                Assert.That(left, Is.EqualTo(2));
+
+                // Saved before: Enter saves into its own slot and leaves.
+                yield return Play(0.5f);
+                Assert.That(ExitGuard.UnsavedText(), Does.Contain("슬롯 1에 저장한 뒤"));
+                ExitGuard.Request("게임을 끝낼까요?", () => left++);
+                Assert.That(dialog.ButtonsText, Does.StartWith("저장하고 나가기 (슬롯 1)"));
+                float now = clock.TotalHours;
+                yield return PressKey(UnityEngine.InputSystem.Key.Enter);
+                Assert.That(left, Is.EqualTo(3), "Enter takes the first button");
+                Assert.That(SaveService.Peek(0).Summary.total_hours, Is.EqualTo(now).Within(0.01f), "saved into slot 1 first");
+                Assert.That(ExitGuard.UnsavedText(), Is.Null);
+                ExitGuard.Request("게임을 끝낼까요?", () => left++);
+                yield return Play(0.3f);
+                ExitGuard.Request("게임을 끝낼까요?", () => left++);
+                dialog.Alternative();
+                Assert.That(left, Is.EqualTo(5), "leaving without saving leaves");
+                Assert.That(ExitGuard.UnsavedText(), Is.Not.Null, "and saved nothing");
+
+                // Overwriting, deleting and loading during play ask; cancelling keeps everything.
+                view.Show(canSave: true);
+                onSave.Invoke(view, new object[] { 0 });
+                Assert.That(dialog.TitleText, Is.EqualTo("슬롯 1에 덮어쓸까요?"));
+                Assert.That(dialog.BodyText, Does.Contain("이 게임을 마지막으로 저장한"));
+                dialog.Cancel();
+                Assert.That(SaveService.Peek(0).Summary.total_hours, Is.EqualTo(now).Within(0.01f), "cancelled: not overwritten");
+                typeof(SaveLoadView).GetMethod("OnLoad", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(view, new object[] { 0 });
+                Assert.That(dialog.TitleText, Is.EqualTo("슬롯 1을 불러올까요?"), "loading over unsaved time asks");
+                Assert.That(dialog.BodyText, Does.Contain("저장한 뒤 게임 시간"));
+                dialog.Cancel();
+                typeof(SaveLoadView).GetMethod("OnDelete", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(view, new object[] { 0 });
+                Assert.That(dialog.ButtonsText, Is.EqualTo("삭제 | 취소"));
+                dialog.Accept();
+                Assert.That(SaveService.Peek(0).Exists, Is.False, "deleted once confirmed");
+                view.Hide();
+
+                // Demolishing asks with what comes back.
+                DebugCommands.ExpandTown(true);
+                DebugCommands.ExpandTown(true);
+                Assert.That(DebugCommands.BuildFacility("Armory", 1), Does.StartWith("Armory Lv1"));
+                var town = Services.Get<Town.TownService>();
+                var armory = town.Buildings.Last(b => b.Type == Town.BuildingType.Armory);
+                var buildingView = Services.Get<BuildingView>();
+                buildingView.ShowBuilding(armory);
+                typeof(BuildingView).GetMethod("OnDemolish", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(buildingView, null);
+                Assert.That(dialog.TitleText, Does.Contain("철거할까요"));
+                Assert.That(dialog.BodyText, Does.Contain("돌려받기"));
+                dialog.Cancel();
+                Assert.That(town.Buildings.Any(b => b == armory), Is.True, "cancelled: still standing");
+                typeof(BuildingView).GetMethod("OnDemolish", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(buildingView, null);
+                dialog.Accept();
+                Assert.That(town.Buildings.Any(b => b == armory), Is.False, "demolished once confirmed");
+
+                // Dismissing asks with who it is.
+                var roster = Services.Get<Adventurers.GuildRoster>();
+                var member = roster.Members[0];
+                var care = Services.Get<MemberCareView>();
+                care.Show(member);
+                var fire = typeof(MemberCareView).GetMethod("Fire", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                fire.Invoke(care, null);
+                Assert.That(dialog.TitleText, Does.Contain(member.Data.name).And.Contain("해고할까요"));
+                dialog.Cancel();
+                Assert.That(roster.Members.Contains(member), Is.True, "cancelled: still a member");
+                fire.Invoke(care, null);
+                yield return PressKey(UnityEngine.InputSystem.Key.Enter);
+                Assert.That(roster.Members.Contains(member), Is.False, "dismissed once confirmed");
+                Assert.That(clock.IsHeld || MenuState.IsOpen, Is.False, "every question let go of the clock");
+            }
+            finally
+            {
+                Dilemmas.DilemmaService.Enabled = dilemmas;
+                input.backgroundBehavior = background;
+                input.editorInputBehaviorInPlayMode = editorInput;
+            }
+        }
     }
 }

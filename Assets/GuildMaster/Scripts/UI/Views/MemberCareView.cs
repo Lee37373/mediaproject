@@ -16,9 +16,6 @@ namespace GuildMaster.UI
     /// </summary>
     public class MemberCareView : UIPanel
     {
-        /// <summary>Real seconds a dismissal stays armed after the first click.</summary>
-        const float FireConfirmSeconds = 3f;
-
         public override string Title => "길드원 관리";
         protected override float RefreshInterval => 0.25f;
 
@@ -26,7 +23,6 @@ namespace GuildMaster.UI
         Text _header, _state, _result;
         ActionRow _interview, _leave, _bonus, _treat, _tribute, _fire;
         string _resultText = "";
-        float _fireArmedUntil;
 
         class ActionRow
         {
@@ -73,7 +69,6 @@ namespace GuildMaster.UI
         {
             _who = who;
             _resultText = "";
-            _fireArmedUntil = 0f;
             Open();
         }
 
@@ -178,12 +173,8 @@ namespace GuildMaster.UI
                 ? $"대화로 길드원의 돈을 받아냅니다 (소지금 {d.gold}G). 사정·명분·보답 약속이 통하고, 협박하면 빨리 뜯어내지만 스트레스와 원망이 쌓입니다."
                 : UIBuilder.Colored(tribute.Reason, UITheme.Warn);
 
-            bool armed = Time.unscaledTime < _fireArmedUntil;
             _fire.Button.interactable = true;
-            _fire.Button.SetLabel(armed ? "정말 해고" : "해고");
-            _fire.Desc.text = armed
-                ? UIBuilder.Colored("한 번 더 누르면 해고합니다.", UITheme.Bad)
-                : "길드에서 내보냅니다. 소지품은 가져가고, 친한 길드원은 마음이 무겁습니다.";
+            _fire.Desc.text = FireText;
         }
 
         static string Requested(MemberCare care, CareDemand kind) => care.Demand == kind ? " (요구)" : "";
@@ -201,7 +192,6 @@ namespace GuildMaster.UI
         void Interview()
         {
             if (_who == null || !Services.TryGet<GuildWelfare>(out var welfare)) return;
-            _fireArmedUntil = 0f;
             var check = welfare.CanInterview(_who);
             if (!check.Ok) { Report(CareResult.Fail(check.Reason)); Refresh(); return; }
             if (Services.TryGet<CounselDialogView>(out var talk)) talk.Show(_who);
@@ -213,7 +203,6 @@ namespace GuildMaster.UI
         void Tribute()
         {
             if (_who == null || !Services.TryGet<TributeService>(out var tributes) || !Services.TryGet<GameClock>(out var clock)) return;
-            _fireArmedUntil = 0f;
             var check = tributes.CanAsk(_who, clock.TotalHours);
             if (!check.Ok) { Report(CareResult.Fail(check.Reason)); Refresh(); return; }
             if (Services.TryGet<TributeDialogView>(out var talk)) talk.Show(_who);
@@ -224,7 +213,6 @@ namespace GuildMaster.UI
         void Treat()
         {
             if (_who == null || !Services.TryGet<Legacy.GuildLegacy>(out var legacy)) return;
-            _fireArmedUntil = 0f;
             Report(legacy.Treat(_who));
             Refresh();
         }
@@ -232,25 +220,30 @@ namespace GuildMaster.UI
         void Do(Func<GuildWelfare, CareResult> action)
         {
             if (_who == null || !Services.TryGet<GuildWelfare>(out var welfare)) return;
-            _fireArmedUntil = 0f;
             Report(action(welfare));
             Refresh();
         }
 
-        /// <summary>Dismissal needs two clicks within a few seconds.</summary>
+        const string FireText = "길드에서 내보냅니다. 소지품은 가져가고, 친한 길드원은 마음이 무겁습니다.";
+
+        /// <summary>Dismissal asks first in the shared question window (P6-1, user decision 2026-11-09).</summary>
         void Fire()
         {
-            if (_who == null || !Services.TryGet<GuildWelfare>(out var welfare)) return;
-            if (Time.unscaledTime >= _fireArmedUntil)
-            {
-                _fireArmedUntil = Time.unscaledTime + FireConfirmSeconds;
-                Refresh();
-                return;
-            }
-            _fireArmedUntil = 0f;
-            var result = welfare.Fire(_who);
+            if (_who == null || _who.Data == null || !Services.TryGet<GuildWelfare>(out _)) return;
+            var who = _who;
+            var d = who.Data;
+            ConfirmDialog.Ask($"{d.name}을(를) 해고할까요?",
+                $"{UIBuilder.Colored(d.name, UITheme.Accent)} · {AdventurerData.ClassLabel(d.cls)} Lv.{d.level} · 골드 {d.gold}\n{FireText}\n되돌릴 수 없습니다.",
+                "해고", () => FireNow(who));
+        }
+
+        void FireNow(Adventurer who)
+        {
+            // The member may have died or left while the question was open (the clock is held, but still).
+            if (who == null || !who.IsAlive || !Services.TryGet<GuildWelfare>(out var welfare)) return;
+            var result = welfare.Fire(who);
             Report(result);
-            if (result.Ok) _who = null;
+            if (result.Ok && _who == who) _who = null;
             Refresh();
         }
 

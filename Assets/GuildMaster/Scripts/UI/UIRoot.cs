@@ -172,6 +172,11 @@ namespace GuildMaster.UI
             _title.Build(HudLayer, _settings, _saves);
             _settings.Build(HudLayer);
             _saves.Build(HudLayer);
+            // P6-1: the shared question window above every menu, and the exit warning that uses it.
+            _confirm = HudLayer.gameObject.AddComponent<ConfirmDialog>();
+            _confirm.Build(HudLayer);
+            Services.Register(_confirm);
+            HudLayer.gameObject.AddComponent<ExitGuard>().Build(_saves, _title);
             // ` key: shortcut reference with toggle states (drawn above everything else).
             HudLayer.gameObject.AddComponent<KeyHelpView>().Build(HudLayer);
             // Hover tooltips sit above every window.
@@ -184,6 +189,7 @@ namespace GuildMaster.UI
         TitleView _title;
         SettingsView _settings;
         SaveLoadView _saves;
+        ConfirmDialog _confirm;
 
         void OnDestroy() => EventBus.Unsubscribe<MapPickingChangedEvent>(OnPicking);
 
@@ -267,6 +273,13 @@ namespace GuildMaster.UI
             RaiseClickedWindow();
             var kb = Keyboard.current;
             if (kb == null) return;
+            // An open question takes Enter (first button) and ESC (cancel) before anything else, typing or not (P6-1).
+            if (_confirm != null && _confirm.IsOpen)
+            {
+                if (kb.escapeKey.wasPressedThisFrame) _confirm.Cancel();
+                else if (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame) _confirm.Accept();
+                return;
+            }
             var es = EventSystem.current;
             bool typing = es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null;
             if (typing) return;

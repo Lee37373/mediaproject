@@ -539,6 +539,8 @@ namespace GuildMaster.Session
                 var warnings = save.Restore(load, loadSlot);
                 Debug.Log($"[GuildMaster] Save restored (slot {loadSlot}, day {load.summary.day}, {warnings.Count} warnings).");
             }
+            else save.MarkStart(clock.TotalHours); // P6-1: the exit warning counts from here
+
             GameSettings.Restoring = null;
 
             Debug.Log($"[GuildMaster] Session started. seed={Seed}, nests={map.Nests.Count}");

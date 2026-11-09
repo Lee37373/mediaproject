@@ -43,6 +43,34 @@ namespace GuildMaster.Save
 
         public IReadOnlyList<ISaveable> Saveables => _saveables;
 
+        // ---------------- What leaving would lose (P6-1) ----------------
+
+        /// <summary>Game hour (<see cref="GameClock.TotalHours"/>) of the last save or load, or of the start of a
+        /// game never saved (NaN until the composition root marks it — then nothing counts as unsaved).</summary>
+        public float CleanAtHours { get; private set; } = float.NaN;
+        /// <summary>Real time of the last save or load (null: this game was neither saved nor loaded yet).</summary>
+        public DateTime? CleanAtReal { get; private set; }
+        /// <summary>The game was loaded (true) rather than saved (false) at <see cref="CleanAtReal"/>.</summary>
+        public bool CleanByLoad { get; private set; }
+
+        /// <summary>The composition root marks a fresh game's first hour: nothing to lose yet.</summary>
+        public void MarkStart(float totalHours)
+        {
+            CleanAtHours = totalHours;
+            CleanAtReal = null;
+            CleanByLoad = false;
+        }
+
+        /// <summary>Game hours played since the last save or load (or the start) — 0 when leaving loses nothing.</summary>
+        public float UnsavedHours(float nowHours) => float.IsNaN(CleanAtHours) ? 0f : Mathf.Max(0f, nowHours - CleanAtHours);
+
+        void MarkClean(float totalHours, bool byLoad)
+        {
+            CleanAtHours = totalHours;
+            CleanAtReal = DateTime.Now;
+            CleanByLoad = byLoad;
+        }
+
         public void Register(ISaveable saveable)
         {
             if (saveable == null) return;
@@ -81,13 +109,15 @@ namespace GuildMaster.Save
             if (slot < 0 || slot >= SlotCount) { error = "슬롯 번호가 잘못되었습니다"; return false; }
             try
             {
-                var text = JsonUtility.ToJson(Capture());
+                var file = Capture();
+                var text = JsonUtility.ToJson(file);
                 Directory.CreateDirectory(Folder);
                 string path = PathOf(slot), temp = path + ".tmp";
                 File.WriteAllText(temp, text);
                 if (File.Exists(path)) File.Delete(path);
                 File.Move(temp, path);
                 CurrentSlot = slot;
+                MarkClean(file.summary.total_hours, byLoad: false);
                 return true;
             }
             catch (Exception e)
@@ -210,6 +240,7 @@ namespace GuildMaster.Save
             // A fresh stream rather than the seed's first numbers again (replay is not promised).
             GameRandom.Shared = new GameRandom(unchecked(file.seed * 31 + Mathf.RoundToInt(file.summary.total_hours * 60f)));
             CurrentSlot = slot;
+            MarkClean(Services.TryGet<GameClock>(out var clock) ? clock.TotalHours : file.summary.total_hours, byLoad: true);
             foreach (var w in ctx.Warnings) Debug.LogWarning("[Save] " + w);
             EventBus.Publish(new GameLoadedEvent { Slot = slot, Warnings = ctx.Warnings.Count });
             return ctx.Warnings;

@@ -138,13 +138,29 @@ namespace GuildMaster.UI
         static string Have(int have, int need, string name, string unit)
             => UIBuilder.Colored($"{name} {have}/{need}{unit}", have >= need ? UITheme.Good : UITheme.Bad);
 
+        /// <summary>Demolition asks first in the shared question window (P6-1, user decision 2026-11-09).</summary>
         void OnDemolish()
         {
-            if (_building == null || !Services.TryGet<ConstructionService>(out var construction)) return;
-            string name = _building.DisplayName;
-            if (construction.TryDemolish(_building, out var error))
+            if (_building == null || !Services.TryGet<ConstructionService>(out var construction) || !construction.CanDemolish(_building)) return;
+            var b = _building;
+            string name = b.DisplayName;
+            if (b.IsDestroyed)
+                ConfirmDialog.Ask($"{name}의 잔해를 치울까요?",
+                    "돌려받는 것은 없고, 치우면 [다시 세우기]로 되살릴 수 없습니다.",
+                    "잔해 치우기", () => DemolishNow(b));
+            else
+                ConfirmDialog.Ask($"{name}을(를) 철거할까요?",
+                    $"Lv.{b.Level} {name}을(를) 허물고 지은 값의 절반을 돌려받습니다.\n돌려받기: {UIBuilder.Colored(construction.RefundText(b), UITheme.Good)}\n되돌릴 수 없습니다.",
+                    "철거", () => DemolishNow(b));
+        }
+
+        void DemolishNow(Building b)
+        {
+            if (b == null || !Services.TryGet<ConstructionService>(out var construction)) return;
+            string name = b.DisplayName;
+            if (construction.TryDemolish(b, out var error))
             {
-                _building = null;
+                if (_building == b) _building = null;
                 _message.text = UIBuilder.Colored($"{name}을(를) 철거했습니다.", UITheme.Good);
                 Close();
             }

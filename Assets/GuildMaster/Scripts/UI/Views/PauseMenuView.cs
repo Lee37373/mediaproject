@@ -6,7 +6,7 @@ namespace GuildMaster.UI
 {
     /// <summary>
     /// ESC pause menu (P4-10): holds the game clock while open. Continue, save or load (P5-4),
-    /// settings, back to the title (a fresh world; what is not saved is lost), or quit.
+    /// settings, back to the title (a fresh world) or quit — both ask first when there is unsaved progress (P6-1, <see cref="ExitGuard"/>).
     /// </summary>
     public class PauseMenuView : MonoBehaviour
     {
@@ -32,9 +32,10 @@ namespace GuildMaster.UI
             UIBuilder.Button(box.transform, "저장하기", () => _saves.Show(canSave: true), -1, 44, null, 18);
             UIBuilder.Button(box.transform, "불러오기", () => _saves.Show(canSave: false), -1, 44, null, 18);
             UIBuilder.Button(box.transform, "설정", () => _settings.Show(), -1, 44, null, 18);
-            UIBuilder.Button(box.transform, "타이틀로", () => GameSettings.ReloadScene(showTitle: true), -1, 44, null, 18)
-                .GetComponent<RectTransform>().Tooltip(() => "저장하지 않은 진행은 사라집니다.");
-            UIBuilder.Button(box.transform, "종료", GameSettings.Quit, -1, 44, UITheme.ButtonDanger, 18);
+            // P6-1: both ask first when there is unsaved progress (ExitGuard).
+            UIBuilder.Button(box.transform, "타이틀로", () => ExitGuard.Request("타이틀로 나갈까요?", () => GameSettings.ReloadScene(showTitle: true)), -1, 44, null, 18)
+                .GetComponent<RectTransform>().Tooltip(() => ExitGuard.UnsavedText() ?? "마지막 저장 뒤로 흐른 시간이 없습니다.");
+            UIBuilder.Button(box.transform, "종료", () => ExitGuard.Request("게임을 끝낼까요?", GameSettings.Quit), -1, 44, UITheme.ButtonDanger, 18);
             _root.gameObject.SetActive(false);
         }
 
