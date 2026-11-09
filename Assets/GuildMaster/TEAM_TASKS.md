@@ -2,7 +2,7 @@
 
 작업이 겹치지 않도록 **누가 무엇을 끝냈고, 하고 있고, 할 예정인지** 적는 문서입니다. git에 올라가므로 `git pull`로 서로의 변경을 받습니다.
 
-- 마지막 갱신: 2026-11-08
+- 마지막 갱신: 2026-11-09
 - 작업 ID는 기획 문서의 ID(P4-8 등)를 그대로 씁니다. 새 작업은 다음 빈 번호를 씁니다(현재 다음 번호: **P4-136**, P4-116은 H12 몫 — 다른 팀원).
 - `F-*` 번호는 `Assets/GuildMaster/FEATURE_IDEAS.md`의 기능 번호입니다(KMS가 쓰던 번호를 그대로 살렸습니다).
 
@@ -146,6 +146,14 @@
 | P4-135 | dev/KMS 7a2ec7f 병합(길드원 창 파티 보드형·사건 카드 창 디자인·대사). 사용자 결정 2026-11-08: 사건 카드 두 파일은 main대로 지우고(P4-118) KMS 디자인(방향·수치 칩, 남은 시간 막대, 인물 칩, 내용 크기 창)은 결정 카드 창(J)으로 옮김, UIRoot는 양쪽 다, WatchRuinView.cs.meta는 main GUID. **KMS에게 알림**: `EventCards.cs`·`EventCardView.cs`·`EventCardChipTests.cs`는 지워졌으니 다음에 main을 받을 때 다시 살리지 마세요 — 칩 함수는 `UI/Framework/UIChips`(Chip·SetChip·SetSignChip·Fill·SetFill), 방향·수치 칩은 `Dilemmas/DilemmaChips`·`DilemmaChangeLog`, 테스트는 `DilemmaChipTests`. 병합 뒤 드러난 기존 버그(광폭이 끝난 동료를 계속 때림)도 고침 | 이재혁 | 완료 | UI/Views/DilemmaView·RosterView, UI/Framework/UIChips, UIRoot, Dilemmas, Adventurers/Adventurer(HandleCombat), Social/TalkBank·TownTalkService | 병합 05ef4f0, 버그 a8eafcc, 디자인 5e2a3ff |
 | P5-5 | Windows 빌드 — 개발이 모두 끝난 뒤 맨 마지막에 진행(사용자 결정 2026-10-10, 2026-10-21 사운드는 빼기로). 2026-11-08 사용자 "지금 시작". 메뉴 `GuildMaster/Windows 빌드` → `Builds/Windows/GuildMasterTycoon.exe`(git 제외, 약 5.3GB: Main 씬 모델 4.6GB + CUDA 뺀 Windows llama 라이브러리 0.5GB). 빌드 뒤 프로젝트를 원래대로(LLMUnity가 옮긴 라이브러리·모델 사본, 제품 이름, 미리 불러오기). 한글 경로에서 실행하면 LLM이 안 뜨므로 타이틀·HUD에 경고. **KMS 참고**: 빌드는 이 메뉴로 — 직접 Build Settings로 빌드하면 LLMUnity가 모든 모델을 넣을 수 있음 | 이재혁 | 완료 | Scripts/Editor/WindowsBuild(신규), LLM/LlamaEnvironment·LlmGateway, UI/Views/TitleView | 362cde4 |
 | P5-6 | 시연 자료 — 빌드 뒤 맨 마지막에 진행(사용자 결정 2026-10-10) | 미정 | 예정 | 영상·발표 자료 | |
+| P6-1 | 완성도(사용자 방향 2026-11-09 — 새 코어 시스템 대신 안전성·접근성·UI·편의): **공용 확인 창 + 나가기 경고** — 해고·저장 덮어쓰기·칸 삭제·건물 철거에 같은 확인 창(시계 멈춤, Enter/ESC), 타이틀로·종료·플레이 중 불러오기·창 X에서 저장 안 한 진행이 있으면 묻기 | 이재혁 | 진행 중 | UI/Framework(확인 창 신규), UI/Views/PauseMenuView·SaveLoadView·MemberCareView·BuildingView, Session/GameSettings, Save/SaveService | |
+| P6-2 | 완성도: 창 관리(ESC가 맨 위 창부터, 창 위치 기억, 모든 창 닫기) | 이재혁 | 예정 | UI/UIRoot, UI/Framework/UIPanel | |
+| P6-3 | 완성도: 설정 창 탭 + 연출 줄이기(흔들림·히트스톱·번쩍임, 저절로 열리는 창) + 시간 조작 편의(큰 사건 때 감속) | 이재혁 | 예정 | UI/Views/SettingsView, Session/GameSettings, Visuals/CombatFeedback | |
+| P6-4 | 완성도: UI 크기 + 글자 크기·고대비·색약 | 이재혁 | 예정 | UI/Framework(UIBuilder·UITheme), UI/Views/SettingsView | |
+| P6-5 | 완성도: 단축키 바꾸기 + 마우스만으로 모든 기능 | 이재혁 | 예정 | Session/GameHotkeys, UI/Views/KeyHelpView·HudView | |
+| P6-6 | 완성도: 처음 보는 사람 눈으로 화면 전체 점검 | 이재혁 | 예정 | UI/Views | |
+| P6-7 | 완성도: 게임 안 도움말·용어집 | 이재혁 | 예정 | UI/Views(신규) | |
+| P6-8 | 완성도: 첫 플레이 튜토리얼 | 이재혁 | 예정 | Guide, UI/Views/GuideView | |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로. KMS가 구현해 P4-117 병합으로 들어옴(`Audio/SoundService`, `Resources/Audio`, 설정 창 볼륨) | KMS | 완료 | Audio(신규), Resources/Audio, UI/Views/SettingsView | 8cff428 |
 | P4-12 | 대화 묶음 생성과 미리 받기 | 미정 | 보류 | LLM, Adventurers/BanterService | |
 | P4-25 | 전체 코드 점검: 버그 8건 수정과 리팩터링(늑대 울음 버프, 사망자 부활, 귀환 중 후퇴, 안개 속 정보 노출, EventBus 할당 등) | 이재혁 | 완료 | Units/Combat·Skills, Adventurers, Monsters/Monster, UI/Views/InspectorView, Core/EventBus | b3a9183 |
