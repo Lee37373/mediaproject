@@ -4,6 +4,7 @@ using GuildMaster.Core;
 using GuildMaster.Data;
 using GuildMaster.Fog;
 using GuildMaster.Monsters;
+using GuildMaster.Session;
 using GuildMaster.Units;
 using UnityEngine;
 
@@ -12,7 +13,8 @@ namespace GuildMaster.Visuals
     /// <summary>
     /// Combat juice (P4-8), driven by events: hit debris coloured by the victim, bigger bursts and a
     /// short hit-stop on critical hits, death bursts, level-up sparkles, and camera shake scaled to
-    /// how hard a hit landed. Only for what the guild sees and what is on screen.
+    /// how hard a hit landed. Only for what the guild sees and what is on screen. The settings' effects
+    /// tab (P6-3) turns the hit-stop off and calms the critical flare (shake strength is the camera's).
     /// </summary>
     public class CombatFeedback : MonoBehaviour
     {
@@ -58,19 +60,21 @@ namespace GuildMaster.Visuals
 
             // The Cartoon Casual VFX Pack draws hits when imported (CasualVfx, 2026-10-30); hit-stop and shake stay here.
             bool packHits = CasualVfx.Active;
-            int count = Mathf.RoundToInt(Mathf.Lerp(4f, 14f, Mathf.Clamp01(share * 2.5f))) + (e.Critical ? 8 : 0);
+            // P6-3: with calmer flashes a critical hit looks like a plain one (no flare, no bigger burst).
+            bool bigCrit = e.Critical && !GameSettings.CalmFlashes;
+            int count = Mathf.RoundToInt(Mathf.Lerp(4f, 14f, Mathf.Clamp01(share * 2.5f))) + (bigCrit ? 8 : 0);
             if (!packHits)
                 _particles.Burst(at, new BurstSpec
                 {
-                    Color = color, Count = count, SpeedMin = 1.2f, SpeedMax = e.Critical ? 4.2f : 3f,
-                    SizeMin = 0.14f, SizeMax = e.Critical ? 0.42f : 0.3f, Lifetime = 0.45f, Gravity = 0.6f, Radius = 0.1f,
+                    Color = color, Count = count, SpeedMin = 1.2f, SpeedMax = bigCrit ? 4.2f : 3f,
+                    SizeMin = 0.14f, SizeMax = bigCrit ? 0.42f : 0.3f, Lifetime = 0.45f, Gravity = 0.6f, Radius = 0.1f,
                 });
 
             if (e.Critical)
             {
-                if (!packHits) _fx.Spark(at, CritFlash, 1.1f, 0.18f);
+                if (!packHits && bigCrit) _fx.Spark(at, CritFlash, 1.1f, 0.18f);
                 bool guildInvolved = victim.Faction == Faction.Guild || (e.Source != null && e.Source.Faction == Faction.Guild);
-                if (guildInvolved && Time.unscaledTime >= _nextHitStop && Services.TryGet<GameClock>(out var clock))
+                if (guildInvolved && GameSettings.HitStop && Time.unscaledTime >= _nextHitStop && Services.TryGet<GameClock>(out var clock))
                 {
                     _nextHitStop = Time.unscaledTime + HitStopCooldown;
                     clock.HitStop(HitStopSeconds);

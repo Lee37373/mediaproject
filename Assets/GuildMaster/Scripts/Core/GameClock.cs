@@ -15,9 +15,21 @@ namespace GuildMaster.Core
         /// <summary>
         /// Pause, then the speeds the player can pick with 1..4 and the HUD buttons. Everything else
         /// reads this array — the HUD labels its buttons from it and the key help counts it — so a new
-        /// speed is added here and nowhere else.
+        /// speed is added here and nowhere else. A release build stops at <see cref="MaxSpeedIndex"/>.
         /// </summary>
         public static readonly float[] SpeedScales = { 0f, 1f, 2f, 4f, 8f };
+
+        /// <summary>
+        /// The faster speeds (x2 and up) exist in the editor and development builds only: the release runs at x1 with
+        /// pause (user decision 2026-11-10, P6-3). Settable for tests.
+        /// </summary>
+        public static bool FastSpeeds = true;
+
+        /// <summary>The highest speed index the player can pick: the last one, or x1 in a release build.</summary>
+        public static int MaxSpeedIndex => FastSpeeds ? SpeedScales.Length - 1 : 1;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => FastSpeeds = Debug.isDebugBuild;
 
         [SerializeField] float realSecondsPerGameHour = 10f;
         [SerializeField] int startHour = 8;
@@ -102,7 +114,7 @@ namespace GuildMaster.Core
         public void SetSpeed(int index)
         {
             if (Frozen) return;
-            SpeedIndex = Mathf.Clamp(index, 0, SpeedScales.Length - 1);
+            SpeedIndex = Mathf.Clamp(index, 0, MaxSpeedIndex); // a save made at x8 loads at x1 in a release build
             ApplyScale();
         }
 

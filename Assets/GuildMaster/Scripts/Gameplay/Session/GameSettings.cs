@@ -3,7 +3,8 @@ using UnityEngine;
 namespace GuildMaster.Session
 {
     /// <summary>
-    /// Player settings kept between runs (PlayerPrefs, P4-10): LLM on/off, the screen mode and (P4-9) the volumes. Also carries what the title screen hands to the next
+    /// Player settings kept between runs (PlayerPrefs, P4-10): LLM on/off, the screen mode, (P4-9) the volumes and (P6-3)
+    /// the calmer effects and the moments that pause the game. Also carries what the title screen hands to the next
     /// scene load (a chosen seed, whether to show the title again).
     /// </summary>
     public static class GameSettings
@@ -28,6 +29,76 @@ namespace GuildMaster.Session
         {
             get => PlayerPrefs.GetInt(NewsKey, 1) == 1;
             set { PlayerPrefs.SetInt(NewsKey, value ? 1 : 0); PlayerPrefs.Save(); }
+        }
+
+        // ---------------- Calmer effects and events (P6-3, user decisions 2026-11-10) ----------------
+        // Read every frame by many units, so each value is kept in memory and written through to PlayerPrefs.
+
+        const string ShakeKey = "gm.shake";
+        const string HitStopKey = "gm.hitStop";
+        const string CalmFlashKey = "gm.calmFlashes";
+        const string DilemmaOpenKey = "gm.dilemmaAutoOpen";
+        const string PauseKeyPrefix = "gm.pause.";
+
+        static float? _shake;
+        static bool? _hitStop, _calmFlashes;
+
+        /// <summary>Screen shake strength, 0 (none) .. 1 (as designed).</summary>
+        public static float ShakeStrength
+        {
+            get => _shake ??= Mathf.Clamp01(PlayerPrefs.GetFloat(ShakeKey, 1f));
+            set { _shake = Mathf.Clamp01(value); PlayerPrefs.SetFloat(ShakeKey, _shake.Value); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>The brief near-freeze on the guild's critical hits (P4-8).</summary>
+        public static bool HitStop
+        {
+            get => _hitStop ??= PlayerPrefs.GetInt(HitStopKey, 1) == 1;
+            set { _hitStop = value; PlayerPrefs.SetInt(HitStopKey, value ? 1 : 0); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>
+        /// Softer flashes: critical hits look like plain ones (no flare), the red hit tint is faint, a struck village
+        /// barely reddens, and the relationship graph's recent lines glow steadily instead of blinking.
+        /// </summary>
+        public static bool CalmFlashes
+        {
+            get => _calmFlashes ??= PlayerPrefs.GetInt(CalmFlashKey, 0) == 1;
+            set { _calmFlashes = value; PlayerPrefs.SetInt(CalmFlashKey, value ? 1 : 0); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>A new decision card opens its window by itself and the game waits (else only the notification).</summary>
+        public static bool DilemmaAutoOpen
+        {
+            get => PlayerPrefs.GetInt(DilemmaOpenKey, 1) == 1;
+            set { PlayerPrefs.SetInt(DilemmaOpenKey, value ? 1 : 0); PlayerPrefs.Save(); }
+        }
+
+        /// <summary>Whether the game pauses by itself when this kind of moment happens (off for all by default).</summary>
+        public static bool PauseOn(PauseTrigger trigger) => PlayerPrefs.GetInt(PauseKeyPrefix + trigger, 0) == 1;
+
+        public static void SetPauseOn(PauseTrigger trigger, bool on)
+        {
+            PlayerPrefs.SetInt(PauseKeyPrefix + trigger, on ? 1 : 0);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>The effects tab's "모두 줄이기": no shake, no hit-stop, soft flashes, no reward effects.</summary>
+        public static void CalmAllEffects()
+        {
+            ShakeStrength = 0f;
+            HitStop = false;
+            CalmFlashes = true;
+            RewardEffects = false;
+        }
+
+        /// <summary>The effects tab's "기본값으로".</summary>
+        public static void DefaultEffects()
+        {
+            ShakeStrength = 1f;
+            HitStop = true;
+            CalmFlashes = false;
+            RewardEffects = true;
         }
 
         public static bool LlmEnabled

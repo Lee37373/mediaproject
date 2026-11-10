@@ -289,7 +289,7 @@ namespace GuildMaster.Visuals
             if (_flashTimer > 0f)
             {
                 _flashTimer -= Time.deltaTime;
-                want = Shown(_flashTimer > 0f ? new Color(1f, 0.45f, 0.45f, _tint.a) : _tint);
+                want = Shown(_flashTimer > 0f ? HitTint(new Color(1f, 0.45f, 0.45f, _tint.a)) : _tint);
             }
             else want = Shown(_tint);
             if (want != _rigTint)
@@ -311,6 +311,12 @@ namespace GuildMaster.Visuals
         Color Shown(Color c) => new(c.r * StatusTint.r, c.g * StatusTint.g, c.b * StatusTint.b, c.a * Mathf.Clamp01(Fade));
 
         public void Flash(float duration = 0.1f) => _flashTimer = duration;
+
+        /// <summary>How far the hit tint goes with the settings' calmer flashes (P6-3): still shows who was struck.</summary>
+        public const float CalmHitTint = 0.35f;
+
+        /// <summary>The red of a hit, or a faint touch of it with calmer flashes (P6-3).</summary>
+        Color HitTint(Color red) => Session.GameSettings.CalmFlashes ? Color.Lerp(_tint, red, CalmHitTint) : red;
 
         /// <summary>
         /// Within this many cells of straight above or below the target a unit keeps the way it faces (P4-92: skilled
@@ -415,7 +421,7 @@ namespace GuildMaster.Visuals
             if (_flashTimer > 0f)
             {
                 _flashTimer -= Time.deltaTime;
-                shown = Shown(_flashTimer > 0f ? new Color(1f, 0.35f, 0.35f, _tint.a) : _tint);
+                shown = Shown(_flashTimer > 0f ? HitTint(new Color(1f, 0.35f, 0.35f, _tint.a)) : _tint);
             }
             else shown = Shown(_tint);
             if (_body.color != shown) _body.color = shown;

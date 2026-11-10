@@ -135,7 +135,7 @@ namespace GuildMaster.Villages
             _renderer.sprite = CartoonArt.Village(Region, ruined);
             float hp = visibleNow ? HpRatio : SeenHpRatio;
             var tint = ruined ? Color.white : Color.Lerp(new Color(0.6f, 0.45f, 0.4f), Color.white, Mathf.Clamp01(hp));
-            if (_flash > 0f && visibleNow) tint = Color.Lerp(tint, new Color(1f, 0.45f, 0.4f), 0.6f);
+            if (_flash > 0f && visibleNow) tint = Color.Lerp(tint, new Color(1f, 0.45f, 0.4f), Session.GameSettings.CalmFlashes ? 0.2f : 0.6f); // P6-3: calmer flashes
             _renderer.color = tint;
         }
 

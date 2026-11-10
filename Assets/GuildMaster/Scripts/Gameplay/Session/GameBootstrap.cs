@@ -483,6 +483,10 @@ namespace GuildMaster.Session
             var spectator = AddSystem<Director.SpectatorCamera>();
             spectator.Init(highlights);
             Services.Register(spectator);
+            // The moments the player chose to pause the game for (P6-3, settings' events tab).
+            var eventPause = AddSystem<EventPause>();
+            eventPause.Init(clock);
+            Services.Register(eventPause);
 
             // --- Player ---
             var avatar = PlayerAvatar.Create(world.TownCenterWorld + new Vector2(0f, -2f), Balance.playerMoveSpeed, Balance.playerSightRadius);

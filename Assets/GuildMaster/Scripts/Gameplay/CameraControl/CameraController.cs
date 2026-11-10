@@ -103,7 +103,7 @@ namespace GuildMaster.CameraControl
             _zoomAtCursor = false;
         }
 
-        /// <summary>Adds screen shake (0..1). Shake strength is trauma squared.</summary>
+        /// <summary>Adds screen shake (0..1). Shake strength is trauma squared, times the settings' shake strength (P6-3).</summary>
         public void Shake(float trauma) => _trauma = Mathf.Clamp01(_trauma + trauma);
 
         void LateUpdate()
@@ -224,7 +224,7 @@ namespace GuildMaster.CameraControl
             if (_trauma > 0f)
             {
                 _shakeTime += dt * 25f;
-                float s = _trauma * _trauma * 0.6f;
+                float s = _trauma * _trauma * 0.6f * Session.GameSettings.ShakeStrength; // P6-3: the player's shake strength
                 offset = new Vector3(
                     (Mathf.PerlinNoise(_shakeTime, 0.1f) - 0.5f) * 2f * s,
                     (Mathf.PerlinNoise(0.1f, _shakeTime) - 0.5f) * 2f * s, 0f);

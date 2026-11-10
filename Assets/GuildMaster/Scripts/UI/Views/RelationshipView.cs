@@ -53,7 +53,7 @@ namespace GuildMaster.UI
         }
 
         RectTransform _graph, _lineLayer, _nodeLayer;
-        Text _info;
+        Text _info, _legend;
         readonly List<Node> _nodes = new();
         readonly List<Line> _lines = new();
         string _signature;
@@ -73,11 +73,8 @@ namespace GuildMaster.UI
             var side = UIBuilder.Panel(body, "Info", UITheme.PanelBgLight);
             side.Size(-1, -1, 1, 1);
             UIBuilder.VLayout(side, 6, 10);
-            var legend = UIBuilder.Label(side.transform,
-                UIBuilder.Colored("━ 호감", Friendly) + "   " + UIBuilder.Colored("━ 반감", Hostile) + "\n" +
-                UIBuilder.Colored($"굵을수록 강함 · 깜빡이면 최근 {EmotionRules.RecentChangeHours:0}시간 안에 바뀜", UITheme.TextMuted),
-                14, TextAnchor.UpperLeft).Size(-1, 44);
-            legend.verticalOverflow = VerticalWrapMode.Overflow;
+            _legend = UIBuilder.Label(side.transform, LegendText(), 14, TextAnchor.UpperLeft).Size(-1, 44);
+            _legend.verticalOverflow = VerticalWrapMode.Overflow;
             var content = UIBuilder.ScrollList(side.transform, out var scroll, 0);
             scroll.GetComponent<RectTransform>().Size(-1, -1, 1, 1);
             _info = UIBuilder.Label(content, "", 15, TextAnchor.UpperLeft);
@@ -188,8 +185,14 @@ namespace GuildMaster.UI
 
         // ---------------- Drawing ----------------
 
+        /// <summary>The legend; recent lines blink, or glow steadily with the settings' calmer flashes (P6-3).</summary>
+        static string LegendText()
+            => UIBuilder.Colored("━ 호감", Friendly) + "   " + UIBuilder.Colored("━ 반감", Hostile) + "\n" +
+               UIBuilder.Colored($"굵을수록 강함 · {(Session.GameSettings.CalmFlashes ? "밝게 빛나면" : "깜빡이면")} 최근 {EmotionRules.RecentChangeHours:0}시간 안에 바뀜", UITheme.TextMuted);
+
         protected override void Refresh()
         {
+            _legend.text = LegendText();
             var people = People();
             string signature = string.Join(",", people.Select(p => p.Id));
             if (signature != _signature)
@@ -237,12 +240,15 @@ namespace GuildMaster.UI
         {
             base.Update();
             if (!Visible) return;
+            // P6-3: with calmer flashes a recent line glows steadily (lighter, fully opaque) instead of blinking.
+            bool calm = Session.GameSettings.CalmFlashes;
             float pulse = 0.25f + 0.75f * Mathf.PingPong(Time.unscaledTime * 2.2f, 1f);
             foreach (var line in _lines)
             {
                 if (!line.Blink || !line.Image.gameObject.activeSelf) continue;
                 var c = line.Color;
-                c.a *= pulse;
+                if (calm) c = new Color(Mathf.Lerp(c.r, 1f, 0.45f), Mathf.Lerp(c.g, 1f, 0.45f), Mathf.Lerp(c.b, 1f, 0.45f), 1f);
+                else c.a *= pulse;
                 line.Image.color = c;
             }
         }

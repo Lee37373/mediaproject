@@ -11,6 +11,8 @@ namespace GuildMaster.Visuals
         const string SparkKey = "fx.spark";
         const string LineKey = "fx.line";
         public const int SortingOrder = Fog.FogOfWar.SortingOrder - 40;
+        /// <summary>A spark's opacity with the settings' calmer flashes (P6-3).</summary>
+        public const float CalmSparkAlpha = 0.45f;
 
         PoolService _pool;
 
@@ -41,10 +43,11 @@ namespace GuildMaster.Visuals
             _pool.Spawn<FxInstance>(RingKey, center).Play(color, radius * 2f * 0.3f, radius * 2f, duration, 0f);
         }
 
-        /// <summary>Soft flash (hits, blocked projectiles, blinks).</summary>
+        /// <summary>Soft flash (hits, blocked projectiles, blinks). Fainter with the settings' calmer flashes (P6-3).</summary>
         public void Spark(Vector2 at, Color color, float size = 0.7f, float duration = 0.2f)
         {
             if (!Visible(at)) return;
+            if (Session.GameSettings.CalmFlashes) color.a *= CalmSparkAlpha;
             _pool.Spawn<FxInstance>(SparkKey, at).Play(color, size * 0.4f, size, duration, 0f);
         }
 

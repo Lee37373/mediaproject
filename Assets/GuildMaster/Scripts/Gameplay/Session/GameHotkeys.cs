@@ -6,7 +6,7 @@ using UnityEngine.InputSystem;
 
 namespace GuildMaster.Session
 {
-    /// <summary>Global shortcuts: Space pause, 1-3 speed, F3 toggle fog, F4 unit gizmos (debug). F (focus) lives in InspectorView.</summary>
+    /// <summary>Global shortcuts: Space pause, 1-4 speed (1 only in a release build), F3 toggle fog, F4 unit gizmos (debug). F (focus) lives in InspectorView.</summary>
     public class GameHotkeys : MonoBehaviour
     {
         void Update()
@@ -17,9 +17,13 @@ namespace GuildMaster.Session
             var clock = Services.Get<GameClock>();
             if (kb.spaceKey.wasPressedThisFrame) clock.TogglePause();
             if (kb.digit1Key.wasPressedThisFrame) clock.SetSpeed(1);
-            if (kb.digit2Key.wasPressedThisFrame) clock.SetSpeed(2);
-            if (kb.digit3Key.wasPressedThisFrame) clock.SetSpeed(3);
-            if (kb.digit4Key.wasPressedThisFrame) clock.SetSpeed(4);
+            // P6-3: x2 and up only where they exist (not in a release build).
+            if (GameClock.FastSpeeds)
+            {
+                if (kb.digit2Key.wasPressedThisFrame) clock.SetSpeed(2);
+                if (kb.digit3Key.wasPressedThisFrame) clock.SetSpeed(3);
+                if (kb.digit4Key.wasPressedThisFrame) clock.SetSpeed(4);
+            }
 
             // F3: fog off (debug): it shows the whole map, so never in a player build (P4-69).
             if (Debug.isDebugBuild && kb.f3Key.wasPressedThisFrame && Services.TryGet<FogOfWar>(out var fog))

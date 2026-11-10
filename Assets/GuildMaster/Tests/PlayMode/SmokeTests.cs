@@ -69,6 +69,8 @@ namespace GuildMaster.Tests
             Seasons.SeasonService.Enabled = true;
             Dilemmas.DilemmaService.Enabled = true;
             Reports.NewsDesk.AutoOpen = true;
+            EventPause.Enabled = true;
+            GameClock.FastSpeeds = Debug.isDebugBuild;
             Director.SpectatorCamera.Set(false);
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
@@ -118,6 +120,8 @@ namespace GuildMaster.Tests
             Dilemmas.DilemmaService.Enabled = false;
             // Nor the morning paper (P4-130): its window would hold the game the first time a test runs past 6 o'clock.
             Reports.NewsDesk.AutoOpen = false;
+            // Nor pauses for moments (P6-3): a choice saved while playing in the editor would stop a test's clock.
+            EventPause.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
@@ -7471,6 +7475,152 @@ namespace GuildMaster.Tests
                 PlayerPrefs.DeleteKey(WindowPlacement.KeyPrefix + "StockView");
                 PlayerPrefs.DeleteKey(WindowPlacement.KeyPrefix + "QuestBoardView");
                 WindowPlacement.KeyPrefix = prefix;
+            }
+        }
+
+        // ---------------- P6-3: settings tabs, calmer effects, pauses for moments ----------------
+
+        /// <summary>
+        /// P6-3 (user decisions 2026-11-10) in one boot: a release build has pause and x1 only (two HUD buttons, keys 2~4
+        /// do nothing, a faster speed is refused); the settings window shows one of five tabs at a time; "모두 줄이기" turns
+        /// the shake, hit-stop and flashes down and the camera then stays put and a critical hit no longer slows time;
+        /// a decision card set to "알림만" waits in its window; a moment set to "일시정지" pauses the game once (not the
+        /// player's own pause, not twice within an hour) and the HUD says why. The player's settings are put back after.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Settings_TabsCalmerEffects_PausesForMoments_AndReleaseSpeeds()
+        {
+            var triggers = (PauseTrigger[])Enum.GetValues(typeof(PauseTrigger));
+            float shake = GameSettings.ShakeStrength;
+            bool hitStop = GameSettings.HitStop, calm = GameSettings.CalmFlashes, reward = GameSettings.RewardEffects;
+            bool dilemmaOpen = GameSettings.DilemmaAutoOpen, news = GameSettings.NewsEachMorning;
+            var pauses = triggers.Select(GameSettings.PauseOn).ToArray();
+            GameClock.FastSpeeds = false; // as in a release build, from the boot on
+            try
+            {
+                yield return Boot();
+                foreach (var t in triggers) GameSettings.SetPauseOn(t, false);
+
+                // A release build: pause and x1.
+                var hud = UnityEngine.Object.FindFirstObjectByType<HudView>();
+                var speedButtons = (UnityEngine.UI.Button[])typeof(HudView).GetField("_speedButtons", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(hud);
+                Assert.That(speedButtons.Length, Is.EqualTo(2), "II and x1 only");
+                Clock.SetSpeed(4);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(1), "a faster speed is refused");
+                Clock.SetSpeed(0);
+                yield return PressKeys(Key.Digit3);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(0), "the key for x4 does nothing");
+                yield return PressKeys(Key.Digit1);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(1));
+                GameClock.FastSpeeds = true;
+
+                // Five tabs, one page at a time.
+                var settings = UnityEngine.Object.FindFirstObjectByType<SettingsView>();
+                var pages = (RectTransform[])typeof(SettingsView).GetField("_pages", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(settings);
+                Assert.That(pages.Length, Is.EqualTo(5));
+                settings.Show();
+                foreach (SettingsView.Tab tab in Enum.GetValues(typeof(SettingsView.Tab)))
+                {
+                    settings.ShowTab(tab);
+                    for (int i = 0; i < pages.Length; i++)
+                        Assert.That(pages[i].gameObject.activeSelf, Is.EqualTo(i == (int)tab), $"{tab}: only its own page");
+                }
+                settings.ShowTab(SettingsView.Tab.Effects);
+                var calmAll = pages[(int)SettingsView.Tab.Effects].GetComponentsInChildren<UnityEngine.UI.Button>()
+                    .First(b => b.GetComponentInChildren<UnityEngine.UI.Text>().text == "모두 줄이기");
+                calmAll.onClick.Invoke();
+                Assert.That(GameSettings.ShakeStrength, Is.EqualTo(0f));
+                Assert.That(GameSettings.HitStop || GameSettings.RewardEffects, Is.False);
+                Assert.That(GameSettings.CalmFlashes, Is.True);
+                settings.Hide();
+                Assert.That(MenuState.IsOpen, Is.False);
+
+                // No shake at 0%, some at 100%.
+                var cam = Services.Get<CameraControl.CameraController>();
+                var basePos = typeof(CameraControl.CameraController).GetField("_basePosition", BindingFlags.NonPublic | BindingFlags.Instance);
+                cam.Shake(1f);
+                yield return null;
+                yield return null;
+                Assert.That(((Vector2)(cam.transform.position - (Vector3)basePos.GetValue(cam))).magnitude, Is.LessThan(1e-4f), "0%: the camera stays put");
+                GameSettings.ShakeStrength = 1f;
+                cam.Shake(1f);
+                yield return null;
+                yield return null;
+                Assert.That(((Vector2)(cam.transform.position - (Vector3)basePos.GetValue(cam))).magnitude, Is.GreaterThan(1e-4f), "100%: it shakes");
+
+                // Hit-stop: a member's critical hit on screen slows time only while it is on.
+                var member = Roster.Members[0];
+                cam.JumpTo(member.Position);
+                yield return null;
+                var feedback = UnityEngine.Object.FindFirstObjectByType<Visuals.CombatFeedback>();
+                var onDamaged = typeof(Visuals.CombatFeedback).GetMethod("OnDamaged", BindingFlags.NonPublic | BindingFlags.Instance);
+                var crit = new UnitDamagedEvent { Target = member, Amount = 1f, Critical = true };
+                onDamaged.Invoke(feedback, new object[] { crit });
+                Assert.That(Time.timeScale, Is.EqualTo(1f), "hit-stop off: time runs on");
+                GameSettings.HitStop = true;
+                onDamaged.Invoke(feedback, new object[] { crit });
+                Assert.That(Time.timeScale, Is.LessThan(0.5f), "hit-stop on: time nearly stops");
+                yield return new WaitForSecondsRealtime(0.2f);
+                Assert.That(Time.timeScale, Is.EqualTo(1f));
+
+                // A decision card set to "알림만" waits; set to open, the next one opens its window.
+                Dilemmas.DilemmaService.Enabled = true;
+                var cards = Services.Get<Dilemmas.DilemmaService>();
+                var cardView = Services.Get<DilemmaView>();
+                GameSettings.DilemmaAutoOpen = false;
+                Assert.That(cards.Deal(null, "investment"), Is.Not.Null);
+                yield return null;
+                Assert.That(cardView.Visible || Clock.IsHeld, Is.False, "only the notification");
+                GameSettings.DilemmaAutoOpen = true;
+                Assert.That(cards.Deal(null, "refugees"), Is.Not.Null);
+                yield return null;
+                Assert.That(cardView.Visible && Clock.IsHeld, Is.True, "the window opens and the game waits");
+                cardView.Close();
+                yield return null;
+                Dilemmas.DilemmaService.Enabled = false;
+
+                // Pausing for a moment: only when chosen, once within an hour, never over the player's own pause.
+                EventPause.Enabled = true;
+                var eventPause = Services.Get<EventPause>();
+                var raid = new Town.RaidSightedEvent { RaidId = 77, Direction = "동", Position = member.Position };
+                Clock.SetSpeed(1);
+                EventBus.Publish(raid);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(1), "\"그대로\": the game runs on");
+                GameSettings.SetPauseOn(PauseTrigger.Raid, true);
+                EventBus.Publish(raid);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(0), "\"일시정지\": the game stops");
+                Assert.That(eventPause.Reason, Does.Contain("침공"));
+                yield return new WaitForSecondsRealtime(0.4f);
+                var timeLabel = (UnityEngine.UI.Text)typeof(HudView).GetField("_time", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(hud);
+                Assert.That(timeLabel.text, Does.Contain("정지·침공"), "the HUD says why");
+                Clock.SetSpeed(1);
+                Assert.That(eventPause.Reason, Is.Null, "running again: no reason left");
+                EventBus.Publish(raid);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(1), "not twice within an hour");
+                var total = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+                var lastHour = typeof(GameClock).GetField("_lastWholeHour", BindingFlags.NonPublic | BindingFlags.Instance);
+                total.SetValue(Clock, Clock.TotalHours + EventPause.RepeatHours + 0.1f);
+                lastHour.SetValue(Clock, Mathf.FloorToInt(Clock.TotalHours));
+                Clock.SetSpeed(0);
+                EventBus.Publish(raid);
+                Assert.That(eventPause.Reason, Is.Null, "the player's own pause stays theirs");
+                Clock.SetSpeed(1);
+                EventBus.Publish(raid);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(0), "an hour later it pauses again");
+                Clock.SetSpeed(1);
+            }
+            finally
+            {
+                GameSettings.ShakeStrength = shake;
+                GameSettings.HitStop = hitStop;
+                GameSettings.CalmFlashes = calm;
+                GameSettings.RewardEffects = reward;
+                GameSettings.DilemmaAutoOpen = dilemmaOpen;
+                GameSettings.NewsEachMorning = news;
+                for (int i = 0; i < triggers.Length; i++) GameSettings.SetPauseOn(triggers[i], pauses[i]);
+                GameClock.FastSpeeds = Debug.isDebugBuild;
+                EventPause.Enabled = false;
+                Dilemmas.DilemmaService.Enabled = false;
             }
         }
     }

@@ -90,6 +90,30 @@ namespace GuildMaster.UI
             }
         }
 
+        /// <summary>True when the skin's button sprites are present.</summary>
+        public static bool HasButtons => Get("button_purple") != null;
+
+        /// <summary>
+        /// Repaints a built button in another colour (P6-3: the chosen settings tab, the speed in force): the skin's sprite
+        /// nearest that colour, else the flat colour. Pass the colour the button was built with to put it back.
+        /// </summary>
+        public static void Recolor(Button button, Color baseColor)
+        {
+            if (button == null || button.targetGraphic is not Image img) return;
+            var sp = Get("button_" + ButtonStyle(baseColor));
+            if (sp != null)
+            {
+                img.sprite = sp;
+                return;
+            }
+            var colors = button.colors;
+            colors.normalColor = baseColor;
+            colors.highlightedColor = Color.Lerp(baseColor, Color.white, 0.18f);
+            colors.pressedColor = Color.Lerp(baseColor, Color.black, 0.25f);
+            colors.selectedColor = baseColor;
+            button.colors = colors;
+        }
+
         /// <summary>Dark outline for text over the skin (cartoon look, readable on any button colour).</summary>
         public static void Outline(Text t)
         {

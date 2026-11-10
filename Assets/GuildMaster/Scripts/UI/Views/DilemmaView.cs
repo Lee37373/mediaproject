@@ -88,9 +88,12 @@ namespace GuildMaster.UI
             if (_holdingClock && Services.TryGet<GameClock>(out var clock)) clock.Release();
         }
 
+        /// <summary>Tests and measuring runs turn it off in code; the player in the settings' events tab (P6-3).</summary>
+        static bool OpensByItself => DilemmaService.AutoOpen && Session.GameSettings.DilemmaAutoOpen;
+
         void OnDealt(DilemmaDealtEvent e)
         {
-            if (!DilemmaService.AutoOpen) return;
+            if (!OpensByItself) return;
             if (Blocked()) _wantsOpen = true;
             else Open();
         }
@@ -108,7 +111,7 @@ namespace GuildMaster.UI
 
         void DriverTick()
         {
-            if (_wantsOpen && !Visible && DilemmaService.AutoOpen && !Blocked())
+            if (_wantsOpen && !Visible && OpensByItself && !Blocked())
             {
                 _wantsOpen = false;
                 if (Services.TryGet<DilemmaService>(out var service) && service.Open.Count > 0) Open();

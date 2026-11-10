@@ -43,6 +43,7 @@ namespace GuildMaster.Tests
             GameSettings.PendingLoad = null;
             MenuState.Reset();
             SaveService.FolderOverride = null;
+            EventPause.Enabled = true;
             if (_scene.IsValid() && _scene.isLoaded) yield return SceneManager.UnloadSceneAsync(_scene);
             yield return Resources.UnloadUnusedAssets();
             System.GC.Collect();
@@ -55,6 +56,7 @@ namespace GuildMaster.Tests
             GameSettings.PaintGround = false;
             DisasterService.ChanceOverride = 0f;
             DisasterService.SpreadScale = 1f;
+            EventPause.Enabled = false; // P6-3: a pause choice saved while playing in the editor would stop the clock
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
         }
