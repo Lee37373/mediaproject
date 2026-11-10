@@ -29,8 +29,8 @@ namespace GuildMaster.UI
 
             var header = UIBuilder.Panel(Frame, "Header", UITheme.Header);
             header.rectTransform.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), Vector2.zero, new Vector2(0, 38));
-            // Drag the title bar to move the window (several windows can be open at once).
-            header.gameObject.AddComponent<WindowDragger>().Init(Frame);
+            // Drag the title bar to move the window (several windows can be open at once); it opens there next time (P6-2).
+            header.gameObject.AddComponent<WindowDragger>().Init(Frame, () => WindowPlacement.Set(PlacementId, Frame.anchoredPosition));
             var title = UIBuilder.Label(header.transform, Title, 19, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold);
             title.rectTransform.Stretch(14, 50, 0, 0);
             var close = UIBuilder.Button(header.transform, "X", Close, 30, 30, UITheme.ButtonDanger);
@@ -62,6 +62,12 @@ namespace GuildMaster.UI
         public void Close()
         {
             if (Frame.gameObject.activeSelf) GuildMaster.Audio.Sound.Play(GuildMaster.Audio.SoundKeys.Close);
+            CloseQuietly();
+        }
+
+        /// <summary>Closes without the sound: "close all" (P6-2) plays it once for every window.</summary>
+        internal void CloseQuietly()
+        {
             Frame.gameObject.SetActive(false);
             if (Core.Services.TryGet<UIRoot>(out var root)) root.NotifyClosed(this);
         }
@@ -82,8 +88,12 @@ namespace GuildMaster.UI
 
         public bool Visible => Frame != null && Frame.gameObject.activeSelf;
         internal RectTransform WindowFrame => Frame;
-        /// <summary>Position given at creation; windows return here when opened alone.</summary>
+        /// <summary>Position given at creation: where the window opens until the player drags it somewhere else.</summary>
         internal Vector2 HomePosition { get; private set; }
+        /// <summary>Key of the remembered spot (P6-2): one per window type.</summary>
+        internal string PlacementId => GetType().Name;
+        /// <summary>Where the window opens: the spot it was last dragged to, else its home (P6-2).</summary>
+        internal Vector2 OpenPosition => WindowPlacement.TryGet(PlacementId, out var pos) ? pos : HomePosition;
 
         protected virtual void Update()
         {

@@ -1089,7 +1089,7 @@ namespace GuildMaster.Tests
                 var view = UnityEngine.Object.FindFirstObjectByType<VictoryView>(FindObjectsInactive.Include);
                 Assert.That(view, Is.Not.Null);
                 Assert.That(Clock.IsHeld, Is.True, "the victory screen holds the game");
-                typeof(VictoryView).GetMethod("Continue", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, null);
+                view.Continue();
                 Assert.That(Clock.IsHeld, Is.False, "and play goes on");
                 if (firstAnimator != null)
                 {
@@ -7305,6 +7305,173 @@ namespace GuildMaster.Tests
                 return true;
             }
             return false;
+        }
+
+        // ---------------- P6-2: window management ----------------
+
+        /// <summary>Presses these keys together for a frame (the last one is checked to be really down).</summary>
+        static IEnumerator PressKeys(params Key[] keys)
+        {
+            var kb = Keyboard.current ?? InputSystem.AddDevice<Keyboard>();
+            if (!kb.enabled) InputSystem.EnableDevice(kb);
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                InputSystem.QueueStateEvent(kb, new KeyboardState(keys));
+                yield return null;
+                if (kb[keys[keys.Length - 1]].isPressed) break;
+            }
+            yield return null;
+            InputSystem.QueueStateEvent(kb, new KeyboardState());
+            yield return null;
+        }
+
+        /// <summary>
+        /// P6-2 (user decisions 2026-11-10) in one boot: ESC closes the top-most thing first — the key help, the victory
+        /// screen, the newest window — and with nothing left opens the pause menu; a text field with the caret keeps ESC
+        /// and the letters, and one that lost the caret (still selected) no longer blocks them; Shift+ESC and the button
+        /// (only with two or more windows) close every window and nothing else; a dragged window opens there again, kept
+        /// on screen, steps aside from another at the same spot, and the reset sends every window home.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Windows_EscClosesTheTopFirst_CloseAll_AndRememberedPlaces()
+        {
+            string prefix = WindowPlacement.KeyPrefix;
+            WindowPlacement.KeyPrefix = "GuildMasterTest.Window."; // never the player's own layout
+            try
+            {
+                yield return Boot();
+                var root = Services.Get<UIRoot>();
+                var stock = Services.Get<StockView>();
+                var board = Services.Get<QuestBoardView>();
+                var bestiary = Services.Get<BestiaryView>();
+                var counsel = Services.Get<CounselDialogView>();
+                var pause = UnityEngine.Object.FindFirstObjectByType<PauseMenuView>();
+                root.ResetWindowPositions(); // a run that stopped half-way may have left test spots
+                Assert.That(Services.Get<InspectorView>().Selected, Is.Null, "nothing selected at the start");
+
+                // ESC: the newest window, then the next; with nothing left the pause menu, and ESC backs out of it.
+                stock.Open();
+                board.Open();
+                yield return PressKeys(Key.Escape);
+                Assert.That(board.Visible, Is.False, "the newest window closes first");
+                Assert.That(stock.Visible, Is.True, "...and only that one");
+                yield return PressKeys(Key.Escape);
+                Assert.That(stock.Visible, Is.False);
+                yield return PressKeys(Key.Escape);
+                Assert.That(pause.IsOpen, Is.True, "nothing left to close: the pause menu");
+                yield return PressKeys(Key.Escape);
+                Assert.That(pause.IsOpen || MenuState.IsOpen, Is.False);
+
+                // A talk opens with the caret in its field: ESC and letters are the field's. The field's own ESC takes the
+                // caret away (IMGUI keys cannot be queued from a test, so the test does that part); the field stays the
+                // selected object, which used to keep ESC and every shortcut dead until a click elsewhere.
+                stock.Open();
+                counsel.Show(Roster.Members[0]);
+                var field = ((RectTransform)counsel.transform.parent).GetComponentInChildren<UnityEngine.UI.InputField>(true);
+                yield return WaitFor(() => field.isFocused, 3f);
+                Assert.That(TextFocus.Typing, Is.True, "the talk opens with the caret in its field");
+                yield return PressKeys(Key.Escape);
+                Assert.That(counsel.Visible, Is.True, "ESC with the caret in a field is the field's, not the window's");
+                yield return PressKeys(Key.Q);
+                Assert.That(board.Visible, Is.False, "letters are text while typing");
+                field.DeactivateInputField();
+                yield return null;
+                Assert.That(UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject, Is.EqualTo(field.gameObject), "the field stays selected...");
+                Assert.That(TextFocus.Typing, Is.False, "...but no longer counts as typing");
+                yield return PressKeys(Key.Escape);
+                Assert.That(counsel.Visible, Is.False, "the next ESC closes the talk");
+                Assert.That(stock.Visible, Is.True, "...and only the talk");
+                Assert.That(Clock.IsHeld, Is.False, "the talk let go of the clock");
+                yield return PressKeys(Key.Q);
+                Assert.That(board.Visible, Is.True, "shortcuts work again without a click elsewhere");
+
+                // Close all: the button shows only with two or more windows and says how many; Shift+ESC does the same.
+                var closeAll = (UnityEngine.UI.Button)typeof(UIRoot).GetField("_closeAll", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(root);
+                yield return null;
+                Assert.That(closeAll.gameObject.activeSelf, Is.True, "two windows: the button shows");
+                Assert.That(closeAll.GetComponentInChildren<UnityEngine.UI.Text>().text, Is.EqualTo("창 모두 닫기 (2)"));
+                closeAll.onClick.Invoke();
+                Assert.That(root.OpenWindowCount, Is.EqualTo(0), "the button closes every window");
+                Assert.That(stock.Visible || board.Visible, Is.False);
+                stock.Open();
+                yield return null;
+                Assert.That(closeAll.gameObject.activeSelf, Is.False, "one window: no button");
+                board.Open();
+                bestiary.Open();
+                yield return PressKeys(Key.LeftShift, Key.Escape);
+                Assert.That(root.OpenWindowCount, Is.EqualTo(0), "Shift+ESC closes every window");
+                yield return PressKeys(Key.LeftShift, Key.Escape);
+                Assert.That(pause.IsOpen || MenuState.IsOpen, Is.False, "...and with none open does nothing else (no pause menu)");
+
+                // The key help is drawn over everything: ESC closes it before the window under it.
+                stock.Open();
+                var help = UnityEngine.Object.FindFirstObjectByType<KeyHelpView>();
+                yield return PressKeys(Key.Backquote);
+                Assert.That(help.IsOpen, Is.True);
+                yield return PressKeys(Key.Escape);
+                Assert.That(help.IsOpen, Is.False, "the key help closes first");
+                Assert.That(stock.Visible, Is.True, "...the window under it stays");
+
+                // The victory screen: ESC = 계속하기 (the clock goes on), the window under it stays.
+                var victory = UnityEngine.Object.FindFirstObjectByType<VictoryView>();
+                Assert.That(Clock.IsHeld, Is.False);
+                typeof(VictoryView).GetMethod("Show", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(victory, null);
+                Assert.That(victory.IsOpen && Clock.IsHeld, Is.True);
+                yield return PressKeys(Key.Escape);
+                Assert.That(victory.IsOpen, Is.False, "ESC on the victory screen goes on playing");
+                Assert.That(Clock.IsHeld, Is.False);
+                Assert.That(stock.Visible, Is.True);
+
+                // Remembered places: home until dragged; a drag is kept and the window opens there alone.
+                root.CloseAllWindows();
+                stock.Open();
+                var frame = (RectTransform)stock.transform.parent;
+                var area = ((RectTransform)frame.parent).rect.size;
+                var home = new Vector2(0, -10);
+                Assert.That(Vector2.Distance(frame.anchoredPosition, home), Is.LessThan(0.5f), "home until dragged");
+                var dragger = frame.GetComponentInChildren<WindowDragger>();
+                var drag = new UnityEngine.EventSystems.PointerEventData(UnityEngine.EventSystems.EventSystem.current);
+                float scale = frame.GetComponentInParent<Canvas>().rootCanvas.scaleFactor;
+                dragger.OnBeginDrag(drag);
+                drag.delta = new Vector2(300, 100) * scale;
+                dragger.OnDrag(drag);
+                dragger.OnEndDrag(drag);
+                var spot = frame.anchoredPosition;
+                Assert.That(Vector2.Distance(spot, WindowPlacement.Clamp(home + new Vector2(300, 100), area, frame.rect.size)), Is.LessThan(0.5f), "dragged");
+                Assert.That(PlayerPrefs.HasKey(WindowPlacement.KeyPrefix + "StockView"), Is.True, "a drag is kept (PlayerPrefs)");
+                stock.Close();
+                stock.Open();
+                Assert.That(Vector2.Distance(frame.anchoredPosition, spot), Is.LessThan(0.5f), "reopened alone, it comes back where it was dragged");
+
+                // Another window remembered at the same spot steps aside when it opens over it.
+                var boardFrame = (RectTransform)board.transform.parent;
+                WindowPlacement.Set("QuestBoardView", spot);
+                board.Open();
+                Assert.That(Vector2.Distance(boardFrame.anchoredPosition, frame.anchoredPosition), Is.GreaterThan(12f), "it steps aside");
+
+                // A spot off the screen (another resolution, another UI size) comes back on it.
+                root.CloseAllWindows();
+                WindowPlacement.Set("StockView", new Vector2(5000, -5000));
+                stock.Open();
+                var p = frame.anchoredPosition;
+                var half = frame.rect.size * 0.5f;
+                Assert.That(p.x - half.x, Is.LessThanOrEqualTo(area.x * 0.5f - WindowPlacement.KeepVisible + 0.5f), "part of it stays on screen (right edge)");
+                Assert.That(p.y + half.y, Is.GreaterThanOrEqualTo(-area.y * 0.5f + WindowPlacement.KeepVisible - 0.5f), "the title bar stays above the bottom");
+
+                // The settings reset: every spot forgotten, open windows back home (the later one stepping aside).
+                board.Close();
+                board.Open();
+                root.ResetWindowPositions();
+                Assert.That(PlayerPrefs.HasKey(WindowPlacement.KeyPrefix + "StockView") || PlayerPrefs.HasKey(WindowPlacement.KeyPrefix + "QuestBoardView"), Is.False, "forgotten");
+                Assert.That(Vector2.Distance(frame.anchoredPosition, home), Is.LessThan(0.5f), "the older window goes home");
+                Assert.That(Vector2.Distance(boardFrame.anchoredPosition, home), Is.GreaterThan(12f), "the newer one steps aside from it");
+            }
+            finally
+            {
+                PlayerPrefs.DeleteKey(WindowPlacement.KeyPrefix + "StockView");
+                PlayerPrefs.DeleteKey(WindowPlacement.KeyPrefix + "QuestBoardView");
+                WindowPlacement.KeyPrefix = prefix;
+            }
         }
     }
 }

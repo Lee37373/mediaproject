@@ -28,7 +28,7 @@ namespace GuildMaster.UI
             _root = dim.rectTransform;
             _root.Stretch();
             var box = UIBuilder.Panel(_root, "Box", UITheme.PanelBg);
-            box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 486));
+            box.rectTransform.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(520, 532)); // 486 → 532: 창 위치 (P6-2)
             UIBuilder.VLayout(box, 10, 24);
             UIBuilder.Label(box.transform, "설정", 26, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(-1, 40);
 
@@ -44,6 +44,10 @@ namespace GuildMaster.UI
             UIBuilder.Slider(musicRow, 0f, 1f, GameSettings.MusicVolume, v => GameSettings.MusicVolume = v, 200);
             var fxRow = Row(box.transform, "보상 연출");
             _rewardFx = UIBuilder.Button(fxRow, "", ToggleRewardFx, 200, 34, null, 15);
+            // P6-2: windows open where they were last dragged, across runs; this sends them all back.
+            var windowRow = Row(box.transform, "창 위치");
+            UIBuilder.Button(windowRow, "처음 자리로", ResetWindows, 200, 34, null, 15)
+                .Tooltip(() => "끌어 옮긴 창들이 다음에 열릴 자리를 잊고 처음 자리로 되돌립니다.");
 
             _note = UIBuilder.Label(box.transform, "", 14, TextAnchor.UpperLeft, UITheme.TextMuted).Size(-1, 56);
             _note.verticalOverflow = VerticalWrapMode.Overflow;
@@ -108,6 +112,13 @@ namespace GuildMaster.UI
         {
             GameSettings.RewardEffects = !GameSettings.RewardEffects;
             Refresh();
+        }
+
+        void ResetWindows()
+        {
+            if (Services.TryGet<UIRoot>(out var root)) root.ResetWindowPositions();
+            Refresh();
+            _note.text = "창 위치를 처음 자리로 되돌렸습니다." + (_note.text.Length > 0 ? "\n" + _note.text : "");
         }
 
         void ToggleFullscreen()

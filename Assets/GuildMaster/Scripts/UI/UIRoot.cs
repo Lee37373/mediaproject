@@ -98,6 +98,12 @@ namespace GuildMaster.UI
             var menu = UIBuilder.Rect(HudLayer, "SideMenu");
             menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, MenuHeight));
             UIBuilder.VLayout(menu, 6, 0);
+            // P6-2 (user decision 2026-11-10): "close all" beside the side menu's top, above the windows, only while two or
+            // more are open; Shift+ESC does the same.
+            _closeAll = UIBuilder.Button(HudLayer, "창 모두 닫기", CloseAllWindows, 150, 34, null, 15);
+            ((RectTransform)_closeAll.transform).Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(166, -60), new Vector2(150, 34));
+            _closeAll.Tooltip(() => "열린 창을 모두 닫습니다 (Shift+ESC).\n결정 카드는 '나중에'와 같아 J로 다시 열 수 있습니다.");
+            _closeAll.gameObject.SetActive(false);
 
             AddWindow<QuestBoardView>(menu, "의뢰 게시판 (Q)", Key.Q, new Vector2(1180, 680));
             AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1200, 680)); // 2026-11-05: party board
@@ -162,7 +168,8 @@ namespace GuildMaster.UI
             toasts.Build(HudLayer);
             HudLayer.gameObject.AddComponent<GameOverView>().Build(HudLayer);
             // The guild reaching rank S — the four region lords among its conditions (P4-83, P4-106): the victory; play goes on.
-            HudLayer.gameObject.AddComponent<VictoryView>().Build(HudLayer);
+            _victory = HudLayer.gameObject.AddComponent<VictoryView>();
+            _victory.Build(HudLayer);
             // Menus (P4-10): pause (ESC) and title over the world, settings above both.
             _pause = HudLayer.gameObject.AddComponent<PauseMenuView>();
             _title = HudLayer.gameObject.AddComponent<TitleView>();
@@ -178,7 +185,8 @@ namespace GuildMaster.UI
             Services.Register(_confirm);
             HudLayer.gameObject.AddComponent<ExitGuard>().Build(_saves, _title);
             // ` key: shortcut reference with toggle states (drawn above everything else).
-            HudLayer.gameObject.AddComponent<KeyHelpView>().Build(HudLayer);
+            _keyHelp = HudLayer.gameObject.AddComponent<KeyHelpView>();
+            _keyHelp.Build(HudLayer);
             // Hover tooltips sit above every window.
             HudLayer.gameObject.AddComponent<UITooltip>().Build(HudLayer);
             EventBus.Subscribe<MapPickingChangedEvent>(OnPicking);
@@ -190,6 +198,10 @@ namespace GuildMaster.UI
         SettingsView _settings;
         SaveLoadView _saves;
         ConfirmDialog _confirm;
+        VictoryView _victory;
+        KeyHelpView _keyHelp;
+        Button _closeAll;
+        int _closeAllCount = -1;
 
         void OnDestroy() => EventBus.Unsubscribe<MapPickingChangedEvent>(OnPicking);
 
@@ -221,18 +233,74 @@ namespace GuildMaster.UI
         {
             _openOrder.Remove(panel);
             _openOrder.RemoveAll(p => p == null || !p.Visible);
-            // A freshly opened window steps aside from any open window sitting at the same spot.
-            if (!wasOpen)
-            {
-                var frame = panel.WindowFrame;
-                if (_openOrder.Count == 0) frame.anchoredPosition = panel.HomePosition;
-                for (int guard = 0; guard < 12 && _openOrder.Exists(p => (p.WindowFrame.anchoredPosition - frame.anchoredPosition).sqrMagnitude < 12f * 12f); guard++)
-                    frame.anchoredPosition += new Vector2(CascadeStep, -CascadeStep);
-            }
+            if (!wasOpen) Place(panel, _openOrder);
             _openOrder.Add(panel);
         }
 
         internal void NotifyClosed(UIPanel panel) => _openOrder.Remove(panel);
+
+        /// <summary>
+        /// Puts a freshly opened window at its own spot — where it was last dragged, else its home (P6-2) — kept on
+        /// screen, stepping aside from any open window sitting at the same spot.
+        /// </summary>
+        static void Place(UIPanel panel, List<UIPanel> others)
+        {
+            var frame = panel.WindowFrame;
+            var area = ((RectTransform)frame.parent).rect.size;
+            var size = frame.rect.size;
+            var pos = WindowPlacement.Clamp(panel.OpenPosition, area, size);
+            for (int guard = 0; guard < 12 && others.Exists(p => p != panel && (p.WindowFrame.anchoredPosition - pos).sqrMagnitude < 12f * 12f); guard++)
+            {
+                var next = WindowPlacement.Clamp(pos + new Vector2(CascadeStep, -CascadeStep), area, size);
+                if (next == pos) break; // pressed against the screen edge
+                pos = next;
+            }
+            frame.anchoredPosition = pos;
+        }
+
+        /// <summary>Open windows (not menus or overlays).</summary>
+        public int OpenWindowCount
+        {
+            get
+            {
+                _openOrder.RemoveAll(p => p == null || !p.Visible);
+                return _openOrder.Count;
+            }
+        }
+
+        /// <summary>
+        /// Shift+ESC and the button (P6-2, user decision 2026-11-10): every window, the ones that opened by themselves
+        /// too (a decision card waits as with "나중에", a talk ends as with its own button), and the key help; the
+        /// selection stays. One close sound for all.
+        /// </summary>
+        public void CloseAllWindows()
+        {
+            int closed = 0;
+            foreach (var p in _panels)
+                if (p != null && p.Visible) { p.CloseQuietly(); closed++; }
+            if (_keyHelp != null && _keyHelp.IsOpen) { _keyHelp.Hide(); closed++; }
+            _openOrder.Clear();
+            if (closed > 0) GuildMaster.Audio.Sound.Play(GuildMaster.Audio.SoundKeys.Close);
+        }
+
+        /// <summary>Settings "창 위치" (P6-2): forgets every dragged spot; open windows go back to their homes.</summary>
+        public void ResetWindowPositions()
+        {
+            foreach (var p in _panels) WindowPlacement.Forget(p.PlacementId);
+            PlayerPrefs.Save();
+            _openOrder.RemoveAll(p => p == null || !p.Visible);
+            for (int i = 0; i < _openOrder.Count; i++) Place(_openOrder[i], _openOrder.GetRange(0, i));
+        }
+
+        void UpdateCloseAllButton()
+        {
+            int open = OpenWindowCount;
+            bool show = open >= 2;
+            if (_closeAll.gameObject.activeSelf != show) _closeAll.gameObject.SetActive(show);
+            if (!show || open == _closeAllCount) return;
+            _closeAllCount = open;
+            _closeAll.SetLabel($"창 모두 닫기 ({open})");
+        }
 
         /// <summary>A press anywhere on a window raises it above the others.</summary>
         void RaiseClickedWindow()
@@ -271,6 +339,7 @@ namespace GuildMaster.UI
         void Update()
         {
             RaiseClickedWindow();
+            UpdateCloseAllButton();
             var kb = Keyboard.current;
             if (kb == null) return;
             // An open question takes Enter (first button) and ESC (cancel) before anything else, typing or not (P6-1).
@@ -280,9 +349,10 @@ namespace GuildMaster.UI
                 else if (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame) _confirm.Accept();
                 return;
             }
-            var es = EventSystem.current;
-            bool typing = es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null;
-            if (typing) return;
+            // While a field has the caret, keys are text: ESC is the field's own (it leaves the field), and the next
+            // ESC closes the window (P6-2, user decision 2026-11-10). This runs before the EventSystem (-500 < 0), so
+            // the frame of that first ESC still sees the field focused.
+            if (Session.TextFocus.Typing) return;
 
             // Menus (title, pause, settings) swallow window shortcuts; ESC backs out of them.
             if (MenuState.IsOpen)
@@ -300,9 +370,14 @@ namespace GuildMaster.UI
 
             if (kb.escapeKey.wasPressedThisFrame && !(Services.TryGet<MapPicker>(out var picker) && picker.IsPicking))
             {
-                // Newest window first, then the selection; with nothing left to close, the pause menu.
+                // The top-most thing first (P6-2): the key help drawn over everything, the victory screen ("계속하기"),
+                // the newest window, then the selection; with nothing left to close, the pause menu.
+                // Shift+ESC closes every window and nothing else.
                 _openOrder.RemoveAll(p => p == null || !p.Visible);
-                if (TopWindow != null) TopWindow.Close();
+                if (kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed) CloseAllWindows();
+                else if (_keyHelp != null && _keyHelp.IsOpen) _keyHelp.Hide();
+                else if (_victory != null && _victory.IsOpen) _victory.Continue();
+                else if (TopWindow != null) TopWindow.Close();
                 else if (Services.TryGet<InspectorView>(out var inspector) && inspector.Selected != null) inspector.Clear();
                 else _pause.Show();
             }

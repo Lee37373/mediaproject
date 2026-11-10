@@ -192,10 +192,6 @@ namespace GuildMaster.UI
             }
         }
 
-        static bool IsTyping()
-        {
-            var es = EventSystem.current;
-            return es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null;
-        }
+        static bool IsTyping() => Session.TextFocus.Typing; // P6-2: a field with the caret, not just a selected one
     }
 }

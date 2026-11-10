@@ -78,7 +78,10 @@ namespace GuildMaster.UI
             _root.gameObject.SetActive(true);
         }
 
-        void Continue()
+        public bool IsOpen => _root != null && _root.gameObject.activeSelf;
+
+        /// <summary>"계속하기", also ESC (P6-2, UIRoot).</summary>
+        public void Continue()
         {
             _root.gameObject.SetActive(false);
             if (_holding && Services.TryGet<GameClock>(out var clock)) clock.Release();

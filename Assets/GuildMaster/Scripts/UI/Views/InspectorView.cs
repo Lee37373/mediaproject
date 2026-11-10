@@ -135,8 +135,7 @@ namespace GuildMaster.UI
         {
             var kb = Keyboard.current;
             if (kb == null || !kb.fKey.wasPressedThisFrame || MenuState.IsOpen) return;
-            var es = EventSystem.current;
-            if (es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null) return;
+            if (Session.TextFocus.Typing) return; // P6-2: a field with the caret, not just a selected one
             if (_selected is Unit) { ToggleFocus(); return; }
             // Nothing selected: F toggles following the guild master avatar.
             if (!Services.TryGet<CameraController>(out var cam) || !Services.TryGet<PlayerAvatar>(out var avatar)) return;
