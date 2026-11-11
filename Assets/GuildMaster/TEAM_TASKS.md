@@ -149,6 +149,7 @@
 | P6-1 | 완성도(사용자 방향 2026-11-09 — 새 코어 시스템 대신 안전성·접근성·UI·편의): **공용 확인 창 + 나가기 경고** — 해고·저장 덮어쓰기·칸 삭제·건물 철거에 같은 확인 창(시계 멈춤, Enter/ESC), 타이틀로·종료·플레이 중 불러오기·창 X에서 저장 안 한 진행이 있으면 묻기(사용자 결정: 저장한 적 없으면 저장 창에서 칸 고르기, 저장 뒤 게임 시간이 흘렀을 때만, 시계 멈춤). **KMS 참고**: 되돌릴 수 없는 버튼을 새로 만들면 `ConfirmDialog.Ask(제목, 본문, "버튼", 할 일)`로 물어 주세요(3초 두 번 누르기 방식은 없앰). 나가는 버튼은 `ExitGuard.Request(질문, 나가기)` | 이재혁 | 완료 | UI/Framework/ConfirmDialog(신규), UI/Views/ExitGuard(신규)·PauseMenuView·VictoryView·SaveLoadView·MemberCareView·BuildingView, UI/UIRoot, Save/SaveService, Session/GameBootstrap, Tests/PlayMode/SaveTests | 80e59e2 |
 | P6-2 | 완성도: 창 관리(ESC가 맨 위 창부터, 창 위치 기억, 모든 창 닫기) — 사용자 결정: 위치는 껐다 켜도 기억(PlayerPrefs, 초기화 버튼), 모두 닫기는 Shift+ESC + 창 2개 이상일 때 버튼, 결정 카드·소식지·대화 창까지 전부(선택은 그대로), 입력칸 첫 ESC는 칸만·둘째에 창 | 이재혁 | 완료 | UI/UIRoot·Framework(UIPanel·WindowDragger·WindowPlacement 신규)·Views(SettingsView·KeyHelpView·VictoryView, 입력 판정 4곳), Session/TextFocus(신규)·GameHotkeys, Tests/PlayMode/SmokeTests. **KMS 참고**: 단축키를 새로 넣으면 입력 중 판정은 `Session.TextFocus.Typing`(커서 있는 칸만)을 쓰세요 | c6c047c |
 | P6-3 | 완성도: 설정 창 5탭(게임·화면·소리·연출·사건) + 연출 줄이기(흔들림 세기·히트스톱·번쩍임 옅게, 모두 줄이기) + 사건 탭(결정 카드·소식지 창 열기/알림만, 사건 일곱 가지 그대로/일시정지 — 기본 그대로). 사용자 결정: **배포 빌드는 정지·x1만**(에디터·개발 빌드는 x8까지) → 큰 사건 때 감속은 뺌. **KMS 참고**: 화면 흔들림은 `CameraController.Shake`, 히트스톱은 `GameSettings.HitStop`을 보고, 새 번쩍이는 효과는 `GameSettings.CalmFlashes`일 때 옅게 해 주세요. 속도 단계는 `GameClock.MaxSpeedIndex`까지 | 이재혁 | 완료 | UI/Views/SettingsView·HudView·KeyHelpView·DilemmaView·RelationshipView, UI/Framework/UISkin, Session/GameSettings·EventPause(신규)·GameHotkeys·GameBootstrap, Core/GameClock, Visuals/CombatFeedback·CasualVfx·CharacterVisual·FxService, CameraControl/CameraController, Villages/Village, Tests(CalmSettingsTests 신규, SmokeTests·SaveTests) | bb0dce0 |
+| P6-3b | 사용자 요청 "전체적으로 버그 수정": 전체 점검 7차(P4-108 이후). 긴 측정으로 찾은 것 — **원수 현상금이 게시 때 위험도로 굳어 Lv1 신입이 차례로 죽던 고리**(현상금이 원수의 지금 레벨·같은 둥지의 더 센 원수를 따라 위험도·보상·인원을 다시 매김, 둥지 토벌·신입 판단도 그 레벨을 봄), **광맥 하나에 채집 의뢰 둘 → 24시간 대기**(걸린 몫은 공급에서 빼고 개인 채집은 양보), 측정용 자동 플레이어가 영입을 못 하던 것(선택지 설득), 교전 카메라를 끌 때 바로 놓기, 명장면의 적 이름. **KMS 쪽 알림**: `Quest.RewardExp·MaxParty`가 바뀔 수 있게 됨(`Quest.Reprice`), 새 이벤트 `IncidentBountyRevisedEvent`, `ErrandOffers.TryGather`의 공급이 이미 걸린 채집 의뢰만큼 줄어듦 | 이재혁 | 완료 | Incidents/IncidentService·IncidentRules·Incident, Nemeses/NemesisService, Adventurers/QuestRisk·AdventurerStates, Quests/Quest·QuestBoard·ErrandOffers·ErrandPoster·ErrandRules, Places/PlaceVisits, Session/BalanceAutoPlayer·FightCamera·GameLog, Director/HighlightService | fab3164 |
 | P6-4 | 완성도: UI 크기 + 글자 크기·고대비·색약 | 이재혁 | 예정 | UI/Framework(UIBuilder·UITheme), UI/Views/SettingsView | |
 | P6-5 | 완성도: 단축키 바꾸기 + 마우스만으로 모든 기능 | 이재혁 | 예정 | Session/GameHotkeys, UI/Views/KeyHelpView·HudView | |
 | P6-6 | 완성도: 처음 보는 사람 눈으로 화면 전체 점검 | 이재혁 | 예정 | UI/Views | |
@@ -183,7 +184,7 @@
 ### 이재혁
 - **진행 중**: 없음
 - **예정**: P5-6 시연
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-135, P5-1 ~ P5-5 (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-135, P5-1 ~ P5-5, P6-1 ~ P6-3b (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
