@@ -20,7 +20,10 @@ namespace GuildMaster.Quests
         {
             public PlaceKind Kind;
             public string ItemId;
-            /// <summary>What the ready spots give at the least (<see cref="ErrandRules.GatherSupply"/>).</summary>
+            /// <summary>
+            /// What the ready spots give at the least (<see cref="ErrandRules.GatherSupply"/>), less what the gathering errands
+            /// already on the board still need of it (<see cref="QuestBoard.GatherStillNeeded"/>).
+            /// </summary>
             public int Supply;
             /// <summary>The ready spot nearest town: where the errand is posted (the members go to whichever is nearest them).</summary>
             public Vector2 Point;
@@ -44,10 +47,12 @@ namespace GuildMaster.Quests
                 point = p.WorldPosition;
             }
             if (ready == 0) return false;
+            string item = PlaceRules.GatherItem(kind);
+            int spoken = Services.TryGet<QuestBoard>(out var board) ? board.GatherStillNeeded(item) : 0;
             offer = new Gather
             {
-                Kind = kind, ItemId = PlaceRules.GatherItem(kind), Point = point,
-                Supply = ErrandRules.GatherSupply(ready, kind == PlaceKind.OreVein),
+                Kind = kind, ItemId = item, Point = point,
+                Supply = ErrandRules.GatherSupply(ready, kind == PlaceKind.OreVein, spoken),
             };
             return true;
         }

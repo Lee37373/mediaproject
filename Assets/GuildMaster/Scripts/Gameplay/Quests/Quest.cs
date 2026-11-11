@@ -75,8 +75,8 @@ namespace GuildMaster.Quests
         public int RewardGold { get; private set; }
         /// <summary>Gold added to the posted reward through negotiation (P4-25); already part of <see cref="RewardGold"/>.</summary>
         public int BonusGold { get; private set; }
-        public int RewardExp { get; }
-        public int MaxParty { get; }
+        public int RewardExp { get; private set; }
+        public int MaxParty { get; private set; }
         public QuestStatus Status { get; internal set; }
         public float PostedAtHour { get; }
         public float CompletedAtHour { get; internal set; }
@@ -236,6 +236,21 @@ namespace GuildMaster.Quests
         {
             PayGold = Mathf.Clamp(gold, 0, RewardGold);
             PayExp = Mathf.Clamp(exp, 0, RewardExp);
+        }
+
+        /// <summary>
+        /// Its client rates and pays it anew while it stands (<see cref="QuestBoard.ReviseIncidentQuest"/>: the bounty on a nemesis
+        /// that grew). What the guild added in a negotiation stays on top; the party's limit never drops under those already on it.
+        /// </summary>
+        internal void Reprice(DangerLevel danger, int membersGold, int feeGold, int exp, int maxParty)
+        {
+            Danger = danger;
+            RewardGold = Mathf.Max(0, membersGold) + BonusGold;
+            FeeGold = Mathf.Max(0, feeGold);
+            RewardExp = Mathf.Max(0, exp);
+            MaxParty = Mathf.Max(1, Mathf.Max(maxParty, _assignees.Count));
+            PayGold = RewardGold;
+            PayExp = RewardExp;
         }
 
         /// <summary>Raises the escrowed gold reward. The board takes the gold from the treasury first (<see cref="QuestBoard.TryRaiseReward"/>).</summary>

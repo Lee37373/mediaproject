@@ -348,7 +348,8 @@ namespace GuildMaster.Director
                 if (!over) continue;
                 if (HighlightRules.IsBigFoe(h.Kind) && !FocusAlive(h))
                 {
-                    string name = h.Focus != null ? h.Focus.DisplayName : "적";
+                    // The name it fought under: its pooled body may already be another monster.
+                    string name = !string.IsNullOrEmpty(h.FoeName) ? h.FoeName : h.Focus != null && h.Focus.UnitId == h.FocusId ? h.Focus.DisplayName : "적";
                     h.Outcome = $"{name} 쓰러짐!";
                     foreach (var a in h.Members)
                         if (a != null && a.Data != null) HighlightRules.Write(a.Data.chronicle, Hour, $"{name}{Josa(name, "을", "를")} 쓰러뜨렸다");

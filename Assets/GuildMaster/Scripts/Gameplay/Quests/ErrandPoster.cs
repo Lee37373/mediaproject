@@ -107,12 +107,12 @@ namespace GuildMaster.Quests
                 options.Add((ErrandOffers.DeliverDraft(v, ErrandRules.PickGoods(_rng), 1f), ErrandRules.DeliverWeight, null));
             if (kind is null or QuestType.Gather)
             {
-                // One of the two kinds of spot the guild knows (both: either).
-                var spots = new List<ErrandOffers.Gather>();
+                // One of the two kinds of spot the guild knows that has enough left to ask for (both: either). Picked among
+                // the ones that can be asked: with ore spoken for and herbs free, the dice landing on ore asked for nothing.
+                var digs = new List<QuestDraft>();
                 foreach (var k in new[] { PlaceKind.OreVein, PlaceKind.HerbPatch })
-                    if (ErrandOffers.TryGather(k, out var g)) spots.Add(g);
-                if (spots.Count > 0 && ErrandOffers.GatherDraft(_rng.Pick(spots), wanted, 1f, out var gd))
-                    options.Add((gd, ErrandRules.GatherWeight, null));
+                    if (ErrandOffers.TryGather(k, out var g) && ErrandOffers.GatherDraft(g, wanted, 1f, out var gd)) digs.Add(gd);
+                if (digs.Count > 0) options.Add((_rng.Pick(digs), ErrandRules.GatherWeight, null));
             }
             if (kind is null or QuestType.Collect)
             {

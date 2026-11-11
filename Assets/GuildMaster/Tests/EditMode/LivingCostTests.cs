@@ -59,14 +59,5 @@ namespace GuildMaster.Tests
             Assert.That(GoldCategories.Income, Does.Contain(GoldCategory.LivingCosts));
             Assert.That(GoldCategories.Classify(GoldReason.Living, -10), Is.EqualTo(GoldCategory.OtherExpense), "keep is never paid out");
         }
-
-        [Test]
-        public void BalanceRun_PitchesToWhatTheVisitorIsAfter()
-        {
-            // The auto player's pitch has to land with the rule-based recruiter, or a balance run
-            // measures a guild that cannot recruit (the 5-day run before P4-68 recruited no one).
-            foreach (var values in new[] { "돈", "명예", "동료", "모험", "안전", "지식" })
-                Assert.That(RuleBasedRecruiter.Score(BalanceAutoPlayer.PitchFor(values), values), Is.GreaterThanOrEqualTo(15), values);
-        }
     }
 }

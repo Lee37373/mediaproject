@@ -43,6 +43,14 @@ namespace GuildMaster.Tests
             Assert.That(ErrandRules.Count(5, 1), Is.EqualTo(0), "too few: not asked");
             Assert.That(ErrandRules.GatherSupply(2, ore: true), Is.EqualTo(2 * Places.PlaceRules.OreMin));
             Assert.That(ErrandRules.GatherSupply(2, ore: false), Is.EqualTo(2 * Places.PlaceRules.HerbMin));
+            // What errands already on the board still need is spoken for (2026-11-10: two errands on one vein).
+            int one = Places.PlaceRules.OreMin;
+            Assert.That(ErrandRules.GatherSupply(1, ore: true, spokenFor: one), Is.EqualTo(0));
+            Assert.That(ErrandRules.GatherSupply(2, ore: true, spokenFor: one), Is.EqualTo(one));
+            Assert.That(ErrandRules.GatherSupply(1, ore: true, spokenFor: 99), Is.EqualTo(0), "never below nothing");
+            Assert.That(ErrandRules.KeptForErrands(1, ore: true, spokenFor: one), Is.True, "the one vein is the errand's");
+            Assert.That(ErrandRules.KeptForErrands(2, ore: true, spokenFor: one), Is.False, "one to spare");
+            Assert.That(ErrandRules.KeptForErrands(1, ore: true, spokenFor: 0), Is.False, "nothing asked: dig away");
             Assert.That(ErrandRules.CollectKills(5, 0.5f), Is.EqualTo(10));
             Assert.That(ErrandRules.CollectKills(4, 1.275f), Is.EqualTo(4));
             Assert.That(ErrandRules.CollectSupply(5, 1f), Is.EqualTo(6), "what was seen, a little over");

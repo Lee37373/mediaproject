@@ -57,6 +57,17 @@ namespace GuildMaster.Quests
         public static int GatherSupply(int readySpots, bool ore)
             => Mathf.Max(0, readySpots) * (ore ? Places.PlaceRules.OreMin : Places.PlaceRules.HerbMin);
 
+        /// <summary>…less what errands already asked of them still need (<paramref name="spokenFor"/>): never below nothing.</summary>
+        public static int GatherSupply(int readySpots, bool ore, int spokenFor)
+            => Mathf.Max(0, GatherSupply(readySpots, ore) - Mathf.Max(0, spokenFor));
+
+        /// <summary>
+        /// A member gathering for itself leaves the spots of a kind alone while taking one more would leave the errands
+        /// on the board short (<paramref name="spokenFor"/>: what they still need).
+        /// </summary>
+        public static bool KeptForErrands(int readySpots, bool ore, int spokenFor)
+            => spokenFor > 0 && GatherSupply(readySpots - 1, ore) < spokenFor;
+
         /// <summary>The part a species is asked for: its likeliest loot, as many per kill as it drops on average.</summary>
         public static float PerKill(LootEntry e) => e == null ? 0f : Mathf.Clamp01(e.chance) * (Mathf.Max(1, e.min) + Mathf.Max(e.min, e.max)) * 0.5f;
 

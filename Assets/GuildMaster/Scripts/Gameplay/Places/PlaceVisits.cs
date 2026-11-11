@@ -62,6 +62,7 @@ namespace GuildMaster.Places
         public PlaceSite Best(Adventurer a, PlaceKind kind)
         {
             if (_places == null || a == null || a.Data == null) return null;
+            if (PlaceRules.IsGathering(kind) && KeptForErrands(kind)) return null;
             var town = _world.TownCenterWorld;
             float power = AdventurerStats.Power(a.Data);
             float reach = a.IsNewcomer ? a.NewcomerReach : PlaceRules.MaxDistanceFromTown;
@@ -80,6 +81,20 @@ namespace GuildMaster.Places
                 best = p;
             }
             return best;
+        }
+
+        /// <summary>
+        /// The ready spots of this kind are spoken for by the gathering errands on the board (<see cref="Quests.ErrandRules.KeptForErrands"/>):
+        /// nobody digs one for itself meanwhile — the errand's taker would find it bare and wait a day for it to grow back.
+        /// </summary>
+        bool KeptForErrands(PlaceKind kind)
+        {
+            if (!Services.TryGet<Quests.QuestBoard>(out var board)) return false;
+            int needed = board.GatherStillNeeded(PlaceRules.GatherItem(kind));
+            if (needed <= 0) return false;
+            int ready = 0;
+            foreach (var p in _places.Known(kind)) if (_places.IsReady(p)) ready++;
+            return Quests.ErrandRules.KeptForErrands(ready, kind == PlaceKind.OreVein, needed);
         }
 
         // ---------------- Gathering spots: one at a time ----------------

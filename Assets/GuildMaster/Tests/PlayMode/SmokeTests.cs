@@ -286,7 +286,7 @@ namespace GuildMaster.Tests
             for (int i = 0; i < placed.Count; i++)
             for (int j = i + 1; j < placed.Count; j++)
                 Assert.That(NameTagLayer.Overlaps(placed[i], placed[j]), Is.False, $"tags {i} and {j} overlap");
-            Assert.That(placed.Count, Is.LessThan(tags.CandidateCount), $"some tags give way ({placed.Count} of {tags.CandidateCount})");
+            Assert.That(placed.Count, Is.LessThan(tags.CandidateCount), $"some tags give way ({placed.Count} of {tags.CandidateCount}; camera {(Vector2)Camera.main.transform.position}, master {master.Position})");
             Assert.That(tags.IsShown(master), Is.True, "the guild master's tag shows over the goblins'");
 
             // P4-128: with the pack imported, a goblin is drawn from its parts and its weapon turns on a blow.
@@ -920,14 +920,14 @@ namespace GuildMaster.Tests
                 var proposals = Services.Get<Proposals.QuestProposalService>();
                 Assert.That(proposals.Reroll(out var why), Is.True, why);
                 yield return WaitFor(() => !proposals.Generating, 5f);
-                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[0] && p.Target.Type == QuestType.Hunt), Is.False, "a den on the board is not offered");
-                var card = proposals.Current.FirstOrDefault(p => p.Target.Den == dens[1] && p.Target.Type == QuestType.Hunt);
+                Assert.That(proposals.Current.Any(p => ReferenceEquals(p.Target.Den, dens[0]) && p.Target.Type == QuestType.Hunt), Is.False, "a den on the board is not offered");
+                var card = proposals.Current.FirstOrDefault(p => ReferenceEquals(p.Target.Den, dens[1]) && p.Target.Type == QuestType.Hunt);
                 Assert.That(card, Is.Not.Null, $"a card for the den taken down ({proposals.EmptyReason})");
                 Assert.That(proposals.Choose(card, out var message), Is.True, message);
                 var patron = board.Quests.First(q => q.IsActive && q.TargetNest == dens[1]);
                 Assert.That(patron.Client, Is.EqualTo(QuestClient.Patron));
                 Assert.That(patron.RewardGold + patron.FeeGold, Is.EqualTo(card.RewardGold));
-                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[1] && p.Target.Type == QuestType.Hunt), Is.False, "the other cards on that den go with it");
+                Assert.That(proposals.Current.Any(p => ReferenceEquals(p.Target.Den, dens[1]) && p.Target.Type == QuestType.Hunt), Is.False, "the other cards on that den go with it");
                 Assert.That(escrow, Is.EqualTo(0), "the client pays, and a den taken down refunds nothing");
 
                 // Taken: not the guild master's to take down. Done: the guild gets its fee.
@@ -1691,6 +1691,12 @@ namespace GuildMaster.Tests
                     "one vein known: as much as it gives at the least");
                 Assert.That(dig.HasRewardItem, Is.True, "a village pays an item besides the gold");
                 Assert.That(dig.Title, Does.StartWith("[채집]"));
+                // The vein is spoken for (2026-11-10): no second errand is asked of it, and nobody digs it for itself meanwhile —
+                // the second errand's taker stood a day by the bare vein, in every measured run.
+                Assert.That(board.GatherStillNeeded(ErrandRules.Ore), Is.EqualTo(2));
+                Assert.That(ErrandOffers.TryGather(World.PlaceKind.OreVein, out var again) && again.Supply == 0, Is.True, "what the vein gives is asked for already");
+                Assert.That(ErrandOffers.GatherDraft(again, 5, 1f, out _), Is.False, "no second dig at the same vein");
+                Assert.That(Services.Get<Places.PlaceVisits>().Best(members[1], World.PlaceKind.OreVein), Is.Null, "kept for the errand");
                 dig.RewardItem = new ItemStack("gear_t3", 1);
                 var digger = members[0];
                 int tierBefore = digger.Data.gearTier;
@@ -5398,6 +5404,22 @@ namespace GuildMaster.Tests
                 Assert.That(n.Deeds.Count, Is.EqualTo(2));
                 Assert.That(goblin.Level, Is.EqualTo(Mathf.Min(MonsterLevel.MaxLevel, before + Nemeses.NemesisRules.DriveOffLevels)));
                 Assert.That(goblin.DisplayName, Does.StartWith($"{victim.Data.name} 잡이"));
+
+                // The bounty follows what it has become (2026-11-10): grown past the danger it was posted at, the town rates
+                // and pays it anew — it stayed 낮음 while the nemesis grew to Lv14 on the newcomers who kept taking it.
+                int postedGold = bounty.RewardGold + bounty.FeeGold;
+                goblin.GrowTo(MonsterLevel.HighDangerLevel);
+                yield return WaitFor(() => bounty.Danger == DangerLevel.High, 5f);
+                Assert.That(bounty.Danger, Is.EqualTo(DangerLevel.High), "rated by the level the guild sees it at now");
+                Assert.That(bounty.RewardGold + bounty.FeeGold, Is.GreaterThan(postedGold), "and paid for it");
+                Assert.That(bounty.MaxParty, Is.EqualTo(QuestPricing.PartyFor(DangerLevel.High)));
+                Assert.That(QuestRisk.KnownFoeLevel(bounty), Is.EqualTo(goblin.Level));
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.Contains("현상금을 다시 매겼습니다")), Is.True, "told");
+                // A member of level 1 does not go for it alone, grudge or not.
+                int friendLevel = friend.Data.level;
+                friend.Data.level = 1;
+                Assert.That(RuleBasedDecisionMaker.Score(friend, bounty), Is.EqualTo(0f), "beyond a newcomer");
+                friend.Data.level = friendLevel;
 
                 // A close call nobody saw: nothing.
                 var unseen = UnitRegistry.All.OfType<Monster>().First(x => x.IsAlive && x != goblin && !x.IsDragon && !fog.IsVisibleRaw(x.Position));

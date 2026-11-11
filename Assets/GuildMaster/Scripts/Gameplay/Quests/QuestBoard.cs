@@ -309,6 +309,19 @@ namespace GuildMaster.Quests
             => PostRequest(draft, client, null, null, null, false, incident);
 
         /// <summary>
+        /// An incident's client rates and pays its quest anew while it stands: the town's bounty on a nemesis follows what the
+        /// guild knows it has become (its level, the stronger ones of its den, its kills) — posted on a Lv4 that then grew to
+        /// Lv14, it stayed 낮음 and members of Lv1 went for it alone, one after another. <paramref name="total"/> is the client's
+        /// whole payment (the guild's fee comes off it as when posted).
+        /// </summary>
+        public void ReviseIncidentQuest(Quest q, DangerLevel danger, int total, int maxParty)
+        {
+            if (q == null || !q.IsActive || q.Incident == null) return;
+            var (members, fee) = QuestPricing.Split(total);
+            q.Reprice(danger, members, fee, QuestPricing.RewardExp(total), maxParty);
+        }
+
+        /// <summary>
         /// The incident is over without its quest done (P4-85: the rare one slipped away, the traveller died...): nobody is
         /// paid. Claimed, it failed; unclaimed, it simply comes down.
         /// </summary>
@@ -365,6 +378,19 @@ namespace GuildMaster.Quests
             foreach (var q in _quests)
                 if (q.IsActive && q.Type == QuestType.Collect && q.TargetNest == n) return true;
             return false;
+        }
+
+        /// <summary>
+        /// What the gathering errands standing on the board still need of this item: it is spoken for. A second errand was
+        /// asked against the same vein while the first one's taker was on its way to dig it, and its taker then waited a day
+        /// by the bare spot (measured on every run).
+        /// </summary>
+        public int GatherStillNeeded(string itemId)
+        {
+            int needed = 0;
+            foreach (var q in _quests)
+                if (q.IsActive && q.Type == QuestType.Gather && q.ItemId == itemId) needed += Mathf.Max(0, q.RequiredCount - q.Progress);
+            return needed;
         }
 
         // ---------------- Errands (P4-133) ----------------

@@ -421,7 +421,10 @@ namespace GuildMaster.Adventurers
         {
             QuestType.Treasure => "보물 털기",
             QuestType.Disaster => "재해 대응",
-            QuestType.Gather => _gatherSpot != null && _gatherHours > 0f ? (_gatherSpot.Kind == PlaceKind.OreVein ? "광석 캐는 중" : "약초 따는 중") : "채집하러 가는 중",
+            QuestType.Gather => _gatherSpot == null ? "채집하러 가는 중"
+                              // Picked clean before it came: it says what it is doing there (it read "채집하러 가는 중" for a day).
+                              : _waitingForRegrowth ? (_gatherSpot.Kind == PlaceKind.OreVein ? "광맥이 다시 드러나길 기다리는 중" : "약초가 다시 자라길 기다리는 중")
+                              : _gatherHours > 0f ? (_gatherSpot.Kind == PlaceKind.OreVein ? "광석 캐는 중" : "약초 따는 중") : "채집하러 가는 중",
             QuestType.Collect => "납품할 것 모으는 중",
             QuestType.Deliver => "배달 중",
             _ => "사냥 중",
