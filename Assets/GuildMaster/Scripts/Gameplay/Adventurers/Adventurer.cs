@@ -52,10 +52,17 @@ namespace GuildMaster.Adventurers
 
         /// <summary>Hp ratio below which the adventurer retreats (traits can modify).</summary>
         public float RetreatThreshold
-            => (Traits?.RetreatThreshold ?? 0.35f)
-               // Fighting a kind it fears (a quirk, P4-104e): it pulls out sooner.
-               + (Data != null && Data.quirks.Count > 0 && Engage?.Target is Monster m && m.Def != null && QuirkRules.Fears(Data.quirks, m.Def.id)
-                   ? QuirkRules.FearRetreatShift : 0f);
+        {
+            get
+            {
+                float t = (Traits?.RetreatThreshold ?? 0.35f)
+                          // Fighting a kind it fears (a quirk, P4-104e): it pulls out sooner.
+                          + (Data != null && Data.quirks.Count > 0 && Engage?.Target is Monster m && m.Def != null && QuirkRules.Fears(Data.quirks, m.Def.id)
+                              ? QuirkRules.FearRetreatShift : 0f);
+                // Behind its rival in a race for kills (P4-131): it holds on longer.
+                return Services.TryGet<BondService>(out var bonds) && bonds.IsBehind(this) ? BondRules.RetreatWhenBehind(t) : t;
+            }
+        }
 
         internal TownIdleState IdleState;
         internal DecidingState DecidingState;
@@ -220,7 +227,51 @@ namespace GuildMaster.Adventurers
         public override bool IsBackLine => Role == PartyRole.Back || FallingBack;
         /// <summary>Skilled+ warriors protect the back line.</summary>
         public override bool GuardsBackLine => Role == PartyRole.Front && Tier >= CombatTier.Skilled;
-        public override Unit CalledTarget => Services.TryGet<PartyTactics>(out var party) ? party.CalledTargetFor(this) : null;
+        /// <summary>The guild master's focus order first (P4-132), then its party leader's call (P4-27).</summary>
+        public override Unit CalledTarget => OrderedTarget ?? (Services.TryGet<PartyTactics>(out var party) ? party.CalledTargetFor(this) : null);
+
+        // ---------------- The guild master's orders (P4-132) ----------------
+
+        Unit _ordered;
+        float _orderedUntil;
+
+        /// <summary>The monster the guild master told it to bring down (a focus order), while the order stands; null otherwise.</summary>
+        public Unit OrderedTarget => _ordered != null && _ordered.IsAlive && Time.time < _orderedUntil ? _ordered : null;
+
+        /// <summary>
+        /// A focus order (P4-132): on <paramref name="target"/> for <paramref name="seconds"/> or until it falls — past its party
+        /// leash and the calling state's zone (<see cref="HandleCombat"/>). A change of state or falling back calls it off.
+        /// </summary>
+        internal void OrderTarget(Unit target, float seconds)
+        {
+            _ordered = target;
+            _orderedUntil = Time.time + seconds;
+            if (target != null && target.IsAlive) Engage.Force(target, OrderLockSeconds);
+        }
+
+        internal void CallOffOrder() => _ordered = null;
+
+        /// <summary>The engagement is held on an ordered target this long at a time (kept up while the order stands).</summary>
+        const float OrderLockSeconds = 0.5f;
+        /// <summary>An ordered target further than this is let go (cells): it ran, or the member was carried off.</summary>
+        const float OrderReach = 18f;
+
+        /// <summary>Called home by the guild master's horn (P4-132): not out to the town's defence before this game hour.</summary>
+        public float HeldHomeUntilHour { get; private set; } = float.NegativeInfinity;
+
+        /// <summary>
+        /// The horn (P4-132): it stops fighting and runs home now — its quest kept, its party's own call not waited for (an order
+        /// is an order) — and stays out of the town's defence until <paramref name="untilHour"/>.
+        /// </summary>
+        internal void RetreatOnOrder(float untilHour)
+        {
+            HeldHomeUntilHour = untilHour;
+            CallOffOrder();
+            Engage.Clear();
+            Looting.Cancel();
+            ReturnState.RequestRetreat();
+            ChangeState(ReturnState);
+        }
 
         /// <summary>Turns a freshly created adventurer into a town visitor (not attacked, no quests).</summary>
         public void BecomeVisitor(float leaveAtHour)
@@ -463,11 +514,18 @@ namespace GuildMaster.Adventurers
             Engage.CandidateFilter = extra == null ? threat : _anyFilter ??= IsAnyCandidate;
             Engage.SearchRadius = Mathf.Max(Stats.SightRadius, ComradeCryRadius);
 
+            // A comrade fought only while it was berserk (or in the fistfight): once it comes to, it is a comrade again and the
+            // fight is off — the engagement used to run on, and the one who had stopped a berserker shot it dead on the way out.
+            if (Engage.Target != null && !IsHostileTo(Engage.Target)) Engage.Clear();
+            // The guild master's focus order (P4-132): it goes past the zone and the party leash below.
+            var ordered = OrderedTarget;
             // Optional zone (town defense): drop targets outside it instead of chasing them.
-            if (Engage.Target != null && allowed != null && !allowed(Engage.Target)) Engage.Clear();
+            if (Engage.Target != null && Engage.Target != ordered && allowed != null && !allowed(Engage.Target)) Engage.Clear();
             // A chase that pulls a member away from its party is called off (P4-38).
-            if (Engage.Target != null && !WasRecentlyAttackedBy(Engage.Target) && !PartyTactics.InLeash(leash, Engage.Target.Position))
+            if (Engage.Target != null && Engage.Target != ordered && !WasRecentlyAttackedBy(Engage.Target)
+                && !PartyTactics.InLeash(leash, Engage.Target.Position))
                 Engage.Clear();
+            if (ordered != null) KeepToTheOrder(ordered);
             if (Engage.Target != null)
             {
                 if (Engage.Tick(dt) != EngageStatus.Lost) return Fighting();
@@ -534,6 +592,25 @@ namespace GuildMaster.Adventurers
             if (called == null || !called.IsAlive || Engage.IsIgnoring(called)) return null;
             if (Vector2.Distance(Position, called.Position) > Stats.SightRadius) return null;
             return threat(called) || (extra != null && extra(called)) ? called : null;
+        }
+
+        /// <summary>
+        /// Holds the engagement on the guild master's ordered target (P4-132) while it can be got at — not one it gave up chasing
+        /// (ignored a while), out of its reach (on the wing) or gone far off: then the order is off. A novice something else is
+        /// hitting turns on that first, as novices do (<see cref="CombatTiers.RetaliatesOnly"/>), and back to the order once it
+        /// lets up — the two would otherwise take the target from each other every frame.
+        /// </summary>
+        void KeepToTheOrder(Unit ordered)
+        {
+            if (Engage.IsIgnoring(ordered) || !Combat.CanReach(this, ordered)
+                || (ordered.Position - Position).sqrMagnitude > OrderReach * OrderReach)
+            {
+                CallOffOrder();
+                return;
+            }
+            var now = Engage.Target;
+            if (now != null && now != ordered && CombatTiers.RetaliatesOnly(Tier) && WasRecentlyAttackedBy(now, 1.5f)) return;
+            Engage.Force(ordered, OrderLockSeconds);
         }
 
         /// <summary>A fight breaks formation pacing (catch-up / waiting speeds): fight at normal speed.</summary>
@@ -628,6 +705,7 @@ namespace GuildMaster.Adventurers
         {
             if (FallingBack) return;
             FallingBack = true;
+            CallOffOrder(); // hurt, it is out of the fight (P4-132)
             _fellBackIn = Fsm.Current;
             _fallBackRepath = 0f;
             Engage.Clear();
@@ -712,6 +790,7 @@ namespace GuildMaster.Adventurers
         public void ChangeState(State<Adventurer> s)
         {
             StopFallingBack();
+            CallOffOrder(); // a focus order was for what it was doing (P4-132); one into town guard is given after the change
             Looting.Cancel();
             Fsm.ChangeState(s);
             EventBus.Publish(new AdventurerStateChangedEvent { Adventurer = this, Label = s.Label });
@@ -803,13 +882,16 @@ namespace GuildMaster.Adventurers
         {
             Data.kills++;
             foreach (var s in loot) Data.AddLoot(s.itemId, s.count);
-            GainExp(exp); // the victim's own level counts (user decision 2026-09-22)
+            GainExp(Mentored(this, exp)); // the victim's own level counts (user decision 2026-09-22)
             // Everyone fighting alongside gets the full EXP too (P4-40, user report 2026-09-21:
             // "levelling is too slow"). Parties focus one target, so the last hit is luck, and a
             // priest that heals the whole fight never landed one at all — Lv1 after three days.
             UnitRegistry.Collect(Position, ExpShareRadius, u => u != this && u is Adventurer m && m.IsGuildMember, s_expShare);
-            foreach (var u in s_expShare) ((Adventurer)u).GainExp(exp);
+            foreach (var u in s_expShare) ((Adventurer)u).GainExp(Mentored((Adventurer)u, exp));
         }
+
+        /// <summary>A kill's EXP with a mentor close by: a little more (P4-131).</summary>
+        static int Mentored(Adventurer a, int exp) => Services.TryGet<BondService>(out var bonds) ? bonds.Mentored(a, exp) : exp;
 
         // ---------------- Save (P5-4) ----------------
 

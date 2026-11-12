@@ -67,7 +67,7 @@ namespace GuildMaster.Adventurers
         /// A walkable cell beside the place (not on its picture), a different one for each visitor — picked by its id, not the
         /// dice, so a loaded game puts it back where it stood.
         /// </summary>
-        static Vector2 SpotBeside(PlaceSite p, Adventurer a)
+        internal static Vector2 SpotBeside(PlaceSite p, Adventurer a)
         {
             var grid = Services.Get<WorldService>().Grid;
             var offsets = Beside;

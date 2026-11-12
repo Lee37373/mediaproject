@@ -36,7 +36,7 @@ namespace GuildMaster.UI
             _stats.horizontalOverflow = HorizontalWrapMode.Wrap;
             UIBuilder.Button(box.transform, "계속하기", Continue, -1, 44, new Color(0.25f, 0.45f, 0.3f), 18)
                 .Tooltip(() => "같은 세계에서 계속 플레이합니다. 정화된 땅은 그대로 비어 갑니다.");
-            UIBuilder.Button(box.transform, "타이틀로", () => GameSettings.ReloadScene(showTitle: true), -1, 40, null, 17);
+            UIBuilder.Button(box.transform, "타이틀로", () => ExitGuard.Request("타이틀로 나갈까요?", () => GameSettings.ReloadScene(showTitle: true)), -1, 40, null, 17); // P6-1
             _root.gameObject.SetActive(false);
             EventBus.Subscribe<Guild.GuildRankChangedEvent>(OnRank);
         }
@@ -78,7 +78,10 @@ namespace GuildMaster.UI
             _root.gameObject.SetActive(true);
         }
 
-        void Continue()
+        public bool IsOpen => _root != null && _root.gameObject.activeSelf;
+
+        /// <summary>"계속하기", also ESC (P6-2, UIRoot).</summary>
+        public void Continue()
         {
             _root.gameObject.SetActive(false);
             if (_holding && Services.TryGet<GameClock>(out var clock)) clock.Release();

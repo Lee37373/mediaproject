@@ -152,35 +152,39 @@ namespace GuildMaster.Session
 
         /// <summary>Talk visitors into joining. Off measures a guild that never recruits.</summary>
         public bool Recruits { get; set; } = true;
-        /// <summary>
-        /// Propose once affinity is here: the rule-based reply says yes from 55 after the proposal line
-        /// (which itself adds a little), and the verdict needs 50.
-        /// </summary>
-        public const int ProposeAt = 55;
-        /// <summary>Pitches before giving up on a visitor (the opening question is not counted).</summary>
-        public const int MaxPitches = 4;
-        const string Opening = "안녕하세요, 어떤 일을 찾고 계신가요?";
+        /// <summary>Lines before giving up on a visitor (a talk is won or lost in far fewer; this only ends one that goes nowhere).</summary>
+        public const int MaxLines = 40;
+        /// <summary>What an argument whose chance the guild master cannot see yet is taken to be worth (percent).</summary>
+        public const int UnknownChance = 40;
 
         RecruitmentSession _talk;
         readonly HashSet<Adventurer> _talkedTo = new();
 
         /// <summary>
-        /// What a player would say once the opening question told them what the visitor is after: a
-        /// line on that and a compliment. The visitor's answer to the opening names what it wants, so
-        /// reading its values here is what the player learns from the talk, not hidden information.
+        /// The line a player would pick from the ones offered: joining is won by arguments rolled for, typed lines win
+        /// nobody (KMS 2026-10-29) — the old typed pitch recruited no one from then on, and a run measured a guild of
+        /// its three or four founders. Asks what the visitor is after while that is offered and unknown (it shows the
+        /// pitches' chances), then the argument with the best chance it can see. Only what the window shows is read.
         /// </summary>
-        public static string PitchFor(string values) => values switch
+        public static RecruitChoice PickLine(RecruitmentSession talk)
         {
-            "돈" => "우리 길드는 보상이 두둑해서 골드를 제대로 벌 수 있어요. 실력이 대단해 보이네요!",
-            "명예" => "우리 길드에서라면 이름을 떨치고 영웅이 될 수 있어요. 실력이 대단해 보이네요!",
-            "동료" => "우리 길드엔 함께 싸울 동료들이 있어요. 실력이 대단해 보이네요!",
-            "모험" => "우리 길드와 미지의 땅을 탐험하는 모험을 떠나 봐요. 실력이 대단해 보이네요!",
-            "안전" => "우리 길드는 서로를 지켜 주니 안전하게 일할 수 있어요. 실력이 대단해 보이네요!",
-            "지식" => "우리 길드에서는 매일 지식을 배울 수 있어요. 실력이 대단해 보이네요!",
-            _ => "우리 길드에 오면 좋은 일이 많을 거예요. 실력이 대단해 보이네요!",
-        };
+            if (talk == null) return null;
+            RecruitChoice best = null, any = null;
+            int bestChance = -1;
+            foreach (var c in talk.Choices)
+            {
+                if (c == null) continue;
+                if (c.Kind == RecruitChoiceKind.AskValues) return c;
+                if (!RecruitLines.IsArgument(c.Kind)) { any ??= c; continue; }
+                int chance = talk.ChanceKnown(c) ? talk.ChanceOf(c).Success : UnknownChance;
+                if (chance <= bestChance) continue;
+                bestChance = chance;
+                best = c;
+            }
+            return best ?? any;
+        }
 
-        /// <summary>One step of a talk per think tick: ask, pitch until warm enough, then propose.</summary>
+        /// <summary>One step of a talk per think tick: a line picked from the ones offered until the visitor joins or leaves.</summary>
         void Recruit()
         {
             if (!Recruits) return;
@@ -193,9 +197,9 @@ namespace GuildMaster.Session
                     _talk = null;
                     return;
                 }
-                if (_talk.Affinity >= ProposeAt) { _ = _talk.SendAsync(null, true); return; }
-                if (_talk.PlayerTurns > MaxPitches) { _talk.Abort(); _talk = null; return; }
-                _ = _talk.SendAsync(_talk.PlayerTurns == 0 ? Opening : PitchFor(_talk.Visitor.Data.values), false);
+                var line = PickLine(_talk);
+                if (line == null || _talk.PlayerTurns > MaxLines) { _talk.Abort(); _talk = null; return; }
+                _ = _talk.SendChoiceAsync(line);
                 return;
             }
             if (!Services.TryGet<VisitorService>(out var visitors)) return;

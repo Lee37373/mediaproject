@@ -168,12 +168,13 @@ namespace GuildMaster.UI
                 _pitch.text = p.Pitch ?? "";
 
                 var riskColor = p.Risk == QuestRisk.Reckless ? UITheme.Bad : p.Risk == QuestRisk.Risky ? UITheme.Warn : UITheme.Good;
-                string what = p.Target.Type == QuestType.Hunt
-                    ? $"{p.Target.Label} x{p.Count} 토벌 · {p.Target.Area}"
-                    : $"{p.Target.Label} 소탕 · {p.Target.Area}";
+                string what = ProposalTexts.WhatLine(p);
                 string check = service.Check(p);
+                // The item the patron pays besides the gold (P4-133).
+                string item = string.IsNullOrEmpty(p.RewardItem.itemId) ? ""
+                    : " + " + UIBuilder.Colored(Quests.ErrandRules.ItemCount(Quest.ItemName(p.RewardItem.itemId), p.RewardItem.count), UITheme.Exp);
                 _detail.text = $"{what}\n길드 기준 {UIBuilder.Colored(p.Risk, riskColor)} · 추천 {p.Party}명 · 보상 {p.RewardGold}G(길드원 {p.MemberGold}G · " +
-                               $"{UIBuilder.Colored($"수수료 {p.FeeGold}G", UITheme.Accent)}) / {p.RewardExp}EXP" +
+                               $"{UIBuilder.Colored($"수수료 {p.FeeGold}G", UITheme.Accent)}) / {p.RewardExp}EXP{item}" +
                                (check != null ? "  " + UIBuilder.Colored(check, UITheme.Bad) : "");
                 _choose.interactable = check == null;
             }

@@ -226,30 +226,43 @@ MonoBehaviour:
   monsters:
   - key: goblin
     sprite: {fileID: 21300000, guid: 2a5cee4ac42504f8c85eeeb7993f8d10, type: 3}
+    parts: {fileID: 3012057582553211427, guid: baac1c9104301431d8c897856ede7bd9, type: 3}
   - key: goblin_archer
     sprite: {fileID: 21300000, guid: 483805364f1c24c9ea7a2ba394d78405, type: 3}
+    parts: {fileID: 1467855000606824608, guid: c3d8c9982b16b4ca29bdb017529dd5de, type: 3}
   - key: goblin_warrior
     sprite: {fileID: 21300000, guid: 1bc6f30aa38ac49ac9ae68e12dd34c18, type: 3}
+    parts: {fileID: 4675763399876256073, guid: 88b2a4e0ce6534d91aed42f78b6083f7, type: 3}
   - key: slime
     sprite: {fileID: 21300000, guid: 28fd0a34190aa4ad1989fb2ecf8ce578, type: 3}
+    parts: {fileID: 9009012672970509345, guid: 2a2934bf37057451f817e19165891f90, type: 3}
   - key: stone_slime
     sprite: {fileID: 21300000, guid: f48fdcc0c8e4345ccbff384d0b92e2d1, type: 3}
+    parts: {fileID: 2099320079833157805, guid: be47301c545f840b98afc7b6bc501e30, type: 3}
   - key: slime_king
     sprite: {fileID: 21300000, guid: 4ed0684047ddd446db42c71e64d3e66e, type: 3}
+    parts: {fileID: 8888021867122937753, guid: 1f7262f791223416298609174c8e43c8, type: 3}
   - key: skull
     sprite: {fileID: 21300000, guid: 72f0358559a3b4ecabe7635452f00c8b, type: 3}
+    parts: {fileID: 5373414145543244546, guid: 066d65920abe64af18cd5b9a84c036a5, type: 3}
   - key: skull_archer
     sprite: {fileID: 21300000, guid: ff0898eab9aee4aaf834ea3bd07a1062, type: 3}
+    parts: {fileID: 5667695128728456299, guid: 214db3b45e9e64ddf9970515c298f1ad, type: 3}
   - key: boss_slime
     sprite: {fileID: 21300000, guid: 9b8d92afcbde74f18afcbf6f3eab637a, type: 3}
+    parts: {fileID: 6660441236427461368, guid: ecccd14177f364b8db55890b29520f59, type: 3}
   - key: boss_stone_slime
     sprite: {fileID: 21300000, guid: 70a32de72fda44b32be69c782d3c6160, type: 3}
+    parts: {fileID: 7600669893260432713, guid: c195e1b58980d491d8c83d7f4cc477d7, type: 3}
   - key: boss_slime_king
     sprite: {fileID: 21300000, guid: d7baaab0f29b64991a3b8803e3746a78, type: 3}
+    parts: {fileID: 4501278960680237203, guid: 921345875a2884c0d9bc08a6dd914aa5, type: 3}
   - key: boss_skull
     sprite: {fileID: 21300000, guid: 3b35801048d364bd089645e573f65a17, type: 3}
+    parts: {fileID: 4658597992217096440, guid: c0be198829499404ba3c452a1a2b024e, type: 3}
   - key: boss_goblin
     sprite: {fileID: 21300000, guid: e57c9c0f717a64b42be139dba1892f2a, type: 3}
+    parts: {fileID: 6251977045722442677, guid: eebfe608cf5744a0b89a37b6ccdb02a1, type: 3}
   humanRig: {fileID: 1824668350962886144, guid: d6c3c650b0b379149a826b54b40b4571, type: 3}
   humanParts:
   - type: Hair
@@ -701,6 +714,12 @@ MonoBehaviour:
     - {fileID: 21300000, guid: 419bba2ab181f3d4da69747453e457a4, type: 3}
     - {fileID: 21300000, guid: 1f7de0baccd29a544911cfba1fcf5971, type: 3}
   vfx:
+  - key: Booster_ArrowUp
+    prefab: {fileID: 1183495606302007993, guid: 5c10626d4afb542fa82233851dd6e46f, type: 3}
+  - key: Booster_Lightning
+    prefab: {fileID: 851840476961654731, guid: de8ead92ffb9c46dcb3f114dfca2269f, type: 3}
+  - key: Bubble
+    prefab: {fileID: 1972700690882371021, guid: 1f901a91c7cd145b5bd4d3e1d9acb667, type: 3}
   - key: Buff1_Blue
     prefab: {fileID: 8398536700712496605, guid: 9ea63a39da9894831b30ddb68c779c13, type: 3}
   - key: Buff1_Green
@@ -713,12 +732,30 @@ MonoBehaviour:
     prefab: {fileID: 8398536700712496605, guid: e3ce507020d6049c0ad6f2b0ebdbb081, type: 3}
   - key: Buff1_Yellow
     prefab: {fileID: 8398536700712496605, guid: 9cd6757bf5d2741f290821fb01085e24, type: 3}
+  - key: Buff2_Red
+    prefab: {fileID: 2201098649976851821, guid: d289b3f2ecb34abca608cb978d1ef84f, type: 3}
+  - key: Buff3_Yellow
+    prefab: {fileID: 9193748372416453468, guid: 1b02d49382e6948b2b636121c1621c79, type: 3}
+  - key: Cloud1
+    prefab: {fileID: 5305861645761716486, guid: 33b9a16e036eb4487983df9ebc7026ea, type: 3}
+  - key: Cloud2
+    prefab: {fileID: 7217909793510778787, guid: b2654b94f65284e699522ff74c7b6e93, type: 3}
+  - key: Explosion_Effect_Blue
+    prefab: {fileID: 5107304801680389854, guid: 797527cd75a36424db3d5aaea2a449fd, type: 3}
+  - key: Explosion_Effect_Green
+    prefab: {fileID: 2582054185210280888, guid: c41503808528148ecbaa69a2fd7ac0d6, type: 3}
+  - key: Explosion_Effect_White
+    prefab: {fileID: 3275760064135781829, guid: 8cc5310ce6c6e4a3eba762e538c5dcbb, type: 3}
+  - key: Explosion_Large
+    prefab: {fileID: 618237541255771735, guid: 18c8372b7d6a14036845fa6319167259, type: 3}
   - key: Explosion_Small
     prefab: {fileID: 8912904719962128330, guid: e691911aac61c42948d670fb836460db, type: 3}
   - key: Heal1
     prefab: {fileID: 5704499188230125001, guid: 98b45afe0847f4e1983b4bf9aecda0d6, type: 3}
   - key: Heal2
     prefab: {fileID: 1308312020384734185, guid: e1fba54b9f41744e7896cc6169fbd40c, type: 3}
+  - key: Hit10_Red
+    prefab: {fileID: 8756492849227175693, guid: e6a5ac322e4b8425799808a7e3ba0a45, type: 3}
   - key: Hit1_Blue
     prefab: {fileID: 1074865102765947933, guid: c5c9cbc6877ba487e9efabb93f84d946, type: 3}
   - key: Hit1_Green
@@ -737,12 +774,22 @@ MonoBehaviour:
     prefab: {fileID: 2831315584173375014, guid: 109861a1a83594e4497dc6b71df24801, type: 3}
   - key: Levelup_Yellow
     prefab: {fileID: 6177370502447319326, guid: c41488ccf3dd43c2a8edf13e8824e1a2, type: 3}
+  - key: Lightning_Small_Blue
+    prefab: {fileID: 2876143933901294431, guid: 88c00a62b6e7e417b85c5407adb3f065, type: 3}
+  - key: Lightning_Small_Yellow
+    prefab: {fileID: 5822591571325701028, guid: 46685f6cea7ae479a8029d70bb111a76, type: 3}
   - key: MagicCircle1_Blue
     prefab: {fileID: 2851253688436897091, guid: 216de842495504fe6854cbed440a81ed, type: 3}
   - key: MagicCircle1_Purple
     prefab: {fileID: 2851253688436897091, guid: 4c4a16c39fd81460a9028e33cb0876b5, type: 3}
   - key: MagicCircle1_Yellow
     prefab: {fileID: 2851253688436897091, guid: 089bafec901794582a08a830001e8f8f, type: 3}
+  - key: Poisoning1
+    prefab: {fileID: 7929597903765682637, guid: d9f2366f42f024b9a9aa857eef36f4d6, type: 3}
+  - key: Poisoning2
+    prefab: {fileID: 8813129680796898534, guid: d800a7967469741a9908516256c93737, type: 3}
+  - key: Shield
+    prefab: {fileID: 6196045956794056190, guid: 5c6b217e5bf52451794273951438bec2, type: 3}
   - key: Smoke
     prefab: {fileID: 1938309193147952539, guid: fa5d72cbefae24283a9bf6d3cbe51e96, type: 3}
   - key: Whirlwind1

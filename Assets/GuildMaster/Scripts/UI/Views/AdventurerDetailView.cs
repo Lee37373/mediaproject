@@ -21,12 +21,13 @@ namespace GuildMaster.UI
     {
         const int DialoguePreview = 4;
         const int MemoryPreview = 5;
+        const int ChroniclePreview = 4;
 
         public override string Title => "모험가 상세";
         protected override float RefreshInterval => 0.25f;
 
         Adventurer _who;
-        Text _header, _stats, _gear, _record, _thought, _mood, _memories, _relations, _dialogue;
+        Text _header, _stats, _gear, _record, _thought, _mood, _memories, _relations, _bonds, _dialogue, _chronicle;
         RectTransform _traitRow, _skillRow;
         readonly List<Text> _skillLabels = new();
 
@@ -44,6 +45,9 @@ namespace GuildMaster.UI
             _gear = Block(left, 72);
             Section(left, "전적");
             _record = Block(left, 72);
+            // Its great moments (P4-129): the latest few lines of its chronicle.
+            Section(left, "전기");
+            _chronicle = Block(left, 96);
             var buttons = UIBuilder.Row(left, 34);
             UIBuilder.Button(buttons, "추적", FocusCamera, 90, 32, null, 15);
             UIBuilder.Button(buttons, "대화 기록 전체", OpenDialogueLog, 140, 32, null, 15);
@@ -66,6 +70,9 @@ namespace GuildMaster.UI
             _memories = Block(right, 84);
             Section(right, "관계");
             _relations = Block(right, 44);
+            // Who is what to it in a fight (P4-131): friends, foes, rivals, mentors.
+            Section(right, "궁합");
+            _bonds = Block(right, 62);
             Section(right, "최근 대화");
             _dialogue = Block(right, 72);
         }
@@ -199,6 +206,9 @@ namespace GuildMaster.UI
                 $"EXP {d.exp}/{d.ExpToNextLevel}  {Bar(100f * d.exp / Mathf.Max(1, d.ExpToNextLevel))}\n" +
                 $"처치 {d.kills} · 완료한 의뢰 {d.questsCompleted}\n" +
                 UIBuilder.Colored($"기억 {d.memories.Count}개 · 대화 {d.dialogue.Count}줄", UITheme.TextMuted);
+            _chronicle.text = d.chronicle.Count == 0 ? UIBuilder.Colored("아직 명장면이 없습니다. 큰 적과의 싸움·위기·마을 방어에 나서면 기록됩니다.", UITheme.TextMuted)
+                : string.Join("\n", d.chronicle.Skip(Mathf.Max(0, d.chronicle.Count - ChroniclePreview)).Select(c => c.Format()))
+                  + (d.chronicle.Count > ChroniclePreview ? "\n" + UIBuilder.Colored($"(모두 {d.chronicle.Count}줄)", UITheme.TextMuted) : "");
 
             for (int i = 0; i < _skillLabels.Count && i < a.Skills.Count; i++)
             {
@@ -218,6 +228,7 @@ namespace GuildMaster.UI
                 : string.Join("\n", d.memories.Skip(Mathf.Max(0, d.memories.Count - MemoryPreview)).Select(m => m.Format()));
 
             _relations.text = RelationsText(a);
+            _bonds.text = BondsText(a);
 
             var lines = d.dialogue;
             _dialogue.text = lines.Count == 0 ? UIBuilder.Colored("아직 나눈 대화가 없습니다.", UITheme.TextMuted)
@@ -233,6 +244,36 @@ namespace GuildMaster.UI
                 .Select(x => $"{x.other.Data.name} {UIBuilder.Colored(Relationships.Describe(x.value), x.value >= 15 ? UITheme.Good : x.value <= -15 ? UITheme.Bad : UITheme.TextMuted)}")
                 .ToList();
             return parts.Count == 0 ? UIBuilder.Colored("다른 길드원이 없습니다.", UITheme.TextMuted) : string.Join(", ", parts);
+        }
+
+        /// <summary>
+        /// Who is what to it in a fight (P4-131): friends, foes, rivals (with its record against each), mentors and pupils, and
+        /// what each does; first, what is working on it right now.
+        /// </summary>
+        static string BondsText(Adventurer a)
+        {
+            if (a.IsVisitor || !Services.TryGet<GuildRoster>(out var roster)) return UIBuilder.Colored("길드원이 아닙니다.", UITheme.TextMuted);
+            var lines = new List<string>();
+            if (a.BondAttack > 0f) lines.Add(UIBuilder.Colored($"지금: 친구 곁에서 공격 +{a.BondAttack * 100f:0}%", UITheme.Good));
+            else if (a.BondAttack < 0f) lines.Add(UIBuilder.Colored($"지금: 앙숙이 거슬려 공격 {a.BondAttack * 100f:0}%", UITheme.Bad));
+            if (Services.TryGet<BondService>(out var service) && service.IsBehind(a)) lines.Add(UIBuilder.Colored("지금: 라이벌에게 지는 중 — 후퇴를 늦춤", UITheme.Warn));
+            var bonds = BondService.BondsOf(a, roster.Members);
+            foreach (BondKind kind in System.Enum.GetValues(typeof(BondKind)))
+            {
+                var names = bonds.Where(b => b.kinds.Contains(kind))
+                                 .Select(b => kind == BondKind.Rival ? RivalName(a, b.other) : b.other.Data.name).ToList();
+                if (names.Count == 0) continue;
+                var color = kind == BondKind.Foe ? UITheme.Bad : kind == BondKind.Rival ? UITheme.Warn : UITheme.Good;
+                lines.Add($"{UIBuilder.Colored(BondRules.Label(kind), color)} {string.Join("·", names)} {UIBuilder.Colored("— " + BondRules.Effect(kind), UITheme.TextMuted)}");
+            }
+            return lines.Count > 0 ? string.Join("\n", lines)
+                : UIBuilder.Colored($"특별한 사이가 없습니다. 서로 {BondRules.FriendAt} 이상 친해지면 함께 싸울 때 강해집니다.", UITheme.TextMuted);
+        }
+
+        static string RivalName(Adventurer a, Adventurer other)
+        {
+            var (won, lost) = BondService.Record(a, other);
+            return won + lost > 0 ? $"{other.Data.name}({won}승 {lost}패)" : other.Data.name;
         }
 
         /// <summary>Ten-block text gauge for 0–100 values.</summary>

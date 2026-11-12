@@ -74,6 +74,10 @@ namespace GuildMaster.Adventurers
             return Mathf.Clamp01(stay);
         }
 
+        /// <summary>What the item a quest pays besides the gold is worth (P4-133), 0 for none.</summary>
+        public static int RewardItemWorth(Quest q)
+            => q != null && q.HasRewardItem && Services.TryGet<GameDatabase>(out var db) ? ErrandRules.Worth(db.Item(q.RewardItem.itemId), q.RewardItem.count) : 0;
+
         /// <summary>Utility score of a quest for this adventurer (0 = refuse).</summary>
         public static float Score(Adventurer a, Quest q)
         {
@@ -98,7 +102,9 @@ namespace GuildMaster.Adventurers
             // Far under the quest's level, a 위험 one is not for it (P4-88): the rules never dare (the model may, rarely).
             if (QuestRisk.TooGreen(d, q, risk)) return 0f;
 
-            float value = q.RewardGold / (float)partySize + q.RewardExp * 1.2f / partySize;
+            float value = q.RewardGold / (float)partySize + q.RewardExp * 1.2f / partySize
+                          // The item besides the gold (P4-133): one of them gets it, so its worth is shared in the reckoning.
+                          + RewardItemWorth(q) * 0.8f / partySize;
             // Personality flavour for the rule-based fallback.
             if (d.values == "돈") value += q.RewardGold * 0.3f;
             if (d.values == "안전" && q.Danger != DangerLevel.Low) value *= 0.5f;

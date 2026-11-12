@@ -75,6 +75,13 @@ namespace GuildMaster.Proposals
             public int count, party, reward_gold, reward_exp;
             public string risk, title, pitch;
             public bool from_llm;
+            // Errands (P4-133).
+            public string item_id, item_name;
+            public int item_value, supply;
+            public float per_kill;
+            public int destination = -1;
+            public string reward_item, goods;
+            public int reward_item_count;
         }
 
         [Serializable]
@@ -106,6 +113,9 @@ namespace GuildMaster.Proposals
                     species = (p.Target.Source as MonsterDefinition)?.id, target_nest = p.Target.Den is Nest n ? nests.IndexOf(n) : -1, target_lord = p.Target.IsLord,
                     style = p.Style, danger = p.Danger, count = p.Count, party = p.Party,
                     reward_gold = p.RewardGold, reward_exp = p.RewardExp, risk = p.Risk, title = p.Title, pitch = p.Pitch, from_llm = p.FromLlm,
+                    item_id = p.Target.ItemId, item_name = p.Target.ItemName, item_value = p.Target.ItemValue, supply = p.Target.Supply,
+                    per_kill = p.Target.PerKill, destination = p.Target.Destination is Villages.Village v ? v.Id : -1,
+                    reward_item = p.RewardItem.itemId, reward_item_count = p.RewardItem.count, goods = p.GoodsName,
                 });
             return JsonUtility.ToJson(s);
         }
@@ -132,9 +142,14 @@ namespace GuildMaster.Proposals
                         Key = p.target_key, Type = p.target_type, Danger = p.target_danger, Label = p.target_label, Area = p.target_area,
                         Distance = p.target_distance, Observed = p.target_observed, Point = p.target_point, Source = db.Monster(p.species),
                         Den = p.target_nest >= 0 && p.target_nest < nests.Count ? nests[p.target_nest] : null, IsLord = p.target_lord,
+                        ItemId = string.IsNullOrEmpty(p.item_id) ? null : p.item_id, ItemName = p.item_name, ItemValue = p.item_value,
+                        Supply = p.supply, PerKill = p.per_kill,
+                        Destination = p.destination >= 0 && Services.TryGet<Villages.VillageService>(out var villages) ? villages.Get(p.destination) : null,
                     },
                     Style = p.style, Danger = p.danger, Count = p.count, Party = p.party, RewardGold = p.reward_gold, RewardExp = p.reward_exp,
                     Risk = p.risk, Title = p.title, Pitch = p.pitch, FromLlm = p.from_llm,
+                    RewardItem = string.IsNullOrEmpty(p.reward_item) ? default : new ItemStack(p.reward_item, p.reward_item_count),
+                    GoodsName = string.IsNullOrEmpty(p.goods) ? null : p.goods,
                 });
         }
 
@@ -219,7 +234,55 @@ namespace GuildMaster.Proposals
                     Den = nest,
                 });
             }
+            AddErrandTargets(list, center);
             return list;
+        }
+
+        /// <summary>Errands on the cards at most per kind (P4-133): so the dens' parts do not crowd out everything else.</summary>
+        const int ErrandTargetsPerKind = 2;
+
+        /// <summary>
+        /// The errands a patron could ask (P4-133, user decision 2026-11-08): goods to a village the guild knows (the nearest
+        /// two), ore or herbs from the spots it found, the parts of a den it has seen occupied (the nearest two).
+        /// </summary>
+        void AddErrandTargets(List<ProposalTarget> list, Vector2 center)
+        {
+            var eco = Services.TryGet<EcosystemManager>(out var e) ? e : null;
+            int LevelAt(Vector2 p) => eco != null ? eco.BirthLevelAt(p) : 1;
+            foreach (var v in ErrandOffers.Destinations().OrderBy(v => Vector2.Distance(center, v.Doorstep)).Take(ErrandTargetsPerKind))
+            {
+                var point = v.Doorstep;
+                list.Add(new ProposalTarget
+                {
+                    Key = $"deliver:{v.Id}", Type = QuestType.Deliver, Danger = QuestBoard.HuntDanger(LevelAt(point), 1), Label = v.DisplayName,
+                    Area = QuestBoard.DescribeArea(point), Distance = Vector2.Distance(center, point), Point = point, Destination = v,
+                });
+            }
+            var db = Services.Get<GameDatabase>();
+            foreach (var kind in new[] { World.PlaceKind.OreVein, World.PlaceKind.HerbPatch })
+            {
+                if (!ErrandOffers.TryGather(kind, out var g)) continue;
+                var item = db.Item(g.ItemId);
+                list.Add(new ProposalTarget
+                {
+                    Key = $"gather:{g.ItemId}", Type = QuestType.Gather, Danger = QuestBoard.HuntDanger(LevelAt(g.Point), 1),
+                    Label = item != null ? item.displayName : g.ItemId, ItemId = g.ItemId, ItemName = item != null ? item.displayName : g.ItemId,
+                    ItemValue = item != null ? item.baseValue : 0, Supply = g.Supply,
+                    Area = QuestBoard.DescribeArea(g.Point), Distance = Vector2.Distance(center, g.Point), Point = g.Point,
+                });
+            }
+            foreach (var c in ErrandOffers.Collects().OrderBy(c => Vector2.Distance(center, c.Den.WorldPosition)).Take(ErrandTargetsPerKind))
+            {
+                var point = c.Den.WorldPosition;
+                list.Add(new ProposalTarget
+                {
+                    Key = $"collect:{c.Den.Cell.x},{c.Den.Cell.y}", Type = QuestType.Collect,
+                    Danger = QuestBoard.HuntDanger(c.Species, 1, point, QuestBoard.HuntRadius), Label = c.Species.displayName,
+                    Area = QuestBoard.DescribeArea(point), Distance = Vector2.Distance(center, point), Observed = _intel.Get(c.Den).LastCount,
+                    Point = point, Source = c.Species, Den = c.Den, ItemId = c.Entry.item.id, ItemName = c.Entry.item.displayName,
+                    ItemValue = c.Entry.item.baseValue, PerKill = c.PerKill, Supply = c.Supply,
+                });
+            }
         }
 
         async Task GenerateAsync(bool auto)
@@ -313,7 +376,11 @@ namespace GuildMaster.Proposals
         public string Check(ProposalPlan plan)
         {
             if (plan == null) return "제안이 없습니다.";
-            if (plan.Target.Den is Nest den && _board.HasActiveHuntOn(den)) return "이미 게시판에 있는 둥지입니다.";
+            if (plan.Target.Den is Nest den)
+            {
+                if (plan.Target.Type == QuestType.Collect ? _board.HasActiveCollectOn(den) : _board.HasActiveHuntOn(den)) return "이미 게시판에 있는 둥지입니다.";
+            }
+            if (plan.Target.Type == QuestType.Deliver && plan.Target.Destination is Villages.Village { SeenRuined: true }) return "무너진 마을입니다.";
             return _board.Validate(ProposalRules.ToDraft(plan), QuestClient.Patron);
         }
 
@@ -322,10 +389,12 @@ namespace GuildMaster.Proposals
         {
             message = Check(plan);
             if (message != null) return false;
-            if (!_board.TryPostRequest(ProposalRules.ToDraft(plan), QuestClient.Patron, out var quest, out message, plan.Target.Den as Nest)) return false;
+            if (!_board.TryPostRequest(ProposalRules.ToDraft(plan), QuestClient.Patron, out var quest, out message, plan.Target.Den as Nest,
+                                       destination: plan.Target.Destination as Villages.Village)) return false;
             _current.RemoveAll(p => p == plan || p.Target.Key == plan.Target.Key);
             if (_current.Count == 0) EmptyReason = "제안한 의뢰를 모두 처리했습니다. 다시 뽑으면 새 제안을 받을 수 있습니다.";
-            message = $"'{quest.Title}' 의뢰를 받았습니다. (보상 {quest.RewardGold + quest.FeeGold}G 중 길드 수수료 {quest.FeeGold}G)";
+            string item = quest.HasRewardItem ? $", 아이템 {quest.RewardItemLabel}" : "";
+            message = $"'{quest.Title}' 의뢰를 받았습니다. (보상 {quest.RewardGold + quest.FeeGold}G 중 길드 수수료 {quest.FeeGold}G{item})";
             EventBus.Publish(new QuestProposalsChangedEvent());
             return true;
         }

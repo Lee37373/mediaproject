@@ -90,10 +90,14 @@ namespace GuildMaster.Fog
             if (!first) VisibilityChanged?.Invoke(this, visible);
         }
 
+        /// <summary>Shows or hides the renderers again (<see cref="FogOfWar.ShowEverything"/> changed).</summary>
+        public void Redraw() => Apply();
+
         void Apply()
         {
-            if (_renderers != null) foreach (var r in _renderers) if (r) r.enabled = _visible;
-            if (_canvases != null) foreach (var c in _canvases) if (c) c.enabled = _visible;
+            bool shown = _visible || FogOfWar.ShowEverything;
+            if (_renderers != null) foreach (var r in _renderers) if (r) r.enabled = shown;
+            if (_canvases != null) foreach (var c in _canvases) if (c) c.enabled = shown;
         }
     }
 }

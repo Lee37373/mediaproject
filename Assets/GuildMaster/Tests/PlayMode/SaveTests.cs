@@ -43,6 +43,7 @@ namespace GuildMaster.Tests
             GameSettings.PendingLoad = null;
             MenuState.Reset();
             SaveService.FolderOverride = null;
+            EventPause.Enabled = true;
             if (_scene.IsValid() && _scene.isLoaded) yield return SceneManager.UnloadSceneAsync(_scene);
             yield return Resources.UnloadUnusedAssets();
             System.GC.Collect();
@@ -55,6 +56,7 @@ namespace GuildMaster.Tests
             GameSettings.PaintGround = false;
             DisasterService.ChanceOverride = 0f;
             DisasterService.SpreadScale = 1f;
+            EventPause.Enabled = false; // P6-3: a pause choice saved while playing in the editor would stop the clock
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
         }
@@ -359,10 +361,77 @@ namespace GuildMaster.Tests
             var nemeses = Services.Get<Nemeses.NemesisService>().Living.Select(n => (n.UnitId, n.Name, n.Monster.Level, bounty: n.Bounty?.Quest?.Id)).ToList();
             Assert.That(nemeses.Any(n => n.UnitId == named.UnitId), Is.True, "the nemesis lives on");
             Assert.That(named.Bounty?.Quest, Is.Not.Null, "with its bounty up");
+            // The KMS systems (P4-119): food, a tribute talk that left a grudge, a chore done today, a guide step, a
+            // resident's opinion and feeling, a rumor, a feeling over a head and a relationship line that just moved.
+            float nowHour = clock.TotalHours;
+            string memberId = roster[0].Data.id, otherId = roster[1].Data.id;
+            Services.Get<Economy.FoodStore>().SetFood(37);
+            var tribute = Services.Get<Economy.TributeService>();
+            tribute.Begin(roster[0], nowHour);
+            tribute.Finish(roster[0], 25, 2, nowHour);
+            var chores = Services.Get<Economy.ChoreService>();
+            chores.Begin(Economy.ChoreKind.Herbs, nowHour);
+            chores.Complete(Economy.ChoreKind.Herbs, 0.8f);
+            Services.Get<Guide.GuideTracker>().Mark(Guide.GuideStep.Board);
+            var hans = Services.Get<Social.ResidentService>().Find("RES_hans").Profile;
+            hans.AddOpinion(17);
+            hans.AddFeeling(memberId, 12);
+            int hansOpinion = hans.GuildOpinion;
+            Services.Get<Social.TownTalkService>().Rumors.Add("시험 소문: 길드원이 빵을 다 먹었다", nowHour, new[] { "RES_elly" }, new[] { memberId }, 1, -1);
+            var emotions = Services.Get<Social.EmotionService>();
+            emotions.Feel(memberId, Social.Emotion.Excited, 10f, "시험 감정");
+            emotions.Book.MarkChanged(memberId, otherId, nowHour, 5);
+            // The town newspaper (P4-130): a paper out and a story on the desk for the next.
+            var news = Services.Get<Reports.NewsDesk>();
+            news.Note(Reports.NewsRules.Festival().On("festival"));
+            var printed = news.Close(clock.Day, Services.Get<Reports.DailyLedger>().Current);
+            news.Note(Reports.NewsRules.Quarrel("시험갑", "시험을").About(memberId, otherId));
+            // A village's errand (P4-133): goods to its door, with the item it pays besides the gold.
+            var errand = Services.Get<Quests.ErrandPoster>().PostFor(villages.Villages[0], Quests.QuestType.Deliver, out var errandError);
+            Assert.That(errand, Is.Not.Null, errandError);
+            var errandSaved = (errand.Id, errand.GoodsName, errand.RewardItem.itemId, errand.RewardItem.count, errand.RewardGold);
+            // A resident's request (P4-134): Hans asks ore the stock has; and Elly's goods to a village, a resident's quest.
+            Services.Get<Economy.GuildTreasury>().AddStock(Quests.ErrandRules.Ore, 5);
+            var requests = Services.Get<Social.ResidentRequests>();
+            var hansAsks = requests.Ask(Services.Get<Social.ResidentService>().Find("RES_hans"), Social.RequestKind.Goods, out var askError);
+            Assert.That(hansAsks, Is.Not.Null, askError);
+            var askSaved = (hansAsks.Id, hansAsks.ItemId, hansAsks.Count, hansAsks.DeadlineHour);
+            Assert.That(board.TryPostRequest(Quests.ErrandOffers.DeliverDraft(villages.Villages[0], "빵 바구니", 0.5f), Quests.QuestClient.Resident, out var residentQuest, out var residentError,
+                                             null, null, false, villages.Villages[0], "RES_elly"), Is.True, residentError);
+            Assert.That((residentQuest.FeeGold, residentQuest.HasRewardItem, residentQuest.Title.StartsWith("[엘리의 부탁]")), Is.EqualTo((0, false, true)), "no fee, no item, by who asked");
+            quests = board.Quests.Count;
 
             var a = Saves.Capture();
             yield return BootFrom(a);
             AssertSameSections(a, _afterBoot);
+            // The KMS systems' state is back (P4-119), not the boot defaults.
+            Assert.That(Services.Get<Economy.FoodStore>().Food, Is.EqualTo(37), "food");
+            Assert.That(Services.Get<Economy.TributeService>().Grudge(Services.Get<Adventurers.GuildRoster>().Members[0], nowHour), Is.EqualTo(2), "the tribute grudge");
+            Assert.That(Services.Get<Economy.ChoreService>().CanDo(Economy.ChoreKind.Herbs, nowHour, 12f).Ok, Is.False, "today's chore done");
+            Assert.That(Services.Get<Guide.GuideTracker>().IsDone(Guide.GuideStep.Board), Is.True, "the guide step");
+            var loadedHans = Services.Get<Social.ResidentService>().Find("RES_hans").Profile;
+            Assert.That((loadedHans.GuildOpinion, loadedHans.FeelingToward(memberId)), Is.EqualTo((hansOpinion, 12)), "Hans' opinion and feeling");
+            Assert.That(Services.Get<Social.TownTalkService>().Rumors.All.Any(r => r.Text.StartsWith("시험 소문") && r.KnownBy.Contains("RES_elly")), Is.True, "the rumor");
+            var loadedEmotions = Services.Get<Social.EmotionService>();
+            Assert.That(loadedEmotions.Book.Of(memberId).Any(f => f.Kind == Social.Emotion.Excited && f.Reason == "시험 감정"), Is.True, "the feeling");
+            Assert.That(loadedEmotions.Book.ChangedRecently(memberId, otherId, nowHour, 1f, out int sign) && sign > 0, Is.True, "the relationship line");
+            var loadedNews = Services.Get<Reports.NewsDesk>();
+            Assert.That(loadedNews.Latest?.day, Is.EqualTo(printed.day), "the paper");
+            Assert.That(loadedNews.Latest.articles.Select(x => x.headline), Is.EqualTo(printed.articles.Select(x => x.headline)), "its stories");
+            Assert.That(loadedNews.Desk.Any(x => x.kind == Reports.NewsKind.Quarrel && x.people.Contains(otherId)), Is.True, "the story for the next paper");
+            var loadedErrand = Services.Get<Quests.QuestBoard>().FindById(errandSaved.Id);
+            Assert.That(loadedErrand, Is.Not.Null, "the village's errand");
+            Assert.That((loadedErrand.Type, loadedErrand.GoodsName, loadedErrand.RewardItem.itemId, loadedErrand.RewardItem.count, loadedErrand.RewardGold),
+                Is.EqualTo((Quests.QuestType.Deliver, errandSaved.GoodsName, errandSaved.itemId, errandSaved.count, errandSaved.RewardGold)), "its goods and pay");
+            Assert.That((loadedErrand.Destination, loadedErrand.Village), Is.EqualTo((Services.Get<Villages.VillageService>().Villages[0], Services.Get<Villages.VillageService>().Villages[0])),
+                "to the village that asked");
+            var loadedAsk = Services.Get<Social.ResidentRequests>().Find(askSaved.Id);
+            Assert.That(loadedAsk, Is.Not.Null, "Hans' request");
+            Assert.That((loadedAsk.Status, loadedAsk.ResidentId, loadedAsk.ItemId, loadedAsk.Count, loadedAsk.DeadlineHour),
+                Is.EqualTo((Social.RequestStatus.Open, "RES_hans", askSaved.ItemId, askSaved.Count, askSaved.DeadlineHour)), "still open, the same things");
+            var loadedResidentQuest = Services.Get<Quests.QuestBoard>().FindById(residentQuest.Id);
+            Assert.That((loadedResidentQuest?.Client, loadedResidentQuest?.ResidentId, loadedResidentQuest?.Title.StartsWith("[엘리의 부탁]")),
+                Is.EqualTo(((Quests.QuestClient?)Quests.QuestClient.Resident, "RES_elly", (bool?)true)), "Elly's quest, by who asked");
             // Every nemesis under its own name, at its level, its bounty on it; the friend's grudge kept (P4-109).
             var loadedNemeses = Services.Get<Nemeses.NemesisService>();
             foreach (var (id, name, level, bountyId) in nemeses)
@@ -463,6 +532,169 @@ namespace GuildMaster.Tests
 
             Assert.That(SaveService.Delete(0), Is.True);
             Assert.That(SaveService.Peek(0).Exists, Is.False);
+        }
+
+        // ---------------- P6-1: the question window and the exit warning ----------------
+
+        static IEnumerator PressKey(UnityEngine.InputSystem.Key key)
+        {
+            var kb = UnityEngine.InputSystem.Keyboard.current ?? UnityEngine.InputSystem.InputSystem.AddDevice<UnityEngine.InputSystem.Keyboard>();
+            if (!kb.enabled) UnityEngine.InputSystem.InputSystem.EnableDevice(kb);
+            // A queued key can be dropped when the editor changes focus: queue it again until it is really down.
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                UnityEngine.InputSystem.InputSystem.QueueStateEvent(kb, new UnityEngine.InputSystem.LowLevel.KeyboardState(key));
+                yield return null;
+                if (kb[key].isPressed) break;
+            }
+            yield return null;
+            UnityEngine.InputSystem.InputSystem.QueueStateEvent(kb, new UnityEngine.InputSystem.LowLevel.KeyboardState());
+            yield return null;
+        }
+
+        /// <summary>Lets this many game hours pass at the top speed (real-time capped).</summary>
+        static IEnumerator Play(float hours)
+        {
+            var clock = Services.Get<GameClock>();
+            clock.SetSpeed(GameClock.SpeedScales.Length - 1);
+            float start = clock.TotalHours, end = Time.realtimeSinceStartup + 20f;
+            while (clock.TotalHours < start + hours && Time.realtimeSinceStartup < end) yield return null;
+            clock.SetSpeed(1);
+        }
+
+        /// <summary>
+        /// P6-1 (user decisions 2026-11-09) in one boot: leaving asks only with unsaved game time and holds the clock while
+        /// asking; ESC cancels and Enter takes the first button through the keyboard; a game never saved picks a slot and the
+        /// save leaves, a saved one saves into its own slot; overwriting, deleting, loading during play, demolishing and
+        /// dismissing all ask in the same window.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ExitWarning_AsksOnlyWithUnsavedTime_AndDestructiveActionsAskInOneWindow()
+        {
+            bool dilemmas = Dilemmas.DilemmaService.Enabled;
+            Dilemmas.DilemmaService.Enabled = false; // a card's window would hold the clock under the test
+            // Keys must reach the game even when the editor window is not focused (as SmokeTests.SetUp does).
+            var input = UnityEngine.InputSystem.InputSystem.settings;
+            var background = input.backgroundBehavior;
+            var editorInput = input.editorInputBehaviorInPlayMode;
+            input.backgroundBehavior = UnityEngine.InputSystem.InputSettings.BackgroundBehavior.IgnoreFocus;
+            input.editorInputBehaviorInPlayMode = UnityEngine.InputSystem.InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+            try
+            {
+                BootNow();
+                yield return null;
+                yield return null;
+                var dialog = Services.Get<ConfirmDialog>();
+                var clock = Services.Get<GameClock>();
+                var view = Object.FindFirstObjectByType<SaveLoadView>();
+                Assert.That(Saves.CleanAtHours, Is.EqualTo(Services.Get<GameBalance>().startHour).Within(0.01f), "a fresh game counts from its first hour");
+
+                yield return Play(0.5f);
+                string lost = ExitGuard.UnsavedText();
+                Assert.That(lost, Does.Contain("저장한 적이 없습니다"), "a fresh game counts from its start");
+                int left = 0;
+                ExitGuard.Request("타이틀로 나갈까요?", () => left++);
+                Assert.That(dialog.IsOpen, Is.True, "unsaved time: it asks");
+                Assert.That(dialog.ButtonsText, Is.EqualTo("저장하고 나가기… | 저장하지 않고 나가기 | 취소"));
+                Assert.That(clock.IsHeld && MenuState.IsOpen, Is.True, "the clock and the shortcuts wait for the answer");
+                float held = clock.TotalHours;
+                yield return null;
+                yield return null;
+                Assert.That(clock.TotalHours, Is.EqualTo(held), "no time passes while asking");
+                yield return PressKey(UnityEngine.InputSystem.Key.Escape);
+                Assert.That(dialog.IsOpen || left > 0, Is.False, "ESC cancels and stays");
+                Assert.That(clock.IsHeld || MenuState.IsOpen, Is.False, "and lets go of the clock");
+
+                // Never saved: "save and leave" opens the slots; closing them leaves nothing behind.
+                ExitGuard.Request("타이틀로 나갈까요?", () => left++);
+                dialog.Accept();
+                Assert.That(view.IsOpen, Is.True, "a game never saved picks a slot");
+                view.Hide();
+                Assert.That(left, Is.Zero, "closing the slots calls leaving off");
+                ExitGuard.Request("타이틀로 나갈까요?", () => left++);
+                dialog.Accept();
+                var onSave = typeof(SaveLoadView).GetMethod("OnSave", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                onSave.Invoke(view, new object[] { 0 });
+                Assert.That(left, Is.EqualTo(1), "saving into an empty slot leaves at once");
+                Assert.That(view.IsOpen, Is.False);
+                Assert.That(Saves.CurrentSlot, Is.EqualTo(0));
+                Assert.That(ExitGuard.UnsavedText(), Is.Null, "just saved: nothing to lose");
+                ExitGuard.Request("게임을 끝낼까요?", () => left++);
+                Assert.That(dialog.IsOpen, Is.False, "nothing to lose: no question");
+                Assert.That(left, Is.EqualTo(2));
+
+                // Saved before: Enter saves into its own slot and leaves.
+                yield return Play(0.5f);
+                Assert.That(ExitGuard.UnsavedText(), Does.Contain("슬롯 1에 저장한 뒤"));
+                ExitGuard.Request("게임을 끝낼까요?", () => left++);
+                Assert.That(dialog.ButtonsText, Does.StartWith("저장하고 나가기 (슬롯 1)"));
+                float now = clock.TotalHours;
+                yield return PressKey(UnityEngine.InputSystem.Key.Enter);
+                Assert.That(left, Is.EqualTo(3), "Enter takes the first button");
+                Assert.That(SaveService.Peek(0).Summary.total_hours, Is.EqualTo(now).Within(0.01f), "saved into slot 1 first");
+                Assert.That(ExitGuard.UnsavedText(), Is.Null);
+                ExitGuard.Request("게임을 끝낼까요?", () => left++);
+                yield return Play(0.3f);
+                ExitGuard.Request("게임을 끝낼까요?", () => left++);
+                dialog.Alternative();
+                Assert.That(left, Is.EqualTo(5), "leaving without saving leaves");
+                Assert.That(ExitGuard.UnsavedText(), Is.Not.Null, "and saved nothing");
+
+                // Overwriting, deleting and loading during play ask; cancelling keeps everything.
+                view.Show(canSave: true);
+                onSave.Invoke(view, new object[] { 0 });
+                Assert.That(dialog.TitleText, Is.EqualTo("슬롯 1에 덮어쓸까요?"));
+                Assert.That(dialog.BodyText, Does.Contain("이 게임을 마지막으로 저장한"));
+                dialog.Cancel();
+                Assert.That(SaveService.Peek(0).Summary.total_hours, Is.EqualTo(now).Within(0.01f), "cancelled: not overwritten");
+                typeof(SaveLoadView).GetMethod("OnLoad", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(view, new object[] { 0 });
+                Assert.That(dialog.TitleText, Is.EqualTo("슬롯 1을 불러올까요?"), "loading over unsaved time asks");
+                Assert.That(dialog.BodyText, Does.Contain("저장한 뒤 게임 시간"));
+                dialog.Cancel();
+                typeof(SaveLoadView).GetMethod("OnDelete", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(view, new object[] { 0 });
+                Assert.That(dialog.ButtonsText, Is.EqualTo("삭제 | 취소"));
+                dialog.Accept();
+                Assert.That(SaveService.Peek(0).Exists, Is.False, "deleted once confirmed");
+                view.Hide();
+
+                // Demolishing asks with what comes back.
+                DebugCommands.ExpandTown(true);
+                DebugCommands.ExpandTown(true);
+                Assert.That(DebugCommands.BuildFacility("Armory", 1), Does.StartWith("Armory Lv1"));
+                var town = Services.Get<Town.TownService>();
+                var armory = town.Buildings.Last(b => b.Type == Town.BuildingType.Armory);
+                var buildingView = Services.Get<BuildingView>();
+                buildingView.ShowBuilding(armory);
+                typeof(BuildingView).GetMethod("OnDemolish", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(buildingView, null);
+                Assert.That(dialog.TitleText, Does.Contain("철거할까요"));
+                Assert.That(dialog.BodyText, Does.Contain("돌려받기"));
+                dialog.Cancel();
+                Assert.That(town.Buildings.Any(b => b == armory), Is.True, "cancelled: still standing");
+                typeof(BuildingView).GetMethod("OnDemolish", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(buildingView, null);
+                dialog.Accept();
+                Assert.That(town.Buildings.Any(b => b == armory), Is.False, "demolished once confirmed");
+
+                // Dismissing asks with who it is.
+                var roster = Services.Get<Adventurers.GuildRoster>();
+                var member = roster.Members[0];
+                var care = Services.Get<MemberCareView>();
+                care.Show(member);
+                var fire = typeof(MemberCareView).GetMethod("Fire", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                fire.Invoke(care, null);
+                Assert.That(dialog.TitleText, Does.Contain(member.Data.name).And.Contain("해고할까요"));
+                dialog.Cancel();
+                Assert.That(roster.Members.Contains(member), Is.True, "cancelled: still a member");
+                fire.Invoke(care, null);
+                yield return PressKey(UnityEngine.InputSystem.Key.Enter);
+                Assert.That(roster.Members.Contains(member), Is.False, "dismissed once confirmed");
+                Assert.That(clock.IsHeld || MenuState.IsOpen, Is.False, "every question let go of the clock");
+            }
+            finally
+            {
+                Dilemmas.DilemmaService.Enabled = dilemmas;
+                input.backgroundBehavior = background;
+                input.editorInputBehaviorInPlayMode = editorInput;
+            }
         }
     }
 }

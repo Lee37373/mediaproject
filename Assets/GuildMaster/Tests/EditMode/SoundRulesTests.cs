@@ -1,6 +1,6 @@
 using GuildMaster.Adventurers;
 using GuildMaster.Audio;
-using GuildMaster.Incidents;
+using GuildMaster.Dilemmas;
 using GuildMaster.Seasons;
 using NUnit.Framework;
 
@@ -96,13 +96,13 @@ namespace GuildMaster.Tests
         }
 
         [Test]
-        public void EventCardResults_SoundLikeTheirTone()
+        public void DecisionCardResults_SoundLikeTheirTone()
         {
-            Assert.That(SoundRules.CardKey(CardTone.Success), Is.EqualTo(SoundKeys.CardSuccess));
-            Assert.That(SoundRules.CardKey(CardTone.Good), Is.EqualTo(SoundKeys.CardSuccess));
-            Assert.That(SoundRules.CardKey(CardTone.Failure), Is.EqualTo(SoundKeys.CardFail));
-            Assert.That(SoundRules.CardKey(CardTone.Bad), Is.EqualTo(SoundKeys.CardFail));
-            Assert.That(SoundRules.CardKey(CardTone.Neutral), Is.EqualTo(SoundKeys.CardResult));
+            Assert.That(SoundRules.CardKey(DilemmaTone.Success), Is.EqualTo(SoundKeys.CardSuccess));
+            Assert.That(SoundRules.CardKey(DilemmaTone.Good), Is.EqualTo(SoundKeys.CardSuccess));
+            Assert.That(SoundRules.CardKey(DilemmaTone.Failure), Is.EqualTo(SoundKeys.CardFail));
+            Assert.That(SoundRules.CardKey(DilemmaTone.Bad), Is.EqualTo(SoundKeys.CardFail));
+            Assert.That(SoundRules.CardKey(DilemmaTone.Neutral), Is.EqualTo(SoundKeys.CardResult));
         }
     }
 }

@@ -18,6 +18,8 @@ namespace GuildMaster.Incidents
     public struct IncidentRumouredEvent { public Incident Incident; }
     /// <summary>A later rumour of where a moving incident (a horde) is now; its quest's area moved there.</summary>
     public struct IncidentRumourUpdatedEvent { public Incident Incident; }
+    /// <summary>The town rated and paid a nemesis's bounty anew (it grew, or a stronger one shares its den); <see cref="Before"/> is the danger it had.</summary>
+    public struct IncidentBountyRevisedEvent { public Incident Incident; public DangerLevel Before; }
     /// <summary>The guild saw an incident with its own eyes for the first time.</summary>
     public struct IncidentSightedEvent { public Incident Incident; }
     /// <summary>An incident is over. <see cref="Known"/>: the guild had heard of it or seen it (else the UI stays silent).</summary>
@@ -264,15 +266,16 @@ namespace GuildMaster.Incidents
         /// The town puts a bounty on a nemesis the guild has seen (<see cref="Nemeses.NemesisService"/>): no rumour, the guild
         /// saw it — the hunt's area is <paramref name="at"/> (its known den, or where it was last seen), its danger a hunt of its
         /// level among <paramref name="pack"/>, and it pays <paramref name="factor"/> times such a hunt. It lasts until it falls.
+        /// <paramref name="packLevel"/>: the strongest other nemesis known to share its den (<see cref="Incident.PackLevel"/>).
         /// </summary>
-        public Incident StartNemesisBounty(Monster nemesis, Vector2 at, int pack, float factor)
+        public Incident StartNemesisBounty(Monster nemesis, Vector2 at, int pack, float factor, int packLevel = 0)
         {
             if (nemesis == null || !nemesis.IsAlive) return null;
             var i = new Incident
             {
                 Id = _nextId++, Kind = IncidentKind.Nemesis, StartedHour = Now, Spot = at, RumourAtHour = Now, EndsAtHour = float.MaxValue,
                 Target = nemesis, TargetName = nemesis.DisplayName, TargetLevel = nemesis.Level, PackSize = Mathf.Max(1, pack), RewardFactor = factor,
-                Sighted = true, LastSeen = at, LastSeenHour = Now,
+                PackLevel = Mathf.Max(0, packLevel), Sighted = true, LastSeen = at, LastSeenHour = Now,
             };
             _active.Add(i);
             Debug.Log($"[Incident] #{i.Id} bounty on {nemesis.DisplayName} Lv{nemesis.Level} at ({at.x:0},{at.y:0}), {QuestBoard.DescribeArea(at)}");
@@ -318,6 +321,28 @@ namespace GuildMaster.Incidents
             i.Quest.Point = i.RumourCentre;
             i.Quest.Radius = i.RumourRadius;
             EventBus.Publish(new IncidentRumourUpdatedEvent { Incident = i });
+        }
+
+        /// <summary>
+        /// The bounty follows what the guild knows of the nemesis (<see cref="Nemeses.NemesisService"/> tells it as that
+        /// changes): the stronger nemesis known to share its den (<paramref name="packLevel"/>) and what its kills make it
+        /// worth (<paramref name="factor"/>). When that moves its danger a step, or its worth, the town rates and pays the
+        /// quest anew — it used to stay as posted while the nemesis grew ten levels on the members sent after it.
+        /// </summary>
+        public void ReviseBounty(Incident i, int packLevel, float factor)
+        {
+            if (i == null || i.Over || i.Kind != IncidentKind.Nemesis) return;
+            i.PackLevel = Mathf.Max(0, packLevel);
+            var q = i.Quest;
+            if (q == null || !q.IsActive) { i.RewardFactor = factor; return; }
+            var danger = IncidentRules.NemesisDanger(i);
+            if (danger == q.Danger && Mathf.Approximately(i.RewardFactor, factor)) return;
+            var before = q.Danger;
+            i.RewardFactor = factor;
+            int gold = IncidentRules.NemesisReward(danger, Vector2.Distance(q.Point, _world.TownCenterWorld), factor);
+            _board.ReviseIncidentQuest(q, danger, gold, QuestPricing.PartyFor(danger));
+            Debug.Log($"[Incident] #{i.Id} bounty on {i.TargetName} revised: Lv{IncidentRules.NemesisLevel(i)} {before}→{danger}, {gold}G");
+            EventBus.Publish(new IncidentBountyRevisedEvent { Incident = i, Before = before });
         }
 
         /// <summary>Why the board took a bounty down: the nemesis fell to someone not on it.</summary>
@@ -864,7 +889,7 @@ namespace GuildMaster.Incidents
                 {
                     var species = i.Target != null ? i.Target.Def : null;
                     if (species == null) return null;
-                    var danger = IncidentRules.NemesisDanger(i.TargetLevel, i.PackSize);
+                    var danger = IncidentRules.NemesisDanger(i);
                     int gold = IncidentRules.NemesisReward(danger, Vector2.Distance(i.RumourCentre, _world.TownCenterWorld), i.RewardFactor);
                     var draft = new QuestDraft
                     {
@@ -929,6 +954,7 @@ namespace GuildMaster.Incidents
             public bool chest_opened;
             public int pack_size;
             public float reward_factor = 1f;
+            public int pack_level;
         }
 
         [System.Serializable]
@@ -957,7 +983,7 @@ namespace GuildMaster.Incidents
                 target = i.Target != null && i.Target.IsAlive ? i.Target.UnitId : null, target_name = i.TargetName, target_level = i.TargetLevel,
                 requirement = i.Requirement, horde_size = i.HordeSize, species_name = i.SpeciesName, horde_level = i.HordeLevel,
                 band = i.Band != null && !i.Over ? i.Band.Id : -1, site = i.Site != null ? _eco.Nests.IndexOf(i.Site) : -1, next_rumour = i.NextRumourHour,
-                destination = i.Destination, ruin = i.RuinIndex, chest_opened = i.ChestOpened, pack_size = i.PackSize, reward_factor = i.RewardFactor,
+                destination = i.Destination, ruin = i.RuinIndex, chest_opened = i.ChestOpened, pack_size = i.PackSize, reward_factor = i.RewardFactor, pack_level = i.PackLevel,
             };
             foreach (var m in i.Members) if (m != null && m.IsAlive) s.members.Add(m.UnitId);
             if (i.Traveller != null && i.Traveller.IsAlive)
@@ -1003,7 +1029,7 @@ namespace GuildMaster.Incidents
                 TargetName = s.target_name, TargetLevel = s.target_level, Requirement = s.requirement,
                 HordeSize = s.horde_size, SpeciesName = s.species_name, HordeLevel = s.horde_level, NextRumourHour = s.next_rumour,
                 Site = s.site >= 0 && s.site < _eco.Nests.Count ? _eco.Nests[s.site] : null, Destination = s.destination,
-                RuinIndex = s.ruin, ChestOpened = s.chest_opened, PackSize = s.pack_size, RewardFactor = s.reward_factor,
+                RuinIndex = s.ruin, ChestOpened = s.chest_opened, PackSize = s.pack_size, RewardFactor = s.reward_factor, PackLevel = s.pack_level,
             };
             if (s.traveller)
             {

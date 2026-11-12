@@ -436,6 +436,51 @@ namespace GuildMaster.Visuals
             return c.ToSprite(key, new Vector2(0.5f, 0.3f));
         }
 
+        /// <summary>
+        /// The guild master's rally flag (P4-132): a pole with the guild's purple swallowtail, a gold band and a gold knob. Two
+        /// frames of the cloth in the wind; the pivot is the pole's foot.
+        /// </summary>
+        public static Sprite RallyFlag(int frame)
+        {
+            frame = Mathf.Abs(frame) % 2;
+            string key = "c_rallyflag:" + frame;
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            const int W = 40, H = 64;
+            const float x = 9f, foot = 4f, top = 60f;
+            var c = new Canvas(W, H);
+            var shadow = new Color(0f, 0f, 0f, 0.22f);
+            c.Shape(Ellipse(x + 2f, foot, 7f, 2.4f), shadow, shadow, 0f);
+            c.Shape(Segment(x, foot, x, top - 2f, 1.5f), Timber, Ink, 1.2f);
+            float lift = frame == 0 ? 0f : 2.5f, tail = frame == 0 ? 0f : -1.5f;
+            var cloth = Poly(1f, new Vector2(x + 1.5f, top - 4f), new Vector2(x + 27f + tail, top - 3f - lift),
+                             new Vector2(x + 27f + tail, top - 29f - lift), new Vector2(x + 16f, top - 22f - lift * 0.5f),
+                             new Vector2(x + 1.5f, top - 28f));
+            c.Shape(cloth, Hex(0x6B3FA0), Ink, 2f);
+            c.ShapeClipped(RoundRect(x, top - 17f - lift * 0.5f, x + 32f, top - 12f - lift * 0.5f, 0f), cloth, Gold);
+            c.ShapeClipped(RoundRect(x + 18f, 0f, x + 32f, H, 0f), cloth, ShadeTint);
+            c.Shape(Circle(x, top - 1f, 2.8f), Gold, Ink, 1.2f);
+            return c.ToSprite(key, new Vector2(x / W, foot / H));
+        }
+
+        /// <summary>
+        /// A delivery's parcel on its carrier's back (P4-133): a wrapped box tied with string, a tag on it. The pivot is the
+        /// box's bottom middle.
+        /// </summary>
+        public static Sprite Parcel()
+        {
+            const string key = "c_parcel";
+            if (s_cache.TryGetValue(key, out var cached)) return cached;
+            var c = new Canvas(22, 20);
+            var paper = Hex(0xC8925A);
+            var string_ = Hex(0xF1E3C0);
+            c.Shape(RoundRect(2, 2, 20, 17, 2f), paper, Ink, 1.6f);
+            c.Shape(RoundRect(2, 9, 20, 11, 0f), string_, Darker(string_, 0.7f), 0.6f);
+            c.Shape(RoundRect(10, 2, 12, 17, 0f), string_, Darker(string_, 0.7f), 0.6f);
+            c.Shape(Circle(11, 10, 2.2f), string_, Darker(string_, 0.6f), 0.8f);
+            c.Shape(RoundRect(14, 12, 18.5f, 15.5f, 0.8f), Hex(0xF4E9C9), Ink, 0.8f);
+            return c.ToSprite(key, new Vector2(0.5f, 0.1f));
+        }
+
         /// <summary>One frame of a campfire flame (P4-66): a teardrop of orange with a yellow heart.</summary>
         public static Sprite Flame(int frame)
         {

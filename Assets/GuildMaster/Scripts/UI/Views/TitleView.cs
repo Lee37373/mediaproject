@@ -31,7 +31,7 @@ namespace GuildMaster.UI
             _root.Stretch();
 
             var box = UIBuilder.Rect(_root, "Box");
-            box.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 20), new Vector2(520, 560));
+            box.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 20), new Vector2(560, 640));
             UIBuilder.VLayout(box, 12, 0);
             UIBuilder.Label(box, "길드 마스터 타이쿤", 46, TextAnchor.MiddleCenter, UITheme.Accent, FontStyle.Bold).Size(-1, 70);
             UIBuilder.Label(box, "모험가들이 스스로 생각하는 길드 경영 시뮬레이션", 18, TextAnchor.MiddleCenter, UITheme.TextMuted).Size(-1, 30);
@@ -48,6 +48,12 @@ namespace GuildMaster.UI
             UIBuilder.Button(box, "설정", () => _settings.Show(), -1, 50, null, 20);
             UIBuilder.Button(box, "종료", GameSettings.Quit, -1, 50, UITheme.ButtonDanger, 20);
             _message = UIBuilder.Label(box, "", 14, TextAnchor.MiddleCenter, UITheme.TextMuted).Size(-1, 40);
+            // P5-5: installed under a non-ASCII path, the local model may not load — say so before the game starts.
+            if (LLM.LlamaEnvironment.InstallPathNotAscii)
+            {
+                var warn = UIBuilder.Label(box, LLM.LlamaEnvironment.InstallPathWarning, 14, TextAnchor.MiddleCenter, UITheme.Warn).Size(-1, 60);
+                warn.verticalOverflow = VerticalWrapMode.Overflow;
+            }
             _root.gameObject.SetActive(false);
         }
 

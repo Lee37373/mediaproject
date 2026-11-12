@@ -87,9 +87,16 @@ namespace GuildMaster.UI
             if (target is World.PlaceSite { Kind: World.PlaceKind.WatchRuin } ruin && Services.TryGet<WatchRuinView>(out var ruinView)) ruinView.ShowRuin(ruin);
             // Clicking the travelling merchant opens its trade window (P4-3).
             if (target is Merchant && Services.TryGet<MerchantView>(out var shop) && !shop.Visible) shop.Open();
+            // Clicking a resident with a request opens it (P4-134, user decision: asked of the guild master directly).
+            if (target is Social.Resident resident && Services.TryGet<Social.ResidentRequests>(out var requests)
+                && requests.ActiveOf(resident.Profile.Id) != null && Services.TryGet<ResidentRequestView>(out var requestView))
+                requestView.Show(resident);
         }
 
         public void Clear() => Show(null);
+
+        /// <summary>The unit picked, or null (its name tag always shows, P4-123).</summary>
+        public Unit SelectedUnit => _selected as Unit;
 
         void Update()
         {
@@ -128,8 +135,7 @@ namespace GuildMaster.UI
         {
             var kb = Keyboard.current;
             if (kb == null || !kb.fKey.wasPressedThisFrame || MenuState.IsOpen) return;
-            var es = EventSystem.current;
-            if (es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null) return;
+            if (Session.TextFocus.Typing) return; // P6-2: a field with the caret, not just a selected one
             if (_selected is Unit) { ToggleFocus(); return; }
             // Nothing selected: F toggles following the guild master avatar.
             if (!Services.TryGet<CameraController>(out var cam) || !Services.TryGet<PlayerAvatar>(out var avatar)) return;
@@ -297,10 +303,19 @@ namespace GuildMaster.UI
             var opinionColor = p.GuildOpinion >= Social.ResidentProfile.GoodOpinion ? UITheme.Good
                 : p.GuildOpinion <= -Social.ResidentProfile.GoodOpinion ? UITheme.Bad : UITheme.TextMuted;
             _title.text = $"{p.Name}  {Muted($"{p.JobLabel} (주민)")}";
+            // P4-134: the standing favour of its trade, and its request.
+            int tier = Social.ResidentRequestRules.Tier(p.GuildOpinion);
+            string favour = tier > 0 ? UIBuilder.Colored(Social.ResidentRequestRules.FavourText(p.Job, tier), UITheme.Good) : Muted("없음");
+            string request = "";
+            if (Services.TryGet<Social.ResidentRequests>(out var requests) && requests.ActiveOf(p.Id) is { } q)
+                request = "\n" + (q.IsOpen
+                    ? UIBuilder.Colored($"부탁: {requests.WhatText(q)} ({requests.HoursLeft(q):0}시간 남음) — 눌러서 들어주기", UITheme.Warn)
+                    : UIBuilder.Colored($"부탁: {requests.WhatText(q)} — {q.MemberName}이(가) 하는 중", UITheme.Good));
             _body.text =
                 $"상태: {UIBuilder.Colored(r.StateLabel, UITheme.Accent)}\n" +
                 $"성격 {p.Mbti} · 가치관 {p.Values}\n" +
-                $"길드에 대한 생각: {UIBuilder.Colored(p.OpinionText, opinionColor)}\n" +
+                $"길드에 대한 생각: {UIBuilder.Colored(p.OpinionText, opinionColor)} ({(p.GuildOpinion > 0 ? "+" : "")}{p.GuildOpinion})\n" +
+                $"단골 혜택: {favour}" + request + "\n" +
                 Muted("방문자에게 길드 이야기를 전합니다. 길드를 좋게 보면 영입을 권하기도 합니다.");
         }
 

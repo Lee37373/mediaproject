@@ -53,7 +53,7 @@ namespace GuildMaster.Quests
 
         /// <summary>A taken hunt, or any open incident's quest.</summary>
         static bool Shown(Quest q)
-            => q.Type == QuestType.Hunt && (q.Status == QuestStatus.InProgress || q.Incident != null && q.Status == QuestStatus.Open);
+            => ErrandRules.IsHuntLike(q.Type) && (q.Status == QuestStatus.InProgress || q.Incident != null && q.Status == QuestStatus.Open);
 
         void OnPosted(QuestPostedEvent e) { if (Shown(e.Quest)) Add(e.Quest); }
 

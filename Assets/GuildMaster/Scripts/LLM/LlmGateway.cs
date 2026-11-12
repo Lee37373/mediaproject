@@ -159,6 +159,7 @@ namespace GuildMaster.LLM
                         ? $"AI: 생각 중… (대기 {_queue.Count})"
                         : $"AI: LLM 준비됨 ({AverageSeconds:0.0}s)",
                     LlmBackendState.Loading => _recovering ? "AI: LLM 복구 중…" : "AI: 모델 로딩 중…",
+                    LlmBackendState.Failed when LlamaEnvironment.InstallPathNotAscii => "AI: 게임 경로에 한글 → 규칙 기반",
                     LlmBackendState.Failed => _gaveUp ? "AI: LLM 복구 실패 → 규칙 기반" : "AI: LLM 오류 → 규칙 기반",
                     _ => "AI: 규칙 기반 (모델 없음)",
                 };

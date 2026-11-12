@@ -4,7 +4,7 @@ using GuildMaster.CameraControl;
 using GuildMaster.Core;
 using GuildMaster.Economy;
 using GuildMaster.Fog;
-using GuildMaster.Incidents;
+using GuildMaster.Dilemmas;
 using GuildMaster.Monsters;
 using GuildMaster.Notifications;
 using GuildMaster.Player;
@@ -61,9 +61,9 @@ namespace GuildMaster.Audio
         /// <summary>Gold in jingles up, gold out clinks down; nothing for zero.</summary>
         public static string GoldKey(int amount) => amount > 0 ? SoundKeys.CoinGain : amount < 0 ? SoundKeys.CoinSpend : null;
 
-        /// <summary>The sound of an event card's result: like the recruit talk's, success and failure each have one.</summary>
-        public static string CardKey(CardTone tone) => EventCards.IsGood(tone) ? SoundKeys.CardSuccess
-            : EventCards.IsBad(tone) ? SoundKeys.CardFail : SoundKeys.CardResult;
+        /// <summary>The sound of a decision card's result (P4-118, from the event cards): like the recruit talk's, success and failure each have one.</summary>
+        public static string CardKey(DilemmaTone tone) => DilemmaRules.IsGood(tone) ? SoundKeys.CardSuccess
+            : DilemmaRules.IsBad(tone) ? SoundKeys.CardFail : SoundKeys.CardResult;
 
         /// <summary>A hammer blow or a press in the odd jobs (2026-11-11), by the game's quality (0 or less = a miss).</summary>
         public static string ChoreHitKey(ChoreKind kind, float quality) => kind == ChoreKind.Forge
@@ -321,8 +321,8 @@ namespace GuildMaster.Audio
             EventBus.Subscribe<GoldFlowEvent>(OnGold);
             EventBus.Subscribe<QuestCompletedEvent>(OnQuestCompleted);
             EventBus.Subscribe<RecruitmentEndedEvent>(OnRecruitEnded);
-            EventBus.Subscribe<EventCardDrawnEvent>(OnEventCard);
-            EventBus.Subscribe<EventCardResolvedEvent>(OnEventCardResolved);
+            EventBus.Subscribe<DilemmaDealtEvent>(OnCardDealt);
+            EventBus.Subscribe<DilemmaResolvedEvent>(OnCardResolved);
             EventBus.Subscribe<NotificationPostedEvent>(OnNotification);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
         }
@@ -341,8 +341,8 @@ namespace GuildMaster.Audio
             EventBus.Unsubscribe<GoldFlowEvent>(OnGold);
             EventBus.Unsubscribe<QuestCompletedEvent>(OnQuestCompleted);
             EventBus.Unsubscribe<RecruitmentEndedEvent>(OnRecruitEnded);
-            EventBus.Unsubscribe<EventCardDrawnEvent>(OnEventCard);
-            EventBus.Unsubscribe<EventCardResolvedEvent>(OnEventCardResolved);
+            EventBus.Unsubscribe<DilemmaDealtEvent>(OnCardDealt);
+            EventBus.Unsubscribe<DilemmaResolvedEvent>(OnCardResolved);
             EventBus.Unsubscribe<NotificationPostedEvent>(OnNotification);
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
         }
@@ -466,8 +466,8 @@ namespace GuildMaster.Audio
         void OnJoined(AdventurerJoinedEvent e) => Play(SoundKeys.RecruitSuccess);
         void OnGold(GoldFlowEvent e) => Play(SoundRules.GoldKey(e.Amount), 0.8f);
         void OnQuestCompleted(QuestCompletedEvent e) => Play(SoundKeys.QuestComplete);
-        void OnEventCard(EventCardDrawnEvent e) => Play(SoundKeys.EventCard);
-        void OnEventCardResolved(EventCardResolvedEvent e) { if (e.Card != null) Play(SoundRules.CardKey(e.Card.Tone)); }
+        void OnCardDealt(DilemmaDealtEvent e) => Play(SoundKeys.EventCard);
+        void OnCardResolved(DilemmaResolvedEvent e) => Play(SoundRules.CardKey(e.Tone));
         void OnHour(HourPassedEvent e)
         {
             Play(SoundRules.HourKey(e.Hour), 0.8f);

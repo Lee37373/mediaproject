@@ -91,7 +91,33 @@ namespace GuildMaster.UI
                     else view.BringToFront();
                     break;
                 }
+                case NotificationTarget.News:
+                {
+                    if (!Services.TryGet<NewspaperView>(out var paper)) break;
+                    if (int.TryParse(link.Id, out int day)) paper.ShowDay(day);
+                    if (!paper.Visible) paper.Open();
+                    else paper.BringToFront();
+                    break;
+                }
+                case NotificationTarget.Resident:
+                {
+                    // The resident and its request window (P4-134).
+                    if (!Services.TryGet<Social.ResidentService>(out var residents) || residents.Find(link.Id) is not { } who) break;
+                    if (Services.TryGet<CameraController>(out var camera)) camera.JumpTo(who.Position);
+                    if (Services.TryGet<InspectorView>(out var inspector)) inspector.Show(who);
+                    if (Services.TryGet<ResidentRequestView>(out var request)) request.Show(who);
+                    break;
+                }
             }
+        }
+
+        /// <summary>Camera and inspector to this member or visitor (the newspaper's stories, P4-130). False when nobody by that id is around.</summary>
+        public static bool GoToPerson(string id)
+        {
+            var who = FindAdventurer(id);
+            if (who == null || !who.IsAlive) return false;
+            FocusOn(who);
+            return true;
         }
 
         static void Show<T>() where T : UIPanel

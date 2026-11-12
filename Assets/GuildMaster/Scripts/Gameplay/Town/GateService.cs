@@ -132,7 +132,9 @@ namespace GuildMaster.Town
             return null;
         }
 
-        public int RepairCost(TownGate g) => g == null ? 0 : Mathf.CeilToInt((g.MaxHp - g.Hp) * RepairGoldPerHp);
+        /// <summary>Gold to mend it fully, less the guard's favour (P4-134: −10% a step).</summary>
+        public int RepairCost(TownGate g)
+            => g == null ? 0 : Social.ResidentRequestRules.Cut(Mathf.CeilToInt((g.MaxHp - g.Hp) * RepairGoldPerHp), Social.ResidentPerks.GateRepairCut);
 
         /// <summary>Why this gate cannot be repaired right now (shown on the button), or null.</summary>
         public string CannotRepairReason(TownGate g)

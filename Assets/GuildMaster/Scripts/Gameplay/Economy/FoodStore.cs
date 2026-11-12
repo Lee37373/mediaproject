@@ -41,8 +41,8 @@ namespace GuildMaster.Economy
     /// <summary>Raised after the night's meals.</summary>
     public struct FoodEatenEvent { public int Eaten; public int Hungry; public int Left; }
 
-    /// <summary>Keeps the guild's food: eaten at midnight, bought from the bakery (the 살림 window).</summary>
-    public class FoodStore : IDisposable
+    /// <summary>Keeps the guild's food: eaten at midnight, bought from the bakery (the 살림 window). Saved as "food" (P4-119).</summary>
+    public class FoodStore : IDisposable, ISaveable
     {
         readonly GuildRoster _roster;
         readonly GuildTreasury _treasury;
@@ -67,10 +67,16 @@ namespace GuildMaster.Economy
         public bool TryBuy(int portions)
         {
             if (portions <= 0) return false;
-            if (!_treasury.TrySpendGold(FoodRules.Price(portions), GoldReason.Food)) return false;
+            if (!_treasury.TrySpendGold(PriceNow(portions), GoldReason.Food)) return false;
             Food += portions;
             return true;
         }
+
+        /// <summary>What the bakery asks for these portions now: the price less the baker's favour (P4-134: −10% a step).</summary>
+        public static int PriceNow(int portions) => Social.ResidentRequestRules.Cut(FoodRules.Price(portions), Social.ResidentPerks.FoodCut);
+
+        /// <summary>Food given to the guild (a resident's thanks, P4-134).</summary>
+        public void Add(int portions) => Food += Mathf.Max(0, portions);
 
         /// <summary>For tests and debug: sets the stock.</summary>
         public void SetFood(int food) => Food = Mathf.Max(0, food);
@@ -108,6 +114,26 @@ namespace GuildMaster.Economy
         static void Post(NotificationKind kind, string title, string text)
         {
             if (Services.TryGet<NotificationCenter>(out var center)) center.Post(kind, title, text, null);
+        }
+
+        // ---------------- Save (P4-119) ----------------
+
+        [Serializable]
+        class SaveData
+        {
+            public int food;
+            public int hungry_nights;
+        }
+
+        public string SaveKey => "food";
+
+        public string Capture() => JsonUtility.ToJson(new SaveData { food = Food, hungry_nights = HungryNights });
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            Food = Mathf.Max(0, s.food);
+            HungryNights = Mathf.Max(0, s.hungry_nights);
         }
     }
 }

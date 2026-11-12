@@ -267,7 +267,41 @@ namespace GuildMaster.Nemeses
                 // wandering is its everyday life, not orders.
                 bool onOrders = m.DefaultStateOverride != null && m.DefaultStateOverride != m.RoamState;
                 if (n.BountyDue && !m.IsInFight() && !onOrders) PostBounty(n);
+                // Its bounty follows what the guild knows: a stronger nemesis of its den, what its kills make it worth.
+                if (n.Bounty != null && !n.Bounty.Over && _incidents != null)
+                    _incidents.ReviseBounty(n.Bounty, StrongestBeside(n), NemesisRules.BountyFactor(n.Kills));
             }
+        }
+
+        /// <summary>The den the guild knows this monster lives in (seen, and known to be its kind's), or null.</summary>
+        Nest KnownDenOf(Monster m)
+        {
+            var home = m != null ? m.Home : null;
+            return home != null && home.Discovered && _intel != null && _intel.SpeciesOf(home) == m.Def ? home : null;
+        }
+
+        /// <summary>The level (as last seen) of the strongest other living nemesis known to share this one's den; 0 for none.</summary>
+        int StrongestBeside(Nemesis n)
+        {
+            var den = KnownDenOf(n.Monster);
+            if (den == null) return 0;
+            int best = 0;
+            foreach (var o in _living)
+                if (o != n && o.Monster != null && o.Monster.IsAlive && KnownDenOf(o.Monster) == den) best = Mathf.Max(best, o.Level);
+            return best;
+        }
+
+        /// <summary>
+        /// The level (as last seen) of the strongest living nemesis the guild knows lives in this den; 0 for none. A hunt on
+        /// the den runs into it (<see cref="QuestRisk.KnownFoeLevel"/>).
+        /// </summary>
+        public static int StrongestKnownAt(Nest den)
+        {
+            if (den == null || !Services.TryGet<NemesisService>(out var service)) return 0;
+            int best = 0;
+            foreach (var n in service._living)
+                if (n.Monster != null && n.Monster.IsAlive && service.KnownDenOf(n.Monster) == den) best = Mathf.Max(best, n.Level);
+            return best;
         }
 
         /// <summary>
@@ -287,7 +321,8 @@ namespace GuildMaster.Nemeses
                 at = home.WorldPosition;
                 pack = Mathf.Max(1, _intel.Get(home).LastCount);
             }
-            n.Bounty = _incidents.StartNemesisBounty(m, at, pack, NemesisRules.BountyFactor(n.Kills));
+            // Rated from the start by the worst the guild knows of its den.
+            n.Bounty = _incidents.StartNemesisBounty(m, at, pack, NemesisRules.BountyFactor(n.Kills), StrongestBeside(n));
         }
 
         // ---------------- Its fall ----------------

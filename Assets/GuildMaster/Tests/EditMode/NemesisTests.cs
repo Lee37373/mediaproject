@@ -70,5 +70,21 @@ namespace GuildMaster.Tests
             int plain = Quests.QuestPricing.HuntReward(DangerLevel.Medium, Quests.QuestPricing.HuntKills, 60f);
             Assert.That(one, Is.GreaterThan(plain), "a bounty pays over a hunt of that danger");
         }
+
+        [Test]
+        public void ItsBounty_IsRatedByTheWorstNemesisKnownInItsDen()
+        {
+            // Measured 2026-11-10: a bounty on a Lv4 beside a Lv14 killer of the same den read 낮음, and newcomers took it alone.
+            var bounty = new Incidents.Incident { Kind = Incidents.IncidentKind.Nemesis, TargetLevel = 4, PackSize = 3 };
+            Assert.That(Incidents.IncidentRules.NemesisLevel(bounty), Is.EqualTo(4));
+            Assert.That(Incidents.IncidentRules.Danger(bounty), Is.EqualTo(DangerLevel.Low));
+            bounty.PackLevel = MonsterLevel.HighDangerLevel + 4;
+            Assert.That(Incidents.IncidentRules.NemesisLevel(bounty), Is.EqualTo(MonsterLevel.HighDangerLevel + 4));
+            Assert.That(Incidents.IncidentRules.Danger(bounty), Is.EqualTo(DangerLevel.High), "fought among them: the worst of them counts");
+            bounty.PackLevel = 2;
+            Assert.That(Incidents.IncidentRules.NemesisLevel(bounty), Is.EqualTo(4), "a weaker den-mate changes nothing");
+            bounty.TargetLevel = MonsterLevel.MediumDangerLevel;
+            Assert.That(Incidents.IncidentRules.Danger(bounty), Is.EqualTo(DangerLevel.Medium), "and it follows the nemesis as it grows");
+        }
     }
 }

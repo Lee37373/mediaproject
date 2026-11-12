@@ -5,7 +5,6 @@ using GuildMaster.Adventurers;
 using GuildMaster.Core;
 using GuildMaster.Economy;
 using GuildMaster.Guide;
-using GuildMaster.Incidents;
 using GuildMaster.Notifications;
 using GuildMaster.Quests;
 using GuildMaster.Recruitment;
@@ -168,7 +167,7 @@ namespace GuildMaster.UI
                 }
             if (Services.TryGet<QuestBoard>(out var board)) s.OpenQuests = board.Quests.Count(q => q != null && q.Status == QuestStatus.Open);
             if (Services.TryGet<GuildTreasury>(out var treasury)) s.Gold = treasury.Gold;
-            if (Services.TryGet<EventCardService>(out var cards) && cards.Pending != null) s.PendingCard = cards.Pending.Title;
+            if (Services.TryGet<Dilemmas.DilemmaService>(out var cards) && cards.Open.Count > 0) s.PendingCard = cards.Open[0].Title;
             return s;
         }
 
@@ -187,16 +186,12 @@ namespace GuildMaster.UI
                 case HintAction.QuestBoard:
                     NotificationActions.Follow(NotificationLink.QuestBoard());
                     break;
-                case HintAction.EventCard:
-                    if (Services.TryGet<EventCardView>(out var view)) view.ShowCard();
+                case HintAction.Decision:
+                    NotificationActions.Follow(NotificationLink.Dilemmas());
                     break;
             }
         }
 
-        static bool IsTyping()
-        {
-            var es = EventSystem.current;
-            return es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null;
-        }
+        static bool IsTyping() => Session.TextFocus.Typing; // P6-2: a field with the caret, not just a selected one
     }
 }

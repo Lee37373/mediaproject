@@ -56,6 +56,7 @@ namespace GuildMaster.UI
             _pageTitle = UIBuilder.Label(nav, "", 20, TextAnchor.MiddleCenter, UITheme.Accent, FontStyle.Bold).Size(-1, -1, 1);
             _next = UIBuilder.Button(nav, "다음 >", () => Step(1), 100, 34, UITheme.Header, 15);
             UIBuilder.Button(nav, "오늘", () => ShowDay(0), 80, 34, UITheme.Button, 15);
+            UIBuilder.Button(nav, "소식지 (O)", OpenNews, 110, 34, UITheme.Button, 15); // P4-130
 
             var summary = UIBuilder.Panel(body, "Summary", UITheme.RowBg);
             summary.Size(-1, 70);
@@ -101,6 +102,16 @@ namespace GuildMaster.UI
 
         void AddCategory(Transform parent, GoldCategory c)
             => _amounts[c] = AddLine(parent, GoldCategories.Label(c), false, UITheme.Text, c);
+
+        /// <summary>The town newspaper of the day shown (P4-130).</summary>
+        void OpenNews()
+        {
+            if (!Services.TryGet<NewspaperView>(out var news)) return;
+            int i = CurrentIndex();
+            news.ShowDay(i >= 0 && i < _pages.Count && _pages[i].Closed ? _pages[i].Day : 0);
+            if (!news.Visible) news.Open();
+            else news.BringToFront();
+        }
 
         void Step(int direction)
         {

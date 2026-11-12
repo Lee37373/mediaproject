@@ -73,7 +73,7 @@ namespace GuildMaster.Units
         protected static void Damage(Unit self, Unit target, float multiplier)
         {
             if (target == null || !target.IsAlive || !Combat.CanReach(self, target)) return;
-            float dmg = Combat.Mitigate(self.Stats.Attack * multiplier * GameRandom.Shared.Range(0.9f, 1.1f), target.EffectiveDefense);
+            float dmg = Combat.Mitigate(self.AttackNow * multiplier * GameRandom.Shared.Range(0.9f, 1.1f), target.EffectiveDefense);
             target.ReceiveDamage(Mathf.Round(dmg), self, false);
         }
 
@@ -106,6 +106,14 @@ namespace GuildMaster.Units
             Fx?.Spark(patient.Position + new Vector2(0f, 0.3f), new Color(0.55f, 1f, 0.6f), 0.9f, 0.35f);
             EventBus.Publish(new UnitHealedEvent { Target = patient, Healer = healer, Amount = gained });
         }
+
+        /// <summary>A pack effect where the guild sees (P4-126); false when the pack is missing, so draw a stand-in.</summary>
+        protected static bool Vfx(string key, Vector2 at, float scale = 1f) => CasualVfx.PlayIfSeen(key, at, scale);
+
+        /// <summary>The target is alive, within reach (plus <paramref name="slack"/>) and in a clear line.</summary>
+        protected static bool InShot(Unit self, Unit target, float slack = 0.5f)
+            => target != null && target.IsAlive && Combat.Distance(self, target) <= self.Stats.AttackRange + slack
+               && World.HasLineOfSight(self.Position, target.Position, 1);
 
         protected static FxService Fx => Services.TryGet<FxService>(out var fx) ? fx : null;
         protected static WorldService World => Services.Get<WorldService>();
@@ -943,6 +951,28 @@ namespace GuildMaster.Units
             "charge" => new ChargeSkill(),
             "slam" => new GroundSlamSkill(),
             "howl" => new PackHowlSkill(),
+            // Adept and master grades (P4-126).
+            "ironwall" => new IronWallSkill(),
+            "execute" => new ExecuteSkill(),
+            "warcry" => new WarCrySkill(),
+            "poison_arrow" => new PoisonArrowSkill(),
+            "snare" => new SnareArrowSkill(),
+            "volley" => new VolleySkill(),
+            "holy_shield" => new HolyShieldSkill(),
+            "smite" => new SmiteSkill(),
+            "bless" => new BlessSkill(),
+            "chain_lightning" => new ChainLightningSkill(),
+            "frost_ring" => new FrostRingSkill(),
+            "meteor" => new MeteorSkill(),
+            // Beasts (P4-126).
+            "poison_sting" => new PoisonStingSkill(),
+            "drain" => new DrainSkill(),
+            "spores" => new SporeCloudSkill(),
+            "tongue" => new TonguePullSkill(),
+            "frenzy" => new FrenzySkill(),
+            "slime_burst" => new SlimeBurstSkill(),
+            "blizzard" => new BlizzardSkill(),
+            "pounce" => new PounceSkill(),
             // Disaster monsters (P4-72): ember, toxic_spit, frost_roar, sand_whirl, quake_stomp.
             _ when Disasters.DisasterRules.KindOfSkill(id) is { } hazard => new HazardStrikeSkill(hazard),
             // Region lords (P4-83).

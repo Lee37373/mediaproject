@@ -35,7 +35,11 @@ namespace GuildMaster.Session
 
         public static void Stop()
         {
-            if (Instance != null) Destroy(Instance.gameObject);
+            if (Instance == null) return;
+            // Lets go of the camera at once: the anchor lives until the frame's end, and the camera went on to the fight
+            // it marked — a jump made right after stopping (a test, the debug command) ended up at that fight instead.
+            if (Services.TryGet<CameraControl.CameraController>(out var cam) && cam.FollowTarget == Instance._anchor) cam.Follow(null);
+            Destroy(Instance.gameObject);
         }
 
         void Awake() => _anchor = new GameObject("FightCameraAnchor").transform;

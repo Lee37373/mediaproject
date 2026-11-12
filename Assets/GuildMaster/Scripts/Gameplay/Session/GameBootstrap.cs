@@ -253,7 +253,7 @@ namespace GuildMaster.Session
             save.Register(ghosts);
 
             var board = AddSystem<QuestBoard>();
-            board.Init(treasury, eco, clock);
+            board.Init(treasury, eco, clock, Seed);
             Services.Register(board);
             save.Register(board);
             AddSystem<QuestAreaMarkers>().Init();
@@ -261,6 +261,11 @@ namespace GuildMaster.Session
             var townQuests = new TownQuestPoster(board, intel, eco, clock, world);
             Services.Register(townQuests);
             save.Register(townQuests);
+            // The other villages' errands (P4-133): goods to carry, ore or herbs to gather, a den's parts — paid in gold and an item.
+            var errands = new ErrandPoster(board, villages, clock, Seed);
+            Services.Register(errands);
+            save.Register(errands);
+            AddSystem<DeliveryParcels>().Init();
 
             // Natural disasters (P4-72): set off by monsters' skills, dealt with through town quests.
             var disasters = AddSystem<Disasters.DisasterService>();
@@ -343,6 +348,10 @@ namespace GuildMaster.Session
             Services.Register(new RelationshipRecorder());
             Services.Register(banter);
             save.Register(banter);
+            // Feelings in a fight (P4-131, F-12): friends beside, foes in the way, rivals' races, mentors near a kill.
+            var bonds = AddSystem<BondService>();
+            bonds.Init(roster, clock, Seed);
+            Services.Register(bonds);
             // Camps out in the wild (P4-66): campfires, the watch, raiders drawn by the light, talk at the fire.
             var camps = AddSystem<CampService>();
             camps.Init(clock, world, pool, roster);
@@ -362,6 +371,10 @@ namespace GuildMaster.Session
             var ledger = new Reports.DailyLedger(treasury, clock.Day, clock.HourOfDay);
             Services.Register(ledger);
             save.Register(ledger);
+            // The town newspaper (P4-130, F-9): the day's stories, composed when the ledger closes the day, out the next morning.
+            var news = new Reports.NewsDesk(clock, roster);
+            Services.Register(news);
+            save.Register(news);
             // Stress and its consequences (F-2): demands, walking away from quests, quitting; interview, leave, bonus.
             var welfare = new Welfare.GuildWelfare(clock, roster, treasury, board, notifications);
             Services.Register(welfare);
@@ -378,11 +391,17 @@ namespace GuildMaster.Session
             save.Register(living);
             // Economy round 2 (user decision 2026-10-29): clients pay for finished quests, and the guild buys food.
             Services.Register(new CommissionService(treasury));
-            Services.Register(new FoodStore(roster, treasury));
+            var food = new FoodStore(roster, treasury);
+            Services.Register(food);
+            save.Register(food); // P4-119: the KMS systems' state is saved too
             // Tribute talks (상납금, 2026-10-29): who was asked when, and grudges.
-            Services.Register(new TributeService());
+            var tribute = new TributeService();
+            Services.Register(tribute);
+            save.Register(tribute);
             // Residents' odd jobs for small income (일손 돕기, 2026-10-29).
-            Services.Register(new ChoreService(treasury));
+            var chores = new ChoreService(treasury);
+            Services.Register(chores);
+            save.Register(chores);
             // What death leaves behind (F-6): the wall of the fallen, relics to fetch, last stands and the wounds after them.
             var legacy = new Legacy.GuildLegacy(clock, roster, treasury, notifications);
             Services.Register(legacy);
@@ -432,21 +451,42 @@ namespace GuildMaster.Session
             var townTalk = AddSystem<Social.TownTalkService>();
             townTalk.Init(llm, roster, world, visitors, merchant, clock);
             Services.Register(townTalk);
+            save.Register(townTalk);
             // Townsfolk (user request 2026-10-07): six residents who go about their day and talk with everyone in town.
             var residents = AddSystem<Social.ResidentService>();
             residents.Init(town, world);
             Services.Register(residents);
+            save.Register(residents);
             townTalk.SetResidents(residents);
+            // The residents' requests and the town's word on the guild (P4-134, F-14): asked of the guild master directly,
+            // thanked once and with a standing favour of their trade; new visitors hear what the town thinks.
+            var residentRequests = new Social.ResidentRequests(board, residents, roster, treasury, clock, Seed);
+            Services.Register(residentRequests);
+            save.Register(residentRequests);
             // Feelings over heads and the relationship graph (F-10, user request 2026-10-11).
-            Services.Register(new Social.EmotionService(clock, roster, residents));
-            // Event cards, 0-2 a day (F-13).
-            Services.Register(new Incidents.EventCardService(clock, roster, treasury, notifications, LlmUse.Gateway(LlmFeature.EventCard, llm)));
+            var emotions = new Social.EmotionService(clock, roster, residents);
+            Services.Register(emotions);
+            save.Register(emotions);
+            // KMS's event cards (F-13) are part of the decision cards now (P4-118, DilemmaService below).
             // "다음 할 일" checklist and hints (F-19).
-            Services.Register(new Guide.GuideTracker());
+            var guide = new Guide.GuideTracker();
+            Services.Register(guide);
+            save.Register(guide);
 
             // --- Camera ---
             var cam = SetupCamera(world);
             Services.Register(cam);
+            // The spectator director (P4-129, H7): the moments worth watching, and the camera mode that goes to them.
+            var highlights = AddSystem<Director.HighlightService>();
+            highlights.Init(clock, roster, world);
+            Services.Register(highlights);
+            var spectator = AddSystem<Director.SpectatorCamera>();
+            spectator.Init(highlights);
+            Services.Register(spectator);
+            // The moments the player chose to pause the game for (P6-3, settings' events tab).
+            var eventPause = AddSystem<EventPause>();
+            eventPause.Init(clock);
+            Services.Register(eventPause);
 
             // --- Player ---
             var avatar = PlayerAvatar.Create(world.TownCenterWorld + new Vector2(0f, -2f), Balance.playerMoveSpeed, Balance.playerSightRadius);
@@ -486,6 +526,11 @@ namespace GuildMaster.Session
             dilemmas.Init(clock, roster, treasury, world, Seed);
             Services.Register(dilemmas);
             save.Register(dilemmas);
+            // The guild master's orders (P4-132, H6): a cheer, a focus, a rally flag, a retreat horn — one gauge for all.
+            var orders = AddSystem<Commands.MasterCommands>();
+            orders.Init(avatar, clock, roster, town, Seed);
+            Services.Register(orders);
+            save.Register(orders);
             AddSystem<PlayerCommandInput>().Init(avatar, cam, Services.Get<PoolService>());
 
             // --- Presentation / input ---
@@ -498,6 +543,8 @@ namespace GuildMaster.Session
                 var warnings = save.Restore(load, loadSlot);
                 Debug.Log($"[GuildMaster] Save restored (slot {loadSlot}, day {load.summary.day}, {warnings.Count} warnings).");
             }
+            else save.MarkStart(clock.TotalHours); // P6-1: the exit warning counts from here
+
             GameSettings.Restoring = null;
 
             Debug.Log($"[GuildMaster] Session started. seed={Seed}, nests={map.Nests.Count}");
@@ -529,7 +576,7 @@ namespace GuildMaster.Session
             controller.Configure(world.WorldBounds, Balance.cameraMinZoom, Balance.cameraMaxZoom, Balance.cameraPanSpeed);
             // Looking into a ruin's dungeon (P4-85), the camera keeps to it.
             controller.AreaBounds = world.UndergroundBoundsAt;
-            controller.JumpTo(world.TownCenterWorld);
+            controller.JumpTo(world.TownCenterWorld, byPlayer: false);
             return controller;
         }
 

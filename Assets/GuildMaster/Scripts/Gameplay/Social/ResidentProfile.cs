@@ -38,6 +38,18 @@ namespace GuildMaster.Social
 
         public void AddOpinion(int delta) => GuildOpinion = Math.Clamp(GuildOpinion + delta, Min, Max);
 
+        /// <summary>Everyone they have feelings about (for saving).</summary>
+        public IReadOnlyDictionary<string, int> Feelings => _feelings;
+
+        /// <summary>Puts saved feelings back (P4-119), replacing the ones there.</summary>
+        public void RestoreFeelings(IEnumerable<KeyValuePair<string, int>> feelings)
+        {
+            _feelings.Clear();
+            if (feelings == null) return;
+            foreach (var kv in feelings)
+                if (!string.IsNullOrEmpty(kv.Key)) _feelings[kv.Key] = Math.Clamp(kv.Value, Min, Max);
+        }
+
         public string JobLabel => Label(Job);
 
         public static string Label(ResidentJob job) => job switch

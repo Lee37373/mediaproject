@@ -211,6 +211,14 @@ namespace GuildMaster.Incidents
         /// <summary>The bounty's danger: a hunt of its level and the pack it was seen with (it is fought among them).</summary>
         public static DangerLevel NemesisDanger(int level, int pack) => QuestBoard.HuntDanger(level, Mathf.Max(1, pack));
 
+        /// <summary>
+        /// The level a bounty is weighed by: the nemesis as the guild last saw it, or a stronger nemesis known to live in the
+        /// same den (they are fought together — a bounty on a Lv4 beside a Lv14 killer was 낮음, and newcomers died to the killer).
+        /// </summary>
+        public static int NemesisLevel(Incident i) => Mathf.Max(i.TargetLevel, i.PackLevel);
+
+        public static DangerLevel NemesisDanger(Incident i) => NemesisDanger(NemesisLevel(i), i.PackSize);
+
         /// <summary>The town's total for the bounty (fee included): a five-kill hunt of that danger at that distance, times the factor.</summary>
         public static int NemesisReward(DangerLevel danger, float distance, float factor)
             => QuestPricing.HuntReward(danger, QuestPricing.HuntKills, distance, factor);
@@ -222,7 +230,7 @@ namespace GuildMaster.Incidents
             IncidentKind.Horde => HordeDanger(i.HordeLevel, i.HordeSize),
             IncidentKind.Rescue => QuestBoard.HuntDanger(i.TargetLevel, Mathf.Max(1, i.Members.Count)),
             IncidentKind.Ruin => QuestBoard.HuntDanger(i.TargetLevel, Mathf.Max(1, i.Members.Count)),
-            IncidentKind.Nemesis => NemesisDanger(i.TargetLevel, i.PackSize),
+            IncidentKind.Nemesis => NemesisDanger(i),
             _ => DangerLevel.High,
         };
 
@@ -276,6 +284,15 @@ namespace GuildMaster.Incidents
         public static string RumourUpdateText(Incident i) => i.Kind == IncidentKind.Nemesis
             ? $"원수 {With(i.TargetName, "이", "가")} {QuestBoard.DescribeArea(i.RumourCentre)} 부근에서 보였다는 소문입니다. 현상금 의뢰 구역을 옮깁니다."
             : $"{i.SpeciesName} 무리가 {QuestBoard.DescribeArea(i.RumourCentre)} 부근까지 왔다는 소식입니다.";
+
+        /// <summary>The town rates a bounty anew: "… (Lv.14)의 현상금을 다시 매겼습니다: 위험도 낮음 → 높음, 보상 …".</summary>
+        public static string BountyRevisedText(Incident i, DangerLevel before)
+        {
+            var q = i.Quest;
+            string danger = q != null && q.Danger != before ? $"위험도 {Quest.DangerLabel(before)} → {Quest.DangerLabel(q.Danger)}, " : "";
+            string beside = i.PackLevel > i.TargetLevel ? $" 같은 둥지에 더 센 원수(Lv.{i.PackLevel})가 있습니다." : "";
+            return $"우리 마을이 원수 {i.TargetName}(Lv.{i.TargetLevel})의 현상금을 다시 매겼습니다: {danger}보상 {(q != null ? q.RewardGold : 0)}G.{beside}";
+        }
 
         public static string SightedText(Incident i) => i.Kind switch
         {

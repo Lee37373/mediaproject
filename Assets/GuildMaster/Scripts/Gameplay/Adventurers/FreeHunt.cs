@@ -158,12 +158,6 @@ namespace GuildMaster.Adventurers
              : Monsters.MonsterLevel.ExpWorth(species.expValue, level) * Mathf.Min(lastCount, DenCountCap) / (8f + Mathf.Max(0f, distance));
 
         /// <summary>
-        /// How far from town to scout: uniform in distance, not in area. Area-uniform points pile up
-        /// at the rim, so the near rings — where the weak prey lives — were hardly ever visited.
-        /// </summary>
-        public static float ScoutDistance(float t01, float reach) => Mathf.Lerp(12f, Mathf.Max(12f, reach), Mathf.Clamp01(t01));
-
-        /// <summary>
         /// A species' stats at a level, before any gear it picked up, for a den judged from afar
         /// (P4-58: the level is the strength; a den's is its birth level, known from its distance).
         /// </summary>
@@ -206,5 +200,14 @@ namespace GuildMaster.Adventurers
         /// </summary>
         public static bool ShouldGoHome(float hoursHunting, int lootItems, bool questAvailable, float hpRatio = 1f)
             => questAvailable || hoursHunting >= MaxHours || lootItems >= FullBag || hpRatio < GoHomeHpRatio;
+
+        /// <summary>
+        /// How near a band is to heading home (P4-121), 0 fresh .. 1 due: the worst of its time out, its bag and its hurt,
+        /// each against what <see cref="ShouldGoHome"/> ends the hunt on. Scouting legs lean back towards town by this
+        /// much (<see cref="ExplorationRoute.LegView.Strain"/>), so a worn band drifts home instead of pushing on to the
+        /// last minute and walking the whole way back.
+        /// </summary>
+        public static float Strain(float hoursHunting, int lootItems, float hpRatio)
+            => Mathf.Clamp01(Mathf.Max(hoursHunting / MaxHours, Mathf.Max(lootItems / (float)FullBag, (1f - hpRatio) / (1f - GoHomeHpRatio))));
     }
 }

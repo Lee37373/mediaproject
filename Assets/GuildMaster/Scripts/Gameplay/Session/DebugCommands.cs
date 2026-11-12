@@ -184,6 +184,128 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        // ---------------- Errands (P4-133) ----------------
+
+        /// <summary>
+        /// The errands on the board (kind, client, progress, item besides the gold and who gets it), what each village would do
+        /// now and why, and what the guild could be asked (spots, dens, villages).
+        /// </summary>
+        public static string Errands(bool checkNow = false)
+        {
+            var poster = Services.Get<ErrandPoster>();
+            var sb = new StringBuilder();
+            if (checkNow) sb.AppendLine($"checked now: +{poster.Check()}");
+            sb.AppendLine($"errands posted {poster.Posted} (enabled {ErrandPoster.Enabled})");
+            foreach (var q in Services.Get<QuestBoard>().Quests.Where(q => ErrandRules.IsErrand(q.Type) || q.HasRewardItem))
+                sb.AppendLine($"  {q.Id} {q.Type} [{q.ClientLabel}] {q.Title} {q.Status} {q.ProgressText} pay {q.RewardGold}G+fee {q.FeeGold}G /{q.RewardExp}EXP " +
+                              $"item {(q.HasRewardItem ? q.RewardItemLabel : "-")}{(q.ItemTakerId != null ? " → " + q.ItemTakerId : "")} party {q.Assignees.Count}/{q.MaxParty} " +
+                              $"{Quest.DangerLabel(q.Danger)}{(q.Type == QuestType.Deliver ? $" to {q.Destination?.DisplayName} goods out {q.GoodsOut}" : "")}");
+            var villages = Services.Get<Villages.VillageService>();
+            foreach (var v in villages.Villages)
+                sb.AppendLine($"  village #{v.Id} {v.DisplayName}: {poster.SkipReason(v) ?? "may ask"}");
+            foreach (var kind in new[] { World.PlaceKind.OreVein, World.PlaceKind.HerbPatch })
+                sb.AppendLine(ErrandOffers.TryGather(kind, out var g) ? $"  gather {g.ItemId}: supply {g.Supply} at {QuestBoard.DescribeArea(g.Point)}" : $"  gather {kind}: no known spot ready");
+            foreach (var c in ErrandOffers.Collects())
+                sb.AppendLine($"  collect {c.Entry.item.displayName} from {c.Species.displayName} @{QuestBoard.DescribeArea(c.Den.WorldPosition)}: {c.PerKill:0.00}/kill, supply {c.Supply}");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// A village asks an errand now: <paramref name="kind"/> "deliver", "gather", "collect" (empty: any it can), village by
+        /// index in the list (-1: the nearest the guild knows). The village need not be known (<paramref name="makeKnown"/>).
+        /// </summary>
+        public static string PostErrand(string kind = "", int village = -1, bool makeKnown = true)
+        {
+            var villages = Services.Get<Villages.VillageService>();
+            var town = Services.Get<World.WorldService>().TownCenterWorld;
+            var v = village >= 0 && village < villages.Villages.Count ? villages.Villages[village]
+                  : villages.Villages.Where(x => !x.IsDestroyed && (x.Known || makeKnown)).OrderBy(x => Vector2.Distance(x.WorldPosition, town)).FirstOrDefault();
+            if (v == null) return "no village";
+            if (makeKnown) v.Known = true;
+            QuestType? type = kind switch { "deliver" => QuestType.Deliver, "gather" => QuestType.Gather, "collect" => QuestType.Collect, _ => null };
+            var q = Services.Get<ErrandPoster>().PostFor(v, type, out var error);
+            return q != null ? $"{q.Id} {q.Title} pay {q.RewardGold}G+fee {q.FeeGold}G /{q.RewardExp}EXP item {q.RewardItemLabel} party {q.MaxParty} {Quest.DangerLabel(q.Danger)}"
+                             : $"{v.DisplayName}: {error}";
+        }
+
+        // ---------------- Residents' requests (P4-134) ----------------
+
+        static Social.Resident ResidentAt(string who)
+        {
+            var residents = Services.Get<Social.ResidentService>().Residents;
+            if (int.TryParse(who, out int i)) return i >= 0 && i < residents.Count ? residents[i] : null;
+            string low = who?.ToLowerInvariant();
+            return residents.FirstOrDefault(r => r != null && (r.Profile.Id == who || r.Profile.Id.ToLowerInvariant() == "res_" + low || r.Profile.Name == who
+                                                               || r.Profile.Job.ToString().ToLowerInvariant() == low));
+        }
+
+        /// <summary>
+        /// The residents (opinion, favour step and what it does, why each would not ask now), the town's opinion and what a
+        /// visitor arriving now would hear, every request kept (kind, what, status, hours left, quest, member) and who could go.
+        /// </summary>
+        public static string Requests(bool checkNow = false)
+        {
+            var svc = Services.Get<Social.ResidentRequests>();
+            var sb = new StringBuilder();
+            if (checkNow) sb.AppendLine($"checked now: {(svc.Check() is { } made ? "#" + made.Id : "none")}");
+            sb.AppendLine($"requests done {svc.Done} failed {svc.Failed} (enabled {Social.ResidentRequests.Enabled}); town opinion {svc.TownOpinion} → visitor word {svc.VisitorWordNow} (last {svc.LastVisitorWord})");
+            foreach (var r in Services.Get<Social.ResidentService>().Residents)
+            {
+                int tier = Social.ResidentRequestRules.Tier(r.Profile.GuildOpinion);
+                sb.AppendLine($"  {r.Profile.Id} {r.Profile.Name} ({r.Profile.Job}) opinion {r.Profile.GuildOpinion} tier {tier}{(tier > 0 ? ": " + Social.ResidentRequestRules.FavourText(r.Profile.Job, tier) : "")} — {svc.SkipReason(r) ?? "may ask"}");
+            }
+            foreach (var q in svc.All)
+            {
+                string plan = q.IsOpen && q.Kind != Social.RequestKind.Story ? " plan " + (svc.Plan(q, out var d, out _, out _, out _) ?? $"ok {d.RewardGold}G/{d.RewardExp}EXP") : "";
+                string stock = q.Kind == Social.RequestKind.Goods ? $" stock {Services.Get<GuildTreasury>().GetStock(q.ItemId)}/{q.Count}" : "";
+                string who = q.IsOpen ? " candidates " + string.Join(",", svc.Candidates(q).Select(c => c.Member.Data.name + (c.Risk != "" ? ":" + c.Risk : ""))) : "";
+                sb.AppendLine($"  #{q.Id} {q.ResidentId} {q.Kind} {svc.WhatText(q)} {q.Status} left {svc.HoursLeft(q):0.0}h quest {q.QuestId ?? "-"} member {q.MemberName ?? "-"}{stock}{plan}{who}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>A resident (index, id, name or job) asks now: <paramref name="kind"/> "goods", "deliver", "story" (empty: any it asks).</summary>
+        public static string Ask(string who, string kind = "")
+        {
+            var r = ResidentAt(who);
+            if (r == null) return "no resident " + who;
+            Social.RequestKind? k = kind switch { "goods" => Social.RequestKind.Goods, "deliver" => Social.RequestKind.Delivery, "story" => Social.RequestKind.Story, _ => null };
+            var svc = Services.Get<Social.ResidentRequests>();
+            var made = svc.Ask(r, k, out var error);
+            return made != null ? $"#{made.Id} {r.Profile.Name}: {svc.WhatText(made)} — \"{svc.AskLine(made)}\"" : $"{r.Profile.Name}: {error}";
+        }
+
+        /// <summary>Hands request #id's things over from the stock (<paramref name="fill"/>: puts them in the stock first).</summary>
+        public static string HandOver(int id, bool fill = false)
+        {
+            var svc = Services.Get<Social.ResidentRequests>();
+            var r = svc.Find(id);
+            if (r == null) return "no request " + id;
+            if (fill && r.Kind == Social.RequestKind.Goods) Services.Get<GuildTreasury>().AddStock(r.ItemId, r.Count);
+            return svc.TryHandOver(r, out var error) ? Requests() : error;
+        }
+
+        /// <summary>Sends member (roster index; -1: the first candidate) on request #id.</summary>
+        public static string SendOn(int id, int member = -1)
+        {
+            var svc = Services.Get<Social.ResidentRequests>();
+            var r = svc.Find(id);
+            if (r == null) return "no request " + id;
+            var members = Services.Get<GuildRoster>().Members;
+            var m = member >= 0 && member < members.Count ? members[member] : svc.Candidates(r).Select(c => c.Member).FirstOrDefault();
+            if (m == null) return "nobody to send";
+            return svc.TrySend(r, m, out var error) ? $"{m.Data.name} → #{id} quest {r.QuestId ?? "(told)"}" : error;
+        }
+
+        /// <summary>Sets a resident's (index, id, name or job) opinion of the guild; "all" sets every one.</summary>
+        public static string Opinion(string who, int value)
+        {
+            var residents = Services.Get<Social.ResidentService>().Residents;
+            var targets = who == "all" ? residents.ToList() : new List<Social.Resident> { ResidentAt(who) };
+            foreach (var r in targets.Where(r => r != null)) r.Profile.GuildOpinion = Mathf.Clamp(value, Social.ResidentProfile.Min, Social.ResidentProfile.Max);
+            return Requests();
+        }
+
         // ---------------- Sudden incidents (P4-85) ----------------
 
         /// <summary>Every incident, real values: kind, where it is and where the rumour put it, the quest, time left, how it ended.</summary>
@@ -862,6 +984,91 @@ namespace GuildMaster.Session
             return sb.ToString();
         }
 
+        /// <summary>Who is what to whom in a fight (P4-131): bonds, the attack share on now, behind a rival, race records.</summary>
+        public static string Bonds()
+        {
+            var r = Services.Get<GuildRoster>().Members;
+            Services.TryGet<BondService>(out var bonds);
+            var sb = new StringBuilder();
+            foreach (var a in r)
+            {
+                if (a?.Data == null || a.IsVisitor) continue;
+                sb.Append($"{a.Data.name} Lv{a.Data.level} 공격몫 {a.BondAttack:+0.00;-0.00;0}{(bonds != null && bonds.IsBehind(a) ? " (라이벌에게 지는 중)" : "")}: ");
+                foreach (var (o, kinds) in BondService.BondsOf(a, r))
+                {
+                    var (won, lost) = BondService.Record(a, o);
+                    sb.Append($"{o.Data.name}[{string.Join("·", kinds.Select(BondRules.Label))}{(won + lost > 0 ? $" {won}승{lost}패" : "")}]  ");
+                }
+                sb.AppendLine();
+            }
+            return sb.ToString();
+        }
+
+        // ---------------- The guild master's orders (P4-132) ----------------
+
+        /// <summary>The command gauge, each order's cooldown, the flag, and who near the master would hear (real values).</summary>
+        public static string Orders()
+        {
+            var orders = Services.Get<Commands.MasterCommands>();
+            var sb = new StringBuilder();
+            sb.AppendLine($"지휘력 {orders.Power:0.0}/{Commands.CommandRules.MaxPower:0}  깃발 {(orders.HasFlag ? $"{orders.FlagPosition} ({orders.FlagHoursLeft:0.0}시간)" : "없음")}");
+            foreach (var c in Commands.CommandRules.All)
+                sb.AppendLine($"  {Commands.CommandRules.Label(c)}: 비용 {Commands.CommandRules.Cost(c):0}, 남은 쿨 {orders.HoursToReady(c):0.00}시간, 지금 {orders.Check(c)}");
+            var me = orders.MasterPosition;
+            foreach (var a in Services.Get<GuildRoster>().Members)
+            {
+                if (a?.Data == null || a.IsVisitor || !a.IsAlive) continue;
+                float d = Vector2.Distance(a.Position, me);
+                if (d > Commands.CommandRules.Reach) continue;
+                float mood = ThoughtRecorder.MoodOf(a);
+                sb.Append($"  {a.Data.name} {d:0.0}칸 {a.StateLabel} 기분 {mood:0} 응원 {a.CheerAttack:0.00} 표적 {(a.OrderedTarget != null ? a.OrderedTarget.DisplayName : "-")} 따름(");
+                sb.Append(string.Join(" ", Commands.CommandRules.All.Select(c => $"{Commands.CommandRules.Label(c)} {Commands.CommandRules.ObeyChance(c, mood, a.Data.traitIds, a.Data.values):0%}")));
+                sb.AppendLine(")");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Gives an order as the bar does ("cheer", "focus", "rally", "retreat"); a focus order goes for the monster nearest
+        /// (x, y), or without a point for the nearest one the guild sees within the master's reach. free = the gauge and the
+        /// cooldown are filled first.
+        /// </summary>
+        public static string Order(string kind, bool free = true, float x = float.NaN, float y = float.NaN)
+        {
+            var orders = Services.Get<Commands.MasterCommands>();
+            var c = kind.ToLowerInvariant() switch
+            {
+                "cheer" or "응원" => Commands.MasterCommand.Cheer,
+                "focus" or "집중" => Commands.MasterCommand.Focus,
+                "rally" or "flag" or "깃발" => Commands.MasterCommand.Rally,
+                _ => Commands.MasterCommand.Retreat,
+            };
+            if (free)
+            {
+                orders.SetPower(Commands.CommandRules.MaxPower);
+                orders.ResetCooldowns();
+            }
+            Vector2? at = null;
+            if (!float.IsNaN(x)) at = new Vector2(x, y);
+            else if (c == Commands.MasterCommand.Focus)
+            {
+                Services.TryGet<GuildMaster.Fog.FogOfWar>(out var fog);
+                var m = UnitRegistry.FindNearest(orders.MasterPosition, Commands.CommandRules.Reach,
+                    u => u is Monster mo && mo.IsAlive && (fog == null || fog.IsVisibleRaw(mo.Position)));
+                if (m != null) at = m.Position;
+            }
+            bool ok = orders.TryIssue(c, at, out var message);
+            return (ok ? "OK " : "NO ") + message;
+        }
+
+        /// <summary>Sets the command gauge.</summary>
+        public static string OrderPower(float power)
+        {
+            var orders = Services.Get<Commands.MasterCommands>();
+            orders.SetPower(power);
+            return $"지휘력 {orders.Power:0}";
+        }
+
         /// <summary>Deals damage to roster member #index (no attacker). For death checks.</summary>
         public static string Hurt(int index, float amount)
         {
@@ -1128,6 +1335,33 @@ namespace GuildMaster.Session
         {
             if (on) FightCamera.Ensure(); else FightCamera.Stop();
             return $"watchFights={(on ? "on" : "off")}";
+        }
+
+        /// <summary>The spectator director (P4-129): the moments going on, what the camera shows, and the mode.</summary>
+        public static string Highlights()
+        {
+            if (!Services.TryGet<Director.HighlightService>(out var h)) return "no HighlightService";
+            var shown = Services.TryGet<Director.SpectatorCamera>(out var s) ? s.Shown : null;
+            return $"spectator={(Director.SpectatorCamera.On ? "on" : "off")} shown={(shown != null ? shown.Title + " " + shown.Subtitle : "none")} started={h.Started}\n{h.Describe()}";
+        }
+
+        /// <summary>Spectator mode on/off (C in play).</summary>
+        public static string Spectate(bool on)
+        {
+            Director.SpectatorCamera.Set(on);
+            return $"spectator={(on ? "on" : "off")}";
+        }
+
+        /// <summary>The town newspaper (P4-130): the stories noted so far today and the latest paper.</summary>
+        public static string News()
+            => Services.TryGet<Reports.NewsDesk>(out var desk) ? desk.Describe() : "no NewsDesk";
+
+        /// <summary>Today's paper so far, out now (its window opens as in the morning).</summary>
+        public static string PrintNews()
+        {
+            if (!Services.TryGet<Reports.NewsDesk>(out var desk)) return "no NewsDesk";
+            var p = desk.PrintNow();
+            return string.Join("\n", p.articles.Select(a => $"[{Reports.NewsRules.Tag(a.kind)} {a.score:0}] {a.headline} — {a.body}"));
         }
 
         /// <summary>
@@ -1493,6 +1727,8 @@ namespace GuildMaster.Session
         public static string Trial(string species, int pack, int level, string team, int memberLevel, int gear, int rounds = 5, int speed = 3)
         {
             if (s_trial != null && s_trial.Running) return "a trial is running: " + s_trial.Report();
+            GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game between rounds
+            GuildMaster.Reports.NewsDesk.AutoOpen = false; // P4-130: nor the morning paper
             var classes = team.ToUpperInvariant().Select(c => c switch
             {
                 'W' => AdventurerClass.Warrior,
@@ -1534,6 +1770,8 @@ namespace GuildMaster.Session
         {
             var probe = WildlifeProbe.Ensure();
             if (probe.Running) return "already running";
+            GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game; cards wait for their deadlines
+            GuildMaster.Reports.NewsDesk.AutoOpen = false; // P4-130: nor the morning paper
             probe.Begin(days);
             Services.Get<GameClock>().SetSpeed(speed);
             return $"wildlife run started: {days} game days";
@@ -1545,6 +1783,8 @@ namespace GuildMaster.Session
         {
             var probe = BalanceProbe.Ensure();
             if (probe.Running) return "already running: " + probe.Report();
+            GuildMaster.Dilemmas.DilemmaService.AutoOpen = false; // P4-118: a card's window would hold the game; cards wait for their deadlines
+            GuildMaster.Reports.NewsDesk.AutoOpen = false; // P4-130: nor the morning paper
             string name = string.IsNullOrEmpty(label) ? "baseline" : label;
             string path = System.IO.Path.Combine(Application.dataPath, "..", "BalanceLogs", $"{name}.csv");
             path = System.IO.Path.GetFullPath(path);

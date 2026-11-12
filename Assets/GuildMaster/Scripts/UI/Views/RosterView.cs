@@ -92,7 +92,7 @@ namespace GuildMaster.UI
             UIBuilder.VLayout(body, 8, 0);
 
             var bar = UIBuilder.Row(body, 40, 6);
-            for (int i = 0; i < 5; i++) _summary.Add(EventCardView.Chip(bar, 13));
+            for (int i = 0; i < 5; i++) _summary.Add(UIChips.Chip(bar, 13));
             UIBuilder.Rect(bar, "Spacer").Size(-1, -1, 1);
             // Recruitment notice (P4-38): pay to bring the next applicant within a few hours.
             _noticeState = UIBuilder.Label(bar, "", 13, TextAnchor.MiddleRight, UITheme.TextMuted).Size(300, 40);
@@ -274,11 +274,11 @@ namespace GuildMaster.UI
                 if (welfare != null && welfare.IsOnLeave(a)) leave++;
             }
             foreach (var g in _groups) if (g.IsParty) parties++;
-            EventCardView.SetChip(_summary[0], $"길드원 <b>{alive}</b>", ChipPlain, UITheme.Text);
-            EventCardView.SetChip(_summary[1], $"파티 <b>{parties}</b>", ChipPlain, UITheme.Text);
-            EventCardView.SetChip(_summary[2], $"밖 <b>{outside}</b> · 마을 <b>{alive - outside}</b>", ChipPlain, UITheme.Text);
-            EventCardView.SetChip(_summary[3], $"위험 <b>{danger}</b>", danger > 0 ? ChipBad : ChipPlain, danger > 0 ? ChipBadText : UITheme.TextMuted);
-            EventCardView.SetChip(_summary[4], $"부상 <b>{wounded}</b> · 휴가 <b>{leave}</b>", wounded + leave > 0 ? ChipWarn : ChipPlain,
+            UIChips.SetChip(_summary[0], $"길드원 <b>{alive}</b>", ChipPlain, UITheme.Text);
+            UIChips.SetChip(_summary[1], $"파티 <b>{parties}</b>", ChipPlain, UITheme.Text);
+            UIChips.SetChip(_summary[2], $"밖 <b>{outside}</b> · 마을 <b>{alive - outside}</b>", ChipPlain, UITheme.Text);
+            UIChips.SetChip(_summary[3], $"위험 <b>{danger}</b>", danger > 0 ? ChipBad : ChipPlain, danger > 0 ? ChipBadText : UITheme.TextMuted);
+            UIChips.SetChip(_summary[4], $"부상 <b>{wounded}</b> · 휴가 <b>{leave}</b>", wounded + leave > 0 ? ChipWarn : ChipPlain,
                                   wounded + leave > 0 ? ChipWarnText : UITheme.TextMuted);
         }
 
@@ -450,7 +450,7 @@ namespace GuildMaster.UI
                 var head = UIBuilder.Row(card._inner, 22, 8);
                 card._title = UIBuilder.Label(head, "", 15, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold);
                 card._title.horizontalOverflow = HorizontalWrapMode.Overflow;
-                card._status = EventCardView.Chip(head, 12);
+                card._status = UIChips.Chip(head, 12);
                 UIBuilder.Rect(head, "Spacer").Size(-1, -1, 1);
                 card._right = UIBuilder.Label(head, "", 12, TextAnchor.MiddleRight, UITheme.TextMuted);
                 card._right.horizontalOverflow = HorizontalWrapMode.Overflow;
@@ -472,7 +472,7 @@ namespace GuildMaster.UI
                     Kind.Home => (PillHome, PillHomeText),
                     _ => (ChipPlain, UITheme.TextMuted),
                 };
-                EventCardView.SetChip(_status, g.Status, pill, pillText);
+                UIChips.SetChip(_status, g.Status, pill, pillText);
                 _detail.text = g.Detail;
                 _right.text = g.Right;
 

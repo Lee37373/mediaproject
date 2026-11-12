@@ -40,7 +40,9 @@ namespace GuildMaster.Adventurers
             var a = Owner;
             if (!Services.TryGet<WaveManager>(out var waves) || !waves.RaidSighted) return; // coordinator releases us
             var world = Services.Get<WorldService>();
-            var rally = Front ?? (waves.Fronts.Count > 0 ? waves.Fronts[0].Point : world.TownCenterWorld);
+            // The guild master's rally flag (P4-132): one that heeds it holds there instead of its gate.
+            var flag = Services.TryGet<Commands.MasterCommands>(out var orders) ? orders.FlagFor(a) : null;
+            var rally = flag ?? Front ?? (waves.Fronts.Count > 0 ? waves.Fronts[0].Point : world.TownCenterWorld);
 
             // Also whoever is shooting into the town from outside, and whoever just hit us: raid
             // archers stand back from the gate (P4-40) and were left to shoot at will while the
@@ -88,7 +90,8 @@ namespace GuildMaster.Adventurers
             float angle = (Mathf.Abs(a.Data.id.GetHashCode()) % 360) * Mathf.Deg2Rad;
             float r = SlotRadius * (a.Stats.IsRanged ? 1.6f : 1f);
             var slot = rally + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * r;
-            if (!world.Grid.IsWalkable(GridMap.WorldToCell(slot)) || !world.Grid.IsInTown(slot)) slot = rally;
+            // Round a flag planted outside the walls, the slots are outside too.
+            if (!world.Grid.IsWalkable(GridMap.WorldToCell(slot)) || flag == null && !world.Grid.IsInTown(slot)) slot = rally;
             if (Vector2.Distance(a.Position, slot) > 0.8f) a.Mover.SetDestination(slot, 0.3f);
         }
     }

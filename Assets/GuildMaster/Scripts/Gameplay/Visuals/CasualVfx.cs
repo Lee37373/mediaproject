@@ -66,10 +66,12 @@ namespace GuildMaster.Visuals
             var at = victim.Position + new Vector2(0f, 0.35f);
             // A monster struck by the guild flashes yellow (purple for a mage); a person struck flashes red.
             bool personHit = victim is not Monster;
-            string key = e.Critical ? (personHit ? "Hit5_Red" : "Hit5_Yellow")
+            // P6-3: with calmer flashes a critical hit plays the plain hit.
+            bool bigCrit = e.Critical && !Session.GameSettings.CalmFlashes;
+            string key = bigCrit ? (personHit ? "Hit5_Red" : "Hit5_Yellow")
                        : personHit ? "Hit1_Red"
                        : e.Source is Adventurer a && a.Data != null && a.Data.cls == AdventurerClass.Mage ? "Hit1_Purple" : "Hit1_Yellow";
-            Play(key, at, e.Critical ? 1.2f : 0.8f);
+            Play(key, at, bigCrit ? 1.2f : 0.8f);
         }
 
         void OnHealed(UnitHealedEvent e)
@@ -124,6 +126,17 @@ namespace GuildMaster.Visuals
         }
 
         // ---------------- Spawning ----------------
+
+        /// <summary>
+        /// A skill's own effect (P4-126), played where the guild can see and the camera looks; false when it was not played
+        /// (no pack, unseen, or no such effect) so the caller can draw its plain stand-in instead.
+        /// </summary>
+        public static bool PlayIfSeen(string key, Vector2 at, float scale = 1f)
+        {
+            if (!Active || !Services.TryGet<CasualVfx>(out var vfx)) return false;
+            if (!Seen(at)) return true; // nothing to draw, and no stand-in either
+            return vfx.Play(key, at, scale);
+        }
 
         /// <summary>Plays an effect once at <paramref name="at"/>; returns false when the pack has no such effect.</summary>
         public bool Play(string key, Vector2 at, float scale = 1f)

@@ -157,6 +157,102 @@ namespace GuildMaster.Tests
             Assert.IsFalse(ExplorationRoute.OpensOut(grid, InOutcrop, new Vector2Int(26, 20)), "seen rock is not");
         }
 
+        // ---------------- Scouting from where the band stands (P4-121) ----------------
+
+        /// <summary>Open grass, 100 × 60, with a walled town on its west side.</summary>
+        static WorldService OpenCountry()
+        {
+            var map = new MapData(100, 60);
+            for (int i = 0; i < map.Tiles.Length; i++) map.Tiles[i] = TileType.Grass;
+            map.TownRect = new RectInt(4, 22, 16, 16);
+            map.TownCenter = new Vector2Int(12, 30);
+            return new WorldService(map);
+        }
+
+        static ExplorationRoute.LegView View(WorldService world, float reach = 200f)
+            => new() { Town = GridMap.CellToWorld(world.Map.TownCenter), Reach = reach };
+
+        [Test]
+        public void AScoutingLeg_HeadsForCountryNobodyHasSeen()
+        {
+            var world = OpenCountry();
+            var from = new Vector2(50.5f, 30.5f);
+            bool Unseen(int x, int y) => y >= 42; // the north is still dark
+            var leg = ExplorationRoute.ScoutLeg(world, Unseen, from, RouteChoice.Normal, View(world));
+            Assert.That(Vector2.Distance(from, leg), Is.EqualTo(ExplorationRoute.LegLength).Within(1.5f), "one leg from where it stands");
+            Assert.That(leg.y, Is.GreaterThan(from.y + 10f), "towards the dark");
+        }
+
+        [Test]
+        public void AScoutingLeg_GoesOnTheWayTheLastOneWent()
+        {
+            // Everything round is as well known as everything else: no turning back and forth for nothing
+            // (P4-121 — a spot drawn round the town each time took the band from one side to the other).
+            var world = OpenCountry();
+            var from = new Vector2(50.5f, 30.5f);
+            var view = View(world);
+            view.Heading = Vector2.down;
+            var leg = ExplorationRoute.ScoutLeg(world, null, from, RouteChoice.Normal, view);
+            Assert.That(leg.y, Is.LessThan(from.y - 10f), "on the way it was going");
+        }
+
+        [Test]
+        public void AScoutingLeg_KeepsClearOfWhatTheBandCannotTake()
+        {
+            var world = OpenCountry();
+            var from = new Vector2(50.5f, 30.5f);
+            bool Unseen(int x, int y) => x >= 60; // the dark lies east, and so does the monster
+            var view = View(world);
+            view.Heading = Vector2.right;
+            var monster = from + new Vector2(10f, 0f);
+            view.Avoid.Add((monster, 9f));
+            var leg = ExplorationRoute.ScoutLeg(world, Unseen, from, RouteChoice.Normal, view);
+            Assert.That(Vector2.Distance(leg, monster), Is.GreaterThanOrEqualTo(9f), "not into its notice");
+            Assert.That(ExplorationRoute.ClosestPass(from, leg, monster), Is.GreaterThan(5f), "nor past under its nose");
+
+            // Walking the goal's way too: the leg towards a den goes round the monster in between.
+            var den = from + new Vector2(40f, 0f);
+            var toDen = ExplorationRoute.NextLeg(world, Unseen, from, den, RouteChoice.Normal, false, view);
+            Assert.That(ExplorationRoute.ClosestPass(from, toDen, monster), Is.GreaterThan(
+                ExplorationRoute.ClosestPass(from, from + Vector2.right * ExplorationRoute.LegLength, monster)), "round it, not through it");
+            Assert.That(Vector2.Distance(toDen, den), Is.LessThan(Vector2.Distance(from, den)), "still on its way");
+        }
+
+        [Test]
+        public void AWornBand_LeansBackTowardsTown_AndAFreshOneStaysWithinItsReach()
+        {
+            var world = OpenCountry();
+            var from = new Vector2(60.5f, 30.5f);
+            var town = GridMap.CellToWorld(world.Map.TownCenter);
+            var fresh = View(world);
+            fresh.Heading = Vector2.right;
+            var outward = ExplorationRoute.ScoutLeg(world, null, from, RouteChoice.Normal, fresh);
+            Assert.That(Vector2.Distance(outward, town), Is.GreaterThan(Vector2.Distance(from, town)), "fresh, it goes on out");
+
+            var worn = View(world);
+            worn.Heading = Vector2.right;
+            worn.Strain = 1f;
+            var homeward = ExplorationRoute.ScoutLeg(world, null, from, RouteChoice.Normal, worn);
+            Assert.That(Vector2.Distance(homeward, town), Is.LessThan(Vector2.Distance(from, town) - 8f), "worn, it heads back");
+
+            var short_ = View(world, reach: 50f);
+            short_.Heading = Vector2.right;
+            var held = ExplorationRoute.ScoutLeg(world, null, from, RouteChoice.Normal, short_);
+            Assert.That(Vector2.Distance(held, town), Is.LessThan(Vector2.Distance(outward, town)), "no further out than it can take on");
+        }
+
+        [Test]
+        public void AScoutingLeg_GoesRoundTheTown_NotAcrossIt()
+        {
+            // Just north of the walls with the dark on the far side: a leg across the town is the shortest look at it.
+            var world = OpenCountry();
+            var from = new Vector2(12.5f, 41.5f); // north of the town
+            bool Unseen(int x, int y) => y < 22; // the south is dark
+            var leg = ExplorationRoute.ScoutLeg(world, Unseen, from, RouteChoice.Normal, View(world));
+            for (int i = 1; i <= 9; i++)
+                Assert.IsFalse(world.Grid.IsInTown(GridMap.WorldToCell(Vector2.Lerp(from, leg, i / 9f))), "the leg does not cross the town");
+        }
+
         [Test]
         public void WithoutFog_ExplorationKnowsEverything()
         {

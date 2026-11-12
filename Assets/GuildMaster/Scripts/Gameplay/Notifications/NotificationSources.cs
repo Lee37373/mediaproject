@@ -104,6 +104,14 @@ namespace GuildMaster.Notifications
             EventBus.Subscribe<Dilemmas.DilemmaDealtEvent>(OnDilemma);
             EventBus.Subscribe<Dilemmas.DilemmaResolvedEvent>(OnDilemmaResolved);
             EventBus.Subscribe<Guild.GuildHolidayEvent>(OnHoliday);
+            EventBus.Subscribe<Reports.NewsPaperDeliveredEvent>(OnNews);
+        }
+
+        // The town newspaper (P4-130): the morning's paper, for when its window did not open by itself.
+        void OnNews(Reports.NewsPaperDeliveredEvent e)
+        {
+            if (e.Paper?.Lead == null) return;
+            _center.Post(NotificationKind.Info, $"{e.Paper.day}일차 마을 소식", e.Paper.Lead.headline, "news:" + e.Paper.day, NotificationLink.News(e.Paper.day));
         }
 
         // The guild's holiday (P4-112): why nobody goes out today.
@@ -225,6 +233,7 @@ namespace GuildMaster.Notifications
             EventBus.Unsubscribe<QuirkGainedEvent>(OnQuirk);
             EventBus.Unsubscribe<Nemeses.NemesisDeedEvent>(OnNemesisDeed);
             EventBus.Unsubscribe<Nemeses.NemesisFellEvent>(OnNemesisFell);
+            EventBus.Unsubscribe<Reports.NewsPaperDeliveredEvent>(OnNews);
         }
 
         // ---------------- Sudden incidents (P4-85): heard by rumour ----------------

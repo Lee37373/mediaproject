@@ -62,6 +62,7 @@ namespace GuildMaster.Places
         public PlaceSite Best(Adventurer a, PlaceKind kind)
         {
             if (_places == null || a == null || a.Data == null) return null;
+            if (PlaceRules.IsGathering(kind) && KeptForErrands(kind)) return null;
             var town = _world.TownCenterWorld;
             float power = AdventurerStats.Power(a.Data);
             float reach = a.IsNewcomer ? a.NewcomerReach : PlaceRules.MaxDistanceFromTown;
@@ -82,11 +83,70 @@ namespace GuildMaster.Places
             return best;
         }
 
+        /// <summary>
+        /// The ready spots of this kind are spoken for by the gathering errands on the board (<see cref="Quests.ErrandRules.KeptForErrands"/>):
+        /// nobody digs one for itself meanwhile — the errand's taker would find it bare and wait a day for it to grow back.
+        /// </summary>
+        bool KeptForErrands(PlaceKind kind)
+        {
+            if (!Services.TryGet<Quests.QuestBoard>(out var board)) return false;
+            int needed = board.GatherStillNeeded(PlaceRules.GatherItem(kind));
+            if (needed <= 0) return false;
+            int ready = 0;
+            foreach (var p in _places.Known(kind)) if (_places.IsReady(p)) ready++;
+            return Quests.ErrandRules.KeptForErrands(ready, kind == PlaceKind.OreVein, needed);
+        }
+
         // ---------------- Gathering spots: one at a time ----------------
 
         bool ClaimedByAnother(PlaceSite p, Adventurer a)
             => PlaceRules.IsGathering(p.Kind) && _claims.TryGetValue(p.Index, out var by) && by != a && by != null && by.IsAlive
-               && by.Fsm.Current == by.PlaceVisitState && by.PlaceVisitState.Place == p;
+               && (by.Fsm.Current == by.PlaceVisitState && by.PlaceVisitState.Place == p
+                   // On a gathering errand at it (P4-133): the spot stays its own through a fight or a night's camp.
+                   || by.CurrentQuest is { Type: Quests.QuestType.Gather, IsActive: true } && by.HuntState.GatherSpot == p);
+
+        /// <summary>
+        /// Where a gathering errand goes next (P4-133): the nearest known spot of the kind with something on it that nobody
+        /// else is on (<paramref name="ready"/>), else — all picked clean — the known one that grows back soonest, to wait by.
+        /// Null when the guild knows none.
+        /// </summary>
+        public PlaceSite ErrandSpot(Adventurer a, PlaceKind kind, out bool ready)
+        {
+            ready = false;
+            if (_places == null || a == null) return null;
+            PlaceSite best = null, soonest = null;
+            float bestD = float.MaxValue, soonestH = float.MaxValue;
+            foreach (var p in _places.Known(kind))
+            {
+                if (ClaimedByAnother(p, a)) continue;
+                float d = Vector2.Distance(a.Position, p.WorldPosition);
+                if (_places.IsReady(p))
+                {
+                    if (d < bestD) { bestD = d; best = p; }
+                }
+                else
+                {
+                    float h = _places.HoursUntilReady(p) + d * 0.01f;
+                    if (h < soonestH) { soonestH = h; soonest = p; }
+                }
+            }
+            ready = best != null;
+            return best ?? soonest;
+        }
+
+        /// <summary>
+        /// A gathering errand's dig (P4-133): what the spot gives (<see cref="PlaceRules.GatherCount"/>), the spot spent as by
+        /// any gatherer — the caller hands the yield to the errand (the rest to the member's pack). 0 if picked clean meanwhile.
+        /// </summary>
+        public int Harvest(Adventurer a, PlaceSite p)
+        {
+            if (a == null || p == null || !a.IsAlive || !PlaceRules.IsGathering(p.Kind) || !_places.IsReady(p)) return 0;
+            int got = PlaceRules.GatherCount(p.Kind, GameRandom.Shared.Value);
+            _places.Spend(p, PlaceRules.RegrowHours);
+            Release(p, a);
+            EventBus.Publish(new PlaceVisitedEvent { Member = a, Place = p, Gathered = got });
+            return got;
+        }
 
         /// <summary>Takes a gathering spot for this member (anything else is shared); false when someone else has it.</summary>
         public bool Claim(PlaceSite p, Adventurer a)

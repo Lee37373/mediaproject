@@ -229,15 +229,18 @@ namespace GuildMaster.Adventurers
         {
             if (leader == null || band == null || slots <= 0 || _hunts.ContainsKey(band)) return;
             Services.TryGet<GuildParties>(out var parties);
-            var candidates = _roster.Members
+            var going = band.Members.Append(leader).Distinct().ToList();
+            var candidates = TakeGettingOn(_roster.Members
                 .Where(a => a != leader && FreeInTown(a) && !band.Has(a) && !IsInvited(a)
                             && (parties == null || parties.PartyOf(a) == null)
                             && FitToBeAsked(a) && !ThinkSources.TrainsByRule(a)
                             && Relationships.Get(leader, a) > HostileThreshold
                             && HuntBandService.SameFooting(a, leader)) // newcomers hunt with newcomers (P4-99)
-                .OrderByDescending(a => Relationships.Get(leader, a))
-                .Take(slots)
-                .ToList();
+                .Select(a => (a, fit: FitWith(a, leader, going)))
+                .Where(x => x.fit.HasValue)
+                // The ones the leader likes most, and the band's friends (P4-131), first.
+                .OrderByDescending(x => Relationships.Get(leader, x.a) + x.fit.Value)
+                .Select(x => x.a), slots);
             if (candidates.Count == 0) return;
 
             var g = new HuntGathering { Band = band, Leader = leader, StartRealTime = Time.unscaledTime };
@@ -340,13 +343,14 @@ namespace GuildMaster.Adventurers
         }
 
         /// <summary>Idle members in town that could reasonably take this quest, best fit first (<paramref name="skip"/>: not asked now).</summary>
-        List<Adventurer> PickCandidates(Quest q, Adventurer leader, Func<Adventurer, bool> skip = null)
+        internal List<Adventurer> PickCandidates(Quest q, Adventurer leader, Func<Adventurer, bool> skip = null)
         {
             Services.TryGet<GuildParties>(out var parties);
             int slots = q.MaxParty - q.Assignees.Count;
             if (slots <= 0) return new List<Adventurer>();
-            return _roster.Members
-                .Where(a => a != leader && FreeInTown(a)
+            var going = q.Assignees.OfType<Adventurer>().Append(leader).Distinct().ToList();
+            return TakeGettingOn(_roster.Members
+                .Where(a => a != leader && FreeInTown(a) && !q.IsAssigned(a)
                             && !IsInvited(a)
                             && (skip == null || !skip(a))
                             // Someone else's party stays with its own leader (P4-50) — its leader too, as for hunts
@@ -354,13 +358,39 @@ namespace GuildMaster.Adventurers
                             // waiting in town for the whole quest, and reset an outing still being split).
                             && (parties == null || parties.PartyOf(a) == null)
                             && Relationships.Get(leader, a) > HostileThreshold)
-                // Friends first: fitness scaled by how the leader feels about them.
-                .Select(a => (a, score: RuleBasedDecisionMaker.Score(a, q) * (1f + Relationships.Get(leader, a) / 100f)))
+                .Select(a => (a, fit: FitWith(a, leader, going)))
+                .Where(x => x.fit.HasValue)
+                // Friends first: fitness scaled by how the leader feels about them, and how those already going do (P4-131).
+                .Select(x => (x.a, score: RuleBasedDecisionMaker.Score(x.a, q) * (1f + (Relationships.Get(leader, x.a) + x.fit.Value) / 100f)))
                 .Where(x => x.score > 0f)
                 .OrderByDescending(x => x.score)
-                .Take(slots)
-                .Select(x => x.a)
-                .ToList();
+                .Select(x => x.a), slots);
+        }
+
+        /// <summary>
+        /// How a member fits those going (P4-131, user decision 2026-11-08: party making looks at the whole party): null if it
+        /// and any of them — the leader too — are foes either way (it is not asked); otherwise its two-way feeling with those
+        /// going other than the leader (the leader's own feeling counts on its own), so the party's friends come first.
+        /// </summary>
+        static float? FitWith(Adventurer a, Adventurer leader, List<Adventurer> going)
+        {
+            foreach (var m in going)
+                if (m != null && m != a && m.IsAlive && BondRules.Foes(Relationships.Get(a, m), Relationships.Get(m, a))) return null;
+            return BondRules.PartyFit(going.Where(m => m != null && m != a && m != leader && m.IsAlive)
+                                           .Select(m => (Relationships.Get(a, m), Relationships.Get(m, a)))) ?? 0f;
+        }
+
+        /// <summary>The best first, up to <paramref name="slots"/>, leaving out one who is a foe of someone already taken (they would go together).</summary>
+        static List<Adventurer> TakeGettingOn(IEnumerable<Adventurer> best, int slots)
+        {
+            var taken = new List<Adventurer>();
+            foreach (var a in best)
+            {
+                if (taken.Count >= slots) break;
+                if (taken.Any(t => BondRules.Foes(Relationships.Get(a, t), Relationships.Get(t, a)))) continue;
+                taken.Add(a);
+            }
+            return taken;
         }
 
         /// <summary>What a member too green for the quest says turning the invitation down (P4-88).</summary>

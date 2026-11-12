@@ -32,6 +32,14 @@ namespace GuildMaster.UI
             _root.gameObject.SetActive(false);
         }
 
+        public bool IsOpen => _root != null && _root.gameObject.activeSelf;
+
+        /// <summary>ESC closes it first, as the top-most thing on screen (P6-2, UIRoot).</summary>
+        public void Hide()
+        {
+            if (_root != null) _root.gameObject.SetActive(false);
+        }
+
         void Update()
         {
             if (_root == null) return;
@@ -47,13 +55,15 @@ namespace GuildMaster.UI
             if (_timer > 0f) return;
             _timer = RefreshInterval;
             _text.text = Describe();
+            // As tall as its lines (P6-2: the window list wraps to more lines than the fixed 236 held).
+            _root.sizeDelta = new Vector2(_root.sizeDelta.x, Mathf.Ceil(_text.preferredHeight) + 24f);
         }
 
         string Describe()
         {
             bool dev = Debug.isDebugBuild;
             var sb = new StringBuilder();
-            sb.AppendLine(UIBuilder.Colored("단축키  (` 키로 닫기)", UITheme.Accent));
+            sb.AppendLine(UIBuilder.Colored("단축키  (` 또는 ESC로 닫기)", UITheme.Accent));
             if (dev)
             {
                 bool llm = Services.TryGet<LlmDebugView>(out var llmView) && llmView.Visible;
@@ -77,10 +87,15 @@ namespace GuildMaster.UI
             bool minimap = Services.TryGet<MinimapView>(out var mm) && mm.IsShown;
             var clock = Services.Get<GameClock>();
             Line(sb, "M", "미니맵", minimap ? "켬" : "끔", minimap, null);
-            Line(sb, $"Space · 1~{GameClock.SpeedScales.Length - 1}", "일시정지 · 속도",
+            Line(sb, "C", "관전 모드(볼 만한 장면으로 카메라)", Director.SpectatorCamera.On ? "켬" : "끔", Director.SpectatorCamera.On, null);
+            // P4-132: the guild master's orders, from the bar at the bottom.
+            if (Services.TryGet<Commands.MasterCommands>(out var orders))
+                Line(sb, "5~8", "지휘: 응원 · 집중 공격 · 집결 깃발 · 후퇴 나팔", $"지휘력 {Mathf.FloorToInt(orders.Power)}", false, null);
+            // P6-3: a release build has pause and x1 only.
+            Line(sb, GameClock.MaxSpeedIndex > 1 ? $"Space · 1~{GameClock.MaxSpeedIndex}" : "Space · 1", GameClock.MaxSpeedIndex > 1 ? "일시정지 · 속도" : "일시정지 · 다시 진행",
                  clock.SpeedIndex == 0 ? "정지" : $"x{GameClock.SpeedScales[clock.SpeedIndex]:0}", false, null);
             // Keep this in step with the AddWindow hotkeys in UIRoot.
-            sb.Append(UIBuilder.Colored("Q 의뢰 · R 길드원 · I 창고 · U 살림 · E 생태계 · T 행상인 · B 건설 · L 정산 · H 추모 · G 등급 · K 도감 · J 결정 · P 규칙 · V 관계도 · N 알림 · Y 할 일 · ESC 창 닫기", UITheme.TextMuted));
+            sb.Append(UIBuilder.Colored("Q 의뢰 · R 길드원 · I 창고 · U 살림 · E 생태계 · T 행상인 · B 건설 · L 정산 · O 소식지 · H 추모 · G 등급 · K 도감 · J 결정 · P 규칙 · V 관계도 · N 알림 · Y 할 일 · ESC 창 닫기 · Shift+ESC 창 모두 닫기", UITheme.TextMuted));
             return sb.ToString();
         }
 
@@ -91,10 +106,6 @@ namespace GuildMaster.UI
             sb.Append(UIBuilder.Colored(key.PadRight(4), UITheme.Accent)).Append("  ").Append(what).Append("  ").Append(stateText).Append(tagText).Append('\n');
         }
 
-        static bool IsTyping()
-        {
-            var es = EventSystem.current;
-            return es != null && es.currentSelectedGameObject != null && es.currentSelectedGameObject.GetComponent<InputField>() != null;
-        }
+        static bool IsTyping() => Session.TextFocus.Typing; // P6-2: a field with the caret, not just a selected one
     }
 }

@@ -12,7 +12,8 @@ namespace GuildMaster.World
     /// <summary>
     /// Draws the map in the cartoon style of the character art. The ground is painted once into
     /// 16×16-cell chunk textures (curved, outlined terrain edges; see <see cref="CartoonGroundPainter"/>);
-    /// trees and rocks sit on a decoration Tilemap. Gameplay keeps using the tile grid.
+    /// trees and rocks sit on decoration Tilemaps, one per map row, drawn in the characters' order by depth (P4-127: a monster
+    /// just behind a tree stood on top of it). Gameplay keeps using the tile grid.
     /// </summary>
     public class MapRenderer : MonoBehaviour
     {
@@ -22,7 +23,9 @@ namespace GuildMaster.World
         const int ChunkCells = 16;
         const int GroundPixelsPerCell = 32;
 
-        Tilemap _decor;
+        /// <summary>Trees and rocks, a Tilemap per row (made when the row first gets one).</summary>
+        Tilemap[] _decorRows;
+        Transform _decorRoot;
         MapData _map;
         readonly List<Tile> _trees = new();
         readonly List<Tile> _deepTrees = new();
@@ -38,7 +41,9 @@ namespace GuildMaster.World
             if (!TryGetComponent<Grid>(out var grid)) grid = gameObject.AddComponent<Grid>();
             grid.cellSize = Vector3.one;
             if (Session.GameSettings.PaintGround) BuildGround(map);
-            _decor = CreateTilemap("Decor", DecorOrder);
+            _decorRoot = new GameObject("Decor").transform;
+            _decorRoot.SetParent(transform, false);
+            _decorRows = new Tilemap[map.Height];
 
             // One set per region (P4-55: dry scrub, frosted trees, dark swamp trees, charred stumps; rocks likewise).
             int regions = System.Enum.GetValues(typeof(Region)).Length;
@@ -58,14 +63,57 @@ namespace GuildMaster.World
             var decorPositions = new List<Vector3Int>();
             var decorTiles = new List<TileBase>();
             for (int y = 0; y < map.Height; y++)
-            for (int x = 0; x < map.Width; x++)
             {
-                var tile = DecorAt(x, y);
-                if (tile == null) continue;
-                decorPositions.Add(new Vector3Int(x, y, 0));
-                decorTiles.Add(tile);
+                decorPositions.Clear();
+                decorTiles.Clear();
+                for (int x = 0; x < map.Width; x++)
+                {
+                    var tile = DecorAt(x, y);
+                    if (tile == null) continue;
+                    decorPositions.Add(new Vector3Int(x, y, 0));
+                    decorTiles.Add(tile);
+                }
+                if (decorPositions.Count > 0) DecorRow(y).SetTiles(decorPositions.ToArray(), decorTiles.ToArray());
             }
-            _decor.SetTiles(decorPositions.ToArray(), decorTiles.ToArray());
+            gameObject.AddComponent<TreeFade>().Init(this, map);
+        }
+
+        /// <summary>
+        /// Where a row's trees and rocks sit among the characters (P4-127): as a unit standing at their foot would
+        /// (<see cref="CharacterVisual"/>: base order − 8 a cell of height). A tree's foot is the middle of its cell and a
+        /// unit's drawn feet are 0.3 below its position, so a unit whose feet are north of the trunk is drawn behind it.
+        /// </summary>
+        public static int DecorRowOrder(int row) => CharacterVisual.BaseSortingOrder - Mathf.RoundToInt((row + 0.8f) * 8f);
+
+        Tilemap DecorRow(int y)
+        {
+            var tm = _decorRows[y];
+            if (tm != null) return tm;
+            var go = new GameObject("Decor " + y);
+            go.transform.SetParent(_decorRoot, false);
+            tm = go.AddComponent<Tilemap>();
+            go.AddComponent<TilemapRenderer>().sortingOrder = DecorRowOrder(y);
+            return _decorRows[y] = tm;
+        }
+
+        void SetDecor(int x, int y, TileBase tile)
+        {
+            if (_decorRows == null || y < 0 || y >= _decorRows.Length) return;
+            if (tile == null && _decorRows[y] == null) return;
+            DecorRow(y).SetTile(new Vector3Int(x, y, 0), tile);
+        }
+
+        /// <summary>Shows a tree at this much opacity (<see cref="TreeFade"/>); 1 puts it back as it was.</summary>
+        public void SetTreeAlpha(Vector2Int cell, float alpha)
+        {
+            if (_decorRows == null || cell.y < 0 || cell.y >= _decorRows.Length || _decorRows[cell.y] == null) return;
+            var tm = _decorRows[cell.y];
+            var pos = new Vector3Int(cell.x, cell.y, 0);
+            if (tm.GetTile(pos) is not Tile tile) return;
+            tm.SetTileFlags(pos, TileFlags.None);
+            var c = tile.color;
+            c.a = alpha;
+            tm.SetColor(pos, c);
         }
 
         /// <summary>The tree or rock standing on a cell, or null.</summary>
@@ -90,10 +138,9 @@ namespace GuildMaster.World
             if (_map == null) return;
             int xMin = Mathf.Max(0, cells.xMin), yMin = Mathf.Max(0, cells.yMin);
             int xMax = Mathf.Min(_map.Width, cells.xMax), yMax = Mathf.Min(_map.Height, cells.yMax);
-            if (_decor != null)
-                for (int y = yMin; y < yMax; y++)
-                for (int x = xMin; x < xMax; x++)
-                    _decor.SetTile(new Vector3Int(x, y, 0), DecorAt(x, y));
+            for (int y = yMin; y < yMax; y++)
+            for (int x = xMin; x < xMax; x++)
+                SetDecor(x, y, DecorAt(x, y));
             if (_chunkState == null || xMax <= xMin || yMax <= yMin) return;
 
             _painter.Refresh(new RectInt(xMin, yMin, xMax - xMin, yMax - yMin));
@@ -205,7 +252,7 @@ namespace GuildMaster.World
         /// </summary>
         public void RequestGround(RectInt cells)
         {
-            if (_chunkState == null || cells.width <= 0 || cells.height <= 0) return;
+            if (_chunkState == null || cells.width <= 0 || cells.height <= 0 || !Session.GameSettings.GroundDetail) return;
             int x0 = Mathf.Max(0, cells.xMin / ChunkCells - 1), x1 = Mathf.Min(_cw - 1, (cells.xMax - 1) / ChunkCells + 1);
             int y0 = Mathf.Max(0, cells.yMin / ChunkCells - 1), y1 = Mathf.Min(_ch - 1, (cells.yMax - 1) / ChunkCells + 1);
             for (int y = y0; y <= y1; y++)
@@ -381,18 +428,18 @@ namespace GuildMaster.World
         /// </summary>
         public void SetTreeBurnt(Vector2Int cell, bool burnt)
         {
-            if (_decor == null || _map == null || !_map.HasTree(cell.x, cell.y)) return;
+            if (_decorRows == null || _map == null || !_map.HasTree(cell.x, cell.y)) return;
             int i = _map.Index(cell.x, cell.y);
             int variant = (Hash(cell.x, cell.y) / 7) % Variants;
             var region = burnt ? (int)Region.Wasteland : (int)_map.Regions[i];
-            _decor.SetTile(new Vector3Int(cell.x, cell.y, 0), (!burnt && _map.Deep[i] ? _deepTrees : _trees)[region * Variants + variant]);
+            SetDecor(cell.x, cell.y, (!burnt && _map.Deep[i] ? _deepTrees : _trees)[region * Variants + variant]);
         }
 
         public void ClearDecor(RectInt area)
         {
             for (int y = area.yMin; y < area.yMax; y++)
             for (int x = area.xMin; x < area.xMax; x++)
-                _decor.SetTile(new Vector3Int(x, y, 0), null);
+                SetDecor(x, y, null);
         }
 
         Tilemap CreateTilemap(string name, int order)

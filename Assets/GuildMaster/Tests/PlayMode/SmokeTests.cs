@@ -60,11 +60,18 @@ namespace GuildMaster.Tests
             GameSettings.ShowTitle = true;
             MenuState.Reset();
             GameSettings.PaintGround = true;
+            GameSettings.GroundDetail = true;
+            Fog.FogOfWar.ShowEverything = false;
+            NameTagLayer.IgnorePointer = false;
             TownQuestPoster.Enabled = true;
             Incidents.IncidentService.Enabled = true;
             Storytelling.StorytellerService.Enabled = true;
             Seasons.SeasonService.Enabled = true;
             Dilemmas.DilemmaService.Enabled = true;
+            Reports.NewsDesk.AutoOpen = true;
+            EventPause.Enabled = true;
+            GameClock.FastSpeeds = Debug.isDebugBuild;
+            Director.SpectatorCamera.Set(false);
             PartyService.AcceptChanceOverride = null;
             InputSystem.settings.backgroundBehavior = _backgroundBehavior;
             InputSystem.settings.editorInputBehaviorInPlayMode = _editorInputBehavior;
@@ -85,7 +92,11 @@ namespace GuildMaster.Tests
         {
             GameSettings.ShowTitle = showTitle;
             GameSettings.PendingSeed = seed;
-            GameSettings.PaintGround = false; // ~9 s a boot; no test looks at the ground
+            // P4-125: only the low-detail ground (~0.4 s a boot; the full detail is most of a boot), and the fog drawn
+            // nowhere — sight and every fog answer stay as they are — so a watched run shows what the fight camera follows.
+            GameSettings.PaintGround = true;
+            GameSettings.GroundDetail = false;
+            Fog.FogOfWar.ShowEverything = true;
             // No natural disasters (P4-72) unless a test asks: one set off by a chance fight drives dens
             // off and changes the world under tests that measure something else.
             DisasterService.ChanceOverride = 0f;
@@ -93,6 +104,10 @@ namespace GuildMaster.Tests
             // Nor the town's own hunts (P4-82) unless a test asks: they would fill the board and pull members
             // off the quests a test posts itself.
             TownQuestPoster.Enabled = false;
+            // Nor the villages' errands (P4-133): they would pull members off the quests a test posts itself.
+            ErrandPoster.Enabled = false;
+            // Nor the residents' requests (P4-134): a test makes a resident ask what it is about.
+            Social.ResidentRequests.Enabled = false;
             // Nor sudden incidents (P4-85): a rare monster out of nowhere fights whatever it meets.
             Incidents.IncidentService.Enabled = false;
             // Nor nemeses (P4-109): a member's death or retreat would rename and grow the monster a test is about.
@@ -103,11 +118,21 @@ namespace GuildMaster.Tests
             Seasons.SeasonService.Enabled = false;
             // Nor decision cards (P4-111c): a card's thoughts, gold and visitors would change what a test measures.
             Dilemmas.DilemmaService.Enabled = false;
+            // Nor the morning paper (P4-130): its window would hold the game the first time a test runs past 6 o'clock.
+            Reports.NewsDesk.AutoOpen = false;
+            // Nor pauses for moments (P6-3): a choice saved while playing in the editor would stop a test's clock.
+            EventPause.Enabled = false;
             new GameObject("GameBootstrap").AddComponent<GameBootstrap>();
             new GameObject("UI").AddComponent<UIRoot>();
             FightCamera.Ensure(); // so a watched test run shows the fight (user request 2026-09-22)
             yield return null;
             yield return null;
+        }
+
+        /// <summary>Waits this many frames.</summary>
+        static IEnumerator WaitFrames(int frames)
+        {
+            for (int i = 0; i < frames; i++) yield return null;
         }
 
         /// <summary>Waits (real time) until the condition holds or the timeout passes.</summary>
@@ -228,6 +253,55 @@ namespace GuildMaster.Tests
                 foreach (var a in u.TargetedBy) Assert.That(a.CurrentTarget, Is.SameAs(u), "TargetedBy lists only its attackers");
                 if (u.CurrentTarget != null) Assert.That(u.CurrentTarget.TargetedBy.Contains(u), Is.True, "a target lists its attacker");
             }
+
+            // P4-125: the tests draw no fog, but a monster out of sight is still out of sight to the game.
+            var fog = Services.Get<Fog.FogOfWar>();
+            var unseen = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && !fog.IsVisibleRaw(m.Position)
+                                                                       && m.GetComponent<Fog.FogHideable>() is { IsFogEvaluated: true });
+            Assert.That(fog.IsVisible(unseen.Position) || unseen.GetComponent<Fog.FogHideable>().IsFogVisible, Is.False, "the fog still hides it");
+            Assert.That(unseen.GetComponentsInChildren<Renderer>().Any(r => r.enabled), Is.True, "but it is drawn");
+
+            // P4-123: in a crowd the name tags never overlap; the less important ones give way, the guild master's stays.
+            var master = Services.Get<Player.PlayerAvatar>();
+            DebugCommands.Invulnerable(true);
+            DebugCommands.SpawnNearMaster("goblin", 10, 2f);
+            // Packed round the master so their tags must overlap (where the spawn put them follows the shared random draw).
+            var crowd = UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Home == null && m.Def.id == "goblin"
+                                                                     && Vector2.Distance(m.Position, master.Position) <= 8f).Take(10).ToList();
+            for (int i = 0; i < crowd.Count; i++)
+            {
+                crowd[i].Mover.Stop();
+                var at = master.Position + new Vector2(-0.8f + (i % 5) * 0.4f, 0.8f + (i / 5) * 0.35f);
+                crowd[i].transform.position = new Vector3(at.x, at.y, crowd[i].transform.position.z);
+            }
+            FightCamera.Stop();
+            NameTagLayer.IgnorePointer = true; // the watcher's mouse over a goblin would rightly put its tag first
+            Services.Get<CameraControl.CameraController>().JumpTo(master.Position);
+            Services.Get<CameraControl.CameraController>().SetZoom(8f);
+            // The camera eases to the zoom; tags show only once it is close enough (NameTagLayer hides them far out).
+            yield return WaitFor(() => Camera.main.orthographicSize <= 9f, 5f);
+            yield return null;
+            var tags = Services.Get<NameTagLayer>();
+            var placed = tags.Placed.ToList();
+            for (int i = 0; i < placed.Count; i++)
+            for (int j = i + 1; j < placed.Count; j++)
+                Assert.That(NameTagLayer.Overlaps(placed[i], placed[j]), Is.False, $"tags {i} and {j} overlap");
+            Assert.That(placed.Count, Is.LessThan(tags.CandidateCount), $"some tags give way ({placed.Count} of {tags.CandidateCount}; camera {(Vector2)Camera.main.transform.position}, master {master.Position})");
+            Assert.That(tags.IsShown(master), Is.True, "the guild master's tag shows over the goblins'");
+
+            // P4-128: with the pack imported, a goblin is drawn from its parts and its weapon turns on a blow.
+            if (Visuals.ArtLibrary.MonsterParts("goblin") != null)
+            {
+                var goblin = UnitRegistry.All.OfType<Monster>().First(m => m.IsAlive && m.Def.id == "goblin" && !m.IsBoss);
+                Assert.That(goblin.Visual.HasPuppet, Is.True, "a pack goblin is drawn in parts");
+                var pivot = goblin.GetComponentsInChildren<Transform>().First(t => t.name == "WeaponPivot");
+                goblin.Visual.PlayAttack();
+                float before = pivot.localEulerAngles.z;
+                yield return WaitFor(() => Mathf.Abs(Mathf.DeltaAngle(pivot.localEulerAngles.z, before)) > 10f, 1f);
+                Assert.That(Mathf.Abs(Mathf.DeltaAngle(pivot.localEulerAngles.z, before)), Is.GreaterThan(10f), "the weapon swings");
+            }
+            DebugCommands.Invulnerable(false);
+            NameTagLayer.IgnorePointer = false;
         }
 
         [UnityTest]
@@ -846,14 +920,14 @@ namespace GuildMaster.Tests
                 var proposals = Services.Get<Proposals.QuestProposalService>();
                 Assert.That(proposals.Reroll(out var why), Is.True, why);
                 yield return WaitFor(() => !proposals.Generating, 5f);
-                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[0]), Is.False, "a den on the board is not offered");
-                var card = proposals.Current.FirstOrDefault(p => p.Target.Den == dens[1]);
+                Assert.That(proposals.Current.Any(p => ReferenceEquals(p.Target.Den, dens[0]) && p.Target.Type == QuestType.Hunt), Is.False, "a den on the board is not offered");
+                var card = proposals.Current.FirstOrDefault(p => ReferenceEquals(p.Target.Den, dens[1]) && p.Target.Type == QuestType.Hunt);
                 Assert.That(card, Is.Not.Null, $"a card for the den taken down ({proposals.EmptyReason})");
                 Assert.That(proposals.Choose(card, out var message), Is.True, message);
                 var patron = board.Quests.First(q => q.IsActive && q.TargetNest == dens[1]);
                 Assert.That(patron.Client, Is.EqualTo(QuestClient.Patron));
                 Assert.That(patron.RewardGold + patron.FeeGold, Is.EqualTo(card.RewardGold));
-                Assert.That(proposals.Current.Any(p => p.Target.Den == dens[1]), Is.False, "the other cards on that den go with it");
+                Assert.That(proposals.Current.Any(p => ReferenceEquals(p.Target.Den, dens[1]) && p.Target.Type == QuestType.Hunt), Is.False, "the other cards on that den go with it");
                 Assert.That(escrow, Is.EqualTo(0), "the client pays, and a den taken down refunds nothing");
 
                 // Taken: not the guild master's to take down. Done: the guild gets its fee.
@@ -1019,7 +1093,7 @@ namespace GuildMaster.Tests
                 var view = UnityEngine.Object.FindFirstObjectByType<VictoryView>(FindObjectsInactive.Include);
                 Assert.That(view, Is.Not.Null);
                 Assert.That(Clock.IsHeld, Is.True, "the victory screen holds the game");
-                typeof(VictoryView).GetMethod("Continue", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, null);
+                view.Continue();
                 Assert.That(Clock.IsHeld, Is.False, "and play goes on");
                 if (firstAnimator != null)
                 {
@@ -1462,10 +1536,27 @@ namespace GuildMaster.Tests
                 Assert.That(village.Candidates, Has.Count.EqualTo(1));
 
                 // Raided where the guild sees it: its people go back in and it posts its defence (it pays, the guild keeps a fee).
-                Assert.That(DebugCommands.RaidVillage(index, "goblin", 3, 9f), Does.Contain("raid of 3"));
+                // From the guild master's side: sight is blocked by the village itself, so raiders coming from behind it
+                // (RaidVillage picks a random side) went unseen once other systems drew on the shared random numbers.
+                Vector2 toMaster = ((Vector2)Services.Get<PlayerAvatar>().transform.position - village.WorldPosition).normalized;
+                var raiders = new System.Collections.Generic.List<Monster>();
+                foreach (float angle in new[] { -25f, 0f, 25f })
+                {
+                    var p = village.WorldPosition + (Vector2)(Quaternion.Euler(0f, 0f, angle) * toMaster) * 9f;
+                    Assert.That(world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(p), 3, out var cell), Is.True, "ground for a raider");
+                    var raider = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, World.GridMap.CellToWorld(cell));
+                    raider.Setup(goblin, null);
+                    raiders.Add(raider);
+                }
+                Assert.That(Services.Get<Villages.VillageRaids>().LaunchGroup(raiders, village), Is.EqualTo(3), "a raid of 3");
                 yield return WaitFor(() => board.Quests.Any(q => q.IsVillageDefence && q.Village == village) && !villages.CandidatesOut(village).Any(), 10f);
                 var defence = board.Quests.FirstOrDefault(q => q.IsVillageDefence && q.Village == village);
-                Assert.That(defence, Is.Not.Null, "seen attacked: the village asks for help");
+                var raidFog = Services.Get<Fog.FogOfWar>();
+                string raidState = string.Join("; ", Services.Get<Villages.VillageRaids>().Report().Select(r => $"{r.village.Name} raiders {r.raiders} sighted {r.sighted}"))
+                                   + " | goblins " + string.Join(", ", UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Def == goblin && Vector2.Distance(m.Position, village.WorldPosition) < 20f)
+                                       .Select(m => $"{Vector2.Distance(m.Position, village.WorldPosition):0.0} seen {raidFog.IsVisibleRaw(m.Position)} {m.StateLabel}"))
+                                   + $" | master {Vector2.Distance(Services.Get<Player.PlayerAvatar>().transform.position, village.WorldPosition):0.0} away";
+                Assert.That(defence, Is.Not.Null, "seen attacked: the village asks for help — " + raidState);
                 Assert.That((defence.Client, defence.ClientLabel, defence.Species, defence.RequiredCount), Is.EqualTo((QuestClient.Village, village.DisplayName, goblin, 3)));
                 Assert.That(defence.Title, Does.StartWith("[방어]"));
                 Assert.That(defence.FeeGold, Is.EqualTo(QuestPricing.Split(defence.RewardGold + defence.FeeGold).fee));
@@ -1524,6 +1615,355 @@ namespace GuildMaster.Tests
                     QuestClient.Village, out _, out _, null, village), Is.False, "a fallen village posts nothing");
                 Assert.That(villages.TryFound(out var risen), Is.True, "a new village may rise elsewhere");
                 Assert.That((risen.IsDestroyed, risen.Known, villages.Villages.Count, villages.Standing.Count()), Is.EqualTo((false, false, 9, 8)));
+            }
+            finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
+        }
+
+        /// <summary>
+        /// P4-133 (F-5, user decision 2026-11-08): a village the guild knows asks errands — ore dug at a spot the guild found, a
+        /// den's parts picked up off the kills, goods walked to its door — paying gold and an item besides, which goes into the
+        /// pack of the one who did most (gear better than its own it puts on). Goods whose last carrier falls are lost. A patron
+        /// card can ask the same.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Errands_ADigAPartsHuntAndADelivery_PayTheOneWhoDidMostAnItem()
+        {
+            yield return Boot();
+            var board = Services.Get<QuestBoard>();
+            var errands = Services.Get<ErrandPoster>();
+            var villages = Services.Get<Villages.VillageService>();
+            var places = Services.Get<Places.PlaceService>();
+            var world = Services.Get<World.WorldService>();
+            var intel = Services.Get<GuildIntel>();
+            var eco = Services.Get<EcosystemManager>();
+            var avatar = Services.Get<PlayerAvatar>();
+            var door = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+            var town = world.TownCenterWorld;
+            var village = villages.Villages.Where(v => v.Inner).OrderBy(v => Vector2.Distance(v.WorldPosition, town)).First();
+            village.Known = true;
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            var rewarded = new System.Collections.Generic.List<QuestItemRewardedEvent>();
+            Action<QuestItemRewardedEvent> onItem = e => rewarded.Add(e);
+            EventBus.Subscribe(onItem);
+            try
+            {
+                Clock.SetSpeed(3);
+                // Nobody else free in town: no invitations, so each errand is one member's.
+                var members = Roster.Members.Where(a => a.IsAlive).ToList();
+                Assume.That(members.Count, Is.GreaterThanOrEqualTo(3));
+                foreach (var a in members) { a.Data.fatigue = 100f; a.Mover.Stop(); a.ChangeState(a.RestState); }
+                IEnumerator SendOut(Adventurer a, Quest q, Vector2 near)
+                {
+                    // The rest stay in bed (the fast clock rests them quickly): nobody free to be asked along.
+                    foreach (var o in members.Where(o => o != a && o.IsAlive && o.CurrentQuest == null && o.Fsm.Current != o.RestState))
+                    {
+                        o.Data.fatigue = 100f;
+                        o.Mover.Stop();
+                        o.ChangeState(o.RestState);
+                    }
+                    foreach (var o in members.Where(o => o != a && o.CurrentQuest == null)) o.Data.fatigue = 100f;
+                    a.Data.fatigue = 0f;
+                    Assert.That(board.TryAccept(q, a), Is.True, $"{a.Data.name} takes {q.Title}");
+                    a.CurrentQuest = q;
+                    Assert.That(world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(near), 4, out var c), Is.True);
+                    a.Mover.Stop();
+                    a.transform.position = World.GridMap.CellToWorld(c);
+                    a.ChangeState(a.TravelState);
+                    yield return null;
+                }
+                IEnumerator BringHome(Adventurer a, Quest q)
+                {
+                    yield return WaitFor(() => a.Fsm.Current == a.ReturnState || q.Status == QuestStatus.TurnedIn, 5f);
+                    a.Mover.Stop();
+                    a.transform.position = door;
+                    yield return WaitFor(() => q.Status == QuestStatus.TurnedIn, 20f);
+                    Assert.That(q.Status, Is.EqualTo(QuestStatus.TurnedIn), $"{q.Title} reported ({a.StateLabel})");
+                }
+
+                // ---- A dig: the vein nearest town, found; the village asks ore of it. ----
+                var vein = places.All.Where(p => p.Kind == World.PlaceKind.OreVein).OrderBy(p => Vector2.Distance(p.WorldPosition, town)).First();
+                Services.Get<Fog.FogOfWar>().Reveal(vein.WorldPosition, 3f);
+                yield return WaitFor(() => places.IsKnown(vein), 5f);
+                Assert.That(places.IsKnown(vein), Is.True, "the guild found the vein");
+                var dig = errands.PostFor(village, QuestType.Gather, out var error);
+                Assert.That(dig, Is.Not.Null, error);
+                Assert.That((dig.Type, dig.Client, dig.Village, dig.ItemId, dig.RequiredCount), Is.EqualTo((QuestType.Gather, QuestClient.Village, village, ErrandRules.Ore, 2)),
+                    "one vein known: as much as it gives at the least");
+                Assert.That(dig.HasRewardItem, Is.True, "a village pays an item besides the gold");
+                Assert.That(dig.Title, Does.StartWith("[채집]"));
+                // The vein is spoken for (2026-11-10): no second errand is asked of it, and nobody digs it for itself meanwhile —
+                // the second errand's taker stood a day by the bare vein, in every measured run.
+                Assert.That(board.GatherStillNeeded(ErrandRules.Ore), Is.EqualTo(2));
+                Assert.That(ErrandOffers.TryGather(World.PlaceKind.OreVein, out var again) && again.Supply == 0, Is.True, "what the vein gives is asked for already");
+                Assert.That(ErrandOffers.GatherDraft(again, 5, 1f, out _), Is.False, "no second dig at the same vein");
+                Assert.That(Services.Get<Places.PlaceVisits>().Best(members[1], World.PlaceKind.OreVein), Is.Null, "kept for the errand");
+                dig.RewardItem = new ItemStack("gear_t3", 1);
+                var digger = members[0];
+                int tierBefore = digger.Data.gearTier;
+                Assume.That(tierBefore, Is.LessThan(3));
+                yield return SendOut(digger, dig, vein.WorldPosition + Vector2.right * 2f);
+                yield return WaitFor(() => digger.HuntState.GatherSpot == vein, 10f);
+                Assert.That(digger.HuntState.GatherSpot, Is.EqualTo(vein), $"at the vein ({digger.StateLabel})");
+                yield return WaitFor(() => dig.Status != QuestStatus.InProgress, 30f);
+                Assert.That((dig.Status, dig.Progress), Is.EqualTo((QuestStatus.Completed, 2)), $"dug ({digger.StateLabel}, {dig.ProgressText})");
+                Assert.That(places.IsReady(vein), Is.False, "picked clean");
+                Assert.That(dig.ItemTakerId, Is.EqualTo(digger.Data.id));
+                yield return BringHome(digger, dig);
+                Assert.That(rewarded.Any(e => e.Member == digger && e.ItemId == "gear_t3"), Is.True, "the item, to the one who did it");
+                Assert.That(digger.Data.gearTier, Is.EqualTo(3), "better gear: put on");
+
+                // ---- A den's parts: slimes by town, seen occupied; three jellies picked up off the kills. ----
+                var den = eco.Nests.Where(n => n.Species.id == "slime" && n.Population >= 4 && !world.Grid.IsInTown(n.Cell))
+                                  .OrderBy(n => Vector2.Distance(n.WorldPosition, town)).FirstOrDefault();
+                Assume.That(den, Is.Not.Null, "a slime den by town");
+                avatar.Mover.Stop();
+                world.Grid.TryFindNearestWalkable(den.Cell, 4, out var stand);
+                avatar.transform.position = World.GridMap.CellToWorld(stand);
+                yield return WaitFor(() => intel.KnownNests.Contains(den) && intel.Get(den).LastCount > 0 && intel.SpeciesOf(den) == den.Species, 10f);
+                var offer = ErrandOffers.Collects().FirstOrDefault(c => c.Den == den);
+                Assert.That(offer.Den, Is.EqualTo(den), "a den seen occupied, whose kind drops a part");
+                Assert.That(offer.Entry.item.id, Is.EqualTo("slime_jelly"));
+                Assert.That(ErrandOffers.CollectDraft(offer, 2, 1f, out var partsDraft), Is.True);
+                Assert.That(board.TryPostRequest(partsDraft, QuestClient.Village, out var parts, out error, den, village), Is.True, error);
+                Assert.That((parts.TargetNest, parts.RequiredCount, parts.Title.StartsWith("[납품]")), Is.EqualTo((den, 2, true)));
+                parts.RewardItem = new ItemStack(Incidents.IncidentRules.RelicId, 1);
+                // Nothing else about: an untargetable member and a hostile monster in sight never fight, and it would not loot.
+                foreach (var m in UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.Def != den.Species && Vector2.Distance(m.Position, den.WorldPosition) < 30f).ToList())
+                    m.Perish();
+                var hunter = members.Where(m => m != digger).OrderByDescending(m => m.Stats.Attack).First();
+                yield return SendOut(hunter, parts, den.WorldPosition);
+                yield return WaitFor(() => parts.Status != QuestStatus.InProgress, 90f);
+                Assert.That((parts.Status, parts.Progress), Is.EqualTo((QuestStatus.Completed, 2)),
+                    $"brought in ({hunter.StateLabel}, {parts.ProgressText}, pack jelly {hunter.Data.loot.Where(s => s.itemId == "slime_jelly").Sum(s => s.count)}, " +
+                    $"den {den.Population} left, jelly on the ground {Services.Get<GroundItemService>().Items.Count(i => i.Item != null && i.Item.id == "slime_jelly")}, " +
+                    $"hostile near: {string.Join(", ", UnitRegistry.All.OfType<Monster>().Where(m => m.IsAlive && m.IsHostileTo(hunter) && Vector2.Distance(m.Position, hunter.Position) < 15f).Select(m => m.Def.id))})");
+                yield return BringHome(hunter, parts);
+                Assert.That(rewarded.Any(e => e.Member == hunter && e.ItemId == Incidents.IncidentRules.RelicId), Is.True);
+
+                // ---- Goods to its door: on the road with a parcel on the back, handed over. ----
+                var road = errands.PostFor(village, QuestType.Deliver, out error);
+                Assert.That(road, Is.Not.Null, error);
+                Assert.That((road.Destination, road.Title.StartsWith("[배달]"), road.ProgressText), Is.EqualTo((village, true, "출발 전")));
+                var carrier = members.First(m => m != digger && m != hunter);
+                yield return SendOut(carrier, road, village.Doorstep + Vector2.down * 8f);
+                yield return WaitFor(() => road.GoodsOut, 3f);
+                Assert.That(road.GoodsOut, Is.True, "out of town with the goods");
+                yield return null;
+                Assert.That(DeliveryParcels.CarrierOf(road), Is.EqualTo(carrier));
+                Assert.That(carrier.transform.Find("Parcel"), Is.Not.Null, "a parcel on its back");
+                yield return WaitFor(() => road.Status != QuestStatus.InProgress, 20f);
+                Assert.That(road.Status, Is.EqualTo(QuestStatus.Completed), $"handed over ({carrier.StateLabel}, {Vector2.Distance(carrier.Position, village.Doorstep):0.0} from the door)");
+                yield return null;
+                Assert.That(carrier.transform.Find("Parcel"), Is.Null, "the parcel is gone with the goods");
+
+                // Goods whose last carrier falls on the road are lost.
+                var lost = errands.PostFor(village, QuestType.Deliver, out error);
+                Assert.That(lost, Is.Not.Null, error);
+                string reason = null;
+                Action<QuestClosedEvent> onClosed = e => { if (e.Quest == lost) reason = e.Reason; };
+                EventBus.Subscribe(onClosed);
+                yield return SendOut(members[0], lost, village.Doorstep + Vector2.down * 30f);
+                yield return WaitFor(() => lost.GoodsOut, 3f);
+                board.RemoveTakerEverywhere(members[0]);
+                EventBus.Unsubscribe(onClosed);
+                Assert.That((lost.Status, reason), Is.EqualTo((QuestStatus.Failed, ErrandRules.GoodsLostReason)));
+
+                // ---- The cards: a patron asks the same, from what the guild knows. ----
+                var proposals = Services.Get<Proposals.QuestProposalService>();
+                var targets = (System.Collections.Generic.List<Proposals.ProposalTarget>)typeof(Proposals.QuestProposalService)
+                    .GetMethod("BuildTargets", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(proposals, null);
+                Assert.That(targets.Any(t => t.Type == QuestType.Deliver && t.Destination == (object)village), Is.True, "goods to the village it knows");
+                Assert.That(targets.Any(t => t.Type == QuestType.Collect && t.Den == (object)den), Is.True, "the den's parts");
+                var pool = Proposals.ProposalRules.BuildPool(targets.Where(t => t.Type == QuestType.Deliver).ToList(), 50f, 4);
+                Assert.That(pool, Is.Not.Empty);
+                Assert.That(proposals.Choose(pool[0], out var message), Is.True, message);
+                var patron = board.Quests.Last();
+                Assert.That((patron.Type, patron.Client, patron.Destination, patron.RewardItem.itemId), Is.EqualTo((QuestType.Deliver, QuestClient.Patron, village, pool[0].RewardItem.itemId)));
+                Assert.That(patron.ClientLabel, Is.EqualTo("의뢰인"));
+                Assert.That(DebugCommands.Errands(), Does.Contain(patron.Id));
+            }
+            finally
+            {
+                EventBus.Unsubscribe(onItem);
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+            }
+        }
+
+        /// <summary>
+        /// P4-134 (F-14, user decision 2026-11-08): residents ask the guild master directly. Hans' ore handed over from the stock
+        /// (his thanks into the stock, his opinion up); Mari's herbs dug by the one member sent — a resident's quest, no fee,
+        /// nobody else takes it up — done when they come in; Elly's basket failed when its carrier gave up (opinion down); the
+        /// child's tale told on the spot; a request left alone lapses with nothing lost. The favours follow the opinions
+        /// (crafting time, food, tax), and the town's opinion is what a new visitor heard. Clicking a resident with a request
+        /// opens its window.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ResidentRequests_HandedOverSentFailedTold_AndTheTownsWordReachesVisitors()
+        {
+            yield return Boot();
+            var requests = Services.Get<Social.ResidentRequests>();
+            var residents = Services.Get<Social.ResidentService>();
+            var treasury = Services.Get<Economy.GuildTreasury>();
+            var board = Services.Get<QuestBoard>();
+            var places = Services.Get<Places.PlaceService>();
+            var world = Services.Get<World.WorldService>();
+            var door = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+            var town = world.TownCenterWorld;
+            var hans = residents.Find("RES_hans");
+            var mari = residents.Find("RES_mari");
+            var elly = residents.Find("RES_elly");
+            var toby = residents.Find("RES_toby");
+            var bartol = residents.Find("RES_bartol");
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            try
+            {
+                Clock.SetSpeed(3);
+                var members = Roster.Members.Where(a => a.IsAlive).ToList();
+                Assume.That(members.Count, Is.GreaterThanOrEqualTo(3));
+                // Everyone in bed in town (at leisure, too tired to wander off): the one sent is rested first.
+                void AllToBed()
+                {
+                    foreach (var a in members.Where(a => a.IsAlive && a.CurrentQuest == null))
+                    {
+                        a.Data.fatigue = 100f;
+                        a.Mover.Stop();
+                        a.transform.position = door;
+                        a.ChangeState(a.RestState);
+                    }
+                }
+                AllToBed();
+                yield return null;
+
+                // ---- Hans' ore, handed over from the stock ----
+                treasury.AddStock(ErrandRules.Ore, 6);
+                var ore = requests.Ask(hans, Social.RequestKind.Goods, out var error);
+                Assert.That(ore, Is.Not.Null, error);
+                Assert.That((ore.ItemId, ore.Status, requests.ActiveOf("RES_hans")), Is.EqualTo((ErrandRules.Ore, Social.RequestStatus.Open, ore)));
+                Assert.That(ore.Count, Is.InRange(3, 5));
+                Assert.That(requests.AskLine(ore), Does.Contain("철광석"));
+                // Clicking him opens his request.
+                var view = Services.Get<ResidentRequestView>();
+                Services.Get<InspectorView>().Show(hans);
+                Assert.That(view.Visible, Is.True, "his request window opened");
+                view.Close();
+                int gearBefore = treasury.GetStock(ErrandRules.Gear(1));
+                int hansBefore = hans.Profile.GuildOpinion;
+                Assert.That(requests.TryHandOver(ore, out error), Is.True, error);
+                Assert.That((ore.Status, treasury.GetStock(ErrandRules.Ore), treasury.GetStock(ErrandRules.Gear(1)), hans.Profile.GuildOpinion),
+                    Is.EqualTo((Social.RequestStatus.Done, 6 - ore.Count, gearBefore + 1, hansBefore + Social.ResidentRequestRules.OpinionWon)), "handed over, thanked with gear");
+                Assert.That(requests.TryHandOver(ore, out _), Is.False, "once");
+
+                // ---- Mari's herbs, dug by one member ----
+                var patch = places.All.Where(p => p.Kind == World.PlaceKind.HerbPatch).OrderBy(p => Vector2.Distance(p.WorldPosition, town)).First();
+                Services.Get<Fog.FogOfWar>().Reveal(patch.WorldPosition, 3f);
+                yield return WaitFor(() => places.IsKnown(patch), 5f);
+                treasury.TryRemoveStock(ErrandRules.Herb, treasury.GetStock(ErrandRules.Herb));
+                var herbs = requests.Ask(mari, Social.RequestKind.Goods, out error);
+                Assert.That(herbs, Is.Not.Null, error);
+                Assert.That(herbs.ItemId, Is.EqualTo(ErrandRules.Herb));
+                herbs.Count = ErrandRules.MinCount; // one harvest fills it
+                Assert.That(requests.CannotHandOverReason(herbs), Does.Contain("모자랍니다"), "none in the stock");
+                var digger = members[0];
+                digger.Data.fatigue = 0f;
+                var candidates = requests.Candidates(herbs);
+                Assert.That(candidates.Select(c => c.Member), Does.Contain(digger), "a rested member in town can go");
+                Assert.That(candidates.All(c => !string.IsNullOrEmpty(c.Risk)), Is.True, "each with the errand's risk");
+                int mariBefore = mari.Profile.GuildOpinion, potionsBefore = treasury.GetStock(ErrandRules.Potion);
+                Assert.That(requests.TrySend(herbs, digger, out error), Is.True, error);
+                var dig = board.FindById(herbs.QuestId);
+                Assert.That(dig, Is.Not.Null);
+                Assert.That((dig.Type, dig.Client, dig.ResidentId, dig.FeeGold, dig.MaxParty, dig.HasRewardItem, dig.IsAssigned(digger), dig.RequiredCount),
+                    Is.EqualTo((QuestType.Gather, QuestClient.Resident, "RES_mari", 0, 1, false, true, 2)), "a resident's quest: one member, no fee");
+                Assert.That(dig.Title, Does.StartWith("[마리의 부탁]"));
+                Assert.That(dig.ClientLabel, Is.EqualTo("약초상 마리"));
+                Assert.That(board.AvailableFor(members[1]).Contains(dig), Is.False, "nobody else takes it up");
+                Assert.That(herbs.Status, Is.EqualTo(Social.RequestStatus.Underway));
+                Assert.That(world.Grid.TryFindNearestWalkable(World.GridMap.WorldToCell(patch.WorldPosition + Vector2.right * 2f), 4, out var near), Is.True);
+                digger.Mover.Stop();
+                digger.transform.position = World.GridMap.CellToWorld(near);
+                digger.ChangeState(digger.TravelState);
+                yield return WaitFor(() => herbs.Status != Social.RequestStatus.Underway, 40f);
+                Assert.That((herbs.Status, dig.Progress), Is.EqualTo((Social.RequestStatus.Done, 2)), $"picked ({digger.StateLabel}, {dig.ProgressText})");
+                Assert.That((mari.Profile.GuildOpinion, treasury.GetStock(ErrandRules.Potion)),
+                    Is.EqualTo((mariBefore + Social.ResidentRequestRules.OpinionWon, potionsBefore + Social.ResidentRequestRules.HerbalistPotions)), "thanked with potions");
+                Assert.That(mari.Profile.FeelingToward(digger.Data.id), Is.EqualTo(Social.ResidentRequestRules.FeelingForHelper), "she likes the one who did it");
+                int paid = -1;
+                Action<QuestRewardPaidEvent> onPaid = e => { if (e.Quest == dig) paid = e.Gold; };
+                EventBus.Subscribe(onPaid);
+                yield return WaitFor(() => digger.Fsm.Current == digger.ReturnState || dig.Status == QuestStatus.TurnedIn, 5f);
+                digger.Mover.Stop();
+                digger.transform.position = door;
+                yield return WaitFor(() => dig.Status == QuestStatus.TurnedIn, 20f);
+                EventBus.Unsubscribe(onPaid);
+                Assert.That((dig.Status, paid), Is.EqualTo((QuestStatus.TurnedIn, dig.RewardGold)), "she pays the member the whole of it");
+
+                // ---- Elly's basket: its carrier gives up, the request failed ----
+                var village = Services.Get<Villages.VillageService>().Villages.Where(v => v.Inner).OrderBy(v => Vector2.Distance(v.WorldPosition, town)).First();
+                village.Known = true;
+                var basket = requests.Ask(elly, Social.RequestKind.Delivery, out error);
+                Assert.That(basket, Is.Not.Null, error);
+                Assert.That(requests.WhatText(basket), Does.Contain(village.DisplayName));
+                AllToBed();
+                var carrier = members[1];
+                carrier.Data.fatigue = 0f;
+                int ellyBefore = elly.Profile.GuildOpinion;
+                Assert.That(requests.TrySend(basket, carrier, out error), Is.True, error);
+                var road = board.FindById(basket.QuestId);
+                string reason = null;
+                Action<QuestClosedEvent> onClosed = e => { if (e.Quest == road) reason = e.Reason; };
+                EventBus.Subscribe(onClosed);
+                board.RemoveTakerEverywhere(carrier);
+                EventBus.Unsubscribe(onClosed);
+                Assert.That((road.Status, reason, basket.Status, elly.Profile.GuildOpinion),
+                    Is.EqualTo((QuestStatus.Failed, Social.ResidentRequestRules.GaveUpReason, Social.RequestStatus.Failed, ellyBefore - Social.ResidentRequestRules.OpinionLost)), "failed: opinion down");
+                carrier.CurrentQuest = null;
+
+                // ---- The child's tale, told on the spot ----
+                AllToBed();
+                var tale = requests.Ask(toby, Social.RequestKind.Story, out error);
+                Assert.That(tale, Is.Not.Null, error);
+                var teller = requests.Candidates(tale).First().Member;
+                int tobyBefore = toby.Profile.GuildOpinion, stoneBefore = treasury.Stock.Values.Sum();
+                Assert.That(requests.TrySend(tale, teller, out error), Is.True, error);
+                Assert.That((tale.Status, tale.MemberName, toby.Profile.GuildOpinion), Is.EqualTo((Social.RequestStatus.Done, teller.Data.name, tobyBefore + 10)));
+                Assert.That(treasury.Stock.Values.Sum(), Is.GreaterThan(stoneBefore), "something he found, into the stock");
+
+                // ---- Left alone, a request lapses: nothing lost ----
+                treasury.AddStock("slime_jelly", 4);
+                var left = requests.Ask(bartol, null, out error);
+                Assert.That(left, Is.Not.Null, error);
+                int bartolBefore = bartol.Profile.GuildOpinion;
+                left.DeadlineHour = Clock.TotalHours - 0.01f;
+                requests.Check();
+                Assert.That((left.Status, bartol.Profile.GuildOpinion), Is.EqualTo((Social.RequestStatus.Lapsed, bartolBefore)));
+                Assert.That((requests.Done, requests.Failed), Is.EqualTo((3, 1)));
+
+                // ---- The favours ----
+                var crafting = Services.Get<Economy.CraftingService>();
+                var potion = Services.Get<GameDatabase>().recipes.First(r => r.id == "potion");
+                mari.Profile.GuildOpinion = 0;
+                float slow = crafting.EffectiveHours(potion);
+                mari.Profile.GuildOpinion = 75;
+                Assert.That(crafting.EffectiveHours(potion) / slow, Is.EqualTo(0.7f).Within(1e-4f), "the apothecary −30%");
+                elly.Profile.GuildOpinion = 50;
+                Assert.That(Economy.FoodStore.PriceNow(Economy.FoodRules.SmallSize), Is.EqualTo(Social.ResidentRequestRules.Cut(Economy.FoodRules.Price(Economy.FoodRules.SmallSize), 0.2f)));
+                int gold = treasury.Gold;
+                Assert.That(Services.Get<Economy.FoodStore>().TryBuy(Economy.FoodRules.SmallSize), Is.True);
+                Assert.That(gold - treasury.Gold, Is.EqualTo(Economy.FoodStore.PriceNow(Economy.FoodRules.SmallSize)), "the baker's price paid");
+                bartol.Profile.GuildOpinion = 25;
+                Assert.That(Social.ResidentPerks.TaxBonus, Is.EqualTo(0.1f).Within(1e-5f));
+
+                // ---- The town's word on the guild reaches a new visitor ----
+                foreach (var r in residents.Residents) r.Profile.GuildOpinion = 50;
+                Assert.That(requests.VisitorWordNow, Is.EqualTo(6 + Social.ResidentRequestRules.ChildBrag(2)));
+                var visitor = Services.Get<Recruitment.VisitorService>().SpawnVisitor();
+                int start = Recruitment.RecruitmentSession.InitialAffinity(visitor.Traits, Recruitment.RecruitmentSession.LevelsAboveGuild(visitor));
+                Assert.That(visitor.Data.recruitAffinity, Is.EqualTo(Mathf.Clamp(start + requests.VisitorWordNow, 0, 100)), "heard well of the guild");
+                foreach (var r in residents.Residents) r.Profile.GuildOpinion = -60;
+                var sour = Services.Get<Recruitment.VisitorService>().SpawnVisitor();
+                int sourStart = Recruitment.RecruitmentSession.InitialAffinity(sour.Traits, Recruitment.RecruitmentSession.LevelsAboveGuild(sour));
+                Assert.That(sour.Data.recruitAffinity, Is.EqualTo(Mathf.Clamp(sourStart - 10, 0, 100)), "heard badly of it");
+                Assert.That(DebugCommands.Requests(), Does.Contain("RES_toby"));
             }
             finally { Unit.GuildInvulnerable = Unit.GuildUntargetable = false; }
         }
@@ -4241,6 +4681,325 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-131 (F-12, user decisions 2026-11-08: friends and foes, rivals, mentors; small numbers, shown by lines and effects;
+        /// party making looks at the whole party): two friends fighting side by side hit 10% harder and two foes in each other's
+        /// way 10% softer, and the foes have words once it is over; two rivals race for kills — the one behind holds on longer,
+        /// and the race leaves a thought and a tally each; a mentor near a kill makes the pupil's EXP count more; and a party is
+        /// not made with one who is a foe of someone already going, however much the leader likes it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Bonds_FriendsLift_FoesDrag_RivalsRace_AMentorTeaches_AndAPartyKeepsFoesApart()
+        {
+            yield return Boot();
+            var bonds = Services.Get<BondService>();
+            var m = Roster.Members.Where(a => a.IsAlive && a.IsGuildMember && !a.IsVisitor).ToList();
+            Assert.That(m.Count, Is.GreaterThanOrEqualTo(4));
+            void Feel(Adventurer from, Adventurer to, int v) => Relationships.Add(from, to, v - Relationships.Get(from, to), "test");
+            void Both(Adventurer a, Adventurer b, int v) { Feel(a, b, v); Feel(b, a, v); }
+            foreach (var a in m) foreach (var b in m) if (a != b) Feel(a, b, 0);
+            void Place(Adventurer a, Vector2 at)
+            {
+                a.ChangeState(a.IdleState);
+                a.Mover.Stop();
+                a.Mover.Warp(at);
+            }
+            var master = MasterOnOpenGround();
+            Assert.That(master, Is.Not.Null);
+            var p = master.Position + new Vector2(0f, 6f);
+            ClearHomelessOf("slime");
+            EmptyNestsNear(p, 20f); // nothing else to fight but what the test brings
+            var said = new System.Collections.Generic.List<string>();
+            Action<AdventurerSpeechEvent> onSay = e => said.Add($"{e.Adventurer.Data.name}: {e.Text}");
+            RivalRaceEvent? race = null;
+            Action<RivalRaceEvent> onRace = e => race = e;
+            EventBus.Subscribe(onSay);
+            EventBus.Subscribe(onRace);
+            Unit.GuildInvulnerable = true;
+            BondService.Certain = true;
+            try
+            {
+                // ---- Friends beside each other, foes in each other's way ----
+                var (f1, f2, e1, e2) = (m[0], m[1], m[2], m[3]);
+                Both(f1, f2, 60);
+                Feel(e1, e2, -60); // one of them hostile is enough
+                var dummy = SpawnMonster("slime", p, level: 30);
+                Place(f1, p + new Vector2(-1f, 0f));
+                Place(f2, p + new Vector2(-1f, 1f));
+                Place(e1, p + new Vector2(1f, 0f));
+                Place(e2, p + new Vector2(1f, 1f));
+                foreach (var a in new[] { f1, f2, e1, e2 }) a.Engage.SetTarget(dummy);
+                yield return WaitFor(() => f1.BondAttack > 0f && f2.BondAttack > 0f && e1.BondAttack < 0f && e2.BondAttack < 0f, 3f);
+                Assert.That((f1.BondAttack, f2.BondAttack), Is.EqualTo((BondRules.FriendShare, BondRules.FriendShare)), "friends side by side");
+                Assert.That((e1.BondAttack, e2.BondAttack), Is.EqualTo((-BondRules.FoeShare, -BondRules.FoeShare)), "foes in each other's way, both");
+                Assert.That(f1.AttackNow, Is.EqualTo(f1.Stats.Attack * (1f + f1.Boons.Attack + BondRules.FriendShare)).Within(0.01f), "it is in the blows");
+                Assert.That(said.Any(s => s.StartsWith(f1.Data.name + ":") && s.Contains(f2.Data.name)), Is.True, "a word to the friend: " + string.Join(" / ", said));
+
+                // The fight over: no bonus, and the foes have words.
+                dummy.ReceiveDamage(dummy.Hp + 1e6f, null, false);
+                foreach (var a in new[] { f1, f2, e1, e2 }) a.Engage.Clear();
+                var quarrels = Enumerable.Range(0, 3).SelectMany(i => new[] { BondRules.Quarrel(e1.Data.name, i).first, BondRules.Quarrel(e2.Data.name, i).first }).ToList();
+                yield return WaitFor(() => said.Any(s => quarrels.Any(q => s.EndsWith(": " + q))), 10f);
+                Assert.That(said.Any(s => quarrels.Any(q => s.EndsWith(": " + q))), Is.True,
+                    $"words after the fight (fighting: {e1.Data.name} {e1.Engage.Target?.name}, {e2.Data.name} {e2.Engage.Target?.name}): " + string.Join(" / ", said));
+                Assert.That((f1.BondAttack, e1.BondAttack), Is.EqualTo((0f, 0f)), "out of the fight, nothing");
+
+                // ---- Rivals race for kills ----
+                Both(f1, f2, -20);
+                f2.Data.level = f1.Data.level;
+                f2.RecalculateStats();
+                Assert.That(BondService.BondsOf(f1, m).Single(b => b.other == f2).kinds, Is.EquivalentTo(new[] { BondKind.Rival }));
+                var big = SpawnMonster("slime", p, level: 30);
+                Place(f1, p + new Vector2(-1f, 0f));
+                Place(f2, p + new Vector2(1f, 0f));
+                f1.Engage.SetTarget(big);
+                f2.Engage.SetTarget(big);
+                yield return new WaitForSeconds(0.4f);
+                float calm = f1.RetreatThreshold;
+                void Kill(Adventurer k)
+                {
+                    var s = SpawnMonster("slime", k.Position + new Vector2(0.6f, 0f));
+                    for (int i = 0; i < 60 && s.IsAlive; i++) Combat.ApplyHit(k, s);
+                    Assert.That(s.IsAlive, Is.False, $"{k.Data.name} took one");
+                }
+                Kill(f1);
+                Kill(f2);
+                Kill(f2);
+                yield return new WaitForSeconds(0.4f);
+                Assert.That((bonds.IsBehind(f1), bonds.IsBehind(f2)), Is.EqualTo((true, false)), "one kill down");
+                Assert.That(f1.RetreatThreshold, Is.EqualTo(BondRules.RetreatWhenBehind(calm)).Within(1e-4f), "it holds on longer");
+                var behindLines = Enumerable.Range(0, 3).Select(i => $"{f1.Data.name}: {BondRules.BehindLine(f2.Data.name, i)}").ToList();
+                var aheadLines = Enumerable.Range(0, 3).Select(i => $"{f2.Data.name}: {BondRules.AheadLine(f1.Data.name, i)}").ToList();
+                yield return WaitFor(() => said.Any(behindLines.Contains), 4f);
+                Assert.That(said.Any(aheadLines.Contains) && said.Any(behindLines.Contains), Is.True, "the one ahead says so, the one behind will not have it: " + string.Join(" / ", said));
+                // Far apart, the race is over: two kills to one.
+                f1.Engage.Clear();
+                Place(f1, p + new Vector2(0f, 40f));
+                yield return WaitFor(() => race.HasValue, 3f);
+                Assert.That(race.HasValue && race.Value.Winner == f2 && race.Value.Loser == f1 && race.Value.WinnerKills == 2 && race.Value.LoserKills == 1, Is.True, "f2 won it");
+                Assert.That(f2.Data.thoughts.Any(t => t.id == ThoughtRules.RivalBeaten.Id && t.about == f1.Data.id), Is.True);
+                Assert.That(f1.Data.thoughts.Any(t => t.id == ThoughtRules.RivalLostTo.Id && t.about == f2.Data.id), Is.True);
+                Assert.That((BondService.Record(f2, f1), BondService.Record(f1, f2)), Is.EqualTo(((1, 0), (0, 1))), "the tally");
+                Assert.That(bonds.IsBehind(f1), Is.False);
+                big.ReceiveDamage(big.Hp + 1e6f, null, false);
+
+                // ---- A mentor near a kill ----
+                var (pupil, mentor) = (e1, e2);
+                Both(pupil, mentor, 20);
+                pupil.Data.level = 1;
+                mentor.Data.level = 1 + BondRules.MentorLevelGap + 5; // room for the pupil's level-up from the kill
+                pupil.RecalculateStats();
+                mentor.RecalculateStats();
+                Place(pupil, p + new Vector2(0f, -4f));
+                Place(mentor, p + new Vector2(2f, -4f));
+                pupil.Data.thoughts.RemoveAll(t => t.id == ThoughtRules.Mentored.Id);
+                Kill(pupil);
+                Assert.That(pupil.Data.thoughts.Any(t => t.id == ThoughtRules.Mentored.Id && t.about == mentor.Data.id), Is.True, "learnt from it");
+                Assert.That((bonds.MentorNear(pupil), bonds.Mentored(pupil, 100)), Is.EqualTo((mentor, 115)));
+                Place(mentor, p + new Vector2(0f, 30f));
+                Assert.That((bonds.MentorNear(pupil), bonds.Mentored(pupil, 100)), Is.EqualTo(((Adventurer)null, 100)), "not from afar");
+
+                // ---- A party keeps foes apart ----
+                var plaza = Services.Get<World.WorldService>().TownCenterWorld;
+                foreach (var a in m) foreach (var b in m) if (a != b) Feel(a, b, 0);
+                var (leader, friend, other, away) = (m[0], m[1], m[2], m[3]);
+                Both(leader, friend, 60);
+                Feel(leader, other, 30);
+                foreach (var a in m) Place(a, plaza + new Vector2(m.IndexOf(a), 0f));
+                away.ChangeState(away.RestState); // not free: only `other` can be asked
+                MakeKnown(Services.Get<EcosystemManager>().Species.First(s => s.id == "slime"));
+                var board = Services.Get<QuestBoard>();
+                var quest = board.FindById(DebugCommands.PostHunt("slime", 6, 80, 20, party: 3));
+                Assert.That(quest, Is.Not.Null);
+                // On the quest without its accepted event (that would set the party gathering going and fill the slots).
+                quest.AddAssignee(leader);
+                quest.AddAssignee(friend);
+                var parties = Services.Get<PartyService>();
+                Assert.That(parties.PickCandidates(quest, leader), Is.EqualTo(new[] { other }), "with nothing against anyone going, it is asked");
+                Feel(other, friend, BondRules.FoeAt);
+                Assert.That(parties.PickCandidates(quest, leader), Is.Empty, "a foe of one already going is not, however much the leader likes it");
+                Feel(other, friend, 0);
+                Feel(friend, other, BondRules.FoeAt);
+                Assert.That(parties.PickCandidates(quest, leader), Is.Empty, "nor when the hate is the other way");
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = false;
+                BondService.Certain = false;
+                EventBus.Unsubscribe(onSay);
+                EventBus.Unsubscribe(onRace);
+            }
+        }
+
+        /// <summary>
+        /// P4-132 (H6, user decisions 2026-11-08): the guild master's orders. Nobody near, nothing spent; a cheer lifts the
+        /// fighters' attack, costs its share of the gauge and waits out its cooldown; a focus order sends them at a monster
+        /// that was no threat to them; the horn sends them running home and keeps them out of the next raid's defence; the
+        /// flag will not go far out, stands in town, and the raid's other defenders hold it instead of their gate; the
+        /// gauge and the flag come back from a save.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Orders_ACheerLifts_AFocusSendsThemAtOne_TheHornSendsThemHome_AndTheFlagHoldsTheTown()
+        {
+            yield return Boot();
+            var orders = Services.Get<Commands.MasterCommands>();
+            Assert.That(UnityEngine.Object.FindFirstObjectByType<CommandBarView>(), Is.Not.Null, "the bar is up");
+            var m = Roster.Members.Where(a => a.IsAlive && a.IsGuildMember && !a.IsVisitor).ToList();
+            Assert.That(m.Count, Is.GreaterThanOrEqualTo(4));
+            // Well out of town, so the ones left in town are out of earshot (the reach is 12 cells).
+            var spot = OpenGrassOutsideTown(35f, 70f);
+            Assume.That(spot, Is.Not.Null, "open grass out of town");
+            var master = Services.Get<PlayerAvatar>();
+            master.Mover.Stop();
+            master.Mover.Warp(spot.Value);
+            var p = spot.Value + new Vector2(0f, 3f);
+            ClearHomelessOf("slime");
+            EmptyNestsNear(p, 20f);
+            Commands.MasterCommandEvent? given = null;
+            Action<Commands.MasterCommandEvent> onGiven = e => given = e;
+            EventBus.Subscribe(onGiven);
+            Unit.GuildInvulnerable = true;
+            Commands.MasterCommands.Certain = true;
+            try
+            {
+                orders.SetPower(Commands.CommandRules.MaxPower);
+                orders.ResetCooldowns();
+                // ---- Nobody near: refused, nothing spent ----
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Cheer, null, out var why), Is.False);
+                Assert.That(why, Does.Contain("싸우는 길드원이 없습니다"));
+                Assert.That(orders.Power, Is.EqualTo(Commands.CommandRules.MaxPower).Within(0.5f), "nothing spent");
+
+                // ---- Three of them fighting by the master ----
+                var field = m.Take(3).ToList();
+                var stay = m.Skip(3).ToList();
+                var dummy = SpawnMonster("slime", p, level: 30);
+                var other = SpawnMonster("slime", p + new Vector2(3f, 0f), level: 30);
+                for (int i = 0; i < field.Count; i++)
+                {
+                    var a = field[i];
+                    a.ChangeState(a.ReturnState); // on its way home: it fights what it meets
+                    a.Mover.Stop();
+                    a.Mover.Warp(p + new Vector2(-1.5f + i * 1.5f, -1f));
+                    a.Engage.SetTarget(dummy);
+                }
+                yield return WaitFor(() => field.All(a => a.InTheThickOfIt), 3f);
+                // The fog looks round every tenth of a second: the master just stepped out here.
+                var fogNow = Services.Get<Fog.FogOfWar>();
+                yield return WaitFor(() => fogNow.IsVisibleRaw(other.Position), 3f);
+
+                // ---- The cheer ----
+                float before = orders.Power;
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Cheer, null, out var cheered), Is.True, cheered);
+                Assert.That(given.HasValue && given.Value.Heard == 3 && given.Value.Followed == 3, Is.True, cheered);
+                Assert.That(cheered, Is.EqualTo("응원: 3명 모두 힘을 냈습니다."));
+                foreach (var a in field)
+                {
+                    Assert.That(a.CheerAttack, Is.EqualTo(Commands.CommandRules.CheerShare), a.Data.name);
+                    Assert.That(a.AttackNow, Is.EqualTo(a.Stats.Attack * (1f + a.Boons.Attack + a.BondAttack + Commands.CommandRules.CheerShare)).Within(0.01f));
+                    Assert.That(a.Data.thoughts.Any(t => t.id == ThoughtRules.Cheered.Id), Is.True, "taken to heart");
+                }
+                Assert.That(orders.Power, Is.EqualTo(before - Commands.CommandRules.Cost(Commands.MasterCommand.Cheer)).Within(0.5f));
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Cheer, null, out var again), Is.False);
+                Assert.That(again, Does.Contain("뒤에 다시"), "its cooldown");
+
+                // ---- The focus: the fight over, they go for one that was no threat to them ----
+                dummy.ReceiveDamage(dummy.Hp + 1e6f, null, false);
+                foreach (var a in field) a.Engage.Clear();
+                yield return null;
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Focus, p + new Vector2(-4f, -3f), out var nothing), Is.False);
+                Assert.That(nothing, Does.Contain("몬스터가 없습니다"));
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Focus, other.Position + new Vector2(0.3f, 0f), out var focused), Is.True,
+                            $"{focused} (at {other.Position - master.Position} from the master, seen {fogNow.IsVisibleRaw(other.Position)})");
+                Assert.That(field.All(a => a.OrderedTarget == other && a.CalledTarget == other), Is.True);
+                yield return new WaitForSeconds(1f);
+                Assert.That(field.All(a => a.Engage.Target == other), Is.True,
+                            "on it: " + string.Join(", ", field.Select(a => $"{a.Data.name} {a.StateLabel} {a.Engage.Target?.name}")));
+
+                // ---- The horn ----
+                float now = Services.Get<GameClock>().TotalHours;
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Retreat, null, out var horn), Is.True, horn);
+                foreach (var a in field)
+                {
+                    Assert.That(a.Fsm.Current == a.ReturnState && a.ReturnState.Retreating, Is.True, $"{a.Data.name} runs home: {a.StateLabel}");
+                    Assert.That(a.OrderedTarget, Is.Null, "the focus is off");
+                    Assert.That(a.HeldHomeUntilHour, Is.GreaterThan(now));
+                }
+                other.ReceiveDamage(other.Hp + 1e6f, null, false);
+                // Home already (at the counter): only the horn keeps them from the next call to arms.
+                var door = Services.Get<Town.TownService>().Get(Town.BuildingType.GuildHall).DoorPosition;
+                foreach (var a in field) { a.Mover.Stop(); a.Mover.Warp(door); }
+                yield return WaitFor(() => field.All(a => a.Fsm.Current == a.VisitState), 3f);
+                Assert.That(field.All(a => a.Fsm.Current == a.VisitState), Is.True, "at the guild: " + string.Join(", ", field.Select(a => a.StateLabel)));
+
+                // ---- The flag: not far out, then in town ----
+                Assert.That(orders.Power, Is.LessThan(Commands.CommandRules.Cost(Commands.MasterCommand.Rally)), "three orders took most of a full gauge");
+                orders.SetPower(Commands.CommandRules.MaxPower);
+                var town = Services.Get<World.WorldService>();
+                master.Mover.Stop();
+                master.Mover.Warp(town.TownCenterWorld + new Vector2(60f, 0f));
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Rally, null, out var tooFar), Is.False);
+                Assert.That(tooFar, Does.Contain("성벽"));
+                // Not under a roof: the walk-in guild hall is in town, but a flag in it would be seen by nobody.
+                var townSvc = Services.Get<Town.TownService>();
+                var hall = townSvc.Get(Town.BuildingType.GuildHall).Footprint;
+                master.Mover.Warp(World.GridMap.CellToWorld(new Vector2Int(hall.x + hall.width / 2, hall.y + hall.height / 2)));
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Rally, null, out var indoors), Is.False);
+                Assert.That(indoors, Does.Contain("건물 안"));
+                bool UnderARoof(Vector2Int c)
+                {
+                    foreach (var b in townSvc.Buildings) if (b != null && b.Footprint.Contains(c)) return true;
+                    return false;
+                }
+                var c0 = World.GridMap.WorldToCell(town.TownCenterWorld);
+                var open = Enumerable.Range(0, 12).SelectMany(r => Enumerable.Range(-r, 2 * r + 1).SelectMany(dx => Enumerable.Range(-r, 2 * r + 1).Select(dy => c0 + new Vector2Int(dx, dy))))
+                                     .First(c => town.Grid.IsWalkable(c) && town.Grid.IsInTown(c) && !UnderARoof(c));
+                var flagAt = World.GridMap.CellToWorld(open);
+                master.Mover.Warp(flagAt);
+                Assert.That(orders.TryIssue(Commands.MasterCommand.Rally, null, out var planted), Is.True, planted);
+                Assert.That(orders.HasFlag && Vector2.Distance(orders.FlagPosition, flagAt) < 0.01f, Is.True);
+
+                // ---- A raid: the horn keeps the three out of it, the others hold the flag ----
+                foreach (var a in stay) { a.ChangeState(a.IdleState); a.Mover.Stop(); }
+                var waves = Services.Get<Town.WaveManager>();
+                var nest = Services.Get<EcosystemManager>().Nests.FirstOrDefault(n => n.Species.canRaid && !n.IsEmpty);
+                Assume.That(nest, Is.Not.Null, "a raid-capable nest");
+                var gate = Services.Get<Town.GateService>().Gates.First();
+                waves.Launch(nest);
+                foreach (var r in nest.Members.Where(r => r != null && r.IsAlive && r.DefaultStateOverride != null))
+                {
+                    r.Mover.Stop();
+                    r.transform.position = gate.OutsidePoint + (Vector2)gate.Outward * 4f;
+                }
+                yield return WaitFor(() => waves.RaidSighted, 8f);
+                Assert.That(waves.RaidSighted, Is.True);
+                yield return new WaitForSeconds(1.5f);
+                foreach (var a in field)
+                    Assert.That(a.Fsm.Current, Is.Not.EqualTo(a.DefendState), $"{a.Data.name} was called home by the horn");
+                var defenders = stay.Where(a => a.Fsm.Current == a.DefendState).ToList();
+                Assert.That(defenders, Is.Not.Empty, "the others defend: " + string.Join(", ", stay.Select(a => a.StateLabel)));
+                foreach (var a in defenders) Assert.That(orders.FlagFor(a), Is.EqualTo((Vector2?)flagAt), $"{a.Data.name} heeds the flag");
+                yield return WaitFor(() => defenders.All(a => !a.IsAlive || a.Fsm.Current != a.DefendState || Vector2.Distance(a.Position, flagAt) < 3.5f), 10f);
+                Assert.That(defenders.All(a => !a.IsAlive || a.Fsm.Current != a.DefendState || Vector2.Distance(a.Position, flagAt) < 3.5f), Is.True,
+                            "under the flag: " + string.Join(", ", defenders.Select(a => $"{a.Data.name} {Vector2.Distance(a.Position, flagAt):0.0}")));
+
+                // ---- Saved and back ----
+                orders.SetPower(42f);
+                string json = orders.Capture();
+                orders.ClearFlag();
+                orders.SetPower(0f);
+                orders.Restore(json, null);
+                Assert.That(orders.Power, Is.EqualTo(42f).Within(0.01f));
+                Assert.That(orders.HasFlag && Vector2.Distance(orders.FlagPosition, flagAt) < 0.01f, Is.True, "the flag stands again");
+                Assert.That(orders.HoursToReady(Commands.MasterCommand.Retreat), Is.GreaterThan(0f), "and the horn is still cooling");
+            }
+            finally
+            {
+                Unit.GuildInvulnerable = false;
+                Commands.MasterCommands.Certain = false;
+                EventBus.Unsubscribe(onGiven);
+            }
+        }
+
+        /// <summary>
         /// P4-104d (user decisions 2026-10-24·25: breaks down to the extreme, a berserker goes for comrades too): a combat inspiration
         /// raises attack and a training one EXP; a spree throws gold away at the guild; a fistfight bruises but never below its floor
         /// and leaves the two on worse terms; a berserker goes for a comrade, who turns on it, until it comes to; quitting leaves the
@@ -4327,6 +5086,15 @@ namespace GuildMaster.Tests
                 Unit.GuildInvulnerable = false;
                 Clock.SetSpeed(1);
             }
+            // P4-135: the fight ends with the break — the ones who had stopped the berserker went on hitting it (their engagement
+            // ran on) and shot it dead walking out on the quest below. Nobody is in a break from here: no blow between members.
+            var friendlyFire = new System.Collections.Generic.List<string>();
+            Action<UnitDamagedEvent> onFriendlyHit = e =>
+            {
+                if (e.Target is Adventurer v && e.Source is Adventurer k && !k.IsHostileTo(v) && friendlyFire.Count < 5)
+                    friendlyFire.Add($"{k.Data.name} → {v.Data.name}");
+            };
+            EventBus.Subscribe(onFriendlyHit);
 
             // Quitting at the worst: gone from the roster.
             var leaver = m[3];
@@ -4344,7 +5112,9 @@ namespace GuildMaster.Tests
             Assert.That(takers.Count, Is.GreaterThanOrEqualTo(2), "a party to walk off from: "
                 + string.Join(", ", Roster.Members.Select(a => $"{a.Data.name} {a.StateLabel} hp={a.HpRatio:0.00} q={a.CurrentQuest?.Id} alive={a.IsAlive}")));
             Clock.SetSpeed(2);
-            yield return WaitFor(() => takers.All(a => !town.IsInTown(a.Position)), 20f);
+            yield return WaitFor(() => takers.All(a => a == null || !a.IsAlive || !town.IsInTown(a.Position)), 20f);
+            EventBus.Unsubscribe(onFriendlyHit);
+            Assert.That(friendlyFire, Is.Empty, "no member hits a comrade once the break is over");
             var quitter = takers[takers.Count - 1];
             Assert.That(breaks.TryBreak(quitter, BreakSeverity.Minor, BreakKind.Sabotage), Is.True);
             Assert.That((quitter.StateLabel, quest.IsAssigned(quitter), quitter.CurrentQuest == null), Is.EqualTo(("따라다니는 중", false, true)),
@@ -4433,6 +5203,129 @@ namespace GuildMaster.Tests
         }
 
         /// <summary>
+        /// P4-129 (H7, user decisions 2026-11-05): a seen boss fight is a highlight and a line in the member's chronicle; in
+        /// spectator mode the camera goes there with a title card; a member low in the fight is a crisis of its own; moving
+        /// the camera by hand takes it back; the boss's fall ends the moment with a result card and a line; turned off,
+        /// the camera is the player's again. P4-130 (F-9): the fall is the day's big story in the town newspaper, made when the
+        /// day ends and out the next morning — its window opens by itself and the game waits; a click on the story goes to
+        /// the member and the game goes on.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Spectator_GoesToABossFight_CardsIt_WritesTheChronicle_GivesTheCameraBack_AndMakesTheNews()
+        {
+            yield return Boot();
+            Services.Get<Legacy.GuildLegacy>().ForcedRoll = 1f; // no last stand
+            Unit.GuildInvulnerable = Unit.GuildUntargetable = true;
+            var cards = new System.Collections.Generic.List<Director.SpectatorCardEvent>();
+            Action<Director.SpectatorCardEvent> onCard = e => cards.Add(e);
+            EventBus.Subscribe(onCard);
+            try
+            {
+                var fog = Services.Get<Fog.FogOfWar>();
+                var world = Services.Get<World.WorldService>();
+                var cam = Services.Get<CameraControl.CameraController>();
+                var highlights = Services.Get<Director.HighlightService>();
+                var spectator = Services.Get<Director.SpectatorCamera>();
+                var member = Roster.Members.First(a => a.IsAlive);
+                Assert.That(world.Grid.TryFindNearestWalkable(world.Map.TownCenter + new Vector2Int(0, -32), 6, out var cell), Is.True);
+                var spot = World.GridMap.CellToWorld(cell);
+                member.Mover.Stop();
+                member.transform.position = spot;
+                var boss = Services.Get<PoolService>().Spawn<Monster>(Monster.PoolKey, spot + new Vector2(1.5f, 0f));
+                boss.Setup(Services.Get<EcosystemManager>().Species.First(s => s.id == "goblin"), null, boss: true);
+                yield return WaitFor(() => fog.IsVisibleRaw(boss.Position), 5f);
+                Assert.That(fog.IsVisibleRaw(boss.Position), Is.True, "the guild sees it");
+                Clock.SetSpeed(0); // the world stands still: only what the test does happens
+
+                // Blows exchanged: a boss fight.
+                Unit.GuildInvulnerable = false;
+                member.ReceiveDamage(1f, boss, false);
+                Unit.GuildInvulnerable = true;
+                boss.ReceiveDamage(1f, member, false);
+                Director.SpectatorCamera.Set(true);
+                highlights.Scan();
+                var fight = highlights.Active.FirstOrDefault(h => h.Kind == Director.HighlightKind.Boss);
+                Assert.That(fight, Is.Not.Null, "a boss fight: " + highlights.Describe());
+                Assert.That(fight.Members, Does.Contain(member));
+                Assert.That(member.Data.chronicle.Any(c => c.text.StartsWith("우두머리와의 싸움")), Is.True, "in the chronicle");
+                yield return WaitFrames(5);
+                Assert.That(spectator.Shown, Is.SameAs(fight), "the camera shows it");
+                Assert.That(cam.FollowTarget != null && Vector2.Distance(cam.FollowTarget.position, fight.Position) < 0.5f, Is.True, "and follows it");
+                Assert.That(cards.Any(c => c.Title == "우두머리와의 싸움" && !c.Result), Is.True, "with its title card");
+
+                // Low in the fight: a crisis too (the camera stays on the boss for now — not enough better to cut in).
+                Unit.GuildInvulnerable = false;
+                member.ReceiveDamage(member.Hp - member.Stats.MaxHp * 0.2f, boss, false);
+                Unit.GuildInvulnerable = true;
+                highlights.Scan();
+                Assert.That(highlights.Active.Any(h => h.Kind == Director.HighlightKind.LowHp && h.Members.Contains(member)), Is.True, "a crisis");
+                Assert.That(member.Data.chronicle.Any(c => c.text.Contains("체력 20%")), Is.True, member.Data.chronicle.Count > 0 ? member.Data.chronicle.Last().text : "none");
+                yield return WaitFrames(3);
+                Assert.That(spectator.Shown, Is.SameAs(fight), "held on the fight");
+
+                // The player moves the camera: hands off.
+                cam.JumpTo(world.TownCenterWorld);
+                yield return WaitFrames(3);
+                Assert.That(spectator.HandsOff(cam), Is.True);
+                Assert.That(cam.FollowTarget, Is.Null, "the camera is let go");
+
+                // The boss falls: the moment ends with its result.
+                boss.ReceiveDamage(boss.Hp + 9999f, member, false);
+                highlights.Scan();
+                Assert.That(fight.Ended && fight.Outcome != null, Is.True, "ended with a result");
+                Assert.That(member.Data.chronicle.Any(c => c.text.EndsWith("쓰러뜨렸다")), Is.True, "the fall in the chronicle");
+                Assert.That(cards.Any(c => c.Result), Is.True, "a result card");
+
+                Director.SpectatorCamera.Set(false);
+                yield return WaitFrames(2);
+                Assert.That(spectator.Shown, Is.Null);
+
+                // P4-130: the fall is on the newspaper's desk.
+                var desk = Services.Get<Reports.NewsDesk>();
+                var story = desk.Desk.FirstOrDefault(s => s.kind == Reports.NewsKind.BigFoeSlain);
+                Assert.That(story, Is.Not.Null, "on the desk: " + desk.Describe());
+                Assert.That(story.people, Does.Contain(member.Data.id));
+                Assert.That(story.body, Does.Contain(member.Data.name));
+                // The day ends: its paper is made, not out before the morning.
+                var view = Services.Get<NewspaperView>();
+                Reports.NewsDesk.AutoOpen = true;
+                var hours = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+                var whole = typeof(GameClock).GetField("_lastWholeHour", BindingFlags.NonPublic | BindingFlags.Instance);
+                int day = Clock.Day;
+                hours.SetValue(Clock, day * 24f - 0.02f);
+                whole.SetValue(Clock, day * 24 - 1);
+                Clock.SetSpeed(1);
+                yield return WaitFor(() => Clock.Day == day + 1, 10f);
+                var paper = desk.Latest;
+                Assert.That(paper?.day, Is.EqualTo(day), "the day's paper: " + desk.Describe());
+                Assert.That(paper.Lead.kind, Is.EqualTo(Reports.NewsKind.BigFoeSlain), string.Join(" / ", paper.articles.Select(s => s.headline)));
+                Assert.That(paper.articles.Count, Is.InRange(1, Reports.NewsRules.MaxArticles));
+                Assert.That(paper.delivered || view.Visible, Is.False, "not out at midnight");
+                // The morning: out, its window open, the game waiting; a notification for it.
+                hours.SetValue(Clock, day * 24f + Reports.NewsRules.DeliveryHour - 0.02f);
+                whole.SetValue(Clock, day * 24 + Reports.NewsRules.DeliveryHour - 1);
+                yield return WaitFor(() => view.Visible, 10f);
+                Assert.That(paper.delivered && view.Visible, Is.True, "out in the morning, its window open");
+                yield return WaitFrames(2);
+                Assert.That(Clock.IsHeld, Is.True, "the game waits");
+                Assert.That(view.Current(), Is.SameAs(paper));
+                Assert.That(Services.Get<Notifications.NotificationCenter>().Entries.Any(n => n.Link.Target == Notifications.NotificationTarget.News), Is.True);
+                // A click on the story: to the member, the paper closed, the game going on.
+                cam.JumpTo(world.TownCenterWorld);
+                view.Go(paper.Lead);
+                yield return WaitFrames(2);
+                Assert.That(view.Visible, Is.False, "closed");
+                Assert.That(Clock.IsHeld, Is.False, "the game goes on");
+                Assert.That(Services.Get<InspectorView>().Selected, Is.SameAs(member), "at the member");
+            }
+            finally
+            {
+                EventBus.Unsubscribe(onCard);
+                Unit.GuildInvulnerable = Unit.GuildUntargetable = false;
+            }
+        }
+
+        /// <summary>
         /// P4-109 (G4, user decisions 2026-10-30): a goblin the guild sees kill a member is named for it and grows, the friend of
         /// the fallen holds a grudge, and once out of the fight it has a bounty on it — that goblin alone — which the friend wants
         /// more. Driving another member off adds to its story; a deed nobody saw makes no nemesis. The member who brings it down
@@ -4511,6 +5404,22 @@ namespace GuildMaster.Tests
                 Assert.That(n.Deeds.Count, Is.EqualTo(2));
                 Assert.That(goblin.Level, Is.EqualTo(Mathf.Min(MonsterLevel.MaxLevel, before + Nemeses.NemesisRules.DriveOffLevels)));
                 Assert.That(goblin.DisplayName, Does.StartWith($"{victim.Data.name} 잡이"));
+
+                // The bounty follows what it has become (2026-11-10): grown past the danger it was posted at, the town rates
+                // and pays it anew — it stayed 낮음 while the nemesis grew to Lv14 on the newcomers who kept taking it.
+                int postedGold = bounty.RewardGold + bounty.FeeGold;
+                goblin.GrowTo(MonsterLevel.HighDangerLevel);
+                yield return WaitFor(() => bounty.Danger == DangerLevel.High, 5f);
+                Assert.That(bounty.Danger, Is.EqualTo(DangerLevel.High), "rated by the level the guild sees it at now");
+                Assert.That(bounty.RewardGold + bounty.FeeGold, Is.GreaterThan(postedGold), "and paid for it");
+                Assert.That(bounty.MaxParty, Is.EqualTo(QuestPricing.PartyFor(DangerLevel.High)));
+                Assert.That(QuestRisk.KnownFoeLevel(bounty), Is.EqualTo(goblin.Level));
+                Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.Contains("현상금을 다시 매겼습니다")), Is.True, "told");
+                // A member of level 1 does not go for it alone, grudge or not.
+                int friendLevel = friend.Data.level;
+                friend.Data.level = 1;
+                Assert.That(RuleBasedDecisionMaker.Score(friend, bounty), Is.EqualTo(0f), "beyond a newcomer");
+                friend.Data.level = friendLevel;
 
                 // A close call nobody saw: nothing.
                 var unseen = UnitRegistry.All.OfType<Monster>().First(x => x.IsAlive && x != goblin && !x.IsDragon && !fog.IsVisibleRaw(x.Position));
@@ -4779,6 +5688,85 @@ namespace GuildMaster.Tests
             follower.ChangeState(follower.ReturnState);
             yield return WaitFor(() => leader.Fsm.Current == leader.ReturnState, 5f);
             Assert.That(leader.Fsm.Current, Is.EqualTo(leader.ReturnState), "the rest follow instead of hunting on alone");
+        }
+
+        [UnityTest]
+        public IEnumerator AHuntingBand_FightsForItsOwn_AndTurnsFromWhatNoneOfItCanTake_Once()
+        {
+            // P4-121 (user report 2026-11-02): one member fought while the others said "저건 우리가 건드릴 상대가 아니야" and walked
+            // off — the hunt's fight filter kept out the comrade rule — and with that monster in sight the leader drew a new
+            // spot every survey, back and forth on the spot.
+            yield return Boot();
+            var lines = new System.Collections.Generic.List<string>();
+            Action<AdventurerSpeechEvent> heard = e => lines.Add($"{e.Adventurer.Data.name}: {e.Text}");
+            EventBus.Subscribe(heard);
+            DebugCommands.Invulnerable(true, false); // no blow lands, but the monsters still pick their targets
+            try
+            {
+                var master = MasterOnOpenGround();
+                Assert.That(master, Is.Not.Null, "open ground for the test");
+                var p = master.Position + new Vector2(0f, 6f);
+                master.transform.position = p + new Vector2(-14f, 0f);
+                var bands = Services.Get<HuntBandService>();
+                var leader = Roster.Members.First(a => a.Data.cls == AdventurerClass.Warrior);
+                var follower = Roster.Members.First(a => a.Data.cls == AdventurerClass.Ranger);
+                // Just the two of them (P4-51: nobody resting is invited along).
+                foreach (var other in Roster.Members.Where(a => a.IsAlive && a != leader && a != follower)) other.ChangeState(other.RestState);
+                leader.ChangeState(leader.FreeHuntState);
+                follower.ChangeState(follower.FreeHuntState);
+                yield return null;
+                var band = bands.BandOf(leader);
+                Assert.That(bands.BandOf(follower), Is.SameAs(band));
+                band.MusterUntilHour = 0f;
+                yield return null;
+                foreach (var (a, at) in new[] { (leader, p), (follower, p + new Vector2(3f, 0f)) })
+                {
+                    a.Mover.Stop();
+                    a.transform.position = at;
+                }
+
+                // A slime king from the edge of the map comes at them: neither could take it on, and both fight it.
+                var king = SpawnMonster("slime_king", follower.Position + new Vector2(3f, 0f), level: MonsterLevel.BirthLevel(1f));
+                Assert.That(king, Is.Not.Null);
+                Assert.That(leader.FreeHuntState.Huntable(king) || follower.FreeHuntState.Huntable(king), Is.False, "out of their league");
+                bool leaderFought = false, followerFought = false;
+                float farthest = 0f;
+                float until = Time.realtimeSinceStartup + 8f;
+                while (Time.realtimeSinceStartup < until && !(leaderFought && followerFought))
+                {
+                    leaderFought |= leader.Engage.Target == king;
+                    followerFought |= follower.Engage.Target == king;
+                    farthest = Mathf.Max(farthest, Vector2.Distance(leader.Position, follower.Position));
+                    yield return null;
+                }
+                Assert.That((leaderFought, followerFought), Is.EqualTo((true, true)),
+                    $"one's fight is the band's — king on {king.CurrentTarget?.name}, lines: {string.Join(" / ", lines)}");
+                Assert.That(lines.Any(l => l.Contains("건드릴 상대가 아니야")), Is.False, "nobody calls it not theirs: " + string.Join(" / ", lines));
+                Assert.That(farthest, Is.LessThan(PartyTactics.Leash), "and nobody walks off");
+                king.Perish();
+                leader.Engage.Clear();
+                follower.Engage.Clear();
+
+                // Something none of them could take, minding its own business on the way they walk: they turn from it, once.
+                yield return WaitFor(() => leader.Mover.IsMoving && leader.Engage.Target == null, 10f);
+                Assume.That(leader.Mover.IsMoving, "the band walks on");
+                var ahead = (leader.Mover.Destination - leader.Position).normalized;
+                var slime = SpawnMonster("slime", leader.Position + ahead * 6f, level: MonsterLevel.BirthLevel(1f));
+                Assert.That(slime, Is.Not.Null);
+                Assert.That(slime.Def.aggressiveToHumans, Is.False, "it does not start a fight");
+                int legsBefore = leader.FreeHuntState.LegsWalked;
+                float startDistance = Vector2.Distance(leader.Position, slime.Position);
+                yield return new WaitForSeconds(4f);
+                int turns = leader.FreeHuntState.LegsWalked - legsBefore;
+                Assert.That(turns, Is.LessThanOrEqualTo(2), "it turns away once and walks that way, not every survey");
+                Assert.That(Vector2.Distance(leader.Position, slime.Position), Is.GreaterThan(startDistance), "away from it");
+                Assert.That(leader.Engage.Target, Is.Not.EqualTo(slime), "and leaves it alone");
+            }
+            finally
+            {
+                EventBus.Unsubscribe(heard);
+                DebugCommands.Invulnerable(false);
+            }
         }
 
         [UnityTest]
@@ -5982,7 +6970,8 @@ namespace GuildMaster.Tests
         /// Decision cards (P4-111c, H3): a card is dealt with its notification and log line; a choice the vault cannot pay is
         /// refused; one made spends its gold and leaves a card to follow, which comes when due; one left unanswered is decided
         /// by its default when its 24 hours are up — fame, the members' thoughts, a notification saying so. Its section saves
-        /// as it is.
+        /// as it is. P4-118: a dealt card opens the window by itself and the game waits until it is closed; what the choice
+        /// came to shows with its colour; a card the event cards brought (the shady trader) raises a member's gear.
         /// </summary>
         [UnityTest]
         public IEnumerator DecisionCards_AreDealt_Decided_FollowedUp_AndDefaultedWhenLeft()
@@ -5996,12 +6985,15 @@ namespace GuildMaster.Tests
                 var treasury = Services.Get<Economy.GuildTreasury>();
                 var rank = Services.Get<Guild.GuildRankService>();
                 var notifications = Services.Get<Notifications.NotificationCenter>();
+                var view = Services.Get<DilemmaView>();
 
                 var invest = cards.Deal(null, "investment");
                 Assert.That(invest, Is.Not.Null);
                 Assert.That(cards.Open, Does.Contain(invest));
                 Assert.That(notifications.Entries.Any(n => n.Title == "결정할 일: 교역로 투자"), Is.True, "told");
                 Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[결정] 교역로 투자")), Is.True, "logged");
+                yield return null;
+                Assert.That(view.Visible && Clock.IsHeld, Is.True, "the card opened its window and the game waits");
 
                 // The vault must hold what a choice costs.
                 int gold = treasury.Gold;
@@ -6009,9 +7001,19 @@ namespace GuildMaster.Tests
                 Assert.That(cards.CannotChoose(invest, 0), Is.Not.Null, "nothing in the vault");
                 Assert.That(cards.Choose(invest, 0), Is.False);
                 treasury.AddGold(gold);
+                Dilemmas.DilemmaResolvedEvent? paid = null;
+                System.Action<Dilemmas.DilemmaResolvedEvent> onPaid = e => paid = e;
+                EventBus.Subscribe(onPaid);
                 Assert.That(cards.Choose(invest, 0), Is.True);
+                EventBus.Unsubscribe(onPaid);
                 Assert.That(treasury.Gold, Is.EqualTo(gold - invest.Gold[0]), "paid in");
+                // P4-135: what it did, with the numbers, for the window's chips.
+                Assert.That(paid?.Changes?.Any(c => c.Text == $"골드 −{invest.Gold[0]}" && c.Sign < 0), Is.True,
+                    "the gold it took shows: " + string.Join(", ", paid?.Changes ?? new System.Collections.Generic.List<Dilemmas.DilemmaChip>()));
                 Assert.That(cards.Open.Contains(invest), Is.False, "decided");
+                view.Close();
+                yield return null;
+                Assert.That(Clock.IsHeld, Is.False, "closed: the game goes on");
 
                 // Three days on, the result follows.
                 JumpClockTo(Mathf.Ceil(invest.DealtHour + 72f) - 0.02f); // just before the hour that strikes it (an hour is ten real seconds)
@@ -6019,11 +7021,39 @@ namespace GuildMaster.Tests
                 var result = cards.Open.FirstOrDefault(c => c.Def.Id == "investment_result");
                 Assert.That(result, Is.Not.Null, "the investment's result follows");
                 Assert.That(result.Gold[0], Is.EqualTo(invest.Gold[0]), "on what was put in");
+                yield return null;
+                Assert.That(view.Visible, Is.True, "the follow-up opens the window too");
+                // Chosen in the window: its result shows, coloured by how the roll went.
+                Dilemmas.DilemmaResolvedEvent? told = null;
+                System.Action<Dilemmas.DilemmaResolvedEvent> listen = e => told = e;
+                EventBus.Subscribe(listen);
                 Assert.That(cards.Choose(result, 0), Is.True);
+                EventBus.Unsubscribe(listen);
+                Assert.That(told?.Tone, Is.EqualTo(Dilemmas.DilemmaTone.Success).Or.EqualTo(Dilemmas.DilemmaTone.Failure), "a rolled choice succeeds or fails");
+                Assert.That(cards.History.Last().Tone, Is.EqualTo(told.Value.Tone));
+
+                // A card that came from the event cards: the shady trader's gear is real for the one who needed it most.
+                var trader = cards.Deal(null, "contraband");
+                Assert.That(trader, Is.Not.Null, "someone could wear better gear");
+                var buyer = Roster.Members.First(a => a.Data.id == trader.Actors[0]);
+                Assert.That(Roster.Members.Where(a => a.IsGuildMember && !a.IsVisitor).Min(a => a.Data.gearTier), Is.EqualTo(buyer.Data.gearTier), "the worst-equipped");
+                int tier = buyer.Data.gearTier;
+                treasury.AddGold(trader.Gold[1]);
+                Assert.That(cards.Choose(trader, 1), Is.True);
+                var bought = cards.History.Last();
+                Assert.That(bought.Tone == Dilemmas.DilemmaTone.Success ? buyer.Data.gearTier > tier : buyer.Data.gearTier == tier, Is.True,
+                    $"real gear raises it, a fake does not ({bought.Tone}: {bought.Result})");
+                Assert.That(buyer.Data.memories.Any(m => m.key == "dilemma:contraband"), Is.True, "the one it was about remembers it");
+                view.Close();
+                yield return null;
 
                 // Left alone, a card is decided by its default once its time is up.
                 var refugees = cards.Deal(null, "refugees");
                 Assert.That(refugees, Is.Not.Null);
+                yield return null;
+                view.Close(); // "나중에": the card waits, the game goes on
+                yield return null;
+                Assert.That(Clock.IsHeld, Is.False);
                 rank.AddFame(20, "테스트"); // fame never goes below 0
                 int fame = rank.Fame;
                 JumpClockTo(Mathf.Ceil(refugees.DeadlineHour) - 0.02f);
@@ -6301,6 +7331,319 @@ namespace GuildMaster.Tests
                 return true;
             }
             return false;
+        }
+
+        // ---------------- P6-2: window management ----------------
+
+        /// <summary>Presses these keys together for a frame (the last one is checked to be really down).</summary>
+        static IEnumerator PressKeys(params Key[] keys)
+        {
+            var kb = Keyboard.current ?? InputSystem.AddDevice<Keyboard>();
+            if (!kb.enabled) InputSystem.EnableDevice(kb);
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                InputSystem.QueueStateEvent(kb, new KeyboardState(keys));
+                yield return null;
+                if (kb[keys[keys.Length - 1]].isPressed) break;
+            }
+            yield return null;
+            InputSystem.QueueStateEvent(kb, new KeyboardState());
+            yield return null;
+        }
+
+        /// <summary>
+        /// P6-2 (user decisions 2026-11-10) in one boot: ESC closes the top-most thing first — the key help, the victory
+        /// screen, the newest window — and with nothing left opens the pause menu; a text field with the caret keeps ESC
+        /// and the letters, and one that lost the caret (still selected) no longer blocks them; Shift+ESC and the button
+        /// (only with two or more windows) close every window and nothing else; a dragged window opens there again, kept
+        /// on screen, steps aside from another at the same spot, and the reset sends every window home.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Windows_EscClosesTheTopFirst_CloseAll_AndRememberedPlaces()
+        {
+            string prefix = WindowPlacement.KeyPrefix;
+            WindowPlacement.KeyPrefix = "GuildMasterTest.Window."; // never the player's own layout
+            try
+            {
+                yield return Boot();
+                var root = Services.Get<UIRoot>();
+                var stock = Services.Get<StockView>();
+                var board = Services.Get<QuestBoardView>();
+                var bestiary = Services.Get<BestiaryView>();
+                var counsel = Services.Get<CounselDialogView>();
+                var pause = UnityEngine.Object.FindFirstObjectByType<PauseMenuView>();
+                root.ResetWindowPositions(); // a run that stopped half-way may have left test spots
+                Assert.That(Services.Get<InspectorView>().Selected, Is.Null, "nothing selected at the start");
+
+                // ESC: the newest window, then the next; with nothing left the pause menu, and ESC backs out of it.
+                stock.Open();
+                board.Open();
+                yield return PressKeys(Key.Escape);
+                Assert.That(board.Visible, Is.False, "the newest window closes first");
+                Assert.That(stock.Visible, Is.True, "...and only that one");
+                yield return PressKeys(Key.Escape);
+                Assert.That(stock.Visible, Is.False);
+                yield return PressKeys(Key.Escape);
+                Assert.That(pause.IsOpen, Is.True, "nothing left to close: the pause menu");
+                yield return PressKeys(Key.Escape);
+                Assert.That(pause.IsOpen || MenuState.IsOpen, Is.False);
+
+                // A talk opens with the caret in its field: ESC and letters are the field's. The field's own ESC takes the
+                // caret away (IMGUI keys cannot be queued from a test, so the test does that part); the field stays the
+                // selected object, which used to keep ESC and every shortcut dead until a click elsewhere.
+                stock.Open();
+                counsel.Show(Roster.Members[0]);
+                var field = ((RectTransform)counsel.transform.parent).GetComponentInChildren<UnityEngine.UI.InputField>(true);
+                yield return WaitFor(() => field.isFocused, 3f);
+                Assert.That(TextFocus.Typing, Is.True, "the talk opens with the caret in its field");
+                yield return PressKeys(Key.Escape);
+                Assert.That(counsel.Visible, Is.True, "ESC with the caret in a field is the field's, not the window's");
+                yield return PressKeys(Key.Q);
+                Assert.That(board.Visible, Is.False, "letters are text while typing");
+                field.DeactivateInputField();
+                yield return null;
+                Assert.That(UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject, Is.EqualTo(field.gameObject), "the field stays selected...");
+                Assert.That(TextFocus.Typing, Is.False, "...but no longer counts as typing");
+                yield return PressKeys(Key.Escape);
+                Assert.That(counsel.Visible, Is.False, "the next ESC closes the talk");
+                Assert.That(stock.Visible, Is.True, "...and only the talk");
+                Assert.That(Clock.IsHeld, Is.False, "the talk let go of the clock");
+                yield return PressKeys(Key.Q);
+                Assert.That(board.Visible, Is.True, "shortcuts work again without a click elsewhere");
+
+                // Close all: the button shows only with two or more windows and says how many; Shift+ESC does the same.
+                var closeAll = (UnityEngine.UI.Button)typeof(UIRoot).GetField("_closeAll", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(root);
+                yield return null;
+                Assert.That(closeAll.gameObject.activeSelf, Is.True, "two windows: the button shows");
+                Assert.That(closeAll.GetComponentInChildren<UnityEngine.UI.Text>().text, Is.EqualTo("창 모두 닫기 (2)"));
+                closeAll.onClick.Invoke();
+                Assert.That(root.OpenWindowCount, Is.EqualTo(0), "the button closes every window");
+                Assert.That(stock.Visible || board.Visible, Is.False);
+                stock.Open();
+                yield return null;
+                Assert.That(closeAll.gameObject.activeSelf, Is.False, "one window: no button");
+                board.Open();
+                bestiary.Open();
+                yield return PressKeys(Key.LeftShift, Key.Escape);
+                Assert.That(root.OpenWindowCount, Is.EqualTo(0), "Shift+ESC closes every window");
+                yield return PressKeys(Key.LeftShift, Key.Escape);
+                Assert.That(pause.IsOpen || MenuState.IsOpen, Is.False, "...and with none open does nothing else (no pause menu)");
+
+                // The key help is drawn over everything: ESC closes it before the window under it.
+                stock.Open();
+                var help = UnityEngine.Object.FindFirstObjectByType<KeyHelpView>();
+                yield return PressKeys(Key.Backquote);
+                Assert.That(help.IsOpen, Is.True);
+                yield return PressKeys(Key.Escape);
+                Assert.That(help.IsOpen, Is.False, "the key help closes first");
+                Assert.That(stock.Visible, Is.True, "...the window under it stays");
+
+                // The victory screen: ESC = 계속하기 (the clock goes on), the window under it stays.
+                var victory = UnityEngine.Object.FindFirstObjectByType<VictoryView>();
+                Assert.That(Clock.IsHeld, Is.False);
+                typeof(VictoryView).GetMethod("Show", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(victory, null);
+                Assert.That(victory.IsOpen && Clock.IsHeld, Is.True);
+                yield return PressKeys(Key.Escape);
+                Assert.That(victory.IsOpen, Is.False, "ESC on the victory screen goes on playing");
+                Assert.That(Clock.IsHeld, Is.False);
+                Assert.That(stock.Visible, Is.True);
+
+                // Remembered places: home until dragged; a drag is kept and the window opens there alone.
+                root.CloseAllWindows();
+                stock.Open();
+                var frame = (RectTransform)stock.transform.parent;
+                var area = ((RectTransform)frame.parent).rect.size;
+                var home = new Vector2(0, -10);
+                Assert.That(Vector2.Distance(frame.anchoredPosition, home), Is.LessThan(0.5f), "home until dragged");
+                var dragger = frame.GetComponentInChildren<WindowDragger>();
+                var drag = new UnityEngine.EventSystems.PointerEventData(UnityEngine.EventSystems.EventSystem.current);
+                float scale = frame.GetComponentInParent<Canvas>().rootCanvas.scaleFactor;
+                dragger.OnBeginDrag(drag);
+                drag.delta = new Vector2(300, 100) * scale;
+                dragger.OnDrag(drag);
+                dragger.OnEndDrag(drag);
+                var spot = frame.anchoredPosition;
+                Assert.That(Vector2.Distance(spot, WindowPlacement.Clamp(home + new Vector2(300, 100), area, frame.rect.size)), Is.LessThan(0.5f), "dragged");
+                Assert.That(PlayerPrefs.HasKey(WindowPlacement.KeyPrefix + "StockView"), Is.True, "a drag is kept (PlayerPrefs)");
+                stock.Close();
+                stock.Open();
+                Assert.That(Vector2.Distance(frame.anchoredPosition, spot), Is.LessThan(0.5f), "reopened alone, it comes back where it was dragged");
+
+                // Another window remembered at the same spot steps aside when it opens over it.
+                var boardFrame = (RectTransform)board.transform.parent;
+                WindowPlacement.Set("QuestBoardView", spot);
+                board.Open();
+                Assert.That(Vector2.Distance(boardFrame.anchoredPosition, frame.anchoredPosition), Is.GreaterThan(12f), "it steps aside");
+
+                // A spot off the screen (another resolution, another UI size) comes back on it.
+                root.CloseAllWindows();
+                WindowPlacement.Set("StockView", new Vector2(5000, -5000));
+                stock.Open();
+                var p = frame.anchoredPosition;
+                var half = frame.rect.size * 0.5f;
+                Assert.That(p.x - half.x, Is.LessThanOrEqualTo(area.x * 0.5f - WindowPlacement.KeepVisible + 0.5f), "part of it stays on screen (right edge)");
+                Assert.That(p.y + half.y, Is.GreaterThanOrEqualTo(-area.y * 0.5f + WindowPlacement.KeepVisible - 0.5f), "the title bar stays above the bottom");
+
+                // The settings reset: every spot forgotten, open windows back home (the later one stepping aside).
+                board.Close();
+                board.Open();
+                root.ResetWindowPositions();
+                Assert.That(PlayerPrefs.HasKey(WindowPlacement.KeyPrefix + "StockView") || PlayerPrefs.HasKey(WindowPlacement.KeyPrefix + "QuestBoardView"), Is.False, "forgotten");
+                Assert.That(Vector2.Distance(frame.anchoredPosition, home), Is.LessThan(0.5f), "the older window goes home");
+                Assert.That(Vector2.Distance(boardFrame.anchoredPosition, home), Is.GreaterThan(12f), "the newer one steps aside from it");
+            }
+            finally
+            {
+                PlayerPrefs.DeleteKey(WindowPlacement.KeyPrefix + "StockView");
+                PlayerPrefs.DeleteKey(WindowPlacement.KeyPrefix + "QuestBoardView");
+                WindowPlacement.KeyPrefix = prefix;
+            }
+        }
+
+        // ---------------- P6-3: settings tabs, calmer effects, pauses for moments ----------------
+
+        /// <summary>
+        /// P6-3 (user decisions 2026-11-10) in one boot: a release build has pause and x1 only (two HUD buttons, keys 2~4
+        /// do nothing, a faster speed is refused); the settings window shows one of five tabs at a time; "모두 줄이기" turns
+        /// the shake, hit-stop and flashes down and the camera then stays put and a critical hit no longer slows time;
+        /// a decision card set to "알림만" waits in its window; a moment set to "일시정지" pauses the game once (not the
+        /// player's own pause, not twice within an hour) and the HUD says why. The player's settings are put back after.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Settings_TabsCalmerEffects_PausesForMoments_AndReleaseSpeeds()
+        {
+            var triggers = (PauseTrigger[])Enum.GetValues(typeof(PauseTrigger));
+            float shake = GameSettings.ShakeStrength;
+            bool hitStop = GameSettings.HitStop, calm = GameSettings.CalmFlashes, reward = GameSettings.RewardEffects;
+            bool dilemmaOpen = GameSettings.DilemmaAutoOpen, news = GameSettings.NewsEachMorning;
+            var pauses = triggers.Select(GameSettings.PauseOn).ToArray();
+            GameClock.FastSpeeds = false; // as in a release build, from the boot on
+            try
+            {
+                yield return Boot();
+                foreach (var t in triggers) GameSettings.SetPauseOn(t, false);
+
+                // A release build: pause and x1.
+                var hud = UnityEngine.Object.FindFirstObjectByType<HudView>();
+                var speedButtons = (UnityEngine.UI.Button[])typeof(HudView).GetField("_speedButtons", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(hud);
+                Assert.That(speedButtons.Length, Is.EqualTo(2), "II and x1 only");
+                Clock.SetSpeed(4);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(1), "a faster speed is refused");
+                Clock.SetSpeed(0);
+                yield return PressKeys(Key.Digit3);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(0), "the key for x4 does nothing");
+                yield return PressKeys(Key.Digit1);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(1));
+                GameClock.FastSpeeds = true;
+
+                // Five tabs, one page at a time.
+                var settings = UnityEngine.Object.FindFirstObjectByType<SettingsView>();
+                var pages = (RectTransform[])typeof(SettingsView).GetField("_pages", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(settings);
+                Assert.That(pages.Length, Is.EqualTo(5));
+                settings.Show();
+                foreach (SettingsView.Tab tab in Enum.GetValues(typeof(SettingsView.Tab)))
+                {
+                    settings.ShowTab(tab);
+                    for (int i = 0; i < pages.Length; i++)
+                        Assert.That(pages[i].gameObject.activeSelf, Is.EqualTo(i == (int)tab), $"{tab}: only its own page");
+                }
+                settings.ShowTab(SettingsView.Tab.Effects);
+                var calmAll = pages[(int)SettingsView.Tab.Effects].GetComponentsInChildren<UnityEngine.UI.Button>()
+                    .First(b => b.GetComponentInChildren<UnityEngine.UI.Text>().text == "모두 줄이기");
+                calmAll.onClick.Invoke();
+                Assert.That(GameSettings.ShakeStrength, Is.EqualTo(0f));
+                Assert.That(GameSettings.HitStop || GameSettings.RewardEffects, Is.False);
+                Assert.That(GameSettings.CalmFlashes, Is.True);
+                settings.Hide();
+                Assert.That(MenuState.IsOpen, Is.False);
+
+                // No shake at 0%, some at 100%.
+                var cam = Services.Get<CameraControl.CameraController>();
+                var basePos = typeof(CameraControl.CameraController).GetField("_basePosition", BindingFlags.NonPublic | BindingFlags.Instance);
+                cam.Shake(1f);
+                yield return null;
+                yield return null;
+                Assert.That(((Vector2)(cam.transform.position - (Vector3)basePos.GetValue(cam))).magnitude, Is.LessThan(1e-4f), "0%: the camera stays put");
+                GameSettings.ShakeStrength = 1f;
+                cam.Shake(1f);
+                yield return null;
+                yield return null;
+                Assert.That(((Vector2)(cam.transform.position - (Vector3)basePos.GetValue(cam))).magnitude, Is.GreaterThan(1e-4f), "100%: it shakes");
+
+                // Hit-stop: a member's critical hit on screen slows time only while it is on.
+                var member = Roster.Members[0];
+                cam.JumpTo(member.Position);
+                yield return null;
+                var feedback = UnityEngine.Object.FindFirstObjectByType<Visuals.CombatFeedback>();
+                var onDamaged = typeof(Visuals.CombatFeedback).GetMethod("OnDamaged", BindingFlags.NonPublic | BindingFlags.Instance);
+                var crit = new UnitDamagedEvent { Target = member, Amount = 1f, Critical = true };
+                onDamaged.Invoke(feedback, new object[] { crit });
+                Assert.That(Time.timeScale, Is.EqualTo(1f), "hit-stop off: time runs on");
+                GameSettings.HitStop = true;
+                onDamaged.Invoke(feedback, new object[] { crit });
+                Assert.That(Time.timeScale, Is.LessThan(0.5f), "hit-stop on: time nearly stops");
+                yield return new WaitForSecondsRealtime(0.2f);
+                Assert.That(Time.timeScale, Is.EqualTo(1f));
+
+                // A decision card set to "알림만" waits; set to open, the next one opens its window.
+                Dilemmas.DilemmaService.Enabled = true;
+                var cards = Services.Get<Dilemmas.DilemmaService>();
+                var cardView = Services.Get<DilemmaView>();
+                GameSettings.DilemmaAutoOpen = false;
+                Assert.That(cards.Deal(null, "investment"), Is.Not.Null);
+                yield return null;
+                Assert.That(cardView.Visible || Clock.IsHeld, Is.False, "only the notification");
+                GameSettings.DilemmaAutoOpen = true;
+                Assert.That(cards.Deal(null, "refugees"), Is.Not.Null);
+                yield return null;
+                Assert.That(cardView.Visible && Clock.IsHeld, Is.True, "the window opens and the game waits");
+                cardView.Close();
+                yield return null;
+                Dilemmas.DilemmaService.Enabled = false;
+
+                // Pausing for a moment: only when chosen, once within an hour, never over the player's own pause.
+                EventPause.Enabled = true;
+                var eventPause = Services.Get<EventPause>();
+                var raid = new Town.RaidSightedEvent { RaidId = 77, Direction = "동", Position = member.Position };
+                Clock.SetSpeed(1);
+                EventBus.Publish(raid);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(1), "\"그대로\": the game runs on");
+                GameSettings.SetPauseOn(PauseTrigger.Raid, true);
+                EventBus.Publish(raid);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(0), "\"일시정지\": the game stops");
+                Assert.That(eventPause.Reason, Does.Contain("침공"));
+                yield return new WaitForSecondsRealtime(0.4f);
+                var timeLabel = (UnityEngine.UI.Text)typeof(HudView).GetField("_time", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(hud);
+                Assert.That(timeLabel.text, Does.Contain("정지·침공"), "the HUD says why");
+                Clock.SetSpeed(1);
+                Assert.That(eventPause.Reason, Is.Null, "running again: no reason left");
+                EventBus.Publish(raid);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(1), "not twice within an hour");
+                var total = typeof(GameClock).GetField("_totalHours", BindingFlags.NonPublic | BindingFlags.Instance);
+                var lastHour = typeof(GameClock).GetField("_lastWholeHour", BindingFlags.NonPublic | BindingFlags.Instance);
+                total.SetValue(Clock, Clock.TotalHours + EventPause.RepeatHours + 0.1f);
+                lastHour.SetValue(Clock, Mathf.FloorToInt(Clock.TotalHours));
+                Clock.SetSpeed(0);
+                EventBus.Publish(raid);
+                Assert.That(eventPause.Reason, Is.Null, "the player's own pause stays theirs");
+                Clock.SetSpeed(1);
+                EventBus.Publish(raid);
+                Assert.That(Clock.SpeedIndex, Is.EqualTo(0), "an hour later it pauses again");
+                Clock.SetSpeed(1);
+            }
+            finally
+            {
+                GameSettings.ShakeStrength = shake;
+                GameSettings.HitStop = hitStop;
+                GameSettings.CalmFlashes = calm;
+                GameSettings.RewardEffects = reward;
+                GameSettings.DilemmaAutoOpen = dilemmaOpen;
+                GameSettings.NewsEachMorning = news;
+                for (int i = 0; i < triggers.Length; i++) GameSettings.SetPauseOn(triggers[i], pauses[i]);
+                GameClock.FastSpeeds = Debug.isDebugBuild;
+                EventPause.Enabled = false;
+                Dilemmas.DilemmaService.Enabled = false;
+            }
         }
     }
 }

@@ -21,6 +21,7 @@ namespace GuildMaster.UI
         Text _monsters;
         Text _extra;
         Button[] _speedButtons;
+        Button _spectate;
         float _timer;
         /// <summary>The gold as shown: it rolls towards the treasury's (P4-106 H8), less what is still flying in.</summary>
         float _shownGold = -1f;
@@ -46,14 +47,19 @@ namespace GuildMaster.UI
             h.padding = new RectOffset(14, 14, 6, 6);
 
             _time = UIBuilder.Label(bar.transform, "", 18, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(330);
-            // One button per GameClock.SpeedScales entry, so a new speed needs no change here.
-            _speedButtons = new Button[GameClock.SpeedScales.Length];
+            // One button per GameClock.SpeedScales entry, so a new speed needs no change here (P6-3: pause and x1 only in a
+            // release build). The chosen one is filled in (P6-3: the speed in force at a glance).
+            _speedButtons = new Button[GameClock.MaxSpeedIndex + 1];
             for (int i = 0; i < _speedButtons.Length; i++)
             {
                 int idx = i;
                 string label = idx == 0 ? "II" : $"x{GameClock.SpeedScales[idx]:0}";
                 _speedButtons[i] = UIBuilder.Button(bar.transform, label, () => Services.Get<GameClock>().SetSpeed(idx), 46, 32, null, 14);
+                _speedButtons[i].Tooltip(() => SpeedTip(idx));
             }
+            // P4-129: spectator mode (C) — the camera goes to the moments worth watching.
+            _spectate = UIBuilder.Button(bar.transform, "관전", () => Director.SpectatorCamera.Set(!Director.SpectatorCamera.On), 56, 32, null, 14);
+            _spectate.Tooltip(() => Director.SpectatorCamera.On ? "관전 모드 켜짐 (C): 카메라가 큰 싸움·위기·마을 방어를 찾아갑니다. 카메라를 움직이면 잠깐 멈춥니다." : "관전 모드 (C): 카메라가 볼 만한 장면을 찾아다닙니다.");
             UIBuilder.Rect(bar.transform, "Spacer").Size(-1, -1, 1);
             // 2026-10-31: an icon before each resource when the UI skin is present (none without it).
             UISkin.LayoutIcon(bar.transform, "gold");
@@ -80,9 +86,17 @@ namespace GuildMaster.UI
             // The season and its day before the clock (P4-111b): "가을 3일 · 13일차 08:00".
             string season = Seasons.SeasonService.Label;
             if (season.Length > 0) season = UIBuilder.Colored(season, SeasonColor(Seasons.SeasonService.Now)) + " · ";
-            _time.text = season + clock.FormatTime() + (clock.IsNight ? " ☾" : " ☀") + (clock.IsHeld ? UIBuilder.Colored(" 정지 중", UITheme.TextMuted) : "");
-            for (int i = 0; i < _speedButtons.Length; i++)
-                _speedButtons[i].GetComponentInChildren<Text>().color = i == clock.SpeedIndex ? UITheme.Accent : UITheme.TextMuted;
+            // P6-3: a pause a moment called for says which ("정지·침공"); the notification tells the rest.
+            string held = clock.IsHeld ? UIBuilder.Colored(" 정지 중", UITheme.TextMuted)
+                : clock.SpeedIndex == 0 && PausedFor() is { } why ? UIBuilder.Colored(" 정지·" + Session.EventPause.Short(why.Trigger), UITheme.Warn)
+                : "";
+            _time.text = season + clock.FormatTime() + (clock.IsNight ? " ☾" : " ☀") + held;
+            if (_paintedSpeed != clock.SpeedIndex)
+            {
+                _paintedSpeed = clock.SpeedIndex;
+                for (int i = 0; i < _speedButtons.Length; i++) PaintSpeed(_speedButtons[i], i == clock.SpeedIndex);
+            }
+            _spectate.GetComponentInChildren<Text>().color = Director.SpectatorCamera.On ? UITheme.Good : UITheme.TextMuted;
 
             var t = Services.Get<GuildTreasury>();
             _gold.text = $"{UIBuilder.Colored("골드", UITheme.Accent)} {t.Gold:N0}";
@@ -107,6 +121,30 @@ namespace GuildMaster.UI
             _members.text = $"길드원 {roster.CountText}";
             _monsters.text = $"시야 내 몬스터 {Services.Get<GuildIntel>().VisibleMonsters}";
             _extra.text = ExtraStatus?.Invoke() ?? "";
+        }
+
+        int _paintedSpeed = -1;
+
+        /// <summary>The speed in force is a filled (yellow) button with bright text, the others plain (P6-3).</summary>
+        void PaintSpeed(Button b, bool on)
+        {
+            UISkin.Recolor(b, on ? UITheme.Accent : UITheme.Button);
+            b.GetComponentInChildren<Text>().color = !on ? UITheme.TextMuted : UISkin.HasButtons ? UITheme.Text : SpeedInk;
+        }
+
+        static readonly Color SpeedInk = new(0.14f, 0.11f, 0.08f);
+
+        /// <summary>The moment the game paused itself for, while it stands still for it (P6-3).</summary>
+        static Session.EventPause PausedFor()
+            => Services.TryGet<Session.EventPause>(out var pause) && pause.Reason != null ? pause : null;
+
+        static string SpeedTip(int index)
+        {
+            string key = index == 0 ? "Space" : index.ToString();
+            string tip = index == 0 ? $"일시정지 ({key})" : $"속도 x{GameClock.SpeedScales[index]:0} ({key})";
+            if (index == 0 && PausedFor() is { } why)
+                tip += $"\n\n{why.Reason} — 사건 때 멈추도록 설정되어 있습니다.\nSpace나 x1로 다시 시작합니다. 설정 → 사건 탭에서 바꿀 수 있습니다.";
+            return tip;
         }
 
         static Color SeasonColor(Seasons.Season s) => s switch

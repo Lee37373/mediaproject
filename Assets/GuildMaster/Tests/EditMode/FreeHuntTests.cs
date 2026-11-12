@@ -108,12 +108,20 @@ namespace GuildMaster.Tests
             // P4-43: nothing is spared, so even the last one is worth the walk.
             Assert.That(FreeHunt.DenScore(slime, 1, 5f), Is.GreaterThan(0f));
             Assert.That(FreeHunt.DenScore(skull, 4, 30f), Is.GreaterThan(FreeHunt.DenScore(slime, 4, 30f)), "richer prey is worth more");
+        }
 
-            // Scouting is spread evenly out to the reach, so the near rings get walked too.
-            float reach = 65f;
-            Assert.That(FreeHunt.ScoutDistance(0f, reach), Is.EqualTo(12f).Within(0.01f), "just outside the walls");
-            Assert.That(FreeHunt.ScoutDistance(1f, reach), Is.EqualTo(reach).Within(0.01f));
-            Assert.That(FreeHunt.ScoutDistance(0.5f, reach), Is.EqualTo((12f + reach) / 2f).Within(0.01f), "uniform in distance, not area");
+        [Test]
+        public void ABandWearsTowardsHome_ByTheWorstOfTimeBagAndHurt()
+        {
+            // P4-121: scouting legs lean back towards town as the band wears, so it is near home when it is due there.
+            Assert.That(FreeHunt.Strain(0f, 0, 1f), Is.EqualTo(0f), "fresh out");
+            Assert.That(FreeHunt.Strain(FreeHunt.MaxHours / 2f, 0, 1f), Is.EqualTo(0.5f).Within(0.001f), "half its time out");
+            Assert.That(FreeHunt.Strain(0f, FreeHunt.FullBag / 2, 1f), Is.EqualTo(0.5f).Within(0.001f), "half a bag");
+            Assert.That(FreeHunt.Strain(0f, 0, (1f + FreeHunt.GoHomeHpRatio) / 2f), Is.EqualTo(0.5f).Within(0.001f), "half way to going home hurt");
+            Assert.That(FreeHunt.Strain(1f, FreeHunt.FullBag / 2, 1f), Is.EqualTo(0.5f).Within(0.001f), "the worst counts, not the sum");
+            Assert.That(FreeHunt.Strain(FreeHunt.MaxHours * 2f, FreeHunt.FullBag * 2, 0.1f), Is.EqualTo(1f), "due home is as worn as it gets");
+            // Whatever wears it to 1 is what sends it home.
+            Assert.IsTrue(FreeHunt.ShouldGoHome(FreeHunt.MaxHours, 0, false));
         }
 
         [Test]

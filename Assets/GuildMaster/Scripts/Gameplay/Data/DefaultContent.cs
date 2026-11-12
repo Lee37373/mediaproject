@@ -413,6 +413,21 @@ namespace GuildMaster.Data
             orc.startingGear.Add(new LootEntry { item = rustyDagger, chance = 0.3f, min = 1, max = 1 });
             Loot(orc, NewMaterial("orc_tusk", "오크 엄니", 10, new Color(0.95f, 0.9f, 0.75f)), 0.75f);
 
+            // Beast skills (P4-126, user request 2026-11-04), on top of the ones above.
+            bee.skillIds.Add("poison_sting");
+            serpent.skillIds.Add("poison_sting");
+            bat.skillIds.Add("drain");
+            larva.skillIds.Add("drain");
+            fungus.skillIds.Add("spores");
+            toad.skillIds.Add("tongue");
+            orc.skillIds.Add("frenzy");
+            rhino.skillIds.Add("frenzy");
+            goblinWarrior.skillIds.Add("warcry");
+            slimeKing.skillIds.Add("slime_burst");
+            yeti.skillIds.Add("blizzard");
+            raptor.skillIds.Add("pounce");
+            hornRabbit.skillIds.Add("pounce");
+
             // Their place in the food web: the prey run from these hunters.
             goblin.prey.Add(hornRabbit);
             bee.prey.Add(hornRabbit);

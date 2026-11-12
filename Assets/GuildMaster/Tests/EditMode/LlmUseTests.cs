@@ -11,7 +11,7 @@ namespace GuildMaster.Tests
             Assert.That(LlmUse.Allows(LlmFeature.Recruit), Is.True);
             Assert.That(LlmUse.Allows(LlmFeature.Counsel), Is.True);
             foreach (var f in new[] { LlmFeature.TownTalk, LlmFeature.Decision, LlmFeature.Party, LlmFeature.Split, LlmFeature.Skill,
-                                      LlmFeature.Proposal, LlmFeature.Persuasion, LlmFeature.EventCard })
+                                      LlmFeature.Proposal, LlmFeature.Persuasion })
             {
                 Assert.That(LlmUse.Allows(f), Is.False, f.ToString());
                 Assert.That(LlmUse.Gateway(f, null), Is.Null);

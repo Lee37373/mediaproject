@@ -27,6 +27,8 @@ namespace GuildMaster.Visuals
         {
             public string key;
             public Sprite sprite;
+            /// <summary>The same monster as separate parts (the pack's prefab, P4-128): moved in code so its weapon swings.</summary>
+            public GameObject parts;
         }
 
         /// <summary>

@@ -55,7 +55,8 @@ namespace GuildMaster.Tests
             yield return Await(first);
             Assert.That(first.Result.Ok, Is.False);
             Assert.That(first.Result.Error, Is.EqualTo("timeout"));
-            Assert.That(_fake.Cancels, Is.GreaterThan(0), "the backend was told to stop");
+            // Not cancelled natively (KMS 2026-09-30: a cancel mid-generation wedged the service); it is set aside instead.
+            Assert.That(_fake.Cancels, Is.EqualTo(0), "the generation is left to end by itself");
 
             // Still running natively: the next request does not pile a second generation on top.
             var second = _gateway.RequestAsync(Request(0.3f));

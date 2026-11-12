@@ -3,13 +3,23 @@ using System.Collections.Generic;
 using System.Linq;
 using GuildMaster.Adventurers;
 using GuildMaster.Seasons;
+using GuildMaster.Social;
 using GuildMaster.Storytelling;
 using UnityEngine;
 
 namespace GuildMaster.Dilemmas
 {
-    /// <summary>What a choice does, roughly — all the card shows of it (user decision 2026-10-30: the direction only).</summary>
-    public enum DilemmaHint { GoldUp, GoldDown, MoodUp, MoodDown, FameUp, FameDown, StockUp, StockDown, Growth, Tired, Risk, Later, Leaving }
+    /// <summary>
+    /// What a choice does, roughly — all the card shows of it (user decision 2026-10-30: the direction only). Town: what the
+    /// townsfolk think of the guild (P4-118, from the event cards).
+    /// </summary>
+    public enum DilemmaHint { GoldUp, GoldDown, MoodUp, MoodDown, FameUp, FameDown, StockUp, StockDown, Growth, Tired, Risk, Later, Leaving, TownUp, TownDown }
+
+    /// <summary>
+    /// How a decision's result reads (P4-118, from KMS's event cards — user request 2026-11-01: success green, failure red, a
+    /// sound each). A rolled choice succeeds or fails; a sure one is good, bad or neither by what it does.
+    /// </summary>
+    public enum DilemmaTone { Neutral, Success, Failure, Good, Bad }
 
     /// <summary>Whom a card is about, picked from the guild when it is dealt.</summary>
     public enum DilemmaCast
@@ -27,6 +37,8 @@ namespace GuildMaster.Dilemmas
         NewcomerAndVeteran,
         /// <summary>One idle in town, not worn out.</summary>
         InTown,
+        /// <summary>The member with the weakest gear who can still be geared up (P4-118).</summary>
+        WeakestGear,
     }
 
     /// <summary>What the guild knows and has when a card might be dealt (everything here is the guild's own: information hiding).</summary>
@@ -37,6 +49,10 @@ namespace GuildMaster.Dilemmas
         public int Gold;
         public int Members;
         public bool Rivals, Friends, Veteran, NewcomerAndVeteran, InTown;
+        /// <summary>Someone could wear better gear (<see cref="DilemmaCast.WeakestGear"/>).</summary>
+        public bool GearUp;
+        /// <summary>The town has its residents (cards that are about one of them).</summary>
+        public bool Residents;
         /// <summary>A standing village the guild knows, by name; null if none.</summary>
         public string Village;
         /// <summary>A kind of monster the guild knows, by name; null if none.</summary>
@@ -52,6 +68,7 @@ namespace GuildMaster.Dilemmas
             DilemmaCast.TwoFriends => Friends,
             DilemmaCast.Veteran => Veteran,
             DilemmaCast.NewcomerAndVeteran => NewcomerAndVeteran,
+            DilemmaCast.WeakestGear => GearUp,
             _ => InTown,
         };
     }
@@ -91,6 +108,23 @@ namespace GuildMaster.Dilemmas
         void FollowUp(string id, float hours);
         /// <summary>A line of what came of it.</summary>
         void Tell(string text);
+
+        // ---- From KMS's event cards (P4-118) ----
+
+        /// <summary>The member's level (1 if they are gone).</summary>
+        int Level(int actor);
+        /// <summary>What the townsfolk think of the guild: every resident's opinion, or one resident's (<paramref name="residentId"/>).</summary>
+        void Standing(int amount, string residentId = null);
+        /// <summary>Word goes round the town: the card's members and the town's chatterboxes know it; <paramref name="tone"/> is how it reflects on the guild and on them (-1..1).</summary>
+        void Rumor(string text, int tone = 0);
+        /// <summary>A passing feeling over <paramref name="actor"/>'s head (-1: every member) for <paramref name="hours"/>.</summary>
+        void Feel(int actor, Emotion feeling, float hours = 5f);
+        /// <summary>The member's gear goes one tier up. False if there is nothing better for them.</summary>
+        bool GearUp(int actor);
+        /// <summary>A seasoned wanderer comes to the door, stronger than the guild's best; <paramref name="welcomed"/>: already well disposed. False if nobody could.</summary>
+        bool Wanderer(bool welcomed);
+        /// <summary>For a rolled choice: did it go well (the result shows green ✔ or red ✘).</summary>
+        void Outcome(bool success);
     }
 
     public sealed class DilemmaChoice
@@ -124,6 +158,10 @@ namespace GuildMaster.Dilemmas
     /// words with names filled in, 24 game hours to answer before the default, a window of their own). The storyteller deals
     /// none to two a day; each is a choice the guild has to make that costs something either way. Pure: the catalogue, when a
     /// card can come, how it reads. <see cref="DilemmaService"/> deals them and carries the choice out.
+    /// P4-118 (user decision 2026-11-02): KMS's event cards (F-13) are folded in — the five that were like ones here became
+    /// one card each (duel, theft, wanderer, feast, shady trader), the other five came over (noble, plague, birthday, Toby,
+    /// two friends), with their effects on the townsfolk, rumours, feelings, gear and a seasoned wanderer, and their result
+    /// colours. A dealt card opens its window and the game waits (<see cref="DilemmaService.AutoOpen"/>).
     /// </summary>
     public static class DilemmaRules
     {
@@ -140,6 +178,14 @@ namespace GuildMaster.Dilemmas
         /// <summary>A card of the season weighs this much more in the draw, in its season.</summary>
         public const float SeasonWeight = 2f;
         public const int MaxHistory = 12;
+        /// <summary>A wanderer the guild threw a feast for starts the recruit talk this warm.</summary>
+        public const int WelcomedAffinity = 60;
+        /// <summary>Residents the cards are about, and the two who pass every rumour on.</summary>
+        public const string Greta = "RES_greta", Mari = "RES_mari", Bartol = "RES_bartol", Toby = "RES_toby";
+        public static readonly string[] Chatterboxes = { "RES_elly", "RES_bartol" };
+
+        /// <summary>Chance the first of two wins a duel: even at the same level, ten points per level between them.</summary>
+        public static float DuelChance(int levelA, int levelB) => Mathf.Clamp(0.5f + 0.1f * (levelA - levelB), 0.2f, 0.8f);
 
         /// <summary>Chance a card is dealt at a deal hour: the storyteller deals more in the quiet, fewer when it holds back.</summary>
         public static float DealChance(StoryPhase phase) => phase switch
@@ -165,24 +211,43 @@ namespace GuildMaster.Dilemmas
 
         // ---------------- Words ----------------
 
-        public static string HintText(DilemmaHint h) => h switch
-        {
-            DilemmaHint.GoldUp => "골드 ↑",
-            DilemmaHint.GoldDown => "골드 ↓",
-            DilemmaHint.MoodUp => "기분 ↑",
-            DilemmaHint.MoodDown => "기분 ↓",
-            DilemmaHint.FameUp => "명성 ↑",
-            DilemmaHint.FameDown => "명성 ↓",
-            DilemmaHint.StockUp => "물자 ↑",
-            DilemmaHint.StockDown => "물자 ↓",
-            DilemmaHint.Growth => "성장",
-            DilemmaHint.Tired => "피로",
-            DilemmaHint.Risk => "운에 맡김",
-            DilemmaHint.Later => "나중에 무슨 일이",
-            _ => "누군가 떠날 수도",
-        };
+        /// <summary>A hint's words (the window shows them as chips, <see cref="DilemmaChips"/>).</summary>
+        public static string HintText(DilemmaHint h) => DilemmaChips.Of(h).Text;
 
         public static string Hints(IReadOnlyList<DilemmaHint> hints) => hints.Count == 0 ? "변화 없음" : string.Join(" · ", hints.Select(HintText));
+
+        // ---------------- How a result reads ----------------
+
+        static bool IsGoodHint(DilemmaHint h) => h is DilemmaHint.GoldUp or DilemmaHint.MoodUp or DilemmaHint.FameUp or DilemmaHint.StockUp
+                                                 or DilemmaHint.Growth or DilemmaHint.TownUp;
+        static bool IsBadHint(DilemmaHint h) => h is DilemmaHint.GoldDown or DilemmaHint.MoodDown or DilemmaHint.FameDown or DilemmaHint.StockDown
+                                                or DilemmaHint.Tired or DilemmaHint.Leaving or DilemmaHint.TownDown;
+
+        /// <summary>
+        /// A rolled choice reads by how the roll went (<paramref name="outcome"/>); a sure one by what it does — a clear gain
+        /// good, a clear loss bad, a trade (gold for everyone's spirits) or a gamble whose end is still to come neither.
+        /// </summary>
+        public static DilemmaTone ToneOf(DilemmaChoice c, bool? outcome)
+        {
+            if (outcome.HasValue) return outcome.Value ? DilemmaTone.Success : DilemmaTone.Failure;
+            if (c == null || c.Hints.Contains(DilemmaHint.Risk) || c.Hints.Contains(DilemmaHint.Later)) return DilemmaTone.Neutral;
+            bool good = c.Hints.Any(IsGoodHint), bad = c.Hints.Any(IsBadHint);
+            return good == bad ? DilemmaTone.Neutral : good ? DilemmaTone.Good : DilemmaTone.Bad;
+        }
+
+        /// <summary>The line over a result: "✔ 성공" and the like; empty for a plain one.</summary>
+        public static string Badge(DilemmaTone t) => t switch
+        {
+            DilemmaTone.Success => "✔ 성공",
+            DilemmaTone.Failure => "✘ 실패",
+            DilemmaTone.Good => "▲ 좋은 결과",
+            DilemmaTone.Bad => "▼ 아쉬운 결과",
+            _ => "",
+        };
+
+        /// <summary>Green for a success or a good result, red for a failure or a bad one.</summary>
+        public static bool IsGood(DilemmaTone t) => t is DilemmaTone.Success or DilemmaTone.Good;
+        public static bool IsBad(DilemmaTone t) => t is DilemmaTone.Failure or DilemmaTone.Bad;
 
         /// <summary>Fills a template: {0} {1} names, {g0}.. gold, {v} village, {s} kind, each with its particles.</summary>
         public static string Fill(string text, IReadOnlyList<string> names, IReadOnlyList<int> gold, string village, string species)
@@ -213,7 +278,8 @@ namespace GuildMaster.Dilemmas
 
         const DilemmaHint GoldUp = DilemmaHint.GoldUp, GoldDown = DilemmaHint.GoldDown, MoodUp = DilemmaHint.MoodUp, MoodDown = DilemmaHint.MoodDown,
             FameUp = DilemmaHint.FameUp, FameDown = DilemmaHint.FameDown, StockUp = DilemmaHint.StockUp, StockDown = DilemmaHint.StockDown,
-            Growth = DilemmaHint.Growth, Tired = DilemmaHint.Tired, Risk = DilemmaHint.Risk, Later = DilemmaHint.Later, Leaving = DilemmaHint.Leaving;
+            Growth = DilemmaHint.Growth, Tired = DilemmaHint.Tired, Risk = DilemmaHint.Risk, Later = DilemmaHint.Later, Leaving = DilemmaHint.Leaving,
+            TownUp = DilemmaHint.TownUp, TownDown = DilemmaHint.TownDown;
 
         public const string Potion = Data.DefaultContent.Potion;
         public const string Ore = "iron_ore";
@@ -223,19 +289,24 @@ namespace GuildMaster.Dilemmas
             // ---- Among the members ----
             new()
             {
-                Id = "duel", Title = "결투 신청", Cast = DilemmaCast.TwoRivals, Gold = new[] { 40 }, Default = 2,
-                Text = "{0}이(가) {1}에게 결투를 신청했습니다. 둘 사이가 좋지 않다는 건 다들 압니다.",
+                Id = "duel", Title = "결투 신청", Cast = DilemmaCast.TwoRivals, Gold = new[] { 40 }, Default = 3,
+                Text = "{0}이(가) 길드 앞마당에서 {1}에게 결투를 신청했습니다. 둘 사이에 쌓인 앙금이 터지기 직전입니다.",
                 Choices = new[]
                 {
                     C("결투를 허락한다", e =>
                     {
-                        int won = e.Chance(0.5f) ? 0 : 1, lost = 1 - won;
+                        // Their levels decide it (from the event card).
+                        int won = e.Chance(DuelChance(e.Level(0), e.Level(1))) ? 0 : 1, lost = 1 - won;
                         e.Think(won, ThoughtRules.DuelWon, lost);
                         e.Think(lost, ThoughtRules.DuelLost, won);
+                        e.Feel(won, Emotion.Excited);
+                        e.Feel(lost, Emotion.Angry);
                         e.Stress(won, -10f);
                         e.Fatigue(lost, 20f);
                         e.Relate(0, 1, 10);
                         e.Relate(1, 0, 10);
+                        e.Rumor(won == 0 ? "{0}이(가) 결투에서 {1}을(를) 꺾었다" : "{1}이(가) 결투에서 {0}을(를) 꺾었다");
+                        e.Outcome(won == 0);
                         e.Tell(won == 0 ? "{0}이(가) 이겼습니다. 한바탕 붙고 나니 앙금이 조금 풀렸습니다." : "{1}이(가) 이겼습니다. 한바탕 붙고 나니 앙금이 조금 풀렸습니다.");
                     }, MoodUp, MoodDown, Risk),
                     Paid(0, "훈련장에서 정식 시합으로 ({g0}G)", e =>
@@ -247,11 +318,24 @@ namespace GuildMaster.Dilemmas
                         e.Relate(1, 0, 15);
                         e.Tell("둘은 땀을 흘린 뒤 악수했습니다.");
                     }, GoldDown, MoodUp),
+                    C("직접 중재한다", e =>
+                    {
+                        bool ok = e.Chance(0.6f);
+                        e.Relate(0, 1, ok ? 12 : -6);
+                        e.Relate(1, 0, ok ? 12 : -6);
+                        e.Stress(0, ok ? -5f : 5f);
+                        e.Stress(1, ok ? -5f : 5f);
+                        e.Feel(0, ok ? Emotion.Happy : Emotion.Angry);
+                        e.Feel(1, ok ? Emotion.Happy : Emotion.Angry);
+                        e.Outcome(ok);
+                        e.Tell(ok ? "길드 마스터의 중재로 둘이 마지못해 악수했습니다." : "중재는 실패했습니다. 둘 다 길드 마스터가 상대 편을 든다고 여깁니다.");
+                    }, MoodUp, MoodDown, Risk),
                     C("말린다", e =>
                     {
                         e.Think(0, ThoughtRules.DecisionDispleased);
                         e.Think(1, ThoughtRules.DecisionDispleased);
-                        e.Tell("둘은 씩씩대며 물러났습니다.");
+                        e.Feel(0, Emotion.Angry);
+                        e.Tell("결투는 막았지만 둘은 씩씩대며 물러났습니다.");
                     }, MoodDown),
                 },
             },
@@ -280,9 +364,9 @@ namespace GuildMaster.Dilemmas
             },
             new()
             {
-                Id = "theft", Title = "사라진 돈", Cast = DilemmaCast.Anyone, Gold = new[] { 60, 20 }, Default = 0,
+                Id = "theft", Title = "금고 도둑", Cast = DilemmaCast.InTown, Gold = new[] { 60, 20 }, Default = 0,
                 When = f => f.Gold >= 120,
-                Text = "금고에서 {g0}G가 사라졌습니다. 몇몇은 {0}을(를) 의심합니다.",
+                Text = "금고에서 {g0}G가 사라졌습니다. {0}은(는) 골목으로 달아나는 그림자를 봤다고 하지만, 몇몇은 오히려 {0}을(를) 의심합니다.",
                 Choices = new[]
                 {
                     C("덮어 둔다 (-{g0}G)", e =>
@@ -290,28 +374,55 @@ namespace GuildMaster.Dilemmas
                         e.Gold(-e.G(0));
                         e.Tell("사라진 돈은 장부에서 지웠습니다.");
                     }, GoldDown),
-                    Paid(1, "조사한다 ({g1}G)", e =>
+                    C("{0}에게 쫓게 한다", e =>
+                    {
+                        e.Fatigue(0, 15f);
+                        if (e.Chance(0.6f))
+                        {
+                            e.Feel(0, Emotion.Excited);
+                            e.Standing(2);
+                            e.Rumor("{0}이(가) 길드 금고를 턴 도둑을 잡았다", 1);
+                            e.Outcome(true);
+                            e.Tell("{0}이(가) 도둑을 붙잡아 돈을 되찾았습니다!");
+                        }
+                        else
+                        {
+                            e.Gold(-e.G(0));
+                            e.Feel(0, Emotion.Angry);
+                            e.Outcome(false);
+                            e.Tell("도둑을 놓쳤고 {g0}G를 잃었습니다.");
+                        }
+                    }, Tired, TownUp, Risk),
+                    Paid(1, "경비대에 조사를 맡긴다 ({g1}G)", e =>
                     {
                         e.Gold(-e.G(1));
-                        if (e.Chance(0.6f)) e.Tell("범인은 지나가던 날품팔이였습니다. 돈을 되찾았습니다.");
+                        bool ok = e.Chance(0.6f);
+                        e.Outcome(ok);
+                        if (ok)
+                        {
+                            e.Standing(5, Greta);
+                            e.Tell("경비병 그레타가 범인을 잡았습니다. 지나가던 날품팔이였고, 돈을 되찾았습니다.");
+                        }
                         else
                         {
                             e.Gold(-e.G(0));
                             e.Think(0, ThoughtRules.Accused);
                             e.Tell("범인은 끝내 못 찾았고, {0}은(는) 의심받은 것에 상처받았습니다.");
                         }
-                    }, GoldDown, Risk),
+                    }, GoldDown, TownUp, Risk),
                     C("{0}을(를) 불러 추궁한다", e =>
                     {
                         if (e.Chance(0.35f))
                         {
                             e.Think(0, ThoughtRules.DecisionDispleased);
+                            e.Outcome(true);
                             e.Tell("{0}이(가) 결국 털어놓고 돈을 돌려놓았습니다.");
                             return;
                         }
                         e.Gold(-e.G(0));
                         e.Think(0, ThoughtRules.Accused);
                         e.Stress(0, 20f);
+                        e.Outcome(false);
                         if (e.Chance(0.3f)) e.Depart(0, "누명에 화가 난 {0}이(가) 길드를 떠났습니다.");
                         else e.Tell("{0}은(는) 결백을 주장했고, 돈은 끝내 나오지 않았습니다.");
                     }, MoodDown, Risk, Leaving),
@@ -392,11 +503,13 @@ namespace GuildMaster.Dilemmas
                         if (e.Chance(0.3f))
                         {
                             e.Fame(-4);
+                            e.Outcome(false);
                             e.Tell("부풀린 이야기가 들통나 길드가 웃음거리가 됐습니다.");
                         }
                         else
                         {
                             e.Fame(4);
+                            e.Outcome(true);
                             e.Tell("소문 덕에 길드 이름이 조금 알려졌습니다.");
                         }
                     }, FameUp, Risk),
@@ -404,6 +517,59 @@ namespace GuildMaster.Dilemmas
                     {
                         e.Think(0, ThoughtRules.DecisionDispleased);
                         e.Tell("{0}은(는) 머쓱해하며 이야기를 고쳐 말했습니다.");
+                    }, MoodDown),
+                },
+            },
+            new()
+            {
+                Id = "birthday", Title = "{0}의 생일", Cast = DilemmaCast.Anyone, Gold = new[] { 30 }, Default = 2,
+                Text = "오늘은 {0}의 생일입니다. 본인은 아무렇지 않은 척하지만 은근히 기대하는 눈치입니다.",
+                Choices = new[]
+                {
+                    Paid(0, "선물을 사 준다 ({g0}G)", e =>
+                    {
+                        e.Gold(-e.G(0));
+                        e.Stress(0, -15f);
+                        e.Feel(0, Emotion.Happy, 8f);
+                        e.Tell("{0}이(가) 선물을 받고 환하게 웃었습니다.");
+                    }, GoldDown, MoodUp),
+                    C("축하한다는 말만 건넨다", e =>
+                    {
+                        e.Stress(0, -5f);
+                        e.Feel(0, Emotion.Happy, 3f);
+                        e.Tell("{0}이(가) 쑥스러워하며 고맙다고 합니다.");
+                    }, MoodUp),
+                    C("모른 척한다", e =>
+                    {
+                        e.Stress(0, 6f);
+                        e.Feel(0, Emotion.Sad, 8f);
+                        e.Tell("{0}이(가) 하루 종일 시무룩합니다.");
+                    }, MoodDown),
+                },
+            },
+            new()
+            {
+                Id = "bond", Title = "의기투합", Cast = DilemmaCast.TwoFriends, Default = 1,
+                Text = "{0}와(과) {1}은(는) 요즘 늘 붙어 다닙니다. 앞으로도 같은 조로 의뢰를 다니고 싶다고 합니다.",
+                Choices = new[]
+                {
+                    C("한 조로 밀어 준다", e =>
+                    {
+                        e.Relate(0, 1, 8);
+                        e.Relate(1, 0, 8);
+                        e.Stress(0, -3f);
+                        e.Stress(1, -3f);
+                        e.Feel(0, Emotion.Happy);
+                        e.Feel(1, Emotion.Happy);
+                        e.Tell("둘은 신이 나서 함께 다닐 계획을 세웁니다.");
+                    }, MoodUp),
+                    C("공과 사는 구분하라고 한다", e =>
+                    {
+                        e.Relate(0, 1, -2);
+                        e.Relate(1, 0, -2);
+                        e.Stress(0, 2f);
+                        e.Stress(1, 2f);
+                        e.Tell("둘은 아쉬운 얼굴로 고개를 끄덕였습니다.");
                     }, MoodDown),
                 },
             },
@@ -457,8 +623,8 @@ namespace GuildMaster.Dilemmas
             },
             new()
             {
-                Id = "feast_fund", Title = "마을 잔치", Cast = DilemmaCast.None, Gold = new[] { 150, 50 }, Default = 2,
-                Text = "마을이 잔치를 열자며 길드에 비용을 나눠 내 달라고 합니다.",
+                Id = "feast_fund", Title = "마을 잔치", Cast = DilemmaCast.None, Gold = new[] { 150, 50 }, Default = 3,
+                Text = "촌장 바르톨이 마을 잔치를 열자며 길드도 비용을 나눠 내 달라고 합니다.",
                 Choices = new[]
                 {
                     Paid(0, "넉넉히 낸다 ({g0}G)", e =>
@@ -467,20 +633,134 @@ namespace GuildMaster.Dilemmas
                         e.Fame(5);
                         e.Think(-1, ThoughtRules.TownFeast);
                         e.Stress(-1, -10f);
-                        e.Tell("성대한 잔치가 열렸고 길드원들도 실컷 즐겼습니다.");
-                    }, GoldDown, FameUp, MoodUp),
-                    Paid(1, "조금 낸다 ({g1}G)", e =>
+                        e.Feel(-1, Emotion.Happy);
+                        e.Standing(4);
+                        e.Standing(8, Bartol);
+                        e.Tell("성대한 잔치가 열렸고 길드원들도 실컷 즐겼습니다. 촌장도 흡족해합니다.");
+                    }, GoldDown, FameUp, MoodUp, TownUp),
+                    Paid(1, "조금 보탠다 ({g1}G)", e =>
                     {
                         e.Gold(-e.G(1));
-                        e.Stress(-1, -3f);
-                        e.Tell("조촐한 잔치가 열렸습니다.");
-                    }, GoldDown, MoodUp),
+                        e.Stress(-1, -5f);
+                        e.Feel(-1, Emotion.Happy, 3f);
+                        e.Standing(1);
+                        e.Standing(3, Bartol);
+                        e.Tell("조촐한 잔치가 열렸습니다. 길드원들도 한숨 돌렸습니다.");
+                    }, GoldDown, MoodUp, TownUp),
+                    C("길드원들만 보낸다", e =>
+                    {
+                        e.Stress(-1, -5f);
+                        e.Standing(-1);
+                        e.Standing(-4, Bartol);
+                        e.Tell("길드원들은 즐거웠지만, 촌장은 길드가 인색하다고 투덜댑니다.");
+                    }, MoodUp, TownDown),
                     C("거절한다", e =>
                     {
                         e.Fame(-2);
                         e.Think(-1, ThoughtRules.DecisionDispleased);
-                        e.Tell("잔치는 열리지 않았습니다.");
-                    }, FameDown, MoodDown),
+                        e.Standing(-3, Bartol);
+                        e.Tell("잔치는 길드 없이 열렸습니다. 길드원들이 창문 너머로 부러운 듯 바라봅니다.");
+                    }, FameDown, MoodDown, TownDown),
+                },
+            },
+            new()
+            {
+                Id = "noble", Title = "귀족의 무모한 부탁", Cast = DilemmaCast.None, Gold = new[] { 150, 80 }, Default = 2,
+                Text = "이웃 영지의 젊은 귀족이 금화 주머니를 흔들며, 길드원들을 데리고 몬스터 둥지를 구경하겠다고 합니다. 위험하기 짝이 없는 일입니다.",
+                Choices = new[]
+                {
+                    C("받는다 (+{g0}G)", e =>
+                    {
+                        e.Gold(e.G(0));
+                        e.Stress(-1, 8f);
+                        e.Standing(-2);
+                        e.Rumor("길드가 귀족의 위험한 나들이를 맡았다");
+                        e.Tell("두둑한 돈을 받았지만 길드원들은 귀족을 지키느라 진땀을 뺐습니다.");
+                    }, GoldUp, MoodDown, TownDown),
+                    C("조건을 깎는다", e =>
+                    {
+                        bool ok = e.Chance(0.6f);
+                        e.Outcome(ok);
+                        if (ok)
+                        {
+                            e.Gold(e.G(1));
+                            e.Stress(-1, 3f);
+                            e.Tell("덜 위험한 길로 돌아가는 조건으로 {g1}G를 받았습니다.");
+                        }
+                        else
+                        {
+                            e.Rumor("귀족이 길드와 흥정하다 화를 내고 떠났다");
+                            e.Tell("귀족은 기분이 상해 떠났습니다.");
+                        }
+                    }, GoldUp, Risk),
+                    C("거절한다", e =>
+                    {
+                        e.Stress(-1, -2f);
+                        e.Tell("길드원들이 안도의 한숨을 쉬었습니다.");
+                    }, MoodUp),
+                },
+            },
+            new()
+            {
+                Id = "plague", Title = "역병의 조짐", Cast = DilemmaCast.InTown, Gold = new[] { 60 }, Default = 2,
+                When = f => f.Residents,
+                Text = "마을에 기침하는 사람이 부쩍 늘었습니다. 약초상 마리가 약을 지을 약초가 모자란다며 길드에 도움을 청합니다.",
+                Choices = new[]
+                {
+                    Paid(0, "약초 값을 댄다 ({g0}G)", e =>
+                    {
+                        e.Gold(-e.G(0));
+                        e.Standing(5);
+                        e.Standing(10, Mari);
+                        e.Rumor("길드가 역병 약값을 댔다", 1);
+                        e.Tell("마리가 약을 지어 돌렸고, 마을 사람들이 길드를 칭찬합니다.");
+                    }, GoldDown, TownUp),
+                    C("{0}을(를) 보내 약초를 캔다", e =>
+                    {
+                        e.Fatigue(0, 25f);
+                        e.Standing(4);
+                        e.Standing(8, Mari);
+                        e.Feel(0, Emotion.Happy);
+                        e.Rumor("{0}이(가) 역병 약초를 캐 왔다", 1);
+                        e.Tell("{0}이(가) 지친 몸으로 약초 바구니를 가득 채워 왔습니다.");
+                    }, Tired, TownUp),
+                    C("모른 척한다", e =>
+                    {
+                        e.Standing(-5);
+                        e.Standing(-10, Mari);
+                        e.Rumor("길드가 역병을 모른 척했다", -1);
+                        e.Tell("마리는 실망한 얼굴로 돌아갔습니다.");
+                    }, TownDown),
+                },
+            },
+            new()
+            {
+                Id = "toby", Title = "꼬마 토비의 부탁", Cast = DilemmaCast.InTown, Gold = new[] { 20 }, Default = 2,
+                When = f => f.Residents,
+                Text = "꼬마 토비가 {0}의 옷자락을 붙잡고, 진짜 모험가의 훈련을 구경하게 해 달라고 조릅니다.",
+                Choices = new[]
+                {
+                    C("훈련을 보여 준다", e =>
+                    {
+                        e.Standing(12, Toby);
+                        e.Standing(1);
+                        e.Fatigue(0, 5f);
+                        e.Feel(0, Emotion.Happy);
+                        e.Tell("토비가 눈을 반짝이며 {0}의 몸놀림을 따라 합니다.");
+                    }, TownUp, Tired),
+                    Paid(0, "목검을 하나 사 준다 ({g0}G)", e =>
+                    {
+                        e.Gold(-e.G(0));
+                        e.Standing(20, Toby);
+                        e.Standing(2);
+                        e.Rumor("길드가 토비에게 목검을 사 줬다", 1);
+                        e.Tell("토비가 목검을 들고 온 마을을 뛰어다닙니다.");
+                    }, GoldDown, TownUp),
+                    C("위험하다며 돌려보낸다", e =>
+                    {
+                        e.Standing(-6, Toby);
+                        e.Tell("토비가 입을 삐죽 내밀고 돌아갔습니다.");
+                    }, TownDown),
                 },
             },
             new()
@@ -542,7 +822,9 @@ namespace GuildMaster.Dilemmas
                 {
                     C("결과를 듣는다", e =>
                     {
-                        if (e.Chance(0.6f))
+                        bool ok = e.Chance(0.6f);
+                        e.Outcome(ok);
+                        if (ok)
                         {
                             e.Gold(e.G(0) * 2);
                             e.Tell("교역이 잘되어 투자금의 두 배를 돌려받았습니다.");
@@ -642,26 +924,41 @@ namespace GuildMaster.Dilemmas
             },
             new()
             {
-                Id = "wanderer", Title = "떠돌이 검사", Cast = DilemmaCast.None, Gold = new[] { 20, 60, 40 }, Default = 0,
-                Text = "떠돌이 검사가 길드에서 하룻밤 묵어 가길 청합니다.",
+                Id = "wanderer", Title = "떠돌이 실력자", Cast = DilemmaCast.None, Gold = new[] { 40, 20, 60, 40 }, Default = 2,
+                Text = "이름난 떠돌이 검사가 하룻밤 묵어 가길 청합니다. 길드에 들어올지는 그의 마음에 달렸습니다.",
                 Choices = new[]
                 {
-                    C("재워 준다 (-{g0}G)", e =>
+                    Paid(0, "환영 연회를 연다 ({g0}G)", e =>
                     {
                         e.Gold(-e.G(0));
-                        if (e.Chance(0.4f) && e.Visitor()) e.Tell("떠돌이는 길드가 마음에 든 눈치입니다. 광장에서 이야기를 나눠 보세요.");
+                        e.Stress(-1, -3f);
+                        e.Feel(-1, Emotion.Happy, 3f);
+                        e.Tell(e.Wanderer(welcomed: true)
+                            ? "연회 덕분에 그가 길드를 좋게 보고 있습니다. 광장에서 말을 걸어 권유해 보세요."
+                            : "연회는 즐거웠지만 그는 서둘러 길을 떠났습니다.");
+                    }, GoldDown, MoodUp),
+                    C("재워 준다 (-{g1}G)", e =>
+                    {
+                        e.Gold(-e.G(1));
+                        if (e.Chance(0.4f) && e.Wanderer(welcomed: false))
+                        {
+                            e.Outcome(true);
+                            e.Tell("그가 길드에 관심을 보입니다. 영입하려면 광장에서 직접 설득해야 합니다.");
+                        }
                         else if (e.Chance(0.6f))
                         {
-                            e.Gold(e.G(1));
-                            e.Tell("떠돌이는 떠나며 넉넉한 사례를 남겼습니다.");
+                            e.Gold(e.G(2));
+                            e.Outcome(true);
+                            e.Tell("그는 떠나며 넉넉한 사례를 남겼습니다.");
                         }
                         else
                         {
-                            e.Gold(-e.G(2));
-                            e.Tell("아침에 보니 떠돌이와 함께 은수저가 사라졌습니다.");
+                            e.Gold(-e.G(3));
+                            e.Outcome(false);
+                            e.Tell("아침에 보니 그와 함께 은수저가 사라졌습니다.");
                         }
                     }, GoldDown, Risk),
-                    C("거절한다", e => e.Tell("떠돌이는 다른 숙소를 찾아갔습니다.")),
+                    C("거절한다", e => e.Tell("그는 술집에서 하룻밤을 보내고 떠났습니다.")),
                 },
             },
             new()
@@ -687,18 +984,44 @@ namespace GuildMaster.Dilemmas
             // ---- Traders ----
             new()
             {
-                Id = "contraband", Title = "수상한 거래", Cast = DilemmaCast.None, Gold = new[] { 60 }, Default = 1,
-                Text = "출처를 묻지 않는 조건으로 철광석 6개를 싸게 넘기겠다는 상인이 있습니다.",
+                Id = "contraband", Title = "수상한 상인", Cast = DilemmaCast.WeakestGear, Gold = new[] { 60, 60 }, Default = 3,
+                Text = "망토를 깊게 눌러쓴 상인이 출처를 묻지 않는 조건으로 철광석 6개를 싸게 넘기겠답니다. '마법이 깃든 장비'도 있다며 {0}에게 눈짓합니다.",
                 Choices = new[]
                 {
-                    Paid(0, "산다 ({g0}G)", e =>
+                    Paid(0, "철광석을 산다 ({g0}G)", e =>
                     {
                         e.Gold(-e.G(0));
                         e.Stock(Ore, 6);
                         if (e.Chance(0.35f)) e.FollowUp("contraband_rumour", 24f);
                         e.Tell("철광석 6개를 창고에 넣었습니다.");
                     }, GoldDown, StockUp, Risk),
-                    C("거절한다", e => e.Tell("상인은 다른 손님을 찾아갔습니다.")),
+                    Paid(1, "{0}에게 장비를 사 준다 ({g1}G)", e =>
+                    {
+                        e.Gold(-e.G(1));
+                        if (!e.Chance(0.5f))
+                        {
+                            e.Feel(0, Emotion.Sad);
+                            e.Standing(-1);
+                            e.Rumor("길드가 떠돌이 상인에게 가짜 장비를 샀다", -1);
+                            e.Outcome(false);
+                            e.Tell("가짜였습니다. 상인은 이미 사라졌습니다.");
+                        }
+                        else if (e.GearUp(0))
+                        {
+                            e.Feel(0, Emotion.Excited);
+                            e.Outcome(true);
+                            e.Tell("진짜였습니다! {0}의 장비가 한 단계 좋아졌습니다.");
+                        }
+                        else e.Tell("진짜였지만, {0}은(는) 이미 그보다 좋은 장비를 쓰고 있었습니다.");
+                    }, GoldDown, Growth, Risk),
+                    C("경비병에게 알린다", e =>
+                    {
+                        e.Standing(2);
+                        e.Standing(8, Greta);
+                        e.Rumor("길드가 수상한 상인을 경비대에 알렸다", 1);
+                        e.Tell("경비병 그레타가 상인을 마을 밖으로 쫓아냈습니다. 주민들이 고마워합니다.");
+                    }, TownUp),
+                    C("거절한다", e => e.Tell("상인은 투덜거리며 다른 손님을 찾아 떠났습니다.")),
                 },
             },
             new()

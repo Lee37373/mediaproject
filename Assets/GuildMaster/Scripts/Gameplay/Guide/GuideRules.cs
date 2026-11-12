@@ -7,11 +7,14 @@ using GuildMaster.Welfare;
 
 namespace GuildMaster.Guide
 {
-    /// <summary>The first things worth doing in a new game (F-19), in the order they are suggested.</summary>
-    public enum GuideStep { PostQuest, TalkVisitor, Counsel, Build, Relationships, EventCard }
+    /// <summary>
+    /// The first things worth doing in a new game (F-19), in the order they are suggested. The guild master does not post
+    /// quests (P4-82): the first step is a look at the board (P4-118, user 2026-11-02).
+    /// </summary>
+    public enum GuideStep { Board, TalkVisitor, Counsel, Build, Relationships, Decision }
 
     /// <summary>What clicking a hint opens.</summary>
-    public enum HintAction { None, Counsel, Visitor, QuestBoard, EventCard }
+    public enum HintAction { None, Counsel, Visitor, QuestBoard, Decision }
 
     /// <summary>One "do this now" line of the guide.</summary>
     public struct GuideHint
@@ -47,20 +50,20 @@ namespace GuildMaster.Guide
         public int IdleMembers;
         public int Gold;
         public bool RosterFull;
-        /// <summary>Title of the event card waiting for an answer (null = none).</summary>
+        /// <summary>Title of a decision card waiting for an answer (null = none).</summary>
         public string PendingCard;
     }
 
     /// <summary>
     /// "다음 할 일" (F-19, user request 2026-10-11): a short checklist of the first things to try, and hints about what
     /// needs the guild master right now — a member who is worn out, a visitor who is keen to join, an empty quest
-    /// board, an event card waiting. Pure rules, covered by EditMode tests.
+    /// board, a decision card waiting. Pure rules, covered by EditMode tests.
     /// </summary>
     public static class GuideRules
     {
         public static readonly GuideStep[] Order =
         {
-            GuideStep.PostQuest, GuideStep.TalkVisitor, GuideStep.Counsel, GuideStep.Build, GuideStep.Relationships, GuideStep.EventCard,
+            GuideStep.Board, GuideStep.TalkVisitor, GuideStep.Counsel, GuideStep.Build, GuideStep.Relationships, GuideStep.Decision,
         };
 
         public const int MaxHints = 4;
@@ -70,22 +73,22 @@ namespace GuildMaster.Guide
 
         public static string Title(GuideStep s) => s switch
         {
-            GuideStep.PostQuest => "의뢰 올리기",
+            GuideStep.Board => "의뢰 게시판 살펴보기",
             GuideStep.TalkVisitor => "방문자와 영입 대화하기",
             GuideStep.Counsel => "길드원 면담하기",
             GuideStep.Build => "건물 짓기·업그레이드",
             GuideStep.Relationships => "관계도 살펴보기",
-            _ => "사건 카드에 답하기",
+            _ => "결정 카드에 답하기",
         };
 
         public static string HowTo(GuideStep s) => s switch
         {
-            GuideStep.PostQuest => "Q 의뢰 게시판에서 의뢰를 올리거나 제안된 의뢰를 고르세요.",
+            GuideStep.Board => "Q 게시판에서 마을이 올린 의뢰를 보세요. 길드원들이 알아서 맡습니다.",
             GuideStep.TalkVisitor => "마을에 온 방문자를 클릭하고 [영입 대화]로 말을 걸어 보세요.",
             GuideStep.Counsel => "R 길드원 → [관리] → [면담]. 지친 길드원을 말로 다독여 주세요.",
             GuideStep.Build => "건물을 클릭해 업그레이드하거나 B 건설에서 새 건물을 지으세요.",
-            GuideStep.Relationships => "G 관계도에서 누가 누구와 친하고 사이가 나쁜지 보세요.",
-            _ => "하루 0~2번 사건이 생깁니다. 카드가 뜨면 선택지를 고르세요.",
+            GuideStep.Relationships => "V 관계도에서 누가 누구와 친하고 사이가 나쁜지 보세요.",
+            _ => "아침 9시와 저녁 5시에 정할 일이 생길 수 있습니다. 카드가 뜨면 선택지를 고르세요(J).",
         };
 
         /// <summary>The first step not done yet (null when all are done).</summary>
@@ -110,7 +113,7 @@ namespace GuildMaster.Guide
             var hints = new List<GuideHint>();
             if (s == null) return hints;
             if (!string.IsNullOrEmpty(s.PendingCard))
-                hints.Add(new GuideHint { Text = $"사건 카드가 답을 기다립니다: '{s.PendingCard}'", Action = HintAction.EventCard, Urgency = 5 });
+                hints.Add(new GuideHint { Text = $"결정 카드가 답을 기다립니다: '{s.PendingCard}'", Action = HintAction.Decision, Urgency = 5 });
             foreach (var m in s.Members)
             {
                 if (m.Demand != CareDemand.None)
@@ -133,7 +136,7 @@ namespace GuildMaster.Guide
                         Urgency = 3,
                     });
             if (s.OpenQuests == 0 && s.IdleMembers > 0)
-                hints.Add(new GuideHint { Text = $"게시판이 비어 쉬는 길드원이 {s.IdleMembers}명 있습니다. 의뢰를 올리세요.", Action = HintAction.QuestBoard, Urgency = 2 });
+                hints.Add(new GuideHint { Text = $"게시판이 비어 쉬는 길드원이 {s.IdleMembers}명 있습니다. 제안 카드에서 의뢰를 골라 맡겨 보세요.", Action = HintAction.QuestBoard, Urgency = 2 });
             if (s.Gold < LowGold)
                 hints.Add(new GuideHint { Text = $"자금이 {s.Gold}G뿐입니다. 창고 물건을 팔거나 보상이 적은 의뢰로 버티세요.", Urgency = 1 });
             // Stable: equal urgency keeps the order above.

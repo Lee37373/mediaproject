@@ -1,3 +1,4 @@
+using System;
 using GuildMaster.Core;
 using GuildMaster.Save;
 using GuildMaster.Session;
@@ -10,12 +11,12 @@ namespace GuildMaster.UI
     /// Save and load (P5-4, user decision 2026-10-04: manual saves in several slots). One row per
     /// slot: what it holds (day, hour, gold, members, when it was saved) with save / load / delete.
     /// Opened from the pause menu (save and load) and the title (load only). Overwriting and deleting
-    /// ask again: the button changes to a question for a few seconds and a second click does it.
+    /// ask in the shared question window, and so does loading another game during play while there
+    /// is unsaved progress (P6-1, user decision 2026-11-09). The exit warning opens it in "save, then
+    /// leave" mode for a game never saved (<see cref="ShowToSaveThen"/>).
     /// </summary>
     public class SaveLoadView : MonoBehaviour
     {
-        const float ConfirmSeconds = 3f;
-
         RectTransform _root;
         Text _title, _message;
         readonly Text[] _info = new Text[SaveService.SlotCount];
@@ -23,10 +24,8 @@ namespace GuildMaster.UI
         readonly Button[] _load = new Button[SaveService.SlotCount];
         readonly Button[] _delete = new Button[SaveService.SlotCount];
         bool _canSave;
-        /// <summary>A button waiting for its second click: which slot, what for, until when (real time).</summary>
-        int _confirmSlot = -1;
-        string _confirmAction;
-        float _confirmUntil;
+        /// <summary>Runs once a save succeeds (the exit warning's "save and leave"), then forgotten.</summary>
+        Action _afterSave;
 
         public bool IsOpen => _root != null && _root.gameObject.activeSelf;
 
@@ -63,10 +62,28 @@ namespace GuildMaster.UI
         /// <param name="canSave">False on the title screen (and after the game is over): loading only.</param>
         public void Show(bool canSave)
         {
+            _afterSave = null;
             _canSave = canSave && !(Services.TryGet<GameOverService>(out var over) && over.IsOver);
             _title.text = _canSave ? "저장 / 불러오기" : "불러오기";
             _message.text = _canSave ? "" : "불러올 저장을 고르세요.";
-            _confirmSlot = -1;
+            Open();
+        }
+
+        /// <summary>
+        /// "Save and leave" for a game never saved (P6-1): saving only, and a successful save runs
+        /// <paramref name="then"/>. Closing the window without saving leaves nothing behind.
+        /// </summary>
+        public void ShowToSaveThen(Action then)
+        {
+            _canSave = true;
+            _afterSave = then;
+            _title.text = "저장하고 나가기";
+            _message.text = "저장할 칸을 고르세요. 저장하면 바로 나갑니다.";
+            Open();
+        }
+
+        void Open()
+        {
             Refresh();
             if (IsOpen) return;
             MenuState.Push();
@@ -77,6 +94,7 @@ namespace GuildMaster.UI
         public void Hide()
         {
             if (!IsOpen) return;
+            _afterSave = null;
             _root.gameObject.SetActive(false);
             MenuState.Pop();
         }
@@ -92,87 +110,97 @@ namespace GuildMaster.UI
             return false;
         }
 
+        /// <summary>What a slot holds, in one or two lines (the slot rows and the questions).</summary>
+        public static string Describe(SlotInfo info) =>
+            !info.Exists ? "<color=#8a8494>비어 있음</color>"
+            : info.Problem != null ? $"<color=#f0705a>{info.Problem}</color>"
+            : $"{info.Summary.day}일차 {info.Summary.hour:00}시 · {info.Summary.gold:N0}G · 길드원 {info.Summary.members}명\n"
+              + $"<size=13><color=#a8a2b4>{info.SavedAt:yyyy-MM-dd HH:mm} 저장</color></size>";
+
         void Refresh()
         {
+            bool savingOnly = _afterSave != null;
             for (int i = 0; i < SaveService.SlotCount; i++)
             {
                 var info = SaveService.Peek(i);
                 bool usable = info.Exists && info.Problem == null;
-                _info[i].text = !info.Exists ? "<color=#8a8494>비어 있음</color>"
-                    : info.Problem != null ? $"<color=#f0705a>{info.Problem}</color>"
-                    : $"{info.Summary.day}일차 {info.Summary.hour:00}시 · {info.Summary.gold:N0}G · 길드원 {info.Summary.members}명\n"
-                      + $"<size=13><color=#a8a2b4>{info.SavedAt:yyyy-MM-dd HH:mm} 저장</color></size>";
+                _info[i].text = Describe(info);
                 _save[i].gameObject.SetActive(_canSave);
+                _load[i].gameObject.SetActive(!savingOnly);
+                _delete[i].gameObject.SetActive(!savingOnly);
                 _load[i].interactable = usable;
                 _delete[i].interactable = info.Exists;
-                SetLabel(_save[i], ConfirmingAt(i, "save") ? "덮어쓰기?" : "저장");
-                SetLabel(_delete[i], ConfirmingAt(i, "delete") ? "삭제?" : "삭제");
             }
-        }
-
-        static void SetLabel(Button b, string text)
-        {
-            var t = b.GetComponentInChildren<Text>();
-            if (t != null) t.text = text;
-        }
-
-        bool ConfirmingAt(int slot, string action)
-            => _confirmSlot == slot && _confirmAction == action && Time.unscaledTime < _confirmUntil;
-
-        /// <summary>First click on something that destroys a save: ask; second click within a few seconds: do it.</summary>
-        bool Confirmed(int slot, string action)
-        {
-            if (ConfirmingAt(slot, action))
-            {
-                _confirmSlot = -1;
-                return true;
-            }
-            _confirmSlot = slot;
-            _confirmAction = action;
-            _confirmUntil = Time.unscaledTime + ConfirmSeconds;
-            return false;
         }
 
         void OnSave(int slot)
         {
-            if (!_canSave || !Services.TryGet<SaveService>(out var saves)) return;
-            if (SaveService.Peek(slot).Exists && !Confirmed(slot, "save"))
+            if (!_canSave || !Services.TryGet<SaveService>(out _)) return;
+            var info = SaveService.Peek(slot);
+            if (!info.Exists)
             {
-                _message.text = $"슬롯 {slot + 1}에 이미 저장이 있습니다. 한 번 더 누르면 덮어씁니다.";
+                SaveNow(slot);
+                return;
+            }
+            bool ours = Services.Get<SaveService>().CurrentSlot == slot;
+            ConfirmDialog.Ask($"슬롯 {slot + 1}에 덮어쓸까요?",
+                $"지금 들어 있는 저장:\n{Describe(info)}\n"
+                + (ours ? UIBuilder.Colored("이 게임을 마지막으로 저장한(불러온) 칸입니다.", UITheme.TextMuted) : UIBuilder.Colored("다른 게임일 수 있습니다. 덮어쓰면 되살릴 수 없습니다.", UITheme.Warn)),
+                "덮어쓰기", () => SaveNow(slot));
+        }
+
+        void SaveNow(int slot)
+        {
+            if (!IsOpen || !Services.TryGet<SaveService>(out var saves)) return;
+            if (!saves.Save(slot, out var error))
+            {
+                _message.text = UIBuilder.Colored(error, UITheme.Bad);
                 Refresh();
                 return;
             }
-            _message.text = saves.Save(slot, out var error) ? $"슬롯 {slot + 1}에 저장했습니다." : error;
+            var then = _afterSave;
+            if (then != null)
+            {
+                Hide();
+                then();
+                return;
+            }
+            _message.text = $"슬롯 {slot + 1}에 저장했습니다.";
             Refresh();
         }
 
         void OnLoad(int slot)
         {
+            // During play, loading throws away what was not saved: ask first (P6-1). The title has nothing to lose.
+            string lost = _canSave ? ExitGuard.UnsavedText() : null;
+            if (lost == null)
+            {
+                LoadNow(slot);
+                return;
+            }
+            ConfirmDialog.Ask($"슬롯 {slot + 1}을 불러올까요?",
+                $"{lost}\n불러오면 그동안의 진행이 사라집니다. 먼저 저장하려면 취소하고 빈 칸이나 이 게임의 칸에 저장하세요.\n\n불러올 저장: {Describe(SaveService.Peek(slot))}",
+                "불러오기", () => LoadNow(slot));
+        }
+
+        void LoadNow(int slot)
+        {
             _message.text = "불러오는 중…";
             // The scene restarts with the save; on success nothing here runs again.
-            if (!SaveService.Load(slot, out var error)) _message.text = error;
+            if (!SaveService.Load(slot, out var error)) _message.text = UIBuilder.Colored(error, UITheme.Bad);
         }
 
         void OnDelete(int slot)
         {
-            if (!Confirmed(slot, "delete"))
-            {
-                _message.text = $"한 번 더 누르면 슬롯 {slot + 1}을 지웁니다.";
-                Refresh();
-                return;
-            }
-            _message.text = SaveService.Delete(slot) ? $"슬롯 {slot + 1}을 지웠습니다." : "지우지 못했습니다.";
-            Refresh();
-        }
-
-        void Update()
-        {
-            // A question nobody answered goes back to the plain button.
-            if (IsOpen && _confirmSlot >= 0 && Time.unscaledTime >= _confirmUntil)
-            {
-                _confirmSlot = -1;
-                Refresh();
-            }
+            var info = SaveService.Peek(slot);
+            if (!info.Exists) return;
+            ConfirmDialog.Ask($"슬롯 {slot + 1}을 지울까요?",
+                $"{Describe(info)}\n지운 저장은 되살릴 수 없습니다.",
+                "삭제", () =>
+                {
+                    _message.text = SaveService.Delete(slot) ? $"슬롯 {slot + 1}을 지웠습니다." : UIBuilder.Colored("지우지 못했습니다.", UITheme.Bad);
+                    Refresh();
+                });
         }
     }
 }

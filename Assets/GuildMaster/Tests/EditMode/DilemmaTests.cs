@@ -3,6 +3,7 @@ using System.Linq;
 using GuildMaster.Adventurers;
 using GuildMaster.Dilemmas;
 using GuildMaster.Seasons;
+using GuildMaster.Social;
 using GuildMaster.Storytelling;
 using NUnit.Framework;
 
@@ -11,7 +12,8 @@ namespace GuildMaster.Tests
     /// <summary>
     /// Decision cards (P4-111c, H3 — user decisions 2026-10-30: the outcome only roughly, fixed words, 24 hours, a window of
     /// their own): the catalogue holds together, every choice runs and tells what came of it, the rough hints match what a
-    /// choice really does, the words fill in with their particles, and when a card can come.
+    /// choice really does, the words fill in with their particles, and when a card can come. P4-118: with KMS's event cards
+    /// folded in — the townsfolk, gear, the duel by levels, and how a result reads.
     /// </summary>
     public class DilemmaTests
     {
@@ -20,8 +22,10 @@ namespace GuildMaster.Tests
         {
             readonly bool _lucky;
             readonly int[] _gold;
-            public int GoldIn, GoldOut, FameUp, FameDown, StockIn, StockOut, Departs;
-            public readonly List<string> FollowUps = new(), Told = new();
+            public int GoldIn, GoldOut, FameUp, FameDown, StockIn, StockOut, Departs, TownUp, TownDown, GearUps;
+            public bool? Rolled;
+            public readonly List<string> FollowUps = new(), Told = new(), Rumours = new();
+            public readonly List<string> Residents = new();
 
             public Recorder(bool lucky, int[] gold)
             {
@@ -48,6 +52,25 @@ namespace GuildMaster.Tests
             public void CutTax(float share) => GoldOut += 1;
             public void FollowUp(string id, float hours) => FollowUps.Add(id);
             public void Tell(string text) => Told.Add(text);
+            public int Level(int actor) => 5;
+
+            public void Standing(int amount, string residentId = null)
+            {
+                if (amount > 0) TownUp += amount; else TownDown -= amount;
+                if (residentId != null) Residents.Add(residentId);
+            }
+
+            public void Rumor(string text, int tone = 0) => Rumours.Add(text);
+            public void Feel(int actor, Emotion feeling, float hours = 5f) => Assert.That(hours, Is.GreaterThan(0f));
+
+            public bool GearUp(int actor)
+            {
+                if (_lucky) GearUps++;
+                return _lucky;
+            }
+
+            public bool Wanderer(bool welcomed) => _lucky;
+            public void Outcome(bool success) => Rolled = success;
         }
 
         static int[] GoldOf(DilemmaDef d) => d.Gold.Select(g => DilemmaRules.ScaledGold(g, 1)).ToArray();
@@ -56,11 +79,11 @@ namespace GuildMaster.Tests
         public void TheCatalogue_HoldsTogether()
         {
             var all = DilemmaRules.All;
-            Assert.That(all.Count, Is.InRange(20, 30), "a first batch of 20 to 30");
+            Assert.That(all.Count, Is.InRange(30, 40), "27 of the first batch and 5 from the event cards (P4-118)");
             Assert.That(all.Select(d => d.Id).Distinct().Count(), Is.EqualTo(all.Count), "unique ids");
             foreach (var d in all)
             {
-                Assert.That(d.Choices.Length, Is.InRange(1, 3), d.Id);
+                Assert.That(d.Choices.Length, Is.InRange(1, 4), d.Id + ": the window has room for four");
                 Assert.That(d.Default, Is.InRange(0, d.Choices.Length - 1), d.Id);
                 Assert.That(d.Choices[d.Default].Cost, Is.EqualTo(-1), d.Id + ": the default needs no gold in the vault");
                 Assert.That(d.Choices[d.Default].NeedsItem, Is.Null, d.Id + ": nor things");
@@ -94,6 +117,11 @@ namespace GuildMaster.Tests
                 if (r.StockIn > 0) Assert.That(Shows(DilemmaHint.StockUp), Is.True, where + ": stock in");
                 if (r.StockOut > 0) Assert.That(Shows(DilemmaHint.StockDown), Is.True, where + ": stock out");
                 if (r.Departs > 0) Assert.That(Shows(DilemmaHint.Leaving), Is.True, where + ": someone leaves");
+                if (r.TownUp > 0 && r.TownDown == 0) Assert.That(Shows(DilemmaHint.TownUp, DilemmaHint.Risk), Is.True, where + ": the town thinks better of the guild");
+                if (r.TownDown > 0 && r.TownUp == 0) Assert.That(Shows(DilemmaHint.TownDown, DilemmaHint.Risk), Is.True, where + ": the town thinks worse of it");
+                if (r.GearUps > 0) Assert.That(Shows(DilemmaHint.Growth), Is.True, where + ": better gear");
+                if (r.Rolled.HasValue) Assert.That(Shows(DilemmaHint.Risk), Is.True, where + ": only a gamble succeeds or fails");
+                foreach (var id in r.Residents) Assert.That(id, Does.StartWith("RES_"), where);
                 foreach (var id in r.FollowUps)
                 {
                     var next = DilemmaRules.Find(id);
@@ -132,11 +160,17 @@ namespace GuildMaster.Tests
         [Test]
         public void ACard_ComesFromDayTwo_InItsSeason_WhenItsPeopleAndThingsAreThere()
         {
-            var facts = new DilemmaFacts { Day = 2, Season = Season.Spring, Gold = 500, Members = 4 };
+            var facts = new DilemmaFacts { Day = 2, Season = Season.Spring, Gold = 500, Members = 4, InTown = true };
             var theft = DilemmaRules.Find("theft");
             Assert.That(DilemmaRules.CanCome(theft, facts), Is.True);
-            Assert.That(DilemmaRules.CanCome(theft, new DilemmaFacts { Day = 1, Season = Season.Spring, Gold = 500, Members = 4 }), Is.False, "not on day 1");
-            Assert.That(DilemmaRules.CanCome(theft, new DilemmaFacts { Day = 2, Gold = 50, Members = 4 }), Is.False, "nothing in the vault to miss");
+            Assert.That(DilemmaRules.CanCome(theft, new DilemmaFacts { Day = 1, Season = Season.Spring, Gold = 500, Members = 4, InTown = true }), Is.False, "not on day 1");
+            Assert.That(DilemmaRules.CanCome(theft, new DilemmaFacts { Day = 2, Gold = 50, Members = 4, InTown = true }), Is.False, "nothing in the vault to miss");
+            Assert.That(DilemmaRules.CanCome(theft, new DilemmaFacts { Day = 2, Gold = 500, Members = 4 }), Is.False, "nobody in town saw the thief");
+            // From the event cards: a resident's request needs the town's people, the shady trader someone to sell gear to.
+            Assert.That(DilemmaRules.CanCome(DilemmaRules.Find("plague"), facts), Is.False, "no residents");
+            Assert.That(DilemmaRules.CanCome(DilemmaRules.Find("plague"), new DilemmaFacts { Day = 2, Members = 4, InTown = true, Residents = true }), Is.True);
+            Assert.That(DilemmaRules.CanCome(DilemmaRules.Find("contraband"), facts), Is.False, "everyone's gear is as good as it gets");
+            Assert.That(DilemmaRules.CanCome(DilemmaRules.Find("contraband"), new DilemmaFacts { Day = 2, Members = 4, GearUp = true }), Is.True);
             Assert.That(DilemmaRules.CanCome(DilemmaRules.Find("duel"), facts), Is.False, "no rivals");
             Assert.That(DilemmaRules.CanCome(DilemmaRules.Find("duel"), new DilemmaFacts { Day = 2, Members = 4, Rivals = true }), Is.True);
             Assert.That(DilemmaRules.CanCome(DilemmaRules.Find("firewood"), facts), Is.False, "a winter card in spring");
@@ -160,6 +194,68 @@ namespace GuildMaster.Tests
             var aid = DilemmaRules.Find("aid");
             Assert.That(DilemmaRules.Affordable(aid.Choices[0], GoldOf(aid), 0, _ => 2), Is.False, "three potions");
             Assert.That(DilemmaRules.Affordable(aid.Choices[0], GoldOf(aid), 0, _ => 3), Is.True);
+        }
+
+        [Test]
+        public void AResult_ReadsByItsRoll_OrByWhatItDid()
+        {
+            var duel = DilemmaRules.Find("duel");
+            Assert.That(DilemmaRules.ToneOf(duel.Choices[0], true), Is.EqualTo(DilemmaTone.Success));
+            Assert.That(DilemmaRules.ToneOf(duel.Choices[0], false), Is.EqualTo(DilemmaTone.Failure));
+            Assert.That(DilemmaRules.ToneOf(duel.Choices[0], null), Is.EqualTo(DilemmaTone.Neutral), "a gamble not rolled reads plain");
+            Assert.That(DilemmaRules.ToneOf(duel.Choices[3], null), Is.EqualTo(DilemmaTone.Bad), "stopping them galls both");
+            var feast = DilemmaRules.Find("feast_fund");
+            Assert.That(DilemmaRules.ToneOf(feast.Choices[0], null), Is.EqualTo(DilemmaTone.Neutral), "gold for everyone's spirits: a trade");
+            Assert.That(DilemmaRules.ToneOf(DilemmaRules.Find("noble").Choices[2], null), Is.EqualTo(DilemmaTone.Good), "turning the noble down: relief");
+            Assert.That(DilemmaRules.ToneOf(DilemmaRules.Find("investment").Choices[0], null), Is.EqualTo(DilemmaTone.Neutral), "its end is still to come");
+            Assert.That(DilemmaRules.Badge(DilemmaTone.Success), Does.Contain("성공"));
+            Assert.That(DilemmaRules.Badge(DilemmaTone.Failure), Does.Contain("실패"));
+            Assert.That(DilemmaRules.Badge(DilemmaTone.Neutral), Is.Empty);
+            Assert.That(DilemmaRules.IsGood(DilemmaTone.Good) && DilemmaRules.IsBad(DilemmaTone.Bad), Is.True);
+
+            // Over the whole catalogue there is something to win and something to lose.
+            int good = 0, bad = 0;
+            foreach (var d in DilemmaRules.All)
+            foreach (var c in d.Choices)
+            {
+                var t = DilemmaRules.ToneOf(c, null);
+                if (t == DilemmaTone.Good) good++;
+                if (t == DilemmaTone.Bad) bad++;
+            }
+            Assert.That(good, Is.GreaterThan(3));
+            Assert.That(bad, Is.GreaterThan(3));
+        }
+
+        [Test]
+        public void ADuel_GoesToTheStronger_TenPointsALevel()
+        {
+            Assert.That(DilemmaRules.DuelChance(3, 3), Is.EqualTo(0.5f));
+            Assert.That(DilemmaRules.DuelChance(5, 3), Is.EqualTo(0.7f).Within(1e-4f));
+            Assert.That(DilemmaRules.DuelChance(1, 20), Is.EqualTo(0.2f));
+            Assert.That(DilemmaRules.DuelChance(20, 1), Is.EqualTo(0.8f));
+        }
+
+        [Test]
+        public void TheEventCards_CameOver_AndTheirLikesBecameOne()
+        {
+            foreach (var id in new[] { "noble", "plague", "birthday", "toby", "bond" })
+                Assert.That(DilemmaRules.Find(id), Is.Not.Null, id);
+            Assert.That(DilemmaRules.All.Count(d => d.Id is "duel" or "theft" or "wanderer" or "feast_fund" or "contraband"), Is.EqualTo(5), "one card each");
+            // The birthday's title names its member; the residents it is about are the town's.
+            var names = new[] { "엘리" };
+            Assert.That(DilemmaRules.Fill(DilemmaRules.Find("birthday").Title, names, null, null, null), Is.EqualTo("엘리의 생일"));
+            var r = new Recorder(true, GoldOf(DilemmaRules.Find("toby")));
+            DilemmaRules.Find("toby").Choices[1].Apply(r);
+            Assert.That(r.Residents, Does.Contain(DilemmaRules.Toby));
+            Assert.That(r.Rumours, Is.Not.Empty, "the wooden sword is talked about");
+            // The shady trader's gear is real on a lucky roll, a fake (and a rumour) on a bad one.
+            var trader = DilemmaRules.Find("contraband");
+            var lucky = new Recorder(true, GoldOf(trader));
+            trader.Choices[1].Apply(lucky);
+            Assert.That((lucky.GearUps, lucky.Rolled), Is.EqualTo((1, (bool?)true)));
+            var unlucky = new Recorder(false, GoldOf(trader));
+            trader.Choices[1].Apply(unlucky);
+            Assert.That((unlucky.GearUps, unlucky.Rolled, unlucky.Rumours.Count), Is.EqualTo((0, (bool?)false, 1)));
         }
     }
 }

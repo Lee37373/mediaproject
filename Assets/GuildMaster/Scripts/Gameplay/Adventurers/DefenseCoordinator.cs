@@ -113,6 +113,8 @@ namespace GuildMaster.Adventurers
             // report 2026-09-22: only one member fought while the others slept it off).
             if (s == a.RestState && !_world.Grid.IsInTown(a.Position)) return false;
             if (s == a.ReturnState && a.ReturnState.Retreating) return false; // badly hurt, heading home
+            // Called home by the guild master's horn (P4-132): it stays back a while, or the call to arms undoes the horn at once.
+            if (Services.TryGet<GameClock>(out var clock) && clock.TotalHours < a.HeldHomeUntilHour) return false;
             return a.HpRatio >= MinHpToDefend;
         }
 

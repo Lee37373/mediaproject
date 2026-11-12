@@ -92,6 +92,11 @@ namespace GuildMaster.Incidents
         /// <summary>Its pack as the guild last saw it (the hunt's danger), and what the bounty pays over a hunt of that danger.</summary>
         public int PackSize;
         public float RewardFactor = 1f;
+        /// <summary>
+        /// The level of the strongest other nemesis the guild knows lives in its den (as last seen; 0: none): the bounty is
+        /// fought among them, so it is rated by the worst of them (<see cref="IncidentRules.NemesisDanger(Incident)"/>).
+        /// </summary>
+        public int PackLevel;
 
         /// <summary>A monster this incident's quest is about: the rare one, a member of the horde, an ambusher, a guardian.</summary>
         public bool IsTarget(Monsters.Monster m) => m != null && (m == Target || Members.Contains(m));

@@ -444,9 +444,9 @@ namespace GuildMaster.Economy
 
     /// <summary>
     /// Who has been asked for money when, and how sore they still are (2026-10-29). One talk per member a day;
-    /// threats and insults leave a grudge that fades over <see cref="TributeRules.GrudgeFadeHours"/>.
+    /// threats and insults leave a grudge that fades over <see cref="TributeRules.GrudgeFadeHours"/>. Saved as "tribute" (P4-119).
     /// </summary>
-    public class TributeService
+    public class TributeService : ISaveable
     {
         class Record
         {
@@ -510,6 +510,52 @@ namespace GuildMaster.Economy
                 Collected += amount;
                 Times++;
             }
+        }
+
+        // ---------------- Save (P4-119) ----------------
+
+        [Serializable]
+        class RecordData
+        {
+            public string id;
+            public float last_hour;
+            public int grudge;
+            public float grudge_hour;
+            public int total;
+        }
+
+        [Serializable]
+        class SaveData
+        {
+            public List<RecordData> records = new();
+            public int collected;
+            public int times;
+        }
+
+        public string SaveKey => "tribute";
+
+        public string Capture()
+        {
+            var s = new SaveData { collected = Collected, times = Times };
+            foreach (var kv in _records.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                s.records.Add(new RecordData
+                {
+                    id = kv.Key, last_hour = kv.Value.LastHour, grudge = kv.Value.Grudge,
+                    grudge_hour = kv.Value.GrudgeHour, total = kv.Value.Total,
+                });
+            return JsonUtility.ToJson(s);
+        }
+
+        public void Restore(string json, SaveContext ctx)
+        {
+            var s = JsonUtility.FromJson<SaveData>(json);
+            _records.Clear();
+            if (s.records != null)
+                foreach (var r in s.records)
+                    if (!string.IsNullOrEmpty(r.id))
+                        _records[r.id] = new Record { LastHour = r.last_hour, Grudge = r.grudge, GrudgeHour = r.grudge_hour, Total = r.total };
+            Collected = s.collected;
+            Times = s.times;
         }
     }
 }

@@ -87,8 +87,32 @@ namespace GuildMaster.Units
 
         /// <summary>Poison, broken armour and chill left by the guild's facilities (P4-87).</summary>
         public Afflictions Afflictions { get; } = new();
-        /// <summary>Defence as blows meet it (broken armour taken off).</summary>
-        public float EffectiveDefense => Stats.Defense * (1f - Afflictions.ArmorBreak);
+        /// <summary>Battle cry, iron wall, blessing and shield from skills (P4-126).</summary>
+        public Boons Boons { get; } = new();
+        /// <summary>Defence as blows meet it (broken armour taken off, a blessing added).</summary>
+        public float EffectiveDefense => Stats.Defense * (1f - Afflictions.ArmorBreak) * (1f + Boons.Defense);
+        /// <summary>
+        /// Attack as blows land (a battle cry or frenzy added, P4-126; a friend beside it or a foe in its way, P4-131; the guild
+        /// master's cheer, P4-132).
+        /// </summary>
+        public float AttackNow => Stats.Attack * Mathf.Max(0.1f, 1f + Boons.Attack + BondAttack + CheerAttack);
+        /// <summary>
+        /// Share added to the attack by who fights beside it (P4-131: a friend +, a foe −), set by
+        /// <see cref="Adventurers.BondService"/> while it fights; 0 otherwise. Not saved (worked out again each moment).
+        /// </summary>
+        public float BondAttack { get; internal set; }
+
+        float _cheer, _cheerUntil;
+        /// <summary>
+        /// Share added to the attack by the guild master's cheer (P4-132), apart from the skills' boons (the strongest of those
+        /// counts, and a battle cry would have swallowed it). Not saved: it lasts seconds.
+        /// </summary>
+        public float CheerAttack => Time.time < _cheerUntil ? _cheer : 0f;
+        public void Cheer(float share, float seconds)
+        {
+            _cheer = Mathf.Max(0f, share);
+            _cheerUntil = Time.time + Mathf.Max(0f, seconds);
+        }
         /// <summary>Seconds between attacks as they are now (a chill draws them out).</summary>
         public float AttackCooldownNow => Stats.AttackCooldown / Mathf.Max(0.1f, 1f - Afflictions.Slow);
 
@@ -259,7 +283,9 @@ namespace GuildMaster.Units
             StunnedUntil = 0f;
             _speedBuffUntil = 0f;
             _knockUntil = 0f;
+            _cheerUntil = 0f;
             Afflictions.Clear();
+            Boons.Clear();
             if (Visual != null) Visual.StatusTint = Color.white;
             CurrentTarget = null;
             foreach (var s in Skills) s.ResetCooldown(GameRandomStagger());
@@ -382,6 +408,7 @@ namespace GuildMaster.Units
             if (!IsAlive) return;
             if (!overTime && source != null && amount > 0f && DamageFactor != null)
                 amount = Mathf.Max(1f, Mathf.Round(amount * DamageFactor(source, this)));
+            amount = Boons.Soak(amount); // iron wall and shield (P4-126)
             if (GuildInvulnerable && Faction == Faction.Guild) amount = 0f;
             Hp -= amount;
             if (source != null)
@@ -402,6 +429,7 @@ namespace GuildMaster.Units
                 _dead = true;
                 // Marks end with the life (the corpse fades from its own colour, not the poison's).
                 Afflictions.Clear();
+                Boons.Clear();
                 if (Visual != null) Visual.StatusTint = Color.white;
                 Mover.Stop();
                 OnDeath(source);
@@ -437,6 +465,8 @@ namespace GuildMaster.Units
             public System.Collections.Generic.List<float> skill_cooldowns = new();
             /// <summary>Marks from the guild's facilities (P4-87); all zero when none.</summary>
             public Afflictions.SaveData afflictions;
+            /// <summary>Blessings from skills (P4-126); null when none.</summary>
+            public Boons.SaveData boons;
         }
 
         public UnitSave CaptureUnit()
@@ -450,6 +480,7 @@ namespace GuildMaster.Units
                 stunned_until = SaveTime.Rel(StunnedUntil), speed_buff = _speedBuff, speed_buff_until = SaveTime.Rel(_speedBuffUntil),
                 hidden_until = SaveTime.Rel(_hiddenUntil), grace_until = SaveTime.Rel(GraceUntil),
                 afflictions = Afflictions.Capture(),
+                boons = Boons.Capture(),
             };
             foreach (var skill in Skills) s.skill_cooldowns.Add(SaveTime.Hundredths(skill.CooldownLeft));
             return s;
@@ -471,6 +502,7 @@ namespace GuildMaster.Units
             GraceUntil = SaveTime.Abs(s.grace_until);
             for (int i = 0; i < Skills.Count && i < s.skill_cooldowns.Count; i++) Skills[i].ResetCooldown(s.skill_cooldowns[i]);
             Afflictions.Restore(s.afflictions);
+            Boons.Restore(s.boons);
         }
 
         public void LinkUnit(UnitSave s, SaveContext ctx)

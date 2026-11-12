@@ -72,6 +72,14 @@ namespace GuildMaster.Visuals
         }
 
         /// <summary>An effect prefab by file name ("Hit1_White"), or null.</summary>
+        /// <summary>A single-picture monster's parts prefab (P4-128), or null (then the picture is moved whole).</summary>
+        public static GameObject MonsterParts(string key)
+        {
+            if (string.IsNullOrEmpty(key) || Catalog == null) return null;
+            var m = Catalog.monsters.FirstOrDefault(x => x.key == key);
+            return m != null && m.sprite != null ? m.parts : null;
+        }
+
         public static GameObject Vfx(string key)
         {
             if (Catalog == null || string.IsNullOrEmpty(key)) return null;

@@ -58,7 +58,9 @@ namespace GuildMaster.Economy
 
         public bool IsUnlocked(RecipeDefinition r) => (StationLevel(r.station)?.craftTier ?? 0) >= r.requiredTier;
 
-        float Speed(BuildingType station) => Mathf.Max(0.1f, StationLevel(station)?.craftSpeed ?? 1f);
+        /// <summary>The station's level, and the smith's or herbalist's favour (P4-134: crafting time −10% a step).</summary>
+        float Speed(BuildingType station)
+            => Mathf.Max(0.1f, StationLevel(station)?.craftSpeed ?? 1f) / Mathf.Max(0.1f, 1f - Social.ResidentPerks.CraftTimeCut(station));
 
         /// <summary>Game hours one unit takes at the station's current speed.</summary>
         public float EffectiveHours(RecipeDefinition r) => r.hours / Speed(r.station);

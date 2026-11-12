@@ -36,7 +36,28 @@ namespace GuildMaster.Adventurers
             return known * (IsDragonWork(q) ? Monsters.Dragon.RiskRequirement
                  : IsLordWork(q) ? Monsters.RegionLords.RiskRequirement
                  // Where it is (P4-104b): the dens next door that would pile in, and known deep woods.
-                 : RuleBasedDecisionMaker.DangerRequirement(q.Danger) * AreaRisk.QuestFactor(q));
+                 : Mathf.Max(RuleBasedDecisionMaker.DangerRequirement(q.Danger) * AreaRisk.QuestFactor(q), KnownFoeRequirement(q)));
+        }
+
+        /// <summary>
+        /// The level of the strongest particular monster the guild knows this quest runs into (0: none): a bounty's nemesis or a
+        /// stronger one of its den (<see cref="Incidents.IncidentRules.NemesisLevel"/>), and for a hunt on a den the strongest
+        /// nemesis known to live there. A den's hunt is rated by the level its young are born at; a Lv14 killer living in it
+        /// left the hunt 낮음, and pairs of Lv1 went.
+        /// </summary>
+        public static int KnownFoeLevel(Quests.Quest q)
+        {
+            if (q == null) return 0;
+            if (q.Incident != null)
+                return q.Incident.Kind == Incidents.IncidentKind.Nemesis ? Incidents.IncidentRules.NemesisLevel(q.Incident) : 0;
+            return Quests.ErrandRules.IsHuntLike(q.Type) && q.TargetNest != null ? Nemeses.NemesisService.StrongestKnownAt(q.TargetNest) : 0;
+        }
+
+        /// <summary>What that monster alone asks: its level's danger step (0 with none known).</summary>
+        static float KnownFoeRequirement(Quests.Quest q)
+        {
+            int foe = KnownFoeLevel(q);
+            return foe > 0 ? RuleBasedDecisionMaker.DangerRequirement(Monsters.MonsterLevel.DangerAt(foe)) : 0f;
         }
 
         /// <summary>A hunt for the dragon (P4-93): beyond a lord, and work for a whole party.</summary>
@@ -75,7 +96,7 @@ namespace GuildMaster.Adventurers
         /// <summary>What the quest asks of this many: <see cref="Requirement(Quests.Quest)"/>, a danger step up for a big hunt alone.</summary>
         public static float Requirement(Quests.Quest q, int partySize)
             => SoloRaises(q, partySize)
-                ? RuleBasedDecisionMaker.DangerRequirement(Quests.QuestBoard.Raise(q.Danger, 1)) * AreaRisk.QuestFactor(q)
+                ? Mathf.Max(RuleBasedDecisionMaker.DangerRequirement(Quests.QuestBoard.Raise(q.Danger, 1)) * AreaRisk.QuestFactor(q), KnownFoeRequirement(q))
                   * Bestiary.BestiaryService.RiskFactor(q.Species)
                 : Requirement(q);
 
@@ -214,7 +235,8 @@ namespace GuildMaster.Adventurers
         public static bool BeyondNewcomer(Adventurer a, Quests.Quest q)
             => a != null && q != null && q.Type != Quests.QuestType.Escort && a.IsNewcomer
                && Core.Services.TryGet<Ecosystem.EcosystemManager>(out var eco)
-               && !NewcomerRules.WithinReach(AdventurerStats.Power(a.Data), eco.BirthLevelAt(q.Point));
+               // ...or a monster the guild knows is there is: a nemesis has grown past the young of its ground.
+               && !NewcomerRules.WithinReach(AdventurerStats.Power(a.Data), Mathf.Max(eco.BirthLevelAt(q.Point), KnownFoeLevel(q)));
 
         /// <summary>
         /// The roll behind a newcomer's quest beyond its ground (P4-100, user decision 2026-10-21: not barred — by the danger,

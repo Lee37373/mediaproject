@@ -235,6 +235,8 @@ namespace GuildMaster.Monsters
             var art = ImportedArt(def, IsBoss, IsRangedVariant);
             if (def.isDragon) ShowPose(DragonPose.Sleeping, force: true);
             else if (rig != null) Visual.InitRig(rig, Scale);
+            // The pack picture in parts, so its weapon swings (P4-128); the whole picture when the parts are missing.
+            else if (art != null && PartsFor(def, IsBoss, IsRangedVariant) is { } parts) Visual.InitPuppet(parts, art, Scale);
             else Visual.Init(art != null ? art : PixelArt.Monster(def), Scale);
             // Coloured by the region it lives in (P4-55; stands in for attributes until they are added).
             var baseTint = IsRangedVariant && art == null ? new Color(0.85f, 0.9f, 1f) : Color.white;
@@ -279,6 +281,14 @@ namespace GuildMaster.Monsters
             if (RigFor(def, boss, ranged) is { } rig) return rig.portrait;
             var art = boss && !string.IsNullOrEmpty(def.bossArtKey) ? ArtLibrary.Monster(def.bossArtKey) : null;
             return art != null ? art : ArtLibrary.Monster(ranged && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
+        }
+
+        /// <summary>The parts prefab of the picture <see cref="ImportedArt"/> picks (P4-128), or null.</summary>
+        public static GameObject PartsFor(MonsterDefinition def, bool boss, bool ranged)
+        {
+            if (RigFor(def, boss, ranged) != null) return null;
+            if (boss && !string.IsNullOrEmpty(def.bossArtKey) && ArtLibrary.Monster(def.bossArtKey) != null) return ArtLibrary.MonsterParts(def.bossArtKey);
+            return ArtLibrary.MonsterParts(ranged && !string.IsNullOrEmpty(def.rangedArtKey) ? def.rangedArtKey : def.artKey);
         }
 
         /// <summary>How this kind is drawn (imported art, or the generated picture; the dragon standing, P4-93).</summary>

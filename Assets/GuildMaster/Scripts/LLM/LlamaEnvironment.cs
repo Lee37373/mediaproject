@@ -20,6 +20,18 @@ namespace GuildMaster.LLM
 
         public static string CacheDirectory { get; private set; }
 
+        /// <summary>
+        /// A Windows player installed under a path with non-ASCII characters (P5-5: e.g. a Korean desktop folder): the model in
+        /// StreamingAssets may not load, so the title and the HUD say so and the game plays on its rules.
+        /// </summary>
+        public static bool InstallPathNotAscii
+            => Application.platform == RuntimePlatform.WindowsPlayer && !IsAscii(Application.streamingAssetsPath);
+
+        /// <summary>What the title screen tells the player when <see cref="InstallPathNotAscii"/>.</summary>
+        public const string InstallPathWarning =
+            "게임 폴더 경로에 한글 등 영문이 아닌 글자가 있어 AI 대화(로컬 LLM)가 동작하지 않을 수 있습니다.\n" +
+            "영문만 있는 경로(예: C:\\Games\\GuildMaster)로 폴더를 옮겨 실행하세요. 그대로 하면 규칙 응답으로 진행됩니다.";
+
         public static bool IsAscii(string s)
         {
             if (string.IsNullOrEmpty(s)) return true;

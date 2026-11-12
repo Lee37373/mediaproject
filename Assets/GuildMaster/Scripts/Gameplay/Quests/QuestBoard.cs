@@ -114,11 +114,15 @@ namespace GuildMaster.Quests
             _restoring = null;
         }
 
-        public void Init(GuildTreasury treasury, EcosystemManager eco, GameClock clock)
+        /// <summary>The board's own dice (P4-133: the item a village or a patron pays), so it does not move the shared ones.</summary>
+        GameRandom _rng = new(0x51A7E);
+
+        public void Init(GuildTreasury treasury, EcosystemManager eco, GameClock clock, int seed = 0)
         {
             _treasury = treasury;
             _eco = eco;
             _clock = clock;
+            _rng = new GameRandom(seed ^ 0x51A7E);
             EventBus.Subscribe<UnitDiedEvent>(OnUnitDied);
             EventBus.Subscribe<NestClearedEvent>(OnNestCleared);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
@@ -184,6 +188,21 @@ namespace GuildMaster.Quests
                     if (d.Hours < 1 || d.Hours > 24) return "호위 시간은 1~24시간이어야 합니다.";
                     if (_quests.Any(q => q.IsActive && q.Type == QuestType.Escort)) return "이미 진행 중인 호위 의뢰가 있습니다.";
                     break;
+                case QuestType.Gather:
+                    if (d.ItemId != ErrandRules.Ore && d.ItemId != ErrandRules.Herb) return "채집할 것을 정하세요.";
+                    if (d.Count < 1) return "채집 수는 1 이상이어야 합니다.";
+                    if (!d.HasPoint) return "채집할 곳을 정하세요.";
+                    break;
+                case QuestType.Collect:
+                    if (d.Species == null || string.IsNullOrEmpty(d.ItemId)) return "모아 올 전리품을 정하세요.";
+                    if (Services.TryGet<GuildIntel>(out var seen) && !seen.IsKnown(d.Species)) return "아직 확인하지 못한 몬스터입니다.";
+                    if (d.Count < 1) return "납품 수는 1 이상이어야 합니다.";
+                    if (!d.HasPoint) return "사냥할 위치를 지도에서 지정하세요.";
+                    if (HuntPointError(d.Point) is { } collectError) return collectError;
+                    break;
+                case QuestType.Deliver:
+                    if (!d.HasPoint) return "배달할 곳을 정하세요.";
+                    break;
             }
             return null;
         }
@@ -234,14 +253,19 @@ namespace GuildMaster.Quests
         /// treasury. <paramref name="target"/> is the den a hunt is for (else the one the guild saw in its area).
         /// </summary>
         public bool TryPostRequest(QuestDraft draft, QuestClient client, out Quest quest, out string error, Nest target = null,
-                                   Villages.Village village = null, bool villageDefence = false)
+                                   Villages.Village village = null, bool villageDefence = false, Villages.Village destination = null,
+                                   string resident = null)
         {
             quest = null;
             error = client == QuestClient.Guild ? "의뢰처가 없습니다."
                   : client == QuestClient.Village && (village == null || village.IsDestroyed) ? "의뢰처 마을이 없습니다."
+                  : client == QuestClient.Resident && string.IsNullOrEmpty(resident) ? "부탁한 주민이 없습니다."
+                  // A delivery goes to a village standing (P4-133): a village's own errand comes to itself.
+                  : draft.Type == QuestType.Deliver && (destination ?? village) is not { IsDestroyed: false } ? "배달할 마을이 없습니다."
                   : Validate(draft, client);
             if (error != null) return false;
-            quest = PostRequest(draft, client, target, null, village, villageDefence);
+            quest = PostRequest(draft, client, target, null, village, villageDefence, null,
+                                draft.Type == QuestType.Deliver ? destination ?? village : null, resident);
             return true;
         }
 
@@ -255,7 +279,12 @@ namespace GuildMaster.Quests
         public void WithdrawFromVillage(Villages.Village v)
         {
             foreach (var q in _quests.ToList())
-                if (q.IsActive && q.Village == v && q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, VillageFellReason);
+            {
+                if (!q.IsActive || q.Assignees.Count > 0) continue;
+                // Goods for a village that is no more are not sent (P4-133); those already on the road learn it there.
+                if (q.Village == v) Close(q, QuestStatus.Cancelled, refund: true, VillageFellReason);
+                else if (q.Destination == v) Close(q, QuestStatus.Cancelled, refund: true, ErrandRules.DestinationFellReason);
+            }
         }
 
         /// <summary>
@@ -280,6 +309,19 @@ namespace GuildMaster.Quests
             => PostRequest(draft, client, null, null, null, false, incident);
 
         /// <summary>
+        /// An incident's client rates and pays its quest anew while it stands: the town's bounty on a nemesis follows what the
+        /// guild knows it has become (its level, the stronger ones of its den, its kills) — posted on a Lv4 that then grew to
+        /// Lv14, it stayed 낮음 and members of Lv1 went for it alone, one after another. <paramref name="total"/> is the client's
+        /// whole payment (the guild's fee comes off it as when posted).
+        /// </summary>
+        public void ReviseIncidentQuest(Quest q, DangerLevel danger, int total, int maxParty)
+        {
+            if (q == null || !q.IsActive || q.Incident == null) return;
+            var (members, fee) = QuestPricing.Split(total);
+            q.Reprice(danger, members, fee, QuestPricing.RewardExp(total), maxParty);
+        }
+
+        /// <summary>
         /// The incident is over without its quest done (P4-85: the rare one slipped away, the traveller died...): nobody is
         /// paid. Claimed, it failed; unclaimed, it simply comes down.
         /// </summary>
@@ -290,13 +332,16 @@ namespace GuildMaster.Quests
         }
 
         Quest PostRequest(QuestDraft draft, QuestClient client, Nest target, Disasters.Disaster disaster = null,
-                          Villages.Village village = null, bool villageDefence = false, Incidents.Incident incident = null)
+                          Villages.Village village = null, bool villageDefence = false, Incidents.Incident incident = null,
+                          Villages.Village destination = null, string resident = null)
         {
-            var (members, fee) = QuestPricing.Split(draft.RewardGold);
+            // A resident pays its member all of it: the guild is thanked by the resident itself (P4-134).
+            var (members, fee) = client == QuestClient.Resident ? (Mathf.Max(0, draft.RewardGold), 0) : QuestPricing.Split(draft.RewardGold);
             draft.RewardGold = members;
             return Add(new Quest($"Q_{_nextId++}", draft, _clock.TotalHours)
             {
                 Client = client, FeeGold = fee, Disaster = disaster, Village = village, IsVillageDefence = villageDefence, Incident = incident,
+                Destination = destination, ResidentId = resident,
             }, target);
         }
 
@@ -304,11 +349,20 @@ namespace GuildMaster.Quests
         {
             quest.Danger = EvaluateDanger(quest);
             // A village's defence is about its raiders, wherever their den is (P4-84); an incident is about itself (P4-85).
-            if (quest.Type == QuestType.Hunt && !quest.IsVillageDefence && quest.Incident == null) quest.TargetNest = target ?? OccupiedNestInArea(quest);
+            if (ErrandRules.IsHuntLike(quest.Type) && !quest.IsVillageDefence && quest.Incident == null) quest.TargetNest = target ?? OccupiedNestInArea(quest);
+            // Another village and a patron pay an item besides the gold (P4-133, user decision 2026-11-08); the town pays gold.
+            if (!quest.HasRewardItem && PaysInKind(quest.Client))
+                quest.RewardItem = ErrandRules.PickReward(quest.Danger, DistanceFromTown(quest.Point), _rng);
             _quests.Add(quest);
             EventBus.Publish(new QuestPostedEvent { Quest = quest });
             return quest;
         }
+
+        /// <summary>The clients who pay an item besides the gold (P4-133): the other villages and the patrons of the proposal cards.</summary>
+        public static bool PaysInKind(QuestClient c) => c is QuestClient.Village or QuestClient.Patron;
+
+        static float DistanceFromTown(Vector2 p)
+            => Services.TryGet<World.WorldService>(out var world) ? Vector2.Distance(p, world.TownCenterWorld) : 0f;
 
         /// <summary>An active hunt is already out on this den (the town and the proposals post one per den).</summary>
         public bool HasActiveHuntOn(Nest n)
@@ -316,6 +370,75 @@ namespace GuildMaster.Quests
             foreach (var q in _quests)
                 if (q.IsActive && q.Type == QuestType.Hunt && q.TargetNest == n) return true;
             return false;
+        }
+
+        /// <summary>Someone already asks for this den's parts (P4-133: one such errand per den).</summary>
+        public bool HasActiveCollectOn(Nest n)
+        {
+            foreach (var q in _quests)
+                if (q.IsActive && q.Type == QuestType.Collect && q.TargetNest == n) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// What the gathering errands standing on the board still need of this item: it is spoken for. A second errand was
+        /// asked against the same vein while the first one's taker was on its way to dig it, and its taker then waited a day
+        /// by the bare spot (measured on every run).
+        /// </summary>
+        public int GatherStillNeeded(string itemId)
+        {
+            int needed = 0;
+            foreach (var q in _quests)
+                if (q.IsActive && q.Type == QuestType.Gather && q.ItemId == itemId) needed += Mathf.Max(0, q.RequiredCount - q.Progress);
+            return needed;
+        }
+
+        // ---------------- Errands (P4-133) ----------------
+
+        /// <summary>
+        /// A taker on a gathering or a parts errand brings in <paramref name="count"/> of <paramref name="itemId"/> (dug up, or
+        /// picked up off a kill): as many as the errand still wants go to it — out of the taker's pack, so they are not sold —
+        /// and it is done once all have come in. Returns how many it took (the rest are the taker's).
+        /// </summary>
+        public int TryCollect(Quest q, IQuestTaker t, string itemId, int count)
+        {
+            if (q == null || t == null || count <= 0 || q.Status != QuestStatus.InProgress || !q.IsAssigned(t)) return 0;
+            if (q.Type is not (QuestType.Gather or QuestType.Collect) || q.ItemId != itemId) return 0;
+            int taken = Mathf.Min(count, q.RequiredCount - q.Progress);
+            if (taken <= 0) return 0;
+            q.Progress += taken;
+            q.AddContribution(t, taken);
+            EventBus.Publish(new QuestProgressEvent { Quest = q });
+            if (q.Progress >= q.RequiredCount) Complete(q);
+            return taken;
+        }
+
+        /// <summary>A taker reached the village with the goods (P4-133): handed over, the errand is done.</summary>
+        public bool DeliverGoods(Quest q, IQuestTaker t)
+        {
+            if (q == null || q.Type != QuestType.Deliver || q.Status != QuestStatus.InProgress || !q.IsAssigned(t)) return false;
+            q.AddContribution(t, 1);
+            Complete(q);
+            return true;
+        }
+
+        /// <summary>An errand that cannot be done any more (the village fell, nowhere left to dig): nobody is paid.</summary>
+        public void FailErrand(Quest q, string reason)
+        {
+            if (q == null || !q.IsActive || q.Status == QuestStatus.Completed) return;
+            Close(q, q.Assignees.Count > 0 ? QuestStatus.Failed : QuestStatus.Cancelled, refund: true, reason);
+        }
+
+        /// <summary>
+        /// A parts errand whose den is gone before all the parts came in (P4-133): those on it are paid for what they brought
+        /// (the client keeps the rest of the gold and its item); nothing brought, it failed; nobody on it, it comes down.
+        /// </summary>
+        void SettleCollect(Quest q, string reason)
+        {
+            if (q.Assignees.Count == 0) { Close(q, QuestStatus.Cancelled, refund: true, reason); return; }
+            if (q.Progress <= 0) { Close(q, QuestStatus.Failed, refund: true, reason); return; }
+            q.SettleShort(q.Progress / (float)q.RequiredCount);
+            Complete(q);
         }
 
         /// <summary>
@@ -351,8 +474,24 @@ namespace GuildMaster.Quests
                 case QuestType.Treasure:
                     d = DangerLevel.High; // a dragon's lair, asleep or not
                     break;
+                // Errands (P4-133): the ground they go to — the parts as the hunt they take, a dig and the road by the level the
+                // young are born at there (the far end of the road, the farthest from town).
+                case QuestType.Collect:
+                    d = HuntDanger(q.Species, CollectKillsOf(q), q.Point, q.Radius);
+                    break;
+                case QuestType.Gather:
+                case QuestType.Deliver:
+                    d = HuntDanger(LevelAt(q.Point), 1);
+                    break;
             }
             return d;
+        }
+
+        /// <summary>The kills a parts errand likely takes (its kind's drop rate).</summary>
+        static int CollectKillsOf(Quest q)
+        {
+            var entry = ErrandRules.CollectEntry(q.Species);
+            return ErrandRules.CollectKills(q.RequiredCount, entry != null && entry.item != null && entry.item.id == q.ItemId ? ErrandRules.PerKill(entry) : 1f);
         }
 
         /// <summary>
@@ -420,7 +559,7 @@ namespace GuildMaster.Quests
         /// one — so the rest of a party joins by invitation, not by walking up to the board.
         /// </summary>
         public IEnumerable<Quest> AvailableFor(IQuestTaker t)
-            => _quests.Where(q => q.Status == QuestStatus.Open && q.Assignees.Count == 0);
+            => _quests.Where(q => q.Status == QuestStatus.Open && q.Assignees.Count == 0 && q.Client != QuestClient.Resident);
 
         public Quest FindById(string id) => _quests.FirstOrDefault(q => q.Id == id);
 
@@ -445,8 +584,14 @@ namespace GuildMaster.Quests
         public void Abandon(Quest q, IQuestTaker t)
         {
             if (q == null || !q.RemoveAssignee(t)) return;
+            bool lost = q.Type == QuestType.Deliver && q.GoodsOut && q.Status == QuestStatus.InProgress && q.Assignees.Count == 0;
             if (q.IsActive && q.Assignees.Count == 0) q.Status = QuestStatus.Open;
             EventBus.Publish(new QuestAbandonedEvent { Quest = q, Taker = t });
+            // The last one carrying the goods fell or left out there (P4-133): the goods are gone with them.
+            if (lost) Close(q, QuestStatus.Failed, refund: true, ErrandRules.GoodsLostReason);
+            // A resident's request was given to this one member (P4-134): it gave up or fell, so the request failed.
+            else if (q.Client == QuestClient.Resident && q.IsActive && q.Assignees.Count == 0)
+                Close(q, QuestStatus.Failed, refund: true, Social.ResidentRequestRules.GaveUpReason);
         }
 
         /// <summary>Called when an assignee reports at the guild. Returns true if a reward was paid.</summary>
@@ -489,8 +634,17 @@ namespace GuildMaster.Quests
             // What lived there is no longer a guess once it has been wiped out, so this goes by the
             // real owners, not by GuildIntel: the quest is settled by what happened, not by hearsay.
             foreach (var q in _quests.ToList())
-                if (q.Status == QuestStatus.InProgress && q.Type == QuestType.Hunt && q.Incident == null && IsInArea(q, e.Nest, e.Nest?.Species)) Complete(q);
+            {
+                if (q.Status != QuestStatus.InProgress || q.Incident != null || !IsInArea(q, e.Nest, e.Nest?.Species)) continue;
+                if (q.Type == QuestType.Hunt) Complete(q);
+                // Nothing left there to take the parts from (P4-133): what the last kills dropped may still be picked up, so it is
+                // settled a while later (SettleHuntsWhoseNestIsGone), paid for what came in by then.
+                else if (q.Type == QuestType.Collect && q.DenGoneAtHour < 0f) q.DenGoneAtHour = _clock.TotalHours;
+            }
         }
+
+        /// <summary>Hours a parts errand goes on after its den is gone (P4-133): the drops of the last kills lie there to be picked up.</summary>
+        public const float CollectGraceHours = 1f;
 
         /// <summary>
         /// The nest of the quest's species inside its hunting area, or null. Guild-facing (UI, prompts),
@@ -595,7 +749,14 @@ namespace GuildMaster.Quests
             if (!Services.TryGet<GuildIntel>(out var intel)) return;
             foreach (var q in _quests.ToList())
             {
-                if (!q.IsActive || q.Type != QuestType.Hunt || q.TargetNest == null) continue;
+                if (!q.IsActive || !ErrandRules.IsHuntLike(q.Type) || q.TargetNest == null) continue;
+                if (q.Type == QuestType.Collect)
+                {
+                    // Gone (wiped out under them, or seen empty): a while to pick up what lies there, then paid for what came in.
+                    if (q.DenGoneAtHour < 0f && SeenGone(q, intel)) q.DenGoneAtHour = _clock.TotalHours;
+                    if (q.DenGoneAtHour >= 0f && (q.Assignees.Count == 0 || _clock.TotalHours - q.DenGoneAtHour >= CollectGraceHours)) SettleCollect(q, NestGoneReason);
+                    continue;
+                }
                 if (!SeenGone(q, intel)) continue;
                 if (q.Assignees.Count == 0) Close(q, QuestStatus.Cancelled, refund: true, NestGoneReason);
                 else Complete(q);
@@ -703,6 +864,7 @@ namespace GuildMaster.Quests
             q.Status = QuestStatus.Completed;
             q.CompletedAtHour = _clock.TotalHours;
             q.ComputePayouts();
+            q.ChooseItemTaker(); // the item besides the gold, to the one who did most (P4-133)
             // The client pays the guild its fee once the work is done (P4-82), whoever turns in afterwards.
             if (q.FundedByClient && q.FeeGold > 0) _treasury.AddGold(q.FeeGold, GoldReason.Commission);
             EventBus.Publish(new QuestCompletedEvent { Quest = q });

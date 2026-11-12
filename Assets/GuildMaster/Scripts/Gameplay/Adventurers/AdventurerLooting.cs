@@ -97,7 +97,17 @@ namespace GuildMaster.Adventurers
             if (Vector2.Distance(a.Position, target.Position) <= ReachDistance)
             {
                 var stack = ground.Take(target, a);
-                if (stack.count > 0) a.Data.AddLoot(stack.itemId, stack.count);
+                if (stack.count > 0)
+                {
+                    // A part a client asked for (P4-133) goes to the errand, out of the pack, so it is not sold.
+                    int taken = 0;
+                    if (a.CurrentQuest is { Type: Quests.QuestType.Collect } q && q.ItemId == stack.itemId)
+                    {
+                        taken = Services.Get<Quests.QuestBoard>().TryCollect(q, a, stack.itemId, stack.count);
+                        if (taken > 0) a.Say(Quests.ErrandRules.CollectedLine(q.ItemLabel, q.Progress, q.RequiredCount), toFeed: false);
+                    }
+                    if (stack.count > taken) a.Data.AddLoot(stack.itemId, stack.count - taken);
+                }
                 return NextStop(a, drop: false);
             }
             if (!a.Mover.IsMoving) a.Mover.SetDestination(target.Position, 0.2f);
