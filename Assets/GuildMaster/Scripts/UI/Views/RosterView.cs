@@ -50,6 +50,28 @@ namespace GuildMaster.UI
             _ => "사",
         };
 
+        /// <summary>
+        /// The item each class is known by, drawn in the avatar circle (user, 2026-11-10: "전" → a sword): warrior a sword,
+        /// ranger a bow, mage a crystal staff, priest a holy wand. Icons from the CharacterMaker pack's thumbnails, copied to
+        /// Resources/UI/Class; null when missing (the initial letter shows instead).
+        /// </summary>
+        internal static Sprite ClassIcon(AdventurerClass c)
+        {
+            if (s_classIcons.TryGetValue(c, out var sprite)) return sprite;
+            string key = c switch
+            {
+                AdventurerClass.Warrior => "warrior",
+                AdventurerClass.Ranger => "ranger",
+                AdventurerClass.Mage => "mage",
+                _ => "priest",
+            };
+            sprite = Resources.Load<Sprite>("UI/Class/class_" + key);
+            s_classIcons[c] = sprite;
+            return sprite;
+        }
+
+        static readonly Dictionary<AdventurerClass, Sprite> s_classIcons = new();
+
         static Sprite s_disc;
         static Sprite Disc => s_disc != null ? s_disc : s_disc = SpriteFactory.Circle(64, Color.white, Color.white);
 
@@ -321,7 +343,32 @@ namespace GuildMaster.UI
             inner.rectTransform.Stretch(3, 3, 3, 3);
             letter = UIBuilder.Label(ring.transform, "", Mathf.RoundToInt(size * 0.38f), TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold);
             letter.rectTransform.Stretch();
+            // The class item, a little inside the ring.
+            var icon = UIBuilder.SpriteImage(ring.transform, "Icon", null, Color.white);
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            float pad = Mathf.Round(size * 0.08f); // the icons have their own margin
+            icon.rectTransform.Stretch(pad, pad, pad, pad);
+            icon.enabled = false;
             return ring;
+        }
+
+        /// <summary>Colours the avatar for a class and puts its item in it (the initial when the icon is missing).</summary>
+        static void SetAvatar(Image ring, Text letter, AdventurerClass c)
+        {
+            var color = ClassColor(c);
+            ring.color = color;
+            // The inside takes a little of the class colour so a dark item (the bow) still reads.
+            if (ring.transform.Find("Inner")?.GetComponent<Image>() is { } inner) inner.color = Color.Lerp(CardBg, color, 0.28f);
+            var sprite = ClassIcon(c);
+            var icon = ring.transform.Find("Icon")?.GetComponent<Image>();
+            if (icon != null)
+            {
+                icon.sprite = sprite;
+                icon.enabled = sprite != null;
+            }
+            letter.text = sprite != null ? "" : ClassInitial(c);
+            letter.color = color;
         }
 
         /// <summary>What needs looking at, as coloured words after the state (at most two).</summary>
@@ -519,9 +566,7 @@ namespace GuildMaster.UI
                 _edge.color = selected ? UITheme.Accent : danger ? TileDanger : TileBg;
                 _face.color = selected ? TileSelected : TileBg;
                 var cls = ClassColor(d.cls);
-                _ring.color = cls;
-                _letter.text = ClassInitial(d.cls);
-                _letter.color = cls;
+                SetAvatar(_ring, _letter, d.cls);
                 string star = leader ? UIBuilder.Colored(" ★", UITheme.Accent) : "";
                 _line.text = $"<b>{d.name}</b>{star} {UIBuilder.Colored($"{AdventurerData.ClassLabel(d.cls)} Lv.{d.level}", cls)}";
                 SetBar(_hpFill, a.HpRatio, HpColor(a.HpRatio));
@@ -632,9 +677,7 @@ namespace GuildMaster.UI
                 if (a == null) return;
                 var d = a.Data;
                 var cls = ClassColor(d.cls);
-                _ring.color = cls;
-                _letter.text = ClassInitial(d.cls);
-                _letter.color = cls;
+                SetAvatar(_ring, _letter, d.cls);
                 bool leader = Services.TryGet<GuildParties>(out var parties) && parties.PartyOf(a) is { } p && p.Leader == a;
                 string titles = d.titles.Count > 0 ? " " + UIBuilder.Colored($"[칭호 {d.titles.Count}]", UITheme.Accent) : "";
                 _name.text = $"{d.name} {(leader ? UIBuilder.Colored("★", UITheme.Accent) + " " : "")}{InspectorView.GradeTag(d.grade)}{titles}";

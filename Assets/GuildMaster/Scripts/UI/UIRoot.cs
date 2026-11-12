@@ -101,7 +101,7 @@ namespace GuildMaster.UI
             // Food and quest payments (economy round 2, 2026-10-29).
             AddWindow<HouseholdView>(menu, "살림 (U)", Key.U, new Vector2(820, 740));
             // Residents' odd jobs as minigames (일손 돕기, 2026-10-29), opened from the household window.
-            AddWindow<ChoreView>(null, null, Key.None, new Vector2(820, 560));
+            AddWindow<ChoreView>(null, null, Key.None, new Vector2(820, 500)); // 2026-11-11: the minigame scene, no empty band
             AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
             AddWindow<MerchantView>(menu, "행상인 (T)", Key.T, new Vector2(760, 600));
             AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(760, 620));

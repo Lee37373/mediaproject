@@ -30,6 +30,13 @@ namespace GuildMaster.Audio
         /// <summary>An event card's result (2026-11-01): a success or a good turn, a failure or a bad one, or plain.</summary>
         public const string CardSuccess = "card_success", CardFail = "card_fail", CardResult = "card_result";
         public const string TownMusic = "bgm_town_loop";
+        /// <summary>The odd-job minigames (2026-11-11): the anvil's "깡~" by how well the hammer landed, the glancing
+        /// "팅~", the quench; herb cards; dough slaps; and the result jingles.</summary>
+        public const string ForgePerfect = "forge_perfect", ForgeGood = "forge_good", ForgeWeak = "forge_weak", ForgeMiss = "forge_miss";
+        public const string ForgeQuench = "forge_quench", ForgeStart = "forge_start";
+        public const string HerbFlip = "herb_flip", HerbMatch = "herb_match", HerbMiss = "herb_miss";
+        public const string DoughPerfect = "dough_perfect", DoughGood = "dough_good", DoughMiss = "dough_miss";
+        public const string ChoreGreat = "chore_great", ChoreOk = "chore_ok", ChoreBad = "chore_bad";
 
         /// <summary>The season's day or night tune (2026-11-01), e.g. "bgm_winter_night".</summary>
         public static string Music(Season season, bool day) => $"bgm_{season.ToString().ToLowerInvariant()}_{(day ? "day" : "night")}";
@@ -57,6 +64,14 @@ namespace GuildMaster.Audio
         /// <summary>The sound of an event card's result: like the recruit talk's, success and failure each have one.</summary>
         public static string CardKey(CardTone tone) => EventCards.IsGood(tone) ? SoundKeys.CardSuccess
             : EventCards.IsBad(tone) ? SoundKeys.CardFail : SoundKeys.CardResult;
+
+        /// <summary>A hammer blow or a press in the odd jobs (2026-11-11), by the game's quality (0 or less = a miss).</summary>
+        public static string ChoreHitKey(ChoreKind kind, float quality) => kind == ChoreKind.Forge
+            ? quality >= 1f ? SoundKeys.ForgePerfect : quality >= 0.6f ? SoundKeys.ForgeGood : quality > 0f ? SoundKeys.ForgeWeak : SoundKeys.ForgeMiss
+            : quality >= 1f ? SoundKeys.DoughPerfect : quality > 0f ? SoundKeys.DoughGood : SoundKeys.DoughMiss;
+
+        /// <summary>The jingle at the end of an odd job: 좋음 and up, 그럭저럭, 엉망 (the grade's edges).</summary>
+        public static string ChoreResultKey(float score) => score >= 0.6f ? SoundKeys.ChoreGreat : score >= 0.3f ? SoundKeys.ChoreOk : SoundKeys.ChoreBad;
 
         /// <summary>The sound a clip is a take of: "hit_sword_v3" → "hit_sword"; other names are their own sound.</summary>
         public static string TakeOf(string clipName)
@@ -89,6 +104,7 @@ namespace GuildMaster.Audio
             SoundKeys.Notify => 1.2f,
             SoundKeys.RecruitSuccess or SoundKeys.RecruitFail or SoundKeys.QuestComplete => 1.5f,
             SoundKeys.CardSuccess or SoundKeys.CardFail or SoundKeys.CardResult => 1.0f,
+            SoundKeys.HerbFlip or SoundKeys.DoughGood or SoundKeys.DoughPerfect or SoundKeys.DoughMiss => 0.05f,
             _ => 0.15f,
         };
 
@@ -202,6 +218,41 @@ namespace GuildMaster.Audio
         }
 
         public static void Click() => Play(SoundKeys.Click);
+    }
+
+    /// <summary>
+    /// Candidate hit sounds to compare while playing (2026-11-12, the team: "타격 사운드가 좀 아쉽다"). Four sets under
+    /// Resources/Audio/HitSets/{A,B,C,D}, each with hit_sword / hit_blunt / arrow_shot / hit_magic in a few takes; the
+    /// chosen one (kept in PlayerPrefs, picked from the GuildMaster menu) stands in for the hit sounds in Audio/Sfx.
+    /// Empty = the sounds the game ships with. Once one is chosen it replaces the files and this goes.
+    /// </summary>
+    public static class HitSoundSets
+    {
+        public const string PrefKey = "dev.hit_sound_set";
+        public static readonly string[] All = { "", "A", "B", "C", "D" };
+
+        public static string Label(string set) => set switch
+        {
+            "A" => "A 묵직한 액션",
+            "B" => "B 경쾌한 캐주얼",
+            "C" => "C 실감 무기",
+            "D" => "D 과장된 만화풍",
+            _ => "지금 쓰는 소리",
+        };
+
+        public static string Current
+        {
+            get => PlayerPrefs.GetString(PrefKey, "");
+            set
+            {
+                PlayerPrefs.SetString(PrefKey, value ?? "");
+                PlayerPrefs.Save();
+            }
+        }
+
+        /// <summary>The sounds a set replaces: the four blows (by attacker class, see <see cref="SoundRules.HitKey"/>).</summary>
+        public static bool IsHitKey(string key) => key == SoundKeys.HitSword || key == SoundKeys.HitBlunt || key == SoundKeys.Arrow
+                                                  || key == SoundKeys.HitMagic;
     }
 
     /// <summary>
@@ -330,15 +381,50 @@ namespace GuildMaster.Audio
             ApplyVolumes();
         }
 
+        readonly Dictionary<string, Dictionary<string, List<AudioClip>>> _hitSets = new();
+
+        /// <summary>The takes of a hit sound in a candidate set (null when the set or the sound is missing).</summary>
+        List<AudioClip> CandidateTakes(string set, string key)
+        {
+            if (string.IsNullOrEmpty(set)) return null;
+            if (!_hitSets.TryGetValue(set, out var byKey))
+            {
+                _hitSets[set] = byKey = new Dictionary<string, List<AudioClip>>();
+                foreach (var clip in Resources.LoadAll<AudioClip>("Audio/HitSets/" + set))
+                {
+                    string k = SoundRules.TakeOf(clip.name);
+                    if (!byKey.TryGetValue(k, out var list)) byKey[k] = list = new List<AudioClip>();
+                    list.Add(clip);
+                }
+            }
+            return byKey.TryGetValue(key, out var takes) && takes.Count > 0 ? takes : null;
+        }
+
+        /// <summary>The four blows twice each, as in a fight (the GuildMaster menu's 들어보기).</summary>
+        public void PreviewHits() => StartCoroutine(PreviewRoutine());
+
+        System.Collections.IEnumerator PreviewRoutine()
+        {
+            foreach (var key in new[] { SoundKeys.HitSword, SoundKeys.HitBlunt, SoundKeys.Arrow, SoundKeys.HitMagic })
+                for (int i = 0; i < 3; i++)
+                {
+                    Play(key, i == 2 ? 1f : 0.75f); // the third one as a critical hit
+                    yield return new WaitForSecondsRealtime(i == 2 ? 0.7f : 0.38f);
+                }
+        }
+
         /// <summary>Plays a clip once (throttled per clip). Combat sounds get a slight random pitch.</summary>
         public void Play(string key, float volume = 1f)
         {
-            if (string.IsNullOrEmpty(key) || !_takes.TryGetValue(key, out var takes) || takes.Count == 0) return;
+            if (string.IsNullOrEmpty(key)) return;
+            var takes = HitSoundSets.IsHitKey(key) ? CandidateTakes(HitSoundSets.Current, key) : null;
+            if (takes == null && (!_takes.TryGetValue(key, out takes) || takes.Count == 0)) return;
             var clip = takes[Random.Range(0, takes.Count)];
             float sfx = GameSettings.SfxVolume;
             if (sfx <= 0.001f || !_throttle.Allow(key, Time.unscaledTime)) return;
             var src = FreeVoice();
-            src.pitch = key.StartsWith("hit_") || key == SoundKeys.Arrow ? Random.Range(0.93f, 1.07f) : 1f;
+            src.pitch = key.StartsWith("hit_") || key == SoundKeys.Arrow ? Random.Range(0.93f, 1.07f)
+                : key.StartsWith("forge_") || key.StartsWith("dough_") ? Random.Range(0.96f, 1.04f) : 1f;
             src.PlayOneShot(clip, Mathf.Clamp01(volume * SoundRules.Level(key) * sfx));
         }
 

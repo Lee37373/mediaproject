@@ -52,9 +52,9 @@ namespace GuildMaster.Economy
 
         public static string HowTo(ChoreKind k) => k switch
         {
-            ChoreKind.Forge => $"오가는 바늘이 초록 칸에 들어왔을 때 망치를 내리치세요 (F 또는 버튼). {ForgeGame.Strikes}번 두드리고, 칠수록 빨라집니다.",
+            ChoreKind.Forge => $"오가는 바늘이 주황 칸(가운데 밝은 곳일수록 좋음)에 들어왔을 때 망치를 내리치세요 (F 또는 버튼). {ForgeGame.Strikes}번 두드리고, 칠수록 빨라집니다.",
             ChoreKind.Herbs => $"카드를 두 장씩 뒤집어 같은 약초를 찾으세요. {HerbGame.TimeLimit:0}초 안에 {HerbGame.Pairs}쌍. 틀린 횟수가 많으면 덜 받습니다.",
-            _ => "오른쪽에서 오는 반죽이 세로선에 닿을 때 누르세요 (F 또는 버튼). 박자에 맞을수록 좋고, 헛치면 깎입니다.",
+            _ => "오른쪽에서 굴러오는 반죽이 손 아래 동그라미에 들어올 때 누르세요 (F 또는 버튼). 동그라미가 박자마다 커집니다. 헛치면 깎입니다.",
         };
 
         public static int Pay(float score)
@@ -81,6 +81,40 @@ namespace GuildMaster.Economy
         }
 
         public static int Day(float totalHours) => Mathf.FloorToInt(totalHours / 24f);
+
+        /// <summary>What the resident says as the job starts (2026-11-11).</summary>
+        public static string Greeting(ChoreKind k) => k switch
+        {
+            ChoreKind.Forge => "쇠가 달았다. 내가 말하면 내리쳐. 박자가 생명이야.",
+            ChoreKind.Herbs => "약초가 다 섞여 버렸어요. 같은 것끼리 짝을 맞춰 주세요!",
+            _ => "반죽이 굴러가면 꾹! 박자에 맞춰 눌러 주세요~",
+        };
+
+        static readonly string[] ForgePerfect = { "그렇지! 바로 그 소리야!", "좋은 울림이다!", "쇠가 노래를 하는군!" };
+        static readonly string[] ForgeGood = { "괜찮아, 계속 쳐.", "좋아, 그 박자로." };
+        static readonly string[] ForgeWeak = { "힘이 덜 실렸어.", "가장자리를 쳤군." };
+        static readonly string[] ForgeMiss = { "어이, 쇠 식는다!", "헛방이잖나!" };
+        static readonly string[] HerbMatch = { "맞아요, 그거예요!", "와, 기억력 좋으시네요!", "향이 딱 맞네요!" };
+        static readonly string[] HerbMiss = { "아, 그건 다른 약초예요.", "냄새가 비슷하죠? 후후." };
+        static readonly string[] DoughPerfect = { "좋아요, 쫀득쫀득!", "완벽한 박자예요!" };
+        static readonly string[] DoughGood = { "좋아요!", "그 느낌이에요!" };
+        static readonly string[] DoughWeak = { "아슬아슬해요!", "조금만 더 박자에 맞춰요!" };
+        static readonly string[] DoughMiss = { "앗, 헛손질이에요~", "반죽은 여기 있어요!" };
+
+        /// <summary>
+        /// The resident's reaction to one blow, pick or press (2026-11-11): <paramref name="quality"/> is the game's
+        /// 0..1 result (0 = a miss); <paramref name="pick"/> chooses among the lines.
+        /// </summary>
+        public static string Cheer(ChoreKind k, float quality, int pick)
+        {
+            string[] lines = k switch
+            {
+                ChoreKind.Forge => quality >= 1f ? ForgePerfect : quality >= 0.6f ? ForgeGood : quality > 0f ? ForgeWeak : ForgeMiss,
+                ChoreKind.Herbs => quality > 0f ? HerbMatch : HerbMiss,
+                _ => quality >= 1f ? DoughPerfect : quality >= 0.6f ? DoughGood : quality > 0f ? DoughWeak : DoughMiss,
+            };
+            return lines[Mathf.Abs(pick) % lines.Length];
+        }
     }
 
     /// <summary>One day's limit and the pay for the odd jobs (2026-10-29).</summary>
