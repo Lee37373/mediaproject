@@ -14,7 +14,8 @@ Shader "GuildMaster/CasualParticle"
         [HideInInspector] _SrcBlend ("Src Blend", Float) = 5
         [HideInInspector] _DstBlend ("Dst Blend", Float) = 10
         [HideInInspector] _Additive ("Additive", Float) = 0
-        _Boost ("Glow Opacity Boost", Float) = 2.2
+        _Boost ("Glow Opacity Boost", Float) = 3.4
+        _AlphaBoost ("Alpha Boost (blended materials)", Float) = 1.35
     }
     SubShader
     {
@@ -39,6 +40,7 @@ Shader "GuildMaster/CasualParticle"
                 half4 _TintColor;
                 half _Additive;
                 half _Boost;
+                half _AlphaBoost;
             CBUFFER_END
 
             struct Attributes
@@ -74,6 +76,8 @@ Shader "GuildMaster/CasualParticle"
                     half a = saturate(peak * _Boost);
                     return half4(light / max(peak, 0.001h) * a, a);
                 }
+                // 2026-11-13: blended materials a little more solid, so they read over grass and stone.
+                c.a = saturate(c.a * _AlphaBoost);
                 return c;
             }
             ENDHLSL

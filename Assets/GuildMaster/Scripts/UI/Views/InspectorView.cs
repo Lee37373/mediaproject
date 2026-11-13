@@ -34,6 +34,7 @@ namespace GuildMaster.UI
         Button _detailButton;
         Button _repairButton;
         object _selected;
+        MemberCard _member;
         float _timer;
         const float DoubleClickSeconds = 0.35f;
         object _lastClicked;
@@ -44,6 +45,7 @@ namespace GuildMaster.UI
         public void Build(RectTransform canvas)
         {
             var img = UIBuilder.Panel(canvas, "Inspector", UITheme.PanelBg);
+            HudStyle.Card(img); // 2026-11-13: the outlined HUD card
             _panel = img.rectTransform;
             _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(420, MinHeight));
             _title = UIBuilder.Label(_panel, "", 18, TextAnchor.UpperLeft, UITheme.Accent, FontStyle.Bold);
@@ -64,6 +66,7 @@ namespace GuildMaster.UI
             _body = UIBuilder.Label(_panel, "", 14, TextAnchor.UpperLeft);
             _body.rectTransform.Stretch(12, 12, 38, 10);
             _body.verticalOverflow = VerticalWrapMode.Overflow;
+            _member = MemberCard.Build(_panel, BodyTop); // a guild member's card (2026-11-13)
             _panel.gameObject.SetActive(false);
 
             var ringGo = new GameObject("SelectionRing");
@@ -121,6 +124,8 @@ namespace GuildMaster.UI
             if (!cam.MapClickReleased) return;
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
             if (Services.TryGet<MapPicker>(out var picker) && picker.IsPicking) return;
+            // An incident's "?"/"!" mark takes the click and goes away (2026-11-13).
+            if (Mouse.current != null && Services.TryGet<RumourMarkLayer>(out var marks) && marks.TryDismissAt(Mouse.current.position.ReadValue())) return;
             var picked = PickAt(cam.MouseWorldPosition());
 
             // Double-click on the same unit focuses (follows) it.
@@ -254,6 +259,7 @@ namespace GuildMaster.UI
 
         void RefreshText()
         {
+            if (_selected is not Adventurer) _member.Hide();
             switch (_selected)
             {
                 case Adventurer a: ShowAdventurer(a); break;
@@ -271,11 +277,11 @@ namespace GuildMaster.UI
                 case PlayerAvatar: break;
             }
             // Tall enough for what it says, the buttons in the corner kept clear (P4-104c: a member's card grew by its mood).
-            float height = Mathf.Max(MinHeight, BodyTop + _body.preferredHeight + ButtonRow);
+            float height = Mathf.Max(MinHeight, BodyTop + (_member.Visible ? _member.Height : _body.preferredHeight) + ButtonRow);
             if (Mathf.Abs(_panel.sizeDelta.y - height) > 0.5f) _panel.sizeDelta = new Vector2(_panel.sizeDelta.x, height);
         }
 
-        const float MinHeight = 292f, BodyTop = 38f, ButtonRow = 46f;
+        const float MinHeight = 200f, BodyTop = 38f, ButtonRow = 46f; // 292 → 200 with the short member card (2026-11-12)
 
         /// <summary>A last sighting under the fog (P4-23): only what was seen, never the present state.</summary>
         void ShowGhost(FogGhost g)
@@ -342,61 +348,16 @@ namespace GuildMaster.UI
             _ => UIBuilder.Colored("[일반]", UITheme.TextMuted),
         };
 
+        /// <summary>
+        /// A member or visitor: the title here, the rest on <see cref="MemberCard"/> (2026-11-13: portrait, gauges, tags;
+        /// the 11-12 short text card before it). Stats, purse, gear, record, memories, relations and loot are in [상세].
+        /// </summary>
         void ShowAdventurer(Adventurer a)
         {
             var d = a.Data;
             _title.text = $"{d.name}  {Muted($"{AdventurerData.ClassLabel(d.cls)} Lv.{d.level}")} {GradeTag(d.grade)}" + (a.IsVisitor ? "  " + UIBuilder.Colored("(방문자)", UITheme.Warn) : "");
-            var s = a.Stats;
-            string quest = a.CurrentQuest != null ? $"{a.CurrentQuest.Title} ({a.CurrentQuest.ProgressText})" : "없음";
-            var db = Services.Get<GameDatabase>();
-            string loot = d.loot.Count == 0 ? "없음" : string.Join(", ", d.loot.Select(l => $"{db.Item(l.itemId)?.displayName ?? l.itemId} x{l.count}"));
-
-            var lines = new System.Collections.Generic.List<string>
-            {
-                $"상태: {UIBuilder.Colored(a.StateLabel, UITheme.Accent)} · 의뢰: {quest}",
-                $"HP {a.Hp:0}/{s.MaxHp:0} · 공격 {s.Attack:0.#} · 방어 {s.Defense:0.#} · 사거리 {s.AttackRange:0.#}",
-                $"EXP {d.exp}/{d.ExpToNextLevel} · {LivingCostRules.Purse(d.gold, d.debt)} · 물약 {d.potions} · 조명탄 {d.flares} · 장비 {d.gearTier}등급",
-                $"피로 {d.fatigue:0} · 스트레스 {d.stress:0} · 처치 {d.kills} · 완료 의뢰 {d.questsCompleted}",
-            };
-            // Values/personality/traits are the recruitment "answer key" (see RecruitDialogView, hidden there
-            // 2026-09-23): this inspector card was still showing them for any visitor just from a map click,
-            // which defeated the point of hiding them in the recruit dialogue (user report 2026-09-23).
-            // Once recruited (not IsVisitor) they're shown normally; there's no more mystery to protect.
-            // User request 2026-09-29: whatever the talk has brought out is shown again (see VisitorReveal).
-            if (a.IsVisitor)
-            {
-                lines.Add($"{RecruitDialogView.KnownTemperament(a)} · 전투 {CombatTiers.Label(a.Tier)}");
-                lines.Add($"{Muted("특성:")} {RecruitDialogView.KnownTraits(a)}");
-            }
-            else
-            {
-                lines.Add($"성격 {d.mbti} · 가치관 {d.values} · 전투 {CombatTiers.Label(a.Tier)}");
-                lines.Add($"{Muted("특성:")} {TraitSet.Format(a.Traits.Traits, UITheme.Good, UITheme.Bad)}"
-                          // Quirks picked up along the way (P4-104e).
-                          + (d.quirks.Count > 0 ? $" {Muted("· 버릇:")} " + UIBuilder.Colored(string.Join(", ", d.quirks.Select(q => QuirkRules.Label(q, ThoughtRecorder.SpeciesName))), UITheme.Accent) : ""));
-                // Titles (P4-83): a region lord's fall, for those who were there.
-                if (d.titles.Count > 0) lines.Add($"{Muted("칭호:")} {UIBuilder.Colored(string.Join(" · ", d.titles), UITheme.Accent)}");
-            }
-            lines.Add($"{Muted("최근 생각:")} {a.LastThought ?? "-"}");
-            // What the latest decision weighed (P4-104a): why it went this way and not another.
-            if (a.LastThinking?.Choice != null) lines.Add($"{Muted("고려한 것:")} {a.LastThinking.Describe()}");
-            // Mood and the heaviest of its thoughts (P4-104c).
-            if (!a.IsVisitor)
-                lines.Add($"{Muted("기분:")} {MoodFormat.Mood(a)}{MoodFormat.Inspiration(a, Services.Get<GameClock>().TotalHours)} · {MoodFormat.Heaviest(a, 3)}");
-            lines.Add($"{Muted("최근 기억:")} {(d.memories.Count > 0 ? d.memories[d.memories.Count - 1].Format() : "-")}");
-            lines.Add($"{Muted("관계:")} {RelationsText(a)}");
-            lines.Add(Muted("전리품: " + loot));
-            _body.text = string.Join("\n", lines);
-        }
-
-        /// <summary>Strongest feelings towards current members, e.g. "테오 친함(+42), 리아 껄끄러움(-18)".</summary>
-        static string RelationsText(Adventurer a)
-        {
-            if (a.IsVisitor || !Services.TryGet<GuildRoster>(out var roster)) return "-";
-            var parts = Relationships.Strongest(a, roster.Members, 3)
-                .Select(x => $"{x.other.Data.name} {UIBuilder.Colored(Relationships.Describe(x.value), x.value >= 15 ? UITheme.Good : x.value <= -15 ? UITheme.Bad : UITheme.TextMuted)}")
-                .ToList();
-            return parts.Count == 0 ? "-" : string.Join(", ", parts);
+            _body.text = "";
+            _member.Bind(a);
         }
 
         void ShowMonster(Monster m)

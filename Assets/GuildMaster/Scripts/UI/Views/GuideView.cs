@@ -17,73 +17,143 @@ using UnityEngine.UI;
 namespace GuildMaster.UI
 {
     /// <summary>
-    /// "다음 할 일" (F-19, user request 2026-10-11): a small panel on the left under the side menu. The checklist of first
-    /// things to try (<see cref="GuideRules.Order"/>, done ones ticked off) and clickable hints about what needs the
-    /// guild master right now — a worn-out member (opens the care window), a keen visitor (jumps to them), an empty
-    /// quest board, a waiting event card. Y or the header button folds it (J went to decision cards at the 2026-10-31 merge).
+    /// "다음 할 일" (F-19, user request 2026-10-11): the next first thing to try (<see cref="GuideRules.Order"/>) and what
+    /// needs the guild master right now — a worn-out member (opens the care window), a keen visitor (jumps to them), an
+    /// empty quest board, a waiting decision card.
+    /// 2026-11-13 (user: "too much text in a narrow box", picked option B and the scroll button): a purple scroll button
+    /// under the minimap with a red count; it opens a wide card of roomy rows — an icon, a few words, one short line —
+    /// with the full sentence in each row's tooltip. A row opens what it is about and closes the card. Y or the button
+    /// toggles it; the button bounces when something new turns up.
     /// </summary>
     public class GuideView : MonoBehaviour
     {
         const float RefreshInterval = 0.5f;
-        const float Width = 300f;
-        const float OpenHeight = 300f;
-        const float FoldedHeight = 34f;
-        const int MaxShownSteps = 3;
+        const float ButtonSize = 64f, Top = 340f, Margin = 8f;
+        const float CardWidth = 470f, RowH = 72f, RowGap = 8f, HeaderH = 52f, Pad = 14f;
+        const int Rows = 1 + GuideRules.MaxHints;
 
-        RectTransform _root, _content;
-        Text _header, _checklist;
-        Button _fold;
-        readonly List<(Button button, Text text)> _hintRows = new();
+        RectTransform _button, _card;
+        Image _bubble;
+        Text _count, _header, _progress;
+        readonly List<Row> _rows = new();
         readonly List<GuideHint> _hints = new();
-        bool _folded;
-        float _timer;
+        GuideStep? _step;
+        bool _open;
+        int _lastCount;
+        float _timer, _bounceUntil;
+
+        class Row
+        {
+            public RectTransform Root;
+            public Button Button;
+            public Image Back, Icon;
+            public Text Title, Sub, Arrow;
+            public string Tip;
+            public System.Action OnClick;
+        }
 
         public void Build(RectTransform canvas)
         {
-            var bg = UIBuilder.Panel(canvas, "Guide", new Color(0.08f, 0.07f, 0.11f, 0.9f));
-            _root = bg.rectTransform;
-            // Under the side menu (which ends about 470px down; 10 buttons since the relationship graph).
-            _root.Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-8, -340), new Vector2(Width, OpenHeight)); // under the minimap (2026-10-31 merge)
+            // The scroll button.
+            var btnImg = HudStyle.NewImage(canvas, "hud_guide_button", "GuideButton");
+            if (btnImg.sprite == null) btnImg.color = UITheme.Button;
+            btnImg.raycastTarget = true;
+            _button = btnImg.rectTransform;
+            _button.Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-Margin, -Top), new Vector2(ButtonSize, ButtonSize));
+            var btn = btnImg.gameObject.AddComponent<Button>();
+            btn.targetGraphic = btnImg;
+            var colors = btn.colors;
+            colors.highlightedColor = new Color(1f, 1f, 1f, 1f);
+            colors.normalColor = new Color(0.94f, 0.94f, 0.94f, 1f);
+            colors.pressedColor = new Color(0.78f, 0.78f, 0.78f, 1f);
+            colors.selectedColor = colors.normalColor;
+            btn.colors = colors;
+            btn.onClick.AddListener(Toggle);
+            btn.onClick.AddListener(GuildMaster.Audio.Sound.Click);
+            btnImg.Tooltip(() => "다음 할 일 (Y)");
 
-            var headerRow = UIBuilder.Rect(_root, "Header");
-            headerRow.Anchor(new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -4), new Vector2(-12, 26));
-            _header = UIBuilder.Label(headerRow, "다음 할 일 (Y)", 16, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold);
-            _header.rectTransform.Stretch(6, 34, 0, 0);
-            _fold = UIBuilder.Button(headerRow, "-", Toggle, 26, 24);
-            ((RectTransform)_fold.transform).Anchor(new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), Vector2.zero, new Vector2(26, 24));
+            _bubble = HudStyle.NewImage(_button, "hud_count", "Count");
+            if (_bubble.sprite == null) _bubble.color = UITheme.Bad;
+            var brt = _bubble.rectTransform;
+            brt.anchorMin = brt.anchorMax = new Vector2(1f, 1f);
+            brt.pivot = new Vector2(0.5f, 0.5f);
+            brt.anchoredPosition = new Vector2(-6f, -6f);
+            brt.sizeDelta = new Vector2(28f, 28f);
+            _count = HudStyle.Label(brt, "", 15, Color.white, FontStyle.Bold, TextAnchor.MiddleCenter);
+            _count.rectTransform.Stretch(0, 0, 0, 1);
+            UISkin.Outline(_count);
 
-            _content = UIBuilder.Rect(_root, "Content");
-            _content.Stretch(8, 8, 34, 8);
-            UIBuilder.VLayout(_content, 4, 0);
-            _checklist = UIBuilder.Label(_content, "", 14, TextAnchor.UpperLeft).Size(-1, 92);
-            _checklist.verticalOverflow = VerticalWrapMode.Overflow;
-            UIBuilder.Label(_content, "지금 챙길 것", 14, TextAnchor.MiddleLeft, UITheme.Accent).Size(-1, 20);
-            for (int i = 0; i < GuideRules.MaxHints; i++)
-            {
-                int index = i;
-                var button = UIBuilder.Button(_content, "", () => Follow(index), -1, 38, new Color(0.18f, 0.16f, 0.24f, 1f), 13);
-                var text = button.GetComponentInChildren<Text>();
-                text.alignment = TextAnchor.MiddleLeft;
-                text.rectTransform.Stretch(8, 6, 1, 1);
-                text.fontSize = 13;
-                _hintRows.Add((button, text));
-            }
+            // The wide card, left of the button, its top level with the button's.
+            var cardImg = UIBuilder.Panel(canvas, "GuideCard", UITheme.PanelBg);
+            HudStyle.Card(cardImg);
+            _card = cardImg.rectTransform;
+            _card.Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-Margin - ButtonSize - 10f, -Top), new Vector2(CardWidth, 200f));
+            HudStyle.Place(HudStyle.NewImage(_card, "hud_icon_todo", "Icon").rectTransform, Pad + 4, 14, 26, 26);
+            _header = HudStyle.Label(_card, "다음 할 일", 20, UITheme.Accent, FontStyle.Bold);
+            HudStyle.Place(_header.rectTransform, Pad + 38, 10, 220, 32);
+            _progress = HudStyle.Label(_card, "", 16, UITheme.TextMuted, FontStyle.Bold, TextAnchor.MiddleRight);
+            HudStyle.Place(_progress.rectTransform, CardWidth - Pad - 120, 10, 112, 32);
+            for (int i = 0; i < Rows; i++) _rows.Add(MakeRow(i));
+            _card.gameObject.SetActive(false);
         }
+
+        Row MakeRow(int i)
+        {
+            var row = new Row();
+            var back = HudStyle.NewImage(_card, "hud_tag", "Row");
+            if (back.sprite == null) back.color = UITheme.RowBg;
+            back.raycastTarget = true;
+            row.Back = back;
+            row.Root = back.rectTransform;
+            HudStyle.Place(row.Root, Pad, HeaderH + i * (RowH + RowGap), CardWidth - 2 * Pad, RowH);
+            row.Button = back.gameObject.AddComponent<Button>();
+            row.Button.targetGraphic = back;
+            var colors = row.Button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.15f, 1.15f, 1.15f, 1f);
+            colors.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = Color.white;
+            row.Button.colors = colors;
+            row.Button.onClick.AddListener(() => { row.OnClick?.Invoke(); });
+            back.Tooltip(() => row.Tip);
+            row.Icon = HudStyle.NewImage(row.Root, "mark_alert", "Icon");
+            row.Icon.preserveAspect = true;
+            HudStyle.Place(row.Icon.rectTransform, 16, (RowH - 34) / 2, 34, 34);
+            row.Title = HudStyle.Label(row.Root, "", 18, HudStyle.Fore, FontStyle.Bold);
+            HudStyle.Place(row.Title.rectTransform, 64, 10, CardWidth - 2 * Pad - 100, 28);
+            row.Sub = HudStyle.Label(row.Root, "", 14, HudStyle.Muted);
+            HudStyle.Place(row.Sub.rectTransform, 64, 38, CardWidth - 2 * Pad - 100, 24);
+            row.Arrow = HudStyle.Label(row.Root, "›", 26, HudStyle.Muted, FontStyle.Bold, TextAnchor.MiddleCenter);
+            HudStyle.Place(row.Arrow.rectTransform, CardWidth - 2 * Pad - 40, (RowH - 36) / 2, 28, 36);
+            foreach (var t in new[] { row.Title, row.Sub }) t.verticalOverflow = VerticalWrapMode.Truncate;
+            return row;
+        }
+
+        public bool IsOpen => _open;
 
         void Toggle()
         {
-            _folded = !_folded;
-            _content.gameObject.SetActive(!_folded);
-            _root.sizeDelta = new Vector2(Width, _folded ? FoldedHeight : OpenHeight);
-            _fold.SetLabel(_folded ? "+" : "-");
+            _open = !_open;
+            _card.gameObject.SetActive(_open);
             _timer = 0f;
+        }
+
+        public void Close()
+        {
+            if (!_open) return;
+            _open = false;
+            _card.gameObject.SetActive(false);
         }
 
         void Update()
         {
-            if (_root == null) return;
+            if (_button == null) return;
             var kb = Keyboard.current;
             if (kb != null && kb.yKey.wasPressedThisFrame && !IsTyping() && !MenuState.IsOpen) Toggle();
+            // A little bounce when something new turns up while the card is shut.
+            float s = Time.unscaledTime < _bounceUntil ? 1f + 0.12f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 9f)) : 1f;
+            _button.localScale = new Vector3(s, s, 1f);
             _timer -= Time.unscaledDeltaTime;
             if (_timer > 0f) return;
             _timer = RefreshInterval;
@@ -94,49 +164,58 @@ namespace GuildMaster.UI
         {
             Services.TryGet<GuideTracker>(out var tracker);
             var snapshot = Snapshot(tracker);
-            if (tracker != null)
-            {
-                int done = GuideRules.Order.Count(tracker.IsDone);
-                _header.text = $"다음 할 일 (Y)  {UIBuilder.Colored($"{done}/{GuideRules.Order.Length}", UITheme.TextMuted)}";
-            }
-            if (_folded) return;
-
-            var sb = new StringBuilder();
-            if (tracker == null || tracker.AllDone) sb.Append(UIBuilder.Colored("기본 할 일을 모두 해 봤습니다.", UITheme.Good));
-            else
-            {
-                int shown = 0;
-                foreach (var step in GuideRules.Order)
-                {
-                    if (tracker.IsDone(step) || shown >= MaxShownSteps) continue;
-                    bool next = shown == 0;
-                    sb.Append(UIBuilder.Colored((next ? "▶ " : "· ") + GuideRules.Title(step), next ? UITheme.Text : UITheme.TextMuted)).Append('\n');
-                    if (next) sb.Append(UIBuilder.Colored("   " + GuideRules.HowTo(step), UITheme.TextMuted)).Append('\n');
-                    shown++;
-                }
-            }
-            _checklist.text = sb.ToString().TrimEnd('\n');
-
+            _step = tracker == null ? null : GuideRules.Next(tracker.IsDone);
             _hints.Clear();
             _hints.AddRange(GuideRules.Hints(snapshot));
-            for (int i = 0; i < _hintRows.Count; i++)
+
+            int count = _hints.Count + (_step.HasValue ? 1 : 0);
+            _bubble.gameObject.SetActive(count > 0);
+            _count.text = count.ToString();
+            if (count > _lastCount && !_open) _bounceUntil = Time.unscaledTime + 2.5f;
+            _lastCount = count;
+            if (!_open) return;
+
+            int done = tracker != null ? GuideRules.Order.Count(tracker.IsDone) : 0;
+            _progress.text = $"{done} / {GuideRules.Order.Length}";
+            int used = 0;
+            if (_step is { } step)
             {
-                var (button, text) = _hintRows[i];
-                bool on = i < _hints.Count;
-                button.gameObject.SetActive(on || (i == 0 && _hints.Count == 0));
-                if (!on)
-                {
-                    if (i == 0)
-                    {
-                        text.text = UIBuilder.Colored("급한 일은 없습니다.", UITheme.TextMuted);
-                        button.interactable = false;
-                    }
-                    continue;
-                }
-                var h = _hints[i];
-                text.text = h.Urgency >= 4 ? UIBuilder.Colored(h.Text, UITheme.Warn) : h.Text;
-                button.interactable = h.Action != HintAction.None;
+                var stepCopy = step;
+                Fill(_rows[used++], "hud_icon_todo", GuideRules.Title(step), GuideRules.Short(step), GuideRules.HowTo(step),
+                     new Color(0.42f, 0.34f, 0.56f, 1f), HudStyle.Fore, step == GuideStep.Board ? () => { NotificationActions.Follow(NotificationLink.QuestBoard()); Close(); } : null);
             }
+            for (int i = 0; i < _hints.Count && used < _rows.Count; i++)
+            {
+                var h = _hints[i];
+                int index = i;
+                bool urgent = h.Urgency >= 4;
+                Fill(_rows[used++], "mark_alert", h.Title ?? h.Text, h.Sub ?? "", h.Text,
+                     urgent ? new Color(0.5f, 0.3f, 0.26f, 1f) : new Color(0.34f, 0.28f, 0.44f, 1f),
+                     urgent ? new Color(1f, 0.8f, 0.55f, 1f) : HudStyle.Fore,
+                     h.Action == HintAction.None ? null : () => { Follow(index); Close(); });
+            }
+            if (used == 0)
+                Fill(_rows[used++], "hud_icon_check_on", tracker != null && tracker.AllDone ? "기본 할 일을 모두 해 봤어요" : "급한 일은 없어요",
+                     "새로운 일이 생기면 숫자로 알려 줘요", null, new Color(0.3f, 0.26f, 0.36f, 1f), HudStyle.Fore, null);
+            for (int i = used; i < _rows.Count; i++)
+                if (_rows[i].Root.gameObject.activeSelf) _rows[i].Root.gameObject.SetActive(false);
+            float height = HeaderH + used * (RowH + RowGap) - RowGap + Pad;
+            if (Mathf.Abs(_card.sizeDelta.y - height) > 0.5f) _card.sizeDelta = new Vector2(CardWidth, height);
+        }
+
+        static void Fill(Row row, string icon, string title, string sub, string tip, Color back, Color titleColor, System.Action onClick)
+        {
+            if (!row.Root.gameObject.activeSelf) row.Root.gameObject.SetActive(true);
+            HudStyle.Slice(row.Icon, icon);
+            row.Icon.type = Image.Type.Simple;
+            row.Back.color = back;
+            row.Title.text = title;
+            row.Title.color = titleColor;
+            row.Sub.text = sub;
+            row.Tip = tip;
+            row.OnClick = onClick;
+            row.Button.interactable = onClick != null;
+            row.Arrow.gameObject.SetActive(onClick != null);
         }
 
         GuideSnapshot Snapshot(GuideTracker tracker)

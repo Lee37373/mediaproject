@@ -145,6 +145,9 @@ namespace GuildMaster.Units
                 h.Knockback(h.Position - self.Position, 0.6f);
             }
             Fx?.Ring(self.Position, 1.9f, Color);
+            // 2026-11-13 (user: effects hard to see): the pack's whirl and a small shake.
+            Vfx("Whirlwind1", self.Position + new Vector2(0f, 0.2f), 1.5f);
+            ShakeIfVisible(self.Position, 0.12f);
             Announce(self);
             return true;
         }
@@ -171,6 +174,7 @@ namespace GuildMaster.Units
             }
             if (pulled == 0) return false;
             Fx?.Ring(self.Position, 5f, Color, 0.5f);
+            Vfx("MagicCircle1_Yellow", self.Position, 1.6f);
             Announce(self);
             return true;
         }
@@ -203,6 +207,7 @@ namespace GuildMaster.Units
                 if (along < 0f || along > (to - from).magnitude) continue;
                 if ((rel - dir * along).sqrMagnitude > 0.45f * 0.45f) continue;
                 Damage(self, u, 1.3f);
+                Vfx("Hit1_Green", u.Position + new Vector2(0f, 0.35f), 0.9f);
                 hits++;
             }
             if (hits == 0) return false;
@@ -236,7 +241,8 @@ namespace GuildMaster.Units
                     if (caster == null) return;
                     foreach (var u in HostilesAround(caster, point, Radius).ToArray()) Damage(caster, u, 1.5f);
                     Fx?.Ring(point, Radius, Color, 0.4f);
-                    Fx?.Spark(point, new Color(1f, 0.8f, 0.3f), 1.4f, 0.3f);
+                    if (!Vfx("Explosion_Small", point, 1.6f)) Fx?.Spark(point, new Color(1f, 0.8f, 0.3f), 1.4f, 0.3f);
+                    ShakeIfVisible(point, 0.15f);
                 },
             });
             Announce(self);
@@ -257,10 +263,10 @@ namespace GuildMaster.Units
             var threat = Tactics.NearestMeleeThreat(self, 1.4f);
             if (threat == null || self.HpRatio > 0.75f) return false;
             if (!Tactics.FindKitePosition(self, threat, target, 3.5f, out var point)) return false;
-            Fx?.Spark(self.Position, Color, 1f);
+            if (!Vfx("MagicCircle1_Purple", self.Position, 1.1f)) Fx?.Spark(self.Position, Color, 1f);
             self.Mover.Stop();
             self.transform.position = new Vector3(point.x, point.y, self.transform.position.z);
-            Fx?.Spark(point, Color, 1f);
+            if (!Vfx("MagicCircle1_Purple", point, 1.1f)) Fx?.Spark(point, Color, 1f);
             Announce(self);
             return true;
         }
@@ -284,6 +290,7 @@ namespace GuildMaster.Units
             var patient = MostEndangeredAlly(self, Range, HealsBelow);
             if (patient == null) return false;
             if (patient != self) Fx?.Beam(self.Position, patient.Position, Color, 0.08f, 0.3f);
+            Vfx("Heal2", patient.Position + new Vector2(0f, 0.2f), 1.2f);
             HealUnit(self, patient, self.Stats.Attack * 3f);
             Announce(self);
             return true;
@@ -314,6 +321,7 @@ namespace GuildMaster.Units
             if (s_patients.Count < MinPatients) return false;
             foreach (var u in s_patients.ToArray()) HealUnit(self, u, self.Stats.Attack * 1.5f);
             Fx?.Ring(self.Position, Radius, Color, 0.5f);
+            Vfx("Heal2", self.Position + new Vector2(0f, 0.2f), 1.9f);
             Announce(self);
             return true;
         }
@@ -348,7 +356,7 @@ namespace GuildMaster.Units
             _time = 0f;
             _active = true;
             self.Mover.Stop();
-            Fx?.Spark(self.Position, new Color(0.8f, 0.7f, 0.5f), 0.9f);
+            if (!Vfx("Smoke", self.Position + new Vector2(0f, 0.15f), 0.7f)) Fx?.Spark(self.Position, new Color(0.8f, 0.7f, 0.5f), 0.9f);
             Announce(self);
             return true;
         }
@@ -366,6 +374,7 @@ namespace GuildMaster.Units
                 Damage(self, _target, 1.4f);
                 _target.Knockback(_dir, 1.4f);
                 _target.Stun(0.5f);
+                Vfx("Hit5_Yellow", _target.Position + new Vector2(0f, 0.35f), 1f);
                 ShakeIfVisible(_target.Position, 0.15f);
                 _active = false;
             }
@@ -403,6 +412,7 @@ namespace GuildMaster.Units
                     u.Knockback(u.Position - center, 1.5f);
                 }
                 Fx?.Ring(center, Radius, Color, 0.45f);
+                Vfx("Explosion_Small", center, 2f);
                 ShakeIfVisible(center, 0.35f);
             });
             Announce(self);
@@ -476,6 +486,7 @@ namespace GuildMaster.Units
                 u.Mover.Stop();
             }
             Fx?.Ring(self.Position, 1.2f, Color, 0.5f);
+            Vfx("Smoke", self.Position + new Vector2(0f, 0.2f), 0.9f);
             Announce(self);
             return true;
         }
@@ -512,10 +523,10 @@ namespace GuildMaster.Units
             var wanted = self.Position + dir.normalized * distance;
             if (!world.Grid.TryFindNearestWalkable(GridMap.WorldToCell(wanted), 3, out var cell)) return false;
             var landing = GridMap.CellToWorld(cell);
-            Fx?.Spark(self.Position, Color, 1f);
+            if (!Vfx("MagicCircle1_Purple", self.Position, 1.1f)) Fx?.Spark(self.Position, Color, 1f);
             self.Mover.Stop();
             self.transform.position = new Vector3(landing.x, landing.y, self.transform.position.z);
-            Fx?.Spark(landing, Color, 1f);
+            if (!Vfx("MagicCircle1_Purple", landing, 1.1f)) Fx?.Spark(landing, Color, 1f);
             Announce(self);
             return true;
         }
@@ -580,7 +591,7 @@ namespace GuildMaster.Units
             var point = OnSelf ? self.Position : target.Position;
             foreach (var u in HostilesAround(self, point, Radius).ToArray()) Damage(self, u, 1.2f);
             Fx?.Ring(point, Radius, Color, 0.4f);
-            Fx?.Spark(point, Color, 1.2f, 0.3f);
+            if (!Vfx("Explosion_Small", point, 1.4f)) Fx?.Spark(point, Color, 1.2f, 0.3f);
             if (OnSelf) ShakeIfVisible(point, 0.2f);
             Announce(self);
             EventBus.Publish(new HazardStrikeEvent { User = self, Point = point, Kind = _kind });
@@ -640,7 +651,7 @@ namespace GuildMaster.Units
             {
                 foreach (var u in HostilesAround(self, point, Radius).ToArray()) Damage(self, u, 2f);
                 Fx?.Ring(point, Radius, Color, 0.5f);
-                Fx?.Spark(point, Color, 1.6f, 0.4f);
+                if (!Vfx("Explosion_Large", point, 1.3f)) Fx?.Spark(point, Color, 1.6f, 0.4f);
                 ShakeIfVisible(point, 0.4f);
                 EventBus.Publish(new HazardStrikeEvent { User = self, Point = point, Kind = _kind });
             });

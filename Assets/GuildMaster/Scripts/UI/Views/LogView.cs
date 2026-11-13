@@ -8,26 +8,28 @@ using UnityEngine.UI;
 namespace GuildMaster.UI
 {
     /// <summary>
-    /// Bottom-right event feed: latest log entries plus NPC speech (chat). Moved from the bottom left, where the guide
-    /// and menus covered it (user, 2026-10-31); steps left of the inspector while something is selected.
+    /// Event feed: latest log entries plus NPC speech (chat). Bottom right from 2026-10-31; back to the bottom left and
+    /// smaller on 2026-11-12 (teammate: it jumped aside every time a character was picked; user: a bit too big), now
+    /// that the side menu is short. It never moves; the inspector has the bottom right to itself.
     /// </summary>
     public class LogView : MonoBehaviour
     {
-        const int VisibleLines = 11;
+        const int VisibleLines = 8;
         static readonly Color SpeechColor = new(0.65f, 0.85f, 1f);
 
         readonly Queue<string> _lines = new();
         Text _text;
         RectTransform _panel;
         bool _dirty;
-        /// <summary>Inspector panel width (420) plus margins, for stepping aside while it is open.</summary>
-        const float BesideInspector = -436f;
+        /// <summary>Narrow enough to stay left of the command bar (620 wide, bottom centre) down to 4:3.</summary>
+        public static readonly Vector2 Size = new(500f, 176f);
 
         public void Build(RectTransform canvas)
         {
             var panel = UIBuilder.Panel(canvas, "Log", new Color(0.05f, 0.04f, 0.07f, 0.72f), raycast: false);
             _panel = panel.rectTransform;
-            _panel.Anchor(new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-8, 8), new Vector2(620, 236));
+            _panel.Anchor(Vector2.zero, Vector2.zero, Vector2.zero, new Vector2(8, 8), Size);
+            panel.gameObject.AddComponent<RectMask2D>(); // a long line wraps; the oldest is cut at the top
             _text = UIBuilder.Label(panel.transform, "", 14, TextAnchor.LowerLeft);
             _text.rectTransform.Stretch(10, 10, 8, 8);
             _text.verticalOverflow = VerticalWrapMode.Overflow;
@@ -79,9 +81,6 @@ namespace GuildMaster.UI
 
         void LateUpdate()
         {
-            bool inspecting = Services.TryGet<InspectorView>(out var inspector) && inspector.Selected != null;
-            float x = inspecting ? BesideInspector : -8f;
-            if (_panel != null && !Mathf.Approximately(_panel.anchoredPosition.x, x)) _panel.anchoredPosition = new Vector2(x, 8);
             if (!_dirty) return;
             _dirty = false;
             _text.text = string.Join("\n", _lines);

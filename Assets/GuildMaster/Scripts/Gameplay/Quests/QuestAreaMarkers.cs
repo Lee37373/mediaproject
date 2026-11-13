@@ -68,6 +68,8 @@ namespace GuildMaster.Quests
         void Add(Quest q)
         {
             if (!Shown(q) || _markers.ContainsKey(q)) return;
+            // 2026-11-13 (user: the purple circles piled up): an incident shows a "?"/"!" notice instead (UI RumourMarkLayer).
+            if (q.Incident != null) return;
             var go = new GameObject($"HuntArea {q.Id}");
             go.transform.SetParent(transform, false);
             var sr = go.AddComponent<SpriteRenderer>();

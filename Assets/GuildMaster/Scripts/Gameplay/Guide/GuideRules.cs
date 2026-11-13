@@ -20,6 +20,10 @@ namespace GuildMaster.Guide
     public struct GuideHint
     {
         public string Text;
+        /// <summary>A few words for the hint card (2026-11-13: "도윤 영입 기회"); <see cref="Text"/> goes to its tooltip.</summary>
+        public string Title;
+        /// <summary>One short line under the title ("호감 63 · 말을 걸어 권유").</summary>
+        public string Sub;
         public HintAction Action;
         /// <summary>The member or visitor it is about (Counsel, Visitor).</summary>
         public string TargetId;
@@ -91,6 +95,17 @@ namespace GuildMaster.Guide
             _ => "아침 9시와 저녁 5시에 정할 일이 생길 수 있습니다. 카드가 뜨면 선택지를 고르세요(J).",
         };
 
+        /// <summary>One short line for the hint card (2026-11-13); <see cref="HowTo"/> is its tooltip.</summary>
+        public static string Short(GuideStep s) => s switch
+        {
+            GuideStep.Board => "Q 게시판에서 마을 의뢰 확인",
+            GuideStep.TalkVisitor => "방문자 클릭 → [영입 대화]",
+            GuideStep.Counsel => "R 길드원 → [관리] → [면담]",
+            GuideStep.Build => "건물 클릭 또는 B 건설",
+            GuideStep.Relationships => "V 관계도 열어 보기",
+            _ => "카드가 뜨면 선택지 고르기 (J)",
+        };
+
         /// <summary>The first step not done yet (null when all are done).</summary>
         public static GuideStep? Next(Func<GuideStep, bool> done)
         {
@@ -113,18 +128,24 @@ namespace GuildMaster.Guide
             var hints = new List<GuideHint>();
             if (s == null) return hints;
             if (!string.IsNullOrEmpty(s.PendingCard))
-                hints.Add(new GuideHint { Text = $"결정 카드가 답을 기다립니다: '{s.PendingCard}'", Action = HintAction.Decision, Urgency = 5 });
+                hints.Add(new GuideHint
+                {
+                    Text = $"결정 카드가 답을 기다립니다: '{s.PendingCard}'", Title = "결정 카드 대기", Sub = $"'{s.PendingCard}' 답하기 (J)",
+                    Action = HintAction.Decision, Urgency = 5,
+                });
             foreach (var m in s.Members)
             {
                 if (m.Demand != CareDemand.None)
                     hints.Add(new GuideHint
                     {
                         Text = $"{Ga(m.Name)} {DemandLabel(m.Demand)}{Eul(DemandLabel(m.Demand))} 요청했습니다.", Action = HintAction.Counsel, TargetId = m.Id, Urgency = 4,
+                        Title = $"{m.Name}의 {DemandLabel(m.Demand)} 요청", Sub = "관리 창에서 들어주기",
                     });
                 else if (m.Stress >= StressRules.StrainedAt)
                     hints.Add(new GuideHint
                     {
                         Text = $"{Ga(m.Name)} 지쳐 있습니다(스트레스 {Math.Round(m.Stress)}). 면담해 보세요.", Action = HintAction.Counsel, TargetId = m.Id,
+                        Title = $"{Ga(m.Name)} 지침", Sub = $"스트레스 {Math.Round(m.Stress)} · 면담하기",
                         Urgency = m.Stress >= StressRules.BreakingAt ? 4 : 3,
                     });
             }
@@ -133,12 +154,21 @@ namespace GuildMaster.Guide
                     hints.Add(new GuideHint
                     {
                         Text = $"방문자 {Ga(v.Name)} 길드에 관심이 많습니다(호감 {v.Affinity}). 말을 걸어 권유해 보세요.", Action = HintAction.Visitor, TargetId = v.Id,
+                        Title = $"{v.Name} 영입 기회", Sub = $"호감 {v.Affinity} · 말을 걸어 권유",
                         Urgency = 3,
                     });
             if (s.OpenQuests == 0 && s.IdleMembers > 0)
-                hints.Add(new GuideHint { Text = $"게시판이 비어 쉬는 길드원이 {s.IdleMembers}명 있습니다. 제안 카드에서 의뢰를 골라 맡겨 보세요.", Action = HintAction.QuestBoard, Urgency = 2 });
+                hints.Add(new GuideHint
+                {
+                    Text = $"게시판이 비어 쉬는 길드원이 {s.IdleMembers}명 있습니다. 제안 카드에서 의뢰를 골라 맡겨 보세요.",
+                    Title = $"쉬는 길드원 {s.IdleMembers}명", Sub = "제안 카드에서 의뢰 맡기기", Action = HintAction.QuestBoard, Urgency = 2,
+                });
             if (s.Gold < LowGold)
-                hints.Add(new GuideHint { Text = $"자금이 {s.Gold}G뿐입니다. 창고 물건을 팔거나 보상이 적은 의뢰로 버티세요.", Urgency = 1 });
+                hints.Add(new GuideHint
+                {
+                    Text = $"자금이 {s.Gold}G뿐입니다. 창고 물건을 팔거나 보상이 적은 의뢰로 버티세요.", Title = $"자금 {s.Gold}G뿐", Sub = "창고 물건 팔기 · 작은 의뢰로 버티기",
+                    Urgency = 1,
+                });
             // Stable: equal urgency keeps the order above.
             return hints.Select((h, i) => (h, i)).OrderByDescending(x => x.h.Urgency).ThenBy(x => x.i).Take(Math.Max(0, max)).Select(x => x.h).ToList();
         }

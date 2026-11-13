@@ -22,8 +22,11 @@ namespace GuildMaster.Visuals
     {
         /// <summary>Above characters (2000 ± y) and the older effects.</summary>
         public const int SortingOrder = 2970;
-        /// <summary>Fits the pack's effects (about 0.7 units at scale 1) to the one-unit characters.</summary>
-        const float BaseScale = 1.2f;
+        /// <summary>Fits the pack's effects (about 0.7 units at scale 1) to the one-unit characters. 1.2 → 1.5 (2026-11-13,
+        /// user: effects hard to see in play).</summary>
+        const float BaseScale = 1.5f;
+        /// <summary>Glow opacity of the "_add" materials (shader _Boost, 2.2 before 2026-11-13) and an alpha lift for the rest.</summary>
+        const float GlowBoost = 3.4f, AlphaBoost = 1.35f;
         const float MaxSeconds = 2.2f;
 
         /// <summary>True when the pack is imported and the service runs: <see cref="CombatFeedback"/> leaves hits to it.</summary>
@@ -71,13 +74,13 @@ namespace GuildMaster.Visuals
             string key = bigCrit ? (personHit ? "Hit5_Red" : "Hit5_Yellow")
                        : personHit ? "Hit1_Red"
                        : e.Source is Adventurer a && a.Data != null && a.Data.cls == AdventurerClass.Mage ? "Hit1_Purple" : "Hit1_Yellow";
-            Play(key, at, bigCrit ? 1.2f : 0.8f);
+            Play(key, at, bigCrit ? 1.5f : 1f);
         }
 
         void OnHealed(UnitHealedEvent e)
         {
             if (e.Target == null || e.Amount <= 0f || !Seen(e.Target.Position)) return;
-            Play("Heal1", e.Target.Position, 0.9f);
+            Play("Heal1", e.Target.Position, 1.1f);
         }
 
         void OnSkill(SkillUsedEvent e)
@@ -85,14 +88,16 @@ namespace GuildMaster.Visuals
             var user = e.User;
             if (user == null || !Seen(user.Position)) return;
             user.Visual?.PlaySkill();
-            // A circle in the skill's colour at the user's feet.
-            Play("Buff1_" + ColorName(e.Color), user.Position, 1f);
+            // A circle in the skill's colour at the user's feet, and (2026-11-13, user: effects hard to see) a magic circle
+            // under it so every skill reads at a glance.
+            Play("Buff1_" + ColorName(e.Color), user.Position, 1.5f);
+            Play(CircleFor(e.Color), user.Position, 1.1f);
         }
 
         void OnLevelUp(AdventurerLevelUpEvent e)
         {
             if (e.Adventurer == null || !Seen(e.Adventurer.Position)) return;
-            Play("Levelup_Yellow", e.Adventurer.Position, 1.1f);
+            Play("Levelup_Yellow", e.Adventurer.Position, 1.4f);
         }
 
         void OnDied(UnitDiedEvent e)
@@ -101,6 +106,14 @@ namespace GuildMaster.Visuals
             if (e.Victim == null || e.Victim is Monster || !Seen(e.Victim.Position)) return;
             Play("Smoke", e.Victim.Position + new Vector2(0f, 0.2f), 0.9f);
         }
+
+        /// <summary>The pack's magic circles come in three colours: purple, blue (cool and pale skills) and yellow (warm).</summary>
+        public static string CircleFor(Color c) => ColorName(c) switch
+        {
+            "Purple" => "MagicCircle1_Purple",
+            "Blue" or "Green" or "White" => "MagicCircle1_Blue",
+            _ => "MagicCircle1_Yellow",
+        };
 
         /// <summary>The pack's colour variant nearest to a skill's colour.</summary>
         public static string ColorName(Color c)
@@ -226,6 +239,8 @@ namespace GuildMaster.Visuals
                                    : src.HasProperty("_Color") ? src.GetColor("_Color") * 0.5f
                                    : new Color(0.5f, 0.5f, 0.5f, 0.5f));
             m.SetFloat("_Additive", additive ? 1f : 0f);
+            m.SetFloat("_Boost", GlowBoost);
+            m.SetFloat("_AlphaBoost", AlphaBoost);
             m.SetFloat("_SrcBlend", (float)(additive ? BlendMode.One : BlendMode.SrcAlpha));
             m.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
             m.renderQueue = (int)RenderQueue.Transparent;

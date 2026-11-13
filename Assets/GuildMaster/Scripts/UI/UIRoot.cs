@@ -56,6 +56,10 @@ namespace GuildMaster.UI
             WorldLayer.gameObject.AddComponent<EmotionIconLayer>().Build(UIBuilder.Rect(WorldLayer, "Emotions").Stretch());
             // Residents' requests (P4-134): a "!" on the other side of the head.
             WorldLayer.gameObject.AddComponent<RequestMarkLayer>().Build(UIBuilder.Rect(WorldLayer, "RequestMarks").Stretch());
+            // Incidents as "?"/"!" notices, gone when clicked (2026-11-13, in place of the purple rumour circles).
+            var rumourMarks = WorldLayer.gameObject.AddComponent<RumourMarkLayer>();
+            rumourMarks.Build(UIBuilder.Rect(WorldLayer, "RumourMarks").Stretch());
+            Services.Register(rumourMarks);
             var bubbles = WorldLayer.gameObject.AddComponent<SpeechBubbleLayer>();
             bubbles.Build(UIBuilder.Rect(WorldLayer, "Bubbles").Stretch());
             // Town talks (user request 2026-10-01): bubbles for people who are not adventurers (the merchant).
@@ -90,7 +94,8 @@ namespace GuildMaster.UI
             HudLayer.gameObject.AddComponent<CommandBarView>().Build(HudLayer);
 
             // The next rank's conditions (P4-106), under the side menu and beneath the windows.
-            const float MenuHeight = 684f; // fifteen buttons of 40 with 6 between (P4-112: the guild's rules; 2026-10-31 merge: 살림, 관계도)
+            // 2026-11-12 (user: too many buttons on the left): four buttons and two groups that open beside the menu.
+            const float MenuHeight = 6 * 40f + 5 * 6f;
             HudLayer.gameObject.AddComponent<GoalPanelView>().Build(HudLayer, new Vector2(8, -60 - MenuHeight - 10));
 
             WindowLayer = UIBuilder.Rect(HudLayer, "Windows").Stretch();
@@ -98,6 +103,9 @@ namespace GuildMaster.UI
             var menu = UIBuilder.Rect(HudLayer, "SideMenu");
             menu.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(8, -60), new Vector2(150, MenuHeight));
             UIBuilder.VLayout(menu, 6, 0);
+            // 2026-11-12: the less used windows sit in two groups (their hotkeys unchanged); moved below 알림 further down.
+            var guildGroup = SideMenuGroup.Create(menu, HudLayer, "길드  ▶");
+            var townGroup = SideMenuGroup.Create(menu, HudLayer, "마을·기록  ▶");
             // P6-2 (user decision 2026-11-10): "close all" beside the side menu's top, above the windows, only while two or
             // more are open; Shift+ESC does the same.
             _closeAll = UIBuilder.Button(HudLayer, "창 모두 닫기", CloseAllWindows, 150, 34, null, 15);
@@ -107,37 +115,41 @@ namespace GuildMaster.UI
 
             AddWindow<QuestBoardView>(menu, "의뢰 게시판 (Q)", Key.Q, new Vector2(1180, 680));
             AddWindow<RosterView>(menu, "길드원 (R)", Key.R, new Vector2(1200, 680)); // 2026-11-05: party board
-            AddWindow<StockView>(menu, "창고 (I)", Key.I, new Vector2(760, 600));
+            AddWindow<StockView>(guildGroup.Items, "창고 (I)", Key.I, new Vector2(760, 600));
             // Food and quest payments (economy round 2, 2026-10-29).
-            AddWindow<HouseholdView>(menu, "살림 (U)", Key.U, new Vector2(820, 900)); // P4-134: the residents' standing and requests
+            AddWindow<HouseholdView>(guildGroup.Items, "살림 (U)", Key.U, new Vector2(820, 900)); // P4-134: the residents' standing and requests
             // A resident's request (P4-134): opened by clicking the resident or its notification.
             AddWindow<ResidentRequestView>(null, null, Key.None, new Vector2(760, 640));
             // Residents' odd jobs as minigames (일손 돕기, 2026-10-29), opened from the household window.
             AddWindow<ChoreView>(null, null, Key.None, new Vector2(820, 500)); // 2026-11-11: the minigame scene, no empty band
-            AddWindow<EcologyView>(menu, "생태계 (E)", Key.E, new Vector2(900, 560));
-            AddWindow<MerchantView>(menu, "행상인 (T)", Key.T, new Vector2(760, 600));
-            AddWindow<BuildView>(menu, "건설 (B)", Key.B, new Vector2(760, 620));
+            AddWindow<EcologyView>(townGroup.Items, "생태계 (E)", Key.E, new Vector2(900, 560));
+            AddWindow<MerchantView>(townGroup.Items, "행상인 (T)", Key.T, new Vector2(760, 600));
+            AddWindow<BuildView>(guildGroup.Items, "건설 (B)", Key.B, new Vector2(760, 620));
             // Daily accounts: income, spending and events per game day (F-3). Moved off B, which
             // construction (P4-13) already claimed.
-            AddWindow<DailyReportView>(menu, "정산 (L)", Key.L, new Vector2(960, 760));
+            AddWindow<DailyReportView>(guildGroup.Items, "정산 (L)", Key.L, new Vector2(960, 760));
             // The town newspaper (P4-130): opens by itself each morning; O, the accounts window and its notification.
             AddWindow<NewspaperView>(null, null, Key.O, new Vector2(920, 800));
             // The wall of the fallen: relics to fetch, memorials (F-6).
-            AddWindow<MemorialView>(menu, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
+            AddWindow<MemorialView>(townGroup.Items, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
             // The guild's rank and fame (P4-106).
-            AddWindow<GuildRankView>(menu, "길드 등급 (G)", Key.G, new Vector2(900, 720));
+            AddWindow<GuildRankView>(guildGroup.Items, "길드 등급 (G)", Key.G, new Vector2(900, 720));
             // The bestiary (P4-107).
-            AddWindow<BestiaryView>(menu, "몬스터 도감 (K)", Key.K, new Vector2(1000, 640));
+            AddWindow<BestiaryView>(townGroup.Items, "몬스터 도감 (K)", Key.K, new Vector2(1000, 640));
             // Decision cards (P4-111c).
             // P4-118: opens by itself on a new card. P4-135: as tall as what it shows (up to 820), KMS's card width.
             AddWindow<DilemmaView>(menu, "결정 (J)", Key.J, new Vector2(760, 820));
             // The guild's rules (P4-112, H2).
-            AddWindow<GuildLawView>(menu, "길드 규칙 (P)", Key.P, new Vector2(980, 760));
+            AddWindow<GuildLawView>(guildGroup.Items, "길드 규칙 (P)", Key.P, new Vector2(980, 760));
             // Who gets along with whom, and how everyone feels (F-10). G went to the guild rank at the 2026-10-31 merge.
-            AddWindow<RelationshipView>(menu, "관계도 (V)", Key.V, new Vector2(1040, 720));
+            AddWindow<RelationshipView>(townGroup.Items, "관계도 (V)", Key.V, new Vector2(1040, 720));
             // Notification list (F-1); the side-menu button shows the unread count (kept up to date by ToastLayer).
             var notificationView = AddWindow<NotificationView>(null, null, Key.N, new Vector2(820, 560));
             var notificationButton = UIBuilder.Button(menu, "알림 (N)", () => Focus(notificationView), -1, 40);
+            guildGroup.Button.transform.SetAsLastSibling();
+            townGroup.Button.transform.SetAsLastSibling();
+            guildGroup.Seal();
+            townGroup.Seal();
             // Debug-only: LLM request/response viewer (no side-menu button).
             if (Debug.isDebugBuild) AddWindow<LlmDebugView>(null, null, Key.F2, new Vector2(1180, 680));
             // Opened from the inspector ("영입 대화"), no menu button or hotkey.
@@ -375,6 +387,7 @@ namespace GuildMaster.UI
                 // Shift+ESC closes every window and nothing else.
                 _openOrder.RemoveAll(p => p == null || !p.Visible);
                 if (kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed) CloseAllWindows();
+                else if (SideMenuGroup.CloseOpen()) { } // an open menu group (2026-11-12) first
                 else if (_keyHelp != null && _keyHelp.IsOpen) _keyHelp.Hide();
                 else if (_victory != null && _victory.IsOpen) _victory.Continue();
                 else if (TopWindow != null) TopWindow.Close();
