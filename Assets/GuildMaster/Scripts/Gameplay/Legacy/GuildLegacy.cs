@@ -16,6 +16,22 @@ namespace GuildMaster.Legacy
     /// <summary>A member held on at 1 HP after a lethal blow (P4-129: the spectator director shows it).</summary>
     public struct LastStandEvent { public Adventurer Adventurer; public Unit Killer; }
 
+    /// <summary>What the memorial wall tells the newspaper (2026-11-15).</summary>
+    public enum MemorialStory { Hero, Anniversary, Heirloom }
+
+    /// <summary>A story of the memorial wall: a hero remembered, an anniversary kept, a relic handed on.</summary>
+    public struct MemorialStoryEvent
+    {
+        public MemorialStory Kind;
+        public int RecordId;
+        /// <summary>The fallen; <see cref="Other"/> = the heir.</summary>
+        public string Name, Other;
+        /// <summary>The hero's reason, or the heirloom.</summary>
+        public string Detail;
+        public int Years, Count;
+        public string[] Ids;
+    }
+
     /// <summary>
     /// What death leaves behind (F-6). Keeps a record of every member who fell, follows what they dropped
     /// (the relics: brought home by a member, taken by a monster, or rotted away), lets the guild master hold a
@@ -44,6 +60,7 @@ namespace GuildMaster.Legacy
             EventBus.Subscribe<AdventurerDiedEvent>(OnDied);
             EventBus.Subscribe<GroundItemTakenEvent>(OnTaken);
             EventBus.Subscribe<HourPassedEvent>(OnHour);
+            EventBus.Subscribe<AdventurerSpeechEvent>(OnSpeech);
         }
 
         public void Dispose()
@@ -51,7 +68,9 @@ namespace GuildMaster.Legacy
             EventBus.Unsubscribe<AdventurerDiedEvent>(OnDied);
             EventBus.Unsubscribe<GroundItemTakenEvent>(OnTaken);
             EventBus.Unsubscribe<HourPassedEvent>(OnHour);
+            EventBus.Unsubscribe<AdventurerSpeechEvent>(OnSpeech);
             _fallen.Clear();
+            _lastSaid.Clear();
         }
 
         /// <summary>Everyone who fell, oldest first.</summary>
@@ -93,6 +112,12 @@ namespace GuildMaster.Legacy
             public bool memorial;
             public float memorial_hour;
             public bool recovery_rewarded;
+            // The memorial wall (2026-11-15); missing in older saves, filled in on load.
+            public int cls = -1;
+            public List<string> titles = new();
+            public string epitaph, hero, last_words, heir_id, heir_name, heir_item;
+            public List<string> rem_ids = new(), rem_names = new(), rem_lines = new();
+            public int anniversaries, last_anniversary;
         }
 
         [Serializable]
@@ -117,7 +142,12 @@ namespace GuildMaster.Legacy
                     id = r.Id, adventurer = r.AdventurerId, name = r.Name, class_label = r.ClassLabel, values = r.Values, killer = r.KillerName,
                     level = r.Level, kills = r.Kills, quests = r.QuestsDone, day = r.Day, died_at = r.DiedAtHour, position = r.Position,
                     memorial = r.MemorialHeld, memorial_hour = r.MemorialHour, recovery_rewarded = r.RecoveryRewarded,
+                    cls = (int)r.Cls, epitaph = r.Epitaph, hero = r.HeroReason, last_words = r.LastWords,
+                    heir_id = r.HeirId, heir_name = r.HeirName, heir_item = r.HeirItem,
+                    anniversaries = r.Anniversaries, last_anniversary = r.LastAnniversaryDay,
                 };
+                sr.titles.AddRange(r.Titles);
+                foreach (var m in r.Remembrances) { sr.rem_ids.Add(m.Id); sr.rem_names.Add(m.Name); sr.rem_lines.Add(m.Line); }
                 foreach (var relic in r.Relics)
                     sr.relics.Add(new SavedRelic
                     {
@@ -147,7 +177,16 @@ namespace GuildMaster.Legacy
                     KillerName = sr.killer, Level = sr.level, Kills = sr.kills, QuestsDone = sr.quests, Day = sr.day,
                     DiedAtHour = sr.died_at, Position = sr.position, MemorialHeld = sr.memorial, MemorialHour = sr.memorial_hour,
                     RecoveryRewarded = sr.recovery_rewarded,
+                    HeroReason = sr.hero, HeirId = sr.heir_id, HeirName = sr.heir_name, HeirItem = sr.heir_item,
+                    Anniversaries = sr.anniversaries, LastAnniversaryDay = sr.last_anniversary,
                 };
+                r.Cls = sr.cls >= 0 ? (AdventurerClass)sr.cls : ClassFromLabel(sr.class_label);
+                if (sr.titles != null) r.Titles.AddRange(sr.titles);
+                if (sr.rem_ids != null)
+                    for (int i = 0; i < sr.rem_ids.Count && i < sr.rem_names.Count && i < sr.rem_lines.Count; i++)
+                        r.Remembrances.Add(new Remembrance { Id = sr.rem_ids[i], Name = sr.rem_names[i], Line = sr.rem_lines[i] });
+                r.Epitaph = string.IsNullOrEmpty(sr.epitaph) ? MemorialRules.Epitaph(r) : sr.epitaph;
+                r.LastWords = string.IsNullOrEmpty(sr.last_words) ? MemorialRules.LastWords(r) : sr.last_words;
                 foreach (var relic in sr.relics)
                     r.Relics.Add(new RelicItem
                     {
@@ -213,6 +252,7 @@ namespace GuildMaster.Legacy
                 AdventurerId = d.id,
                 Name = d.name,
                 ClassLabel = AdventurerData.ClassLabel(d.cls),
+                Cls = d.cls,
                 Values = d.values,
                 Level = d.level,
                 Kills = d.kills,
@@ -247,8 +287,11 @@ namespace GuildMaster.Legacy
                         DroppedAtHour = g.DroppedAtHour,
                     });
                 }
+            if (d.titles != null) rec.Titles.AddRange(d.titles);
+            WriteTheStone(rec, d.id);
             _fallen.Add(rec);
             while (_fallen.Count > LegacyRules.MaxRecords) _fallen.RemoveAt(0);
+            HonourIfHero(rec);
 
             if (rec.HasRelics)
                 _center?.Post(NotificationKind.Warning, LegacyTexts.RelicTitle,
@@ -309,7 +352,11 @@ namespace GuildMaster.Legacy
         /// <summary>The spot is in the guild's sight right now (town watch, members, the guild master).</summary>
         static bool SeenByGuild(Vector2 p) => !Services.TryGet<Fog.FogOfWar>(out var fog) || fog.IsVisibleRaw(p);
 
-        void OnHour(HourPassedEvent e) => CheckRelicsInSight();
+        void OnHour(HourPassedEvent e)
+        {
+            CheckRelicsInSight();
+            if (e.Hour == MemorialRules.AnniversaryHour) KeepAnniversaries(e.Day);
+        }
 
         /// <summary>
         /// Relics no longer on the ground become known as lost only when the guild could know it
@@ -422,7 +469,156 @@ namespace GuildMaster.Legacy
                 Relieve(m, relief);
                 Remember(m, friend ? 3 : 2, friend ? LegacyTexts.MemoryMemorialFriend(rec.Name) : LegacyTexts.MemoryMemorial(rec.Name), "memorial:" + rec.Id);
             }
+            SayRemembrances(rec);
             return CareResult.Success(LegacyTexts.MemorialDone(rec.Name, cost, members, friends));
+        }
+
+        // ---------------- The memorial wall (2026-11-15, MemorialRules) ----------------
+
+        /// <summary>What each member said last and when (game hours): words heard just before a fall become the last words.</summary>
+        readonly Dictionary<string, (string text, float hour)> _lastSaid = new();
+
+        void OnSpeech(AdventurerSpeechEvent e)
+        {
+            var a = e.Adventurer;
+            if (a == null || a.Data == null || a.IsVisitor || string.IsNullOrWhiteSpace(e.Text)) return;
+            // Only what is said in a fight can be last words (not a chat in town an hour before a fall).
+            bool fighting = (a.CurrentTarget != null && a.CurrentTarget.IsAlive) || Time.time - a.LastAttackedTime < 10f;
+            if (!fighting) return;
+            _lastSaid[a.Data.id] = (e.Text.Trim().Trim('"'), _clock.TotalHours);
+        }
+
+        static AdventurerClass ClassFromLabel(string label)
+        {
+            foreach (AdventurerClass c in Enum.GetValues(typeof(AdventurerClass)))
+                if (AdventurerData.ClassLabel(c) == label) return c;
+            return AdventurerClass.Warrior;
+        }
+
+        /// <summary>The stone's line, the last words, whether a hero, and the closest friends' words.</summary>
+        void WriteTheStone(FallenRecord rec, string id)
+        {
+            rec.Epitaph = MemorialRules.Epitaph(rec);
+            rec.HeroReason = MemorialRules.HeroReason(rec);
+            rec.LastWords = _lastSaid.TryGetValue(id, out var said) && _clock.TotalHours - said.hour <= MemorialRules.LastWordsHours
+                ? said.text : MemorialRules.LastWords(rec);
+            _lastSaid.Remove(id);
+            var friends = new List<KeyValuePair<string, int>>();
+            foreach (var kv in rec.Relations) if (kv.Value >= Welfare.StressRules.FriendRelation) friends.Add(kv);
+            friends.Sort((a, b) => b.Value != a.Value ? b.Value.CompareTo(a.Value) : string.CompareOrdinal(a.Key, b.Key));
+            for (int i = 0; i < friends.Count && rec.Remembrances.Count < MemorialRules.Remembrances; i++)
+            {
+                var m = _roster.Find(friends[i].Key);
+                if (m == null || m.Data == null) continue;
+                rec.Remembrances.Add(new Remembrance
+                {
+                    Id = m.Data.id, Name = m.Data.name,
+                    Line = MemorialRules.Remembrance(rec.Name, rec.KillerName, friends[i].Value, rec.Id * 7 + i),
+                });
+            }
+        }
+
+        /// <summary>A hero's fall: fame for the guild, a notice, a story, and those who knew them carry on in their name.</summary>
+        void HonourIfHero(FallenRecord rec)
+        {
+            if (!rec.IsHero) return;
+            if (Services.TryGet<Guild.GuildRankService>(out var rank)) rank.AddFame(MemorialRules.HeroFame, $"영웅 {rec.Name}");
+            _center?.Post(NotificationKind.Info, MemorialRules.HeroTitle, MemorialRules.HeroNotice(rec.Name, rec.HeroReason), "hero:" + rec.Id, NotificationLink.Memorial(rec.Id));
+            foreach (var m in _roster.Members.ToList())
+                if (m != null && m.IsAlive && m.Data != null && rec.Relations.TryGetValue(m.Data.id, out int r) && r >= 0)
+                    ThoughtRecorder.Give(m, MemorialRules.HeroRemembered, "hero:" + rec.AdventurerId, rec.Name);
+            EventBus.Publish(new MemorialStoryEvent { Kind = MemorialStory.Hero, RecordId = rec.Id, Name = rec.Name, Detail = rec.HeroReason, Ids = new[] { rec.AdventurerId } });
+        }
+
+        /// <summary>The friends whose words are on the stone say them aloud (a memorial, an anniversary).</summary>
+        void SayRemembrances(FallenRecord rec, int seed = 0)
+        {
+            foreach (var w in rec.Remembrances)
+            {
+                var m = _roster.Find(w.Id);
+                if (m == null || !m.IsAlive) continue;
+                string line = seed == 0 ? w.Line
+                    : MemorialRules.Remembrance(rec.Name, rec.KillerName, rec.Relations.TryGetValue(w.Id, out int r) ? r : 40, rec.Id * 7 + seed);
+                EventBus.Publish(new AdventurerSpeechEvent { Adventurer = m, Text = line });
+            }
+        }
+
+        /// <summary>A year (and every year) after they fell, those who were fond of them remember them at dusk.</summary>
+        void KeepAnniversaries(int today)
+        {
+            foreach (var rec in _fallen)
+            {
+                if (rec.LastAnniversaryDay == today || !MemorialRules.IsAnniversary(rec.Day, today)) continue;
+                rec.LastAnniversaryDay = today;
+                rec.Anniversaries++;
+                int years = MemorialRules.Years(rec.Day, today);
+                var ids = new List<string> { rec.AdventurerId };
+                foreach (var m in _roster.Members.ToList())
+                {
+                    if (m == null || !m.IsAlive || m.Data == null || m.IsVisitor) continue;
+                    if (!rec.Relations.TryGetValue(m.Data.id, out int relation) || relation < 0) continue;
+                    bool friend = rec.FriendIds.Contains(m.Data.id);
+                    Relieve(m, friend ? MemorialRules.AnniversaryFriendRelief : MemorialRules.AnniversaryRelief);
+                    ThoughtRecorder.Give(m, MemorialRules.Anniversary, "anniversary:" + rec.AdventurerId, rec.Name);
+                    Remember(m, friend ? 2 : 1, $"{rec.Name}의 {years}주기를 함께 기렸다", "anniversary:" + rec.Id);
+                    ids.Add(m.Data.id);
+                }
+                SayRemembrances(rec, today);
+                _center?.Post(NotificationKind.Info, MemorialRules.AnniversaryTitle, MemorialRules.AnniversaryNotice(rec.Name, years, ids.Count - 1),
+                    "anniversary:" + rec.Id, NotificationLink.Memorial(rec.Id));
+                EventBus.Publish(new MemorialStoryEvent { Kind = MemorialStory.Anniversary, RecordId = rec.Id, Name = rec.Name, Years = years, Count = ids.Count - 1, Ids = ids.ToArray() });
+            }
+        }
+
+        /// <summary>The relic an heir would carry: the first that came home.</summary>
+        public static RelicItem HeirloomOf(FallenRecord rec)
+        {
+            if (rec == null) return null;
+            foreach (var r in rec.Relics) if (r.State == RelicState.Recovered) return r;
+            return null;
+        }
+
+        /// <summary>Who may take the relic on: friends of the fallen first, then the same class (<see cref="MemorialRules.RankHeirs{T}"/>).</summary>
+        public List<Adventurer> HeirCandidates(FallenRecord rec)
+        {
+            if (rec == null || rec.HasHeir || HeirloomOf(rec) == null) return new List<Adventurer>();
+            var alive = _roster.Members.Where(m => m != null && m.IsAlive && m.Data != null && m.IsGuildMember && !m.IsVisitor);
+            return MemorialRules.RankHeirs(alive, m => rec.Relations.TryGetValue(m.Data.id, out int v) ? v : 0, m => m.Data.cls == rec.Cls);
+        }
+
+        public CareCheck CanBequeath(FallenRecord rec)
+        {
+            if (rec == null) return CareCheck.No("고인이 없습니다.");
+            if (rec.HasHeir)
+                return CareCheck.No($"{rec.HeirName}{MemoryRecorder.Josa(rec.HeirName, "이", "가")} 이미 {rec.Name}의 {rec.HeirItem}{MemoryRecorder.Josa(rec.HeirItem, "을", "를")} 물려받았습니다.");
+            if (HeirloomOf(rec) == null) return CareCheck.No("되찾은 유품이 없습니다. 먼저 유품을 회수해야 물려줄 수 있습니다.");
+            if (HeirCandidates(rec).Count == 0) return CareCheck.No("유품을 물려받을 길드원이 없습니다.");
+            return CareCheck.Yes;
+        }
+
+        /// <summary>Hands the relic on: the heir carries it (a little stronger), holds the thought of it, and is known for it.</summary>
+        public CareResult Bequeath(FallenRecord rec, Adventurer heir)
+        {
+            var check = CanBequeath(rec);
+            if (!check.Ok) return CareResult.Fail(check.Reason);
+            if (heir == null || !heir.IsAlive || heir.Data == null) return CareResult.Fail("물려받을 길드원이 없습니다.");
+            string item = MemorialRules.Keepsake(rec.Cls);
+            heir.Data.heirlooms ??= new List<string>();
+            heir.Data.heirlooms.Add(MemorialRules.HeirloomName(rec.Name, item));
+            string title = MemorialRules.HeirTitle(rec.Name);
+            if (!heir.Data.titles.Contains(title)) heir.Data.titles.Add(title);
+            heir.RecalculateStats();
+            rec.HeirId = heir.Data.id;
+            rec.HeirName = heir.Data.name;
+            rec.HeirItem = item;
+            ThoughtRecorder.Give(heir, MemorialRules.Heirloom, "heirloom:" + rec.AdventurerId, rec.Name);
+            Remember(heir, 3, $"{rec.Name}의 {item}{MemoryRecorder.Josa(item, "을", "를")} 물려받았다", "heirloom:" + rec.Id);
+            EventBus.Publish(new MemorialStoryEvent
+            {
+                Kind = MemorialStory.Heirloom, RecordId = rec.Id, Name = rec.Name, Other = heir.Data.name, Detail = item,
+                Ids = new[] { heir.Data.id, rec.AdventurerId },
+            });
+            return CareResult.Success(MemorialRules.HeirloomGiven(heir.Data.name, rec.Name, item));
         }
 
         // ---------------- Last stand and the wound ----------------

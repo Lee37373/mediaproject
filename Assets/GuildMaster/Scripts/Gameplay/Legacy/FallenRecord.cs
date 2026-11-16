@@ -22,6 +22,14 @@ namespace GuildMaster.Legacy
         internal float DroppedAtHour;
     }
 
+    /// <summary>A friend's words about the fallen, kept on the stone (2026-11-15).</summary>
+    public class Remembrance
+    {
+        public string Id;
+        public string Name;
+        public string Line;
+    }
+
     /// <summary>
     /// A guild member who died (F-6): who they were, how they fell, what they left behind and what became of it,
     /// and whether the guild held a memorial. Plain data plus the small state changes that belong to it, so it is
@@ -33,6 +41,10 @@ namespace GuildMaster.Legacy
         public string AdventurerId;
         public string Name;
         public string ClassLabel;
+        /// <summary>The class itself, for the mark cut in the stone (2026-11-15).</summary>
+        public Adventurers.AdventurerClass Cls;
+        /// <summary>Titles they carried when they fell (P4-83: a region lord's fall) — a title makes a hero.</summary>
+        public readonly List<string> Titles = new();
         public string Values;
         public int Level;
         public int Kills;
@@ -51,6 +63,24 @@ namespace GuildMaster.Legacy
         public float MemorialHour;
         /// <summary>The friends have been relieved by a relic coming home (once per record).</summary>
         public bool RecoveryRewarded;
+
+        // ---------------- The memorial wall (2026-11-15, MemorialRules) ----------------
+
+        /// <summary>The line cut in the stone.</summary>
+        public string Epitaph;
+        /// <summary>Why they are a hero of the guild, null when not (a gold stone, fame when they fell).</summary>
+        public string HeroReason;
+        public bool IsHero => !string.IsNullOrEmpty(HeroReason);
+        /// <summary>What they said last (heard just before the fall), or the line the wall gives them.</summary>
+        public string LastWords;
+        /// <summary>The closest friends' words about them.</summary>
+        public readonly List<Remembrance> Remembrances = new();
+        /// <summary>Who carries their relic now, and which one (once per record).</summary>
+        public string HeirId, HeirName, HeirItem;
+        public bool HasHeir => !string.IsNullOrEmpty(HeirId);
+        /// <summary>Anniversaries remembered, and the day of the last (one a day at most).</summary>
+        public int Anniversaries;
+        public int LastAnniversaryDay;
 
         public int Count(RelicState state)
         {

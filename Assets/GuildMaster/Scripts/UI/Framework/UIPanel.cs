@@ -22,6 +22,7 @@ namespace GuildMaster.UI
         {
             var frameImg = UIBuilder.Panel(parent, $"Window:{Title}", UITheme.PanelBg);
             Frame = frameImg.rectTransform;
+            frameImg.gameObject.AddComponent<CanvasGroup>(); // fades in as it opens (2026-11-13)
             Frame.Anchor(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), anchoredPos, size);
             HomePosition = anchoredPos;
             transform.SetParent(Frame, false);
@@ -39,6 +40,8 @@ namespace GuildMaster.UI
 
             Body = UIBuilder.Rect(Frame, "Body");
             Body.Stretch(10, 10, 46, 10);
+            // 2026-11-13: clear of the wooden skin's stone frame.
+            if (WoodSkin.WindowBoard != null) Body.Stretch(WoodSkin.BodyInset.x, WoodSkin.BodyInset.y, WoodSkin.BodyInset.z, WoodSkin.BodyInset.w);
             Build(Body);
             Frame.gameObject.SetActive(false);
         }
@@ -53,6 +56,7 @@ namespace GuildMaster.UI
             if (!wasOpen) GuildMaster.Audio.Sound.Play(GuildMaster.Audio.SoundKeys.Open);
             Frame.gameObject.SetActive(true);
             Frame.SetAsLastSibling();
+            if (!wasOpen) UIMotion.PopIn(Frame, 0.94f, 0.2f); // 2026-11-13 (DOTween): a small pop instead of appearing at once
             if (Core.Services.TryGet<UIRoot>(out var root)) root.NotifyOpened(this, wasOpen);
             _refreshTimer = 0f;
             OnOpened();

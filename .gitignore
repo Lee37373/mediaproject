@@ -93,6 +93,10 @@ InitTestScene*.unity*
 # same GUIDs as Assets/Layer Lab, so keeping both would collide.
 /Assets/Arts/
 /Assets/Arts.meta
+# "Fantasy Wooden GUI : Free" (Black Hammer, Asset Store EULA, 2026-11-13): the wooden buttons. Import it from
+# Package Manager > My Assets; Resources/UI/WoodSkin.asset (tracked) references it by GUID, purple buttons without it.
+/Assets/Fantasy Wooden GUI  Free/
+/Assets/Fantasy Wooden GUI  Free.meta
 
 # Design / plan / progress notes stay local (user request 2026-09-19)
 /Assets/GuildMaster/Docs/

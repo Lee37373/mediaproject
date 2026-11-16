@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 16fedd12919046ef875777a490a4028f, type: 3}
+  m_Name: WoodSkin
+  m_EditorClassIdentifier: GuildMaster.UI::GuildMaster.UI.WoodSkinCatalog
+  button: {fileID: 21300000, guid: 2be7b70e984b51444aca9c12ae4723a7, type: 3}
+  buttonPressed: {fileID: 21300000, guid: d6a1673a31851fd4395c287261da36e4, type: 3}
+  close: {fileID: 21300000, guid: 11277a3f23988ec47908362d708edaa8, type: 3}
+  windowBoard: {fileID: 21300000, guid: 7066e0747291df44fa5c2bf93bee3a6e, type: 3}
+  cardBoard: {fileID: 21300000, guid: 8dd861a6e819de241bca68a36048a6bd, type: 3}
+  titlePlate: {fileID: 21300000, guid: 4d6a99baee23b654f9e4bb672ae0b438, type: 3}

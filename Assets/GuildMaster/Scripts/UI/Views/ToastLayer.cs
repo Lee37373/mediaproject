@@ -16,11 +16,18 @@ namespace GuildMaster.UI
     {
         const int MaxVisible = 4;
         const float ToastHeight = 84f;
+        /// <summary>A long notice grows its toast up to this, so its last line is not cut (2026-11-14).</summary>
+        const float MaxToastHeight = 168f;
+        /// <summary>Toast width, and the body text's width inside it.</summary>
+        const float ToastWidth = 380f, BodyWidth = ToastWidth - 24f;
         const float FadeSeconds = 0.4f;
         /// <summary>A hovered toast stays at least this much longer, so it can be read and clicked.</summary>
         const float HoverGraceSeconds = 2f;
-        /// <summary>Just below the minimap when it is shown, otherwise right under the top bar.</summary>
-        const float StackTopBelowMinimap = -320f;
+        /// <summary>
+        /// Below the minimap, its caption and the to-do scroll button when the minimap is shown (2026-11-14: at -320 toasts
+        /// covered both), otherwise right under the top bar.
+        /// </summary>
+        const float StackTopBelowMinimap = -412f;
         const float StackTopNoMinimap = -60f;
 
         readonly List<Toast> _toasts = new();
@@ -33,7 +40,7 @@ namespace GuildMaster.UI
         public void Build(RectTransform canvas)
         {
             _stack = UIBuilder.Rect(canvas, "Toasts");
-            _stack.Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-8, StackTopBelowMinimap), new Vector2(380, 0));
+            _stack.Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-8, StackTopBelowMinimap), new Vector2(ToastWidth, 0));
             UIBuilder.VLayout(_stack, 6, 0);
             UIBuilder.FitContent(_stack);
             EventBus.Subscribe<NotificationPostedEvent>(OnPosted);
@@ -46,6 +53,7 @@ namespace GuildMaster.UI
             var n = e.Notification;
             if (n == null || !n.Toast || _stack == null) return;
             var toast = _toasts.Find(t => t != null && t.Data == n);
+            bool fresh = toast == null;
             if (toast == null)
             {
                 toast = Toast.Create(_stack);
@@ -53,6 +61,9 @@ namespace GuildMaster.UI
                 while (_toasts.Count > MaxVisible) Remove(_toasts[0]);
             }
             toast.Bind(n, Time.unscaledTime);
+            // 2026-11-13 (DOTween): a new toast pops in, a repeated one (×n) gives a little punch.
+            if (fresh) UIMotion.PopIn((RectTransform)toast.transform, 0.8f, 0.25f, fade: false);
+            else UIMotion.Punch(toast.transform, 0.08f, 0.3f);
         }
 
         void Remove(Toast toast)
@@ -135,11 +146,15 @@ namespace GuildMaster.UI
             {
                 Data = n;
                 var color = NotificationActions.KindColor(n.Kind);
-                _bg.color = Color.Lerp(UITheme.PanelBg, color, 0.22f);
+                _bg.color = Color.Lerp(WoodSkin.Panel(UITheme.PanelBg), color, 0.22f);
                 string count = n.Count > 1 ? $" ×{n.Count}" : "";
                 string more = n.HasLink ? "  ›" : "";
                 _title.text = UIBuilder.Colored(n.Title + count, color) + UIBuilder.Colored(more, UITheme.TextMuted);
                 _body.text = n.Text;
+                // As tall as its text (body: 30 px from the top, 6 from the bottom).
+                var settings = _body.GetGenerationSettings(new Vector2(BodyWidth, 0f));
+                float textHeight = _body.cachedTextGeneratorForLayout.GetPreferredHeight(n.Text ?? "", settings) / _body.pixelsPerUnit;
+                _bg.Size(-1, Mathf.Clamp(Mathf.Ceil(textHeight) + 38f, ToastHeight, MaxToastHeight));
                 HideAt = now + Seconds(n.Kind);
                 SetAlpha(1f);
             }

@@ -131,7 +131,7 @@ namespace GuildMaster.UI
             // The town newspaper (P4-130): opens by itself each morning; O, the accounts window and its notification.
             AddWindow<NewspaperView>(null, null, Key.O, new Vector2(920, 800));
             // The wall of the fallen: relics to fetch, memorials (F-6).
-            AddWindow<MemorialView>(townGroup.Items, "추모의 벽 (H)", Key.H, new Vector2(880, 640));
+            AddWindow<MemorialView>(townGroup.Items, "추모의 벽 (H)", Key.H, new Vector2(1260, 760)); // 2026-11-15: stones and a page
             // The guild's rank and fame (P4-106).
             AddWindow<GuildRankView>(guildGroup.Items, "길드 등급 (G)", Key.G, new Vector2(900, 720));
             // The bestiary (P4-107).

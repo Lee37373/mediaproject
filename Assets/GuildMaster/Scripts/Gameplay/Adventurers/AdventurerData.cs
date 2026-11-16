@@ -48,6 +48,8 @@ namespace GuildMaster.Adventurers
         public float blessedUntil, shrineReadyAt;
         /// <summary>Titles earned (P4-83: "모래 폭군 카르샤를 쓰러뜨린 자" for taking part in a region lord's fall).</summary>
         public List<string> titles = new();
+        /// <summary>Relics of fallen comrades handed down to it on the memorial wall ("루나의 지팡이"), each a little strength (2026-11-15).</summary>
+        public List<string> heirlooms = new();
         /// <summary>Its great moments (P4-129, H7): one line per highlight it took part in, oldest first.</summary>
         public List<Director.ChronicleEntry> chronicle = new();
         /// <summary>How this adventurer feels about other members (see Relationships).</summary>

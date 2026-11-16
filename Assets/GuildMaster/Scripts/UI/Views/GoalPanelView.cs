@@ -20,6 +20,7 @@ namespace GuildMaster.UI
         Text _title;
         readonly List<Text> _lines = new();
         readonly List<Image> _checks = new();
+        readonly List<bool> _met = new();
         float _timer;
 
         public void Build(RectTransform canvas, Vector2 topLeft)
@@ -70,7 +71,12 @@ namespace GuildMaster.UI
                 bool shown = i < goals.Count;
                 _lines[i].text = shown ? RankFormat.Line(goals[i], standing) : "";
                 _checks[i].gameObject.SetActive(shown);
-                if (shown) HudStyle.Slice(_checks[i], GuildRankRules.Progress(goals[i], standing) >= goals[i].Count ? "hud_icon_check_on" : "hud_icon_check_off");
+                bool met = shown && GuildRankRules.Progress(goals[i], standing) >= goals[i].Count;
+                if (shown) HudStyle.Slice(_checks[i], met ? "hud_icon_check_on" : "hud_icon_check_off");
+                // A box just ticked pops (2026-11-13, DOTween).
+                while (_met.Count <= i) _met.Add(met);
+                if (met && !_met[i]) UIMotion.Punch(_checks[i].transform, 0.5f, 0.5f);
+                _met[i] = met;
             }
         }
     }

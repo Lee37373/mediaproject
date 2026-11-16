@@ -17,6 +17,7 @@ namespace GuildMaster.Reports
         Quarrel, MakeUp, Comfort, Friends, Enemies,
         Disaster, DisasterOver, Incident, Festival, Season, Village, VillageLost, VillageRaid, Discovery, Merchant,
         Gold, Quiet,
+        Memorial,
     }
 
     /// <summary>One story of a day: what the newspaper prints, and who or where a click on it goes to.</summary>
@@ -145,6 +146,7 @@ namespace GuildMaster.Reports
             NewsKind.Discovery => 22f,
             NewsKind.Merchant => 18f,
             NewsKind.Gold => 10f,
+            NewsKind.Memorial => 44f,
             _ => 5f,
         };
 
@@ -185,6 +187,7 @@ namespace GuildMaster.Reports
             NewsKind.Discovery => "발견",
             NewsKind.Merchant => "장터",
             NewsKind.Gold => "살림",
+            NewsKind.Memorial => "추모",
             _ => "단신",
         };
 
@@ -327,6 +330,19 @@ namespace GuildMaster.Reports
                 Variant(name, $"{name}, 끝내 돌아오지 못하다", $"길드원 {name} 잠들다"),
                 (killer != null ? $"{name}{Josa(name, "이", "가")} {killer}{Josa(killer, "과", "와")} 싸우다 목숨을 잃었다." : $"{name}{Josa(name, "이", "가")} 목숨을 잃었다.")
                 + " 길드는 슬픔에 잠겼다.");
+
+        /// <summary>The memorial wall (2026-11-15): a hero remembered, an anniversary kept, a relic handed on.</summary>
+        public static NewsArticle Hero(string name, string reason)
+            => Make(NewsKind.Memorial, Variant(name, $"영웅 {name}, 길드의 이름으로 기억되다", $"{name}, 영웅으로 비석에 새겨지다"),
+                $"{reason}. 길드는 그의 비석을 금빛으로 둘렀다.");
+
+        public static NewsArticle Anniversary(string name, int years, int gathered)
+            => Make(NewsKind.Memorial, $"{name}의 {years}주기",
+                gathered > 0 ? $"길드원 {gathered}명이 저녁 무렵 그를 기렸다." : "길드는 조용히 그를 기렸다.");
+
+        public static NewsArticle Heirloom(string heir, string dead, string item)
+            => Make(NewsKind.Memorial, $"{heir}, {dead}의 {item}{Josa(item, "을", "를")} 물려받다",
+                $"{dead}의 뜻을 잇겠다고 다짐했다.");
 
         public static NewsArticle LastStand(string name, string foe)
             => Make(NewsKind.LastStand,

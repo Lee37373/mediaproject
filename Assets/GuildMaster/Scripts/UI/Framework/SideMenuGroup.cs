@@ -35,6 +35,7 @@ namespace GuildMaster.UI
             group._button = UIBuilder.Button(menu, label, group.Toggle, -1, ButtonHeight);
             group._buttonRect = (RectTransform)group._button.transform;
             var panel = UIBuilder.Panel(layer, "MenuGroup:" + label, ColumnBg); // nearly opaque: it opens over the goal panel
+            HudStyle.Card(panel); // 2026-11-13: stone slab with the wooden skin
             group._flyout = panel.rectTransform;
             group._flyout.anchorMin = group._flyout.anchorMax = group._flyout.pivot = new Vector2(0f, 1f);
             UIBuilder.VLayout(panel, Spacing, (int)Padding);
@@ -73,6 +74,7 @@ namespace GuildMaster.UI
             pos.y = Mathf.Max(pos.y, -r.height + _flyout.sizeDelta.y + 8f); // kept above the bottom edge
             _flyout.anchoredPosition = pos;
             _flyout.gameObject.SetActive(true); // made right after the menu: above the windows, under tooltips and menus
+            UIMotion.PopIn(_flyout, 0.85f, 0.18f, fade: false); // 2026-11-13: unfolds from the group button
         }
 
         public void Close()

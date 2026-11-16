@@ -18,6 +18,8 @@ namespace GuildMaster.UI
     /// N belongs to the notification window, with the rest of the window keys.
     /// Where tags would overlap only the most important shows (P4-123, user request 2026-11-04: a crowd's tags drowned
     /// the fight); a unit under the mouse pointer always shows its tag.
+    /// A unit in a fight fades its tag out and back in a little after the fight (2026-11-14, user: "전투 중에 이름 가림,
+    /// 마우스 올리면 바뀜"): the hovered or picked one still shows its tag.
     /// </summary>
     public class NameTagLayer : MonoBehaviour
     {
@@ -29,6 +31,10 @@ namespace GuildMaster.UI
         const float TagHeight = 18f, TagGap = 2f;
         /// <summary>A hovered tag that lands on another steps up this many times at most.</summary>
         const int HoverSteps = 6;
+        /// <summary>A unit counts as fighting while it has a live target, or this long after it was last hit.</summary>
+        const float CombatHoldSeconds = 3f;
+        /// <summary>Tag alpha per second while fading out (into a fight) or back in.</summary>
+        const float FadeSpeed = 4f;
 
         static readonly Color AdventurerColor = new(0.7f, 1f, 0.7f);
         static readonly Color MonsterColor = new(1f, 0.72f, 0.66f);
@@ -51,6 +57,7 @@ namespace GuildMaster.UI
             public Color Color;
             public int Priority;
             public bool Hovered;
+            public float Alpha;
             /// <summary>Tie-break among equals: shown last frame first, then a fixed order (no flicker as units move).</summary>
             public bool ShownBefore;
             public int Order;
@@ -64,6 +71,8 @@ namespace GuildMaster.UI
         readonly List<Rect> _placed = new();
         HashSet<object> _shown = new(), _shownNow = new();
         readonly Dictionary<string, float> _widths = new();
+        /// <summary>Each unit's tag alpha (faded out while it fights).</summary>
+        readonly Dictionary<object, float> _alpha = new();
         Text _measure;
 
         public bool Enabled => _enabled;
@@ -75,6 +84,10 @@ namespace GuildMaster.UI
         public int CandidateCount => _candidates.Count;
         /// <summary>Whether this unit's tag showed this frame.</summary>
         public bool IsShown(object unit) => _shown.Contains(unit);
+
+        /// <summary>In a fight: chasing or striking a live target, or hit within the last few seconds.</summary>
+        public static bool InCombat(Unit u)
+            => u != null && ((u.CurrentTarget != null && u.CurrentTarget.IsAlive) || Time.time - u.LastAttackedTime < CombatHoldSeconds);
 
         public void Build(RectTransform layer) => _layer = layer;
 
@@ -122,12 +135,18 @@ namespace GuildMaster.UI
             return w;
         }
 
-        void Add(object key, Vector3 world, string label, Color color, int priority, bool hovered)
+        void Add(object key, Vector3 world, string label, Color color, int priority, bool hovered, bool fighting = false)
         {
             if (string.IsNullOrEmpty(label) || !WorldOverlay.TryWorldToLocal(_layer, world, out var local)) return;
+            float want = fighting && !hovered && priority != Priority.Selected ? 0f : 1f;
+            float alpha = _alpha.TryGetValue(key, out var was) ? Mathf.MoveTowards(was, want, FadeSpeed * Time.unscaledDeltaTime) : want;
+            if (hovered) alpha = 1f;
+            if (_alpha.Count > 1024) _alpha.Clear(); // dead units' entries
+            _alpha[key] = alpha;
+            if (alpha < 0.02f) return;
             _candidates.Add(new Candidate
             {
-                Key = key, Local = local, Text = label, Color = color, Hovered = hovered,
+                Key = key, Local = local, Text = label, Color = color, Hovered = hovered, Alpha = alpha,
                 Priority = hovered ? Priority.Hovered : priority,
                 ShownBefore = _shown.Contains(key),
                 Order = key is Object o ? o.GetInstanceID() : 0,
@@ -171,7 +190,7 @@ namespace GuildMaster.UI
         }
 
         /// <summary>Whether the pointer is on this unit's figure (feet at its position, about a cell tall).</summary>
-        static bool Under(Vector2 pointer, Vector2 feet, float scale)
+        public static bool Under(Vector2 pointer, Vector2 feet, float scale)
         {
             float dx = pointer.x - feet.x, dy = pointer.y - feet.y;
             return Mathf.Abs(dx) <= 0.45f * scale && dy >= -0.25f * scale && dy <= 1.05f * scale;
@@ -227,7 +246,7 @@ namespace GuildMaster.UI
                     case Adventurer a:
                         Add(a, a.transform.position + new Vector3(0f, HeadOffset), LabelFor(a), a.IsVisitor ? VisitorColor : AdventurerColor,
                             a == selected ? Priority.Selected : a.IsVisitor ? Priority.Visitor : Priority.Member,
-                            hovering && Under(pointer, a.Position, 1f));
+                            hovering && Under(pointer, a.Position, 1f), InCombat(a));
                         break;
                     case Town.Merchant merchant:
                         Add(merchant, merchant.transform.position + new Vector3(0f, HeadOffset), "행상인", VisitorColor,
@@ -238,7 +257,7 @@ namespace GuildMaster.UI
                         Add(m, m.transform.position + new Vector3(0f, HeadOffset * m.Scale), LabelFor(m),
                             m.IsNemesis ? NemesisColor : m.IsBoss ? BossColor : MonsterColor,
                             m == selected ? Priority.Selected : m.IsNemesis ? Priority.Nemesis : m.IsBoss ? Priority.Boss : Priority.Monster,
-                            hovering && Under(pointer, m.Position, m.Scale));
+                            hovering && Under(pointer, m.Position, m.Scale), InCombat(m));
                         break;
                 }
             }
@@ -269,7 +288,7 @@ namespace GuildMaster.UI
                 _shownNow.Add(c.Key);
                 var t = Acquire();
                 t.text = c.Text;
-                t.color = c.Color;
+                t.color = new Color(c.Color.r, c.Color.g, c.Color.b, c.Color.a * c.Alpha);
                 t.rectTransform.anchoredPosition = new Vector2(c.Local.x, rect.y);
             }
         }

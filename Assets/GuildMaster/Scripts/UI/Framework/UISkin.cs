@@ -52,6 +52,7 @@ namespace GuildMaster.UI
             img.sprite = sp;
             img.type = Image.Type.Sliced;
             img.pixelsPerUnitMultiplier = PanelPpu;
+            if (WoodSkin.Present) img.color = WoodSkin.Panel(img.color); // 2026-11-13: stone-brown instead of purple
         }
 
         /// <summary>The button sprite nearest a colour: green, blue, red, yellow, purple or gray.</summary>
@@ -69,6 +70,12 @@ namespace GuildMaster.UI
 
         public static void Button(Button button, Image img, Color baseColor, Text label)
         {
+            // 2026-11-13 (user's pick): wooden planks from "Fantasy Wooden GUI : Free" when that pack is imported.
+            if (WoodSkin.Present)
+            {
+                WoodButton(button, img, baseColor, label);
+                return;
+            }
             var sp = Get("button_" + ButtonStyle(baseColor));
             if (sp == null) return;
             img.sprite = sp;
@@ -90,6 +97,29 @@ namespace GuildMaster.UI
             }
         }
 
+        static void WoodButton(Button button, Image img, Color baseColor, Text label)
+        {
+            img.sprite = WoodSkin.Button;
+            img.type = Image.Type.Sliced;
+            img.pixelsPerUnitMultiplier = WoodSkin.Ppu;
+            img.color = WoodSkin.Tint(ButtonStyle(baseColor));
+            var colors = button.colors;
+            colors.normalColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            colors.highlightedColor = Color.white;
+            colors.pressedColor = new Color(0.9f, 0.9f, 0.9f, 1f); // the pressed plank does the work
+            colors.selectedColor = colors.normalColor;
+            colors.disabledColor = new Color(0.55f, 0.53f, 0.53f, 0.8f);
+            button.colors = colors;
+            if (label != null)
+            {
+                var rt = label.rectTransform;
+                rt.offsetMin = new Vector2(rt.offsetMin.x, WoodSkin.LabelLift); // above the plank's lip
+                if (label.color == Color.white) label.color = new Color(1f, 0.95f, 0.84f, 1f); // cream on wood
+                Outline(label);
+            }
+            button.gameObject.AddComponent<WoodPress>().Init(img, label);
+        }
+
         /// <summary>True when the skin's button sprites are present.</summary>
         public static bool HasButtons => Get("button_purple") != null;
 
@@ -100,6 +130,7 @@ namespace GuildMaster.UI
         public static void Recolor(Button button, Color baseColor)
         {
             if (button == null || button.targetGraphic is not Image img) return;
+            if (WoodSkin.Present && img.sprite == WoodSkin.Button) { img.color = WoodSkin.Tint(ButtonStyle(baseColor)); return; }
             var sp = Get("button_" + ButtonStyle(baseColor));
             if (sp != null)
             {
@@ -127,15 +158,17 @@ namespace GuildMaster.UI
         public static void Window(Image frame, Image header, Button close, Text title)
         {
             var sp = Get("panel_window_purple");
-            if (sp == null) return;
-            frame.sprite = sp;
+            if (sp == null && !WoodSkin.Present) return;
+            frame.sprite = WoodSkin.WindowBoard != null ? WoodSkin.WindowBoard : sp; // 2026-11-13: the pack's stone slab
             frame.type = Image.Type.Sliced;
-            frame.pixelsPerUnitMultiplier = WindowPpu;
-            frame.color = Color.white;
+            frame.pixelsPerUnitMultiplier = WoodSkin.WindowBoard != null ? WoodSkin.BoardPpu : WindowPpu;
+            frame.color = WoodSkin.WindowBoard != null ? WoodSkin.BoardTint : Color.white;
             if (header != null) header.color = new Color(0f, 0f, 0f, 0f);
             Outline(title);
-            var round = Get("button_close");
+            TitlePlate(header, title);
+            var round = WoodSkin.Close != null ? WoodSkin.Close : Get("button_close"); // 2026-11-13: the pack's wooden X
             if (close == null || round == null) return;
+            if (close.TryGetComponent<WoodPress>(out var press)) press.Init(null, null); // a single picture, no plank swap
             var img = (Image)close.targetGraphic;
             img.sprite = round;
             img.type = Image.Type.Simple;
@@ -149,6 +182,28 @@ namespace GuildMaster.UI
             close.colors = colors;
             foreach (var t in close.GetComponentsInChildren<Text>(true)) t.enabled = false;
             ((RectTransform)close.transform).sizeDelta = new Vector2(34, 34);
+        }
+
+        /// <summary>The window's title on the pack's stone plaque, as wide as the title (2026-11-13).</summary>
+        static void TitlePlate(Image header, Text title)
+        {
+            if (header == null || title == null || WoodSkin.TitlePlate == null) return;
+            var plate = UIBuilder.Rect(header.transform, "TitlePlate");
+            plate.SetAsFirstSibling();
+            var img = plate.gameObject.AddComponent<Image>();
+            img.sprite = WoodSkin.TitlePlate;
+            img.type = Image.Type.Sliced;
+            img.pixelsPerUnitMultiplier = WoodSkin.PlatePpu;
+            img.raycastTarget = false;
+            float w = Mathf.Ceil(title.preferredWidth) + 64f;
+            plate.anchorMin = plate.anchorMax = plate.pivot = new Vector2(0f, 1f);
+            plate.anchoredPosition = new Vector2(6f, 4f);
+            plate.sizeDelta = new Vector2(w, 42f);
+            var rt = title.rectTransform;
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(6f, 4f);
+            rt.sizeDelta = new Vector2(w, 40f);
+            title.alignment = TextAnchor.MiddleCenter;
         }
 
         /// <summary>A small icon in a layout row (HUD); nothing without the skin.</summary>

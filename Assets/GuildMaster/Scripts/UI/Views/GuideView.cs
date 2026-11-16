@@ -40,7 +40,7 @@ namespace GuildMaster.UI
         GuideStep? _step;
         bool _open;
         int _lastCount;
-        float _timer, _bounceUntil;
+        float _timer;
 
         class Row
         {
@@ -55,11 +55,14 @@ namespace GuildMaster.UI
         public void Build(RectTransform canvas)
         {
             // The scroll button.
-            var btnImg = HudStyle.NewImage(canvas, "hud_guide_button", "GuideButton");
+            // A wooden plank with nails when the wood pack is in (2026-11-13), the purple one otherwise.
+            var btnImg = HudStyle.NewImage(canvas, WoodSkin.Present ? "hud_guide_button_wood" : "hud_guide_button", "GuideButton");
             if (btnImg.sprite == null) btnImg.color = UITheme.Button;
             btnImg.raycastTarget = true;
             _button = btnImg.rectTransform;
-            _button.Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-Margin, -Top), new Vector2(ButtonSize, ButtonSize));
+            // Pivot in the middle, so the hover, press and bounce grow from its centre (same place as before).
+            _button.Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(0.5f, 0.5f),
+                new Vector2(-Margin - ButtonSize / 2f, -Top - ButtonSize / 2f), new Vector2(ButtonSize, ButtonSize));
             var btn = btnImg.gameObject.AddComponent<Button>();
             btn.targetGraphic = btnImg;
             var colors = btn.colors;
@@ -70,6 +73,7 @@ namespace GuildMaster.UI
             btn.colors = colors;
             btn.onClick.AddListener(Toggle);
             btn.onClick.AddListener(GuildMaster.Audio.Sound.Click);
+            btnImg.gameObject.AddComponent<ButtonJuice>(); // 2026-11-14: the same lean-in and press as every other button
             btnImg.Tooltip(() => "다음 할 일 (Y)");
 
             _bubble = HudStyle.NewImage(_button, "hud_count", "Count");
@@ -136,6 +140,7 @@ namespace GuildMaster.UI
         {
             _open = !_open;
             _card.gameObject.SetActive(_open);
+            if (_open) { Refresh(); UIMotion.PopIn(_card, 0.9f, 0.2f, fade: false); } // 2026-11-13: pops out of the button
             _timer = 0f;
         }
 
@@ -151,9 +156,6 @@ namespace GuildMaster.UI
             if (_button == null) return;
             var kb = Keyboard.current;
             if (kb != null && kb.yKey.wasPressedThisFrame && !IsTyping() && !MenuState.IsOpen) Toggle();
-            // A little bounce when something new turns up while the card is shut.
-            float s = Time.unscaledTime < _bounceUntil ? 1f + 0.12f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 9f)) : 1f;
-            _button.localScale = new Vector3(s, s, 1f);
             _timer -= Time.unscaledDeltaTime;
             if (_timer > 0f) return;
             _timer = RefreshInterval;
@@ -171,7 +173,9 @@ namespace GuildMaster.UI
             int count = _hints.Count + (_step.HasValue ? 1 : 0);
             _bubble.gameObject.SetActive(count > 0);
             _count.text = count.ToString();
-            if (count > _lastCount && !_open) _bounceUntil = Time.unscaledTime + 2.5f;
+            // Something new: the button hops (card shut) and the count pops (DOTween, 2026-11-13).
+            if (count > _lastCount && !_open) UIMotion.Bounce(_button);
+            if (count != _lastCount && count > 0) UIMotion.Punch(_bubble.rectTransform, 0.4f);
             _lastCount = count;
             if (!_open) return;
 
@@ -182,7 +186,7 @@ namespace GuildMaster.UI
             {
                 var stepCopy = step;
                 Fill(_rows[used++], "hud_icon_todo", GuideRules.Title(step), GuideRules.Short(step), GuideRules.HowTo(step),
-                     new Color(0.42f, 0.34f, 0.56f, 1f), HudStyle.Fore, step == GuideStep.Board ? () => { NotificationActions.Follow(NotificationLink.QuestBoard()); Close(); } : null);
+                     WoodSkin.Warm(new Color(0.42f, 0.34f, 0.56f, 1f)), HudStyle.Fore, step == GuideStep.Board ? () => { NotificationActions.Follow(NotificationLink.QuestBoard()); Close(); } : null);
             }
             for (int i = 0; i < _hints.Count && used < _rows.Count; i++)
             {
@@ -190,13 +194,13 @@ namespace GuildMaster.UI
                 int index = i;
                 bool urgent = h.Urgency >= 4;
                 Fill(_rows[used++], "mark_alert", h.Title ?? h.Text, h.Sub ?? "", h.Text,
-                     urgent ? new Color(0.5f, 0.3f, 0.26f, 1f) : new Color(0.34f, 0.28f, 0.44f, 1f),
+                     urgent ? new Color(0.5f, 0.3f, 0.26f, 1f) : WoodSkin.Warm(new Color(0.34f, 0.28f, 0.44f, 1f)),
                      urgent ? new Color(1f, 0.8f, 0.55f, 1f) : HudStyle.Fore,
                      h.Action == HintAction.None ? null : () => { Follow(index); Close(); });
             }
             if (used == 0)
                 Fill(_rows[used++], "hud_icon_check_on", tracker != null && tracker.AllDone ? "기본 할 일을 모두 해 봤어요" : "급한 일은 없어요",
-                     "새로운 일이 생기면 숫자로 알려 줘요", null, new Color(0.3f, 0.26f, 0.36f, 1f), HudStyle.Fore, null);
+                     "새로운 일이 생기면 숫자로 알려 줘요", null, WoodSkin.Warm(new Color(0.3f, 0.26f, 0.36f, 1f)), HudStyle.Fore, null);
             for (int i = used; i < _rows.Count; i++)
                 if (_rows[i].Root.gameObject.activeSelf) _rows[i].Root.gameObject.SetActive(false);
             float height = HeaderH + used * (RowH + RowGap) - RowGap + Pad;

@@ -41,7 +41,19 @@ namespace GuildMaster.UI
         public static bool Present => Get("hud_card") != null;
 
         /// <summary>Turns a panel into an outlined HUD card.</summary>
-        public static void Card(Image img) => Slice(img, "hud_card");
+        public static void Card(Image img)
+        {
+            // 2026-11-13: the pack's stone slab when "Fantasy Wooden GUI" is imported.
+            if (img != null && WoodSkin.CardBoard != null)
+            {
+                img.sprite = WoodSkin.CardBoard;
+                img.type = Image.Type.Sliced;
+                img.pixelsPerUnitMultiplier = WoodSkin.BoardPpu;
+                img.color = WoodSkin.BoardTint;
+                return;
+            }
+            Slice(img, "hud_card");
+        }
 
         public static void Slice(Image img, string sprite, Color? tint = null)
         {
@@ -133,10 +145,11 @@ namespace GuildMaster.UI
                 return new Gauge { Root = root, _fill = f, _value = value };
             }
 
-            public void Set(float value, float max, string text)
+            /// <summary>Slides to the new value (2026-11-13, DOTween); <paramref name="snap"/> for a different unit.</summary>
+            public void Set(float value, float max, string text, bool snap = false)
             {
                 float r = max > 0f ? Mathf.Clamp01(value / max) : 0f;
-                _fill.anchorMax = new Vector2(r, 1f);
+                UIMotion.Fill(_fill, r, snap);
                 _fill.gameObject.SetActive(r > 0.04f); // the sliced fill needs about 9 px
                 _value.text = text;
             }

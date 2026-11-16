@@ -218,6 +218,7 @@ namespace GuildMaster.UI
             img.Size(width, height);
             UISkin.Button(btn, img, baseColor, text);            // 2026-10-31: skin and click sound
             btn.onClick.AddListener(GuildMaster.Audio.Sound.Click);
+            img.gameObject.AddComponent<ButtonJuice>(); // 2026-11-13: lean in, press, spring back (DOTween)
             return btn;
         }
 

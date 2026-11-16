@@ -32,15 +32,20 @@ namespace GuildMaster.UI
         {
             if (!Services.TryGet(out _orders)) return;
 
-            var root = UIBuilder.Panel(canvas, "CommandBar", UITheme.PanelBg).rectTransform;
-            root.Anchor(new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 8), new Vector2(Width, 84));
-            UIBuilder.VLayout(root, 6, 8);
+            var rootImg = UIBuilder.Panel(canvas, "CommandBar", UITheme.PanelBg);
+            var root = rootImg.rectTransform;
+            // 2026-11-13 (KMS, user asked): the stone slab of "Fantasy Wooden GUI" when it is imported, a little taller
+            // so the rows clear its frame; unchanged without the pack.
+            bool stone = WoodSkin.CardBoard != null;
+            if (stone) HudStyle.Card(rootImg);
+            root.Anchor(new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 8), new Vector2(Width, stone ? 100 : 84));
+            UIBuilder.VLayout(root, 6, stone ? 16 : 8);
 
             var gauge = UIBuilder.Row(root, 18, 8);
             UIBuilder.Label(gauge, "지휘력", 15, TextAnchor.MiddleLeft, UITheme.Accent, FontStyle.Bold).Size(56, 18, 0);
-            var track = UIBuilder.Panel(gauge, "Track", UIChips.Track).rectTransform;
+            var track = UIBuilder.Panel(gauge, "Track", WoodSkin.Warm(UIChips.Track)).rectTransform;
             track.Size(-1, 18, 1);
-            _fill = UIChips.Fill(track, new Color(0.62f, 0.45f, 0.95f, 1f));
+            _fill = UIChips.Fill(track, WoodSkin.Present ? new Color(0.96f, 0.66f, 0.26f, 1f) : new Color(0.62f, 0.45f, 0.95f, 1f));
             _power = UIBuilder.Label(gauge, "", 15, TextAnchor.MiddleRight, UITheme.Text).Size(70, 18, 0);
             track.Tooltip(() => $"지휘력: 명령마다 씁니다. 시간이 지나면 시간당 {CommandRules.PowerPerHour:0}씩 차고, 의뢰 완료 +{CommandRules.QuestDonePower:0}, 침공을 막으면 +{CommandRules.RaidHeldPower:0}.");
 
@@ -57,8 +62,8 @@ namespace GuildMaster.UI
                 b.gameObject.AddComponent<ReachOnHover>().Orders = _orders;
             }
 
-            var msg = UIBuilder.Panel(canvas, "CommandMessage", new Color(0.08f, 0.07f, 0.11f, 0.9f), raycast: false);
-            msg.rectTransform.Anchor(new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 98), new Vector2(Width + 120f, 30));
+            var msg = UIBuilder.Panel(canvas, "CommandMessage", WoodSkin.Warm(new Color(0.08f, 0.07f, 0.11f, 0.9f)), raycast: false);
+            msg.rectTransform.Anchor(new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, stone ? 114 : 98), new Vector2(Width + 120f, 30));
             _messageGroup = msg.gameObject.AddComponent<CanvasGroup>();
             _messageGroup.alpha = 0f;
             _messageGroup.blocksRaycasts = false;
@@ -118,7 +123,7 @@ namespace GuildMaster.UI
                 _labels[(int)c].text = $"{name} <size=12>({CommandRules.Key(c)})</size> · {tail}";
             }
             if (_orders.HasFlag)
-                _labels[(int)MasterCommand.Rally].text += UIBuilder.Colored(" ⚑", new Color(0.75f, 0.55f, 1f));
+                _labels[(int)MasterCommand.Rally].text += UIBuilder.Colored(" ⚑", WoodSkin.Warm(new Color(0.75f, 0.55f, 1f)));
         }
 
         void Give(MasterCommand c)

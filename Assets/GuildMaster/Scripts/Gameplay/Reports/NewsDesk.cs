@@ -80,6 +80,7 @@ namespace GuildMaster.Reports
             EventBus.Subscribe<Seasons.SeasonChangedEvent>(OnSeason);
             EventBus.Subscribe<Seasons.FestivalEvent>(OnFestival);
             EventBus.Subscribe<Villages.VillageDiscoveredEvent>(OnVillage);
+            EventBus.Subscribe<Legacy.MemorialStoryEvent>(OnMemorial);
             EventBus.Subscribe<Villages.VillageRuinsSeenEvent>(OnVillageLost);
             EventBus.Subscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
             EventBus.Subscribe<Places.PlaceDiscoveredEvent>(OnPlace);
@@ -121,6 +122,7 @@ namespace GuildMaster.Reports
             EventBus.Unsubscribe<Seasons.SeasonChangedEvent>(OnSeason);
             EventBus.Unsubscribe<Seasons.FestivalEvent>(OnFestival);
             EventBus.Unsubscribe<Villages.VillageDiscoveredEvent>(OnVillage);
+            EventBus.Unsubscribe<Legacy.MemorialStoryEvent>(OnMemorial);
             EventBus.Unsubscribe<Villages.VillageRuinsSeenEvent>(OnVillageLost);
             EventBus.Unsubscribe<Villages.VillageRaidSightedEvent>(OnVillageRaid);
             EventBus.Unsubscribe<Places.PlaceDiscoveredEvent>(OnPlace);
@@ -438,6 +440,18 @@ namespace GuildMaster.Reports
             if (n == null) return;
             Note(NewsRules.NemesisDeed(e.OldName ?? n.Name, n.Name, e.Deed.victim, e.Deed.kind == Nemeses.DeedKind.Killed, e.IsNew)
                 .At(n.LastSeen).On("nemesis:" + n.UnitId));
+        }
+
+        /// <summary>The memorial wall's stories (2026-11-15): a hero, an anniversary, an heirloom.</summary>
+        void OnMemorial(Legacy.MemorialStoryEvent e)
+        {
+            var art = e.Kind switch
+            {
+                Legacy.MemorialStory.Hero => NewsRules.Hero(e.Name, e.Detail),
+                Legacy.MemorialStory.Anniversary => NewsRules.Anniversary(e.Name, e.Years, e.Count),
+                _ => NewsRules.Heirloom(e.Other, e.Name, e.Detail),
+            };
+            Note(art.About(e.Ids).On($"memorial:{e.Kind}:{e.RecordId}"));
         }
 
         void OnNemesisFell(Nemeses.NemesisFellEvent e)

@@ -408,6 +408,8 @@ namespace GuildMaster.Adventurers
             // P4-87: weakened, raised for members by the guild's stat buildings.
             Stats = AdventurerStats.Compute(Data, Traits?.Modifiers,
                 Services.TryGet<Town.FacilityService>(out var facilities) ? facilities.ScaleFor(this) : null);
+            // Relics of fallen comrades it carries (2026-11-15, the memorial wall).
+            Stats = Legacy.MemorialRules.WithHeirlooms(Stats, Data);
             // A combat inspiration (P4-104d) while it lasts.
             if (Data.inspiration == InspirationKind.Combat)
             {

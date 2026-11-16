@@ -79,9 +79,11 @@ namespace GuildMaster.UI
 
         public void Show(object target)
         {
+            bool wasShown = _panel.gameObject.activeSelf;
             _selected = target;
             UnitGizmos.Focus = target as Unit;
             _panel.gameObject.SetActive(target != null);
+            if (target != null && !wasShown) UIMotion.PopIn(_panel, 0.94f, 0.18f, fade: false); // 2026-11-13 (DOTween)
             _timer = 0f;
             RefreshFollowButton();
             // Clicking a building also opens its upgrade window (P4-1).

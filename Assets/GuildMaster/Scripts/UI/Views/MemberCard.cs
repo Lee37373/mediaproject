@@ -28,6 +28,8 @@ namespace GuildMaster.UI
         readonly List<HudStyle.Tag> _traits = new();
         Image _note;
 
+        Adventurer _who;
+
         public float Height { get; private set; }
         public bool Visible => _root != null && _root.gameObject.activeSelf;
 
@@ -100,9 +102,11 @@ namespace GuildMaster.UI
             _quest.text = a.CurrentQuest != null ? $"의뢰 {a.CurrentQuest.Title} ({a.CurrentQuest.ProgressText})" : "의뢰 없음";
             HudStyle.Place(_quest.rectTransform, Col + w + 8, 0, Width - Col - w - 8, TagH);
 
-            _hp.Set(a.Hp, s.MaxHp, $"{a.Hp:0}/{s.MaxHp:0}");
-            _tired.Set(d.fatigue, 100f, $"{d.fatigue:0}");
-            _stress.Set(d.stress, 100f, $"{d.stress:0}");
+            bool snap = a != _who; // a newly picked member's bars start where they are; the same one's slide
+            _who = a;
+            _hp.Set(a.Hp, s.MaxHp, $"{a.Hp:0}/{s.MaxHp:0}", snap);
+            _tired.Set(d.fatigue, 100f, $"{d.fatigue:0}", snap);
+            _stress.Set(d.stress, 100f, $"{d.stress:0}", snap);
 
             float y;
             if (a.IsVisitor)

@@ -188,7 +188,10 @@ namespace GuildMaster.UI
             _listLayout.preferredHeight = list;
             _listLayout.minHeight = Mathf.Min(list, 180f);
             LayoutRebuilder.ForceRebuildLayoutImmediate(Body);
-            float want = Mathf.Clamp(Mathf.Ceil(LayoutUtility.GetPreferredHeight(Body)) + 56f, MinHeight, MaxHeight);
+            // The window's own top and bottom margins around the body: 56 plain, 72 with the wooden skin's stone frame
+            // (2026-11-14: a fixed 56 left the window 16 px short there, and the result's story slid under its chips).
+            float chrome = Body.offsetMin.y - Body.offsetMax.y;
+            float want = Mathf.Clamp(Mathf.Ceil(LayoutUtility.GetPreferredHeight(Body)) + chrome, MinHeight, MaxHeight);
             float old = frame.sizeDelta.y;
             if (Mathf.Abs(want - old) < 1f) return;
             frame.sizeDelta = new Vector2(frame.sizeDelta.x, want);
