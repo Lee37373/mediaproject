@@ -155,7 +155,7 @@
 | P6-6 | 완성도: 처음 보는 사람 눈으로 화면 전체 점검 | 이재혁 | 예정 | UI/Views | |
 | P6-7 | 완성도: 게임 안 도움말·용어집 | 이재혁 | 예정 | UI/Views(신규) | |
 | P6-8 | 완성도: 첫 플레이 튜토리얼 | 이재혁 | 예정 | Guide, UI/Views/GuideView | |
-| P6-9 | 투사체 리마스터(사용자 요청 2026-11-17: defence 프로젝트의 투사체를 본떠서): 화살은 쏜 사람 손의 화살 그림 그대로 날아가는 방향으로, 마법은 빛나는 구체 + 흰 심지 + 잔상 꼬리, 스킬 화살은 색 꼬리. 규칙(속도·유도·막힘·피해)은 그대로 | 이재혁 | 진행 중 | Units/ProjectileService·Projectile(분리), Visuals(ShotLook 신규·HumanRig·CharacterVisual·CharacterArtCatalog·ArtLibrary), Core/SpriteFactory, Editor/ArtCatalogBuilder, 쏘는 곳(Adventurer·Monster·ClassSkills·Skills·ArrowTower·PerfProbe) | |
+| P6-9 | 투사체 리마스터(사용자 요청 2026-11-17: defence 프로젝트의 투사체를 본떠서): 화살은 쏜 사람 손의 화살 그림 그대로 날아가는 방향으로, 마법은 빛나는 구체 + 흰 심지 + 잔상 꼬리, 스킬 화살은 색 꼬리. 규칙(속도·유도·막힘·피해)은 그대로 | 이재혁 | 완료 | Units/ProjectileService·Projectile(분리), Visuals(ShotLook 신규·HumanRig·CharacterVisual·CharacterArtCatalog·ArtLibrary), Core/SpriteFactory, Editor/ArtCatalogBuilder, 쏘는 곳(Adventurer·Monster·ClassSkills·Skills·ArrowTower·PerfProbe) | 54391d5 |
 | P4-9 | 사운드(효과음·BGM) — 사용자 결정 2026-10-21: 이번엔 빼고 빌드로. KMS가 구현해 P4-117 병합으로 들어옴(`Audio/SoundService`, `Resources/Audio`, 설정 창 볼륨) | KMS | 완료 | Audio(신규), Resources/Audio, UI/Views/SettingsView | 8cff428 |
 | P4-12 | 대화 묶음 생성과 미리 받기 | 미정 | 보류 | LLM, Adventurers/BanterService | |
 | P4-25 | 전체 코드 점검: 버그 8건 수정과 리팩터링(늑대 울음 버프, 사망자 부활, 귀환 중 후퇴, 안개 속 정보 노출, EventBus 할당 등) | 이재혁 | 완료 | Units/Combat·Skills, Adventurers, Monsters/Monster, UI/Views/InspectorView, Core/EventBus | b3a9183 |
@@ -183,9 +183,9 @@
 ## 담당자별 요약
 
 ### 이재혁
-- **진행 중**: P6-9 투사체 리마스터
+- **진행 중**: 없음
 - **예정**: P5-6 시연
-- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-135, P5-1 ~ P5-5, P6-1 ~ P6-3b (위 표 참고)
+- **완료**: P1 ~ P4-8, P4-10, P4-11, P4-13, P4-15 ~ P4-29, P4-31 ~ P4-43, P4-44 ~ P4-56, P4-58, P4-60 ~ P4-115, P4-117 ~ P4-135, P5-1 ~ P5-5, P6-1 ~ P6-3b, P6-9 (위 표 참고)
 
 ### KMS (이름을 적어 주세요)
 - **진행 중**: 없음
