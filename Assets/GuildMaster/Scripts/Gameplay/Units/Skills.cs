@@ -235,7 +235,7 @@ namespace GuildMaster.Units
             var caster = self;
             projectiles.Launch(self, target, new ProjectileSpec
             {
-                Speed = 7f, Size = 0.6f, Color = Color, TreeBlockChance = 0.6f,
+                Speed = 7f, Look = ShotLook.Orb(Color, 0.95f), TreeBlockChance = 0.6f,
                 OnImpact = (point, _) =>
                 {
                     if (caster == null) return;

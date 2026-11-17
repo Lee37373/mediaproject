@@ -7236,6 +7236,36 @@ namespace GuildMaster.Tests
                 var target = SpawnAt(tower.Center + new Vector2(0f, -5f));
                 Assert.That(Town.ArrowTower.IsThreat(target), Is.True, "a stray");
                 target.Stun(30f);
+
+                // P6-9: its shot flies as an arrow turned at the goblin, with no tail; a mage's is a glowing orb with a white
+                // core and a tail strung out behind it; a ranger shoots the arrow on its bow.
+                Projectile[] Shots() => UnityEngine.Object.FindObjectsByType<Projectile>(FindObjectsSortMode.None);
+                yield return WaitFor(() => Shots().Length > 0, 5f);
+                var arrow = Shots().OrderBy(p => ((Vector2)p.transform.position - tower.Center).sqrMagnitude).First();
+                var toGoblin = target.Position - (Vector2)arrow.transform.position;
+                Assert.That(arrow.GetComponent<SpriteRenderer>().sprite, Is.Not.EqualTo(SpriteFactory.Glow()), "an arrow, not an orb");
+                Assert.That(Mathf.Abs(Mathf.DeltaAngle(arrow.transform.eulerAngles.z, Mathf.Atan2(toGoblin.y, toGoblin.x) * Mathf.Rad2Deg)), Is.LessThan(25f), "turned to where it flies");
+                Assert.That(arrow.transform.Find("Tail0").gameObject.activeSelf, Is.False, "a plain arrow has no tail");
+                var roster = Services.Get<Adventurers.GuildRoster>().Members;
+                var mage = roster.FirstOrDefault(a => a.Data.cls == Adventurers.AdventurerClass.Mage);
+                var ranger = roster.FirstOrDefault(a => a.Data.cls == Adventurers.AdventurerClass.Ranger);
+                if (ranger != null)
+                {
+                    Assert.That(ranger.ShotLook.Kind, Is.EqualTo(Visuals.ShotKind.Arrow));
+                    if (Visuals.ArtLibrary.HasHumans) Assert.That(ranger.ShotLook.Sprite, Is.EqualTo(ranger.Visual.HeldArrow).And.Not.Null, "the arrow on its bow");
+                }
+                var orbLook = mage != null ? mage.ShotLook : Visuals.ShotLook.Orb(Color.cyan, 0.6f);
+                Assert.That(orbLook.Kind, Is.EqualTo(Visuals.ShotKind.Orb));
+                var orbSpec = ProjectileSpec.Of(orbLook);
+                orbSpec.OnImpact = (_, _) => { };
+                orbSpec.TreeBlockChance = 0f;
+                Services.Get<ProjectileService>().LaunchFrom(target.Position + new Vector2(7f, 0f), target, orbSpec);
+                yield return new WaitForSeconds(0.2f);
+                var orb = Shots().Where(p => p.transform.Find("Core").gameObject.activeSelf).OrderBy(p => ((Vector2)p.transform.position - target.Position).sqrMagnitude).FirstOrDefault();
+                Assert.That(orb, Is.Not.Null, "an orb with its core");
+                Assert.That(Vector2.Distance(orb.transform.Find("Tail4").position, orb.transform.position), Is.GreaterThan(0.3f), "its tail behind it");
+                Assert.That(orb.transform.Find("Tail4").position.x, Is.GreaterThan(orb.transform.position.x), "on the side it came from");
+
                 yield return WaitFor(() => !target.IsAlive, 20f);
                 Assert.That(target.IsAlive, Is.False, "shot down");
                 Assert.That(Services.Get<GameLog>().Entries.Any(e => e.Text.StartsWith("[방어] 화살탑이 고블린")), Is.True, "logged");

@@ -174,6 +174,9 @@ namespace GuildMaster.Visuals
 
         SpriteRenderer Part(string path) => _parts.TryGetValue(path, out var t) ? t.GetComponent<SpriteRenderer>() : null;
 
+        /// <summary>The arrow nocked on its bow (P6-9: the one a shot flies with), or null without a bow.</summary>
+        public Sprite HeldArrow => Part("HandRight/Bow/Arrow") is { } r && r.gameObject.activeSelf ? r.sprite : null;
+
         void Show(string path, bool on)
         {
             if (_parts.TryGetValue(path, out var t)) t.gameObject.SetActive(on);

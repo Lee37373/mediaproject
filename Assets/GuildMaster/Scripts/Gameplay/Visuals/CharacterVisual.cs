@@ -43,6 +43,9 @@ namespace GuildMaster.Visuals
 
         public HumanRig Rig => _humanRig;
 
+        /// <summary>The arrow in its hands, drawn by the rig (P6-9), or null.</summary>
+        public Sprite HeldArrow => _humanRig != null ? _humanRig.HeldArrow : null;
+
         /// <summary>
         /// Draws this character with the CharacterMaker rig (people only). False when that pack is not imported:
         /// the caller then uses the old art.

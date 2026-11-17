@@ -121,11 +121,15 @@ namespace GuildMaster.Adventurers
         public string TraderName => Data.name;
         public int Gold { get => Data.gold; set => Data.gold = value; }
         public List<ItemStack> CarriedLoot => Data.loot;
-        public Color ProjectileColor => Data.cls switch
+        /// <summary>
+        /// Its shots (P6-9): a mage's arcane orb, a priest's mote of holy light, else the arrow on its bow (the code arrow
+        /// without the people pack).
+        /// </summary>
+        public ShotLook ShotLook => Data.cls switch
         {
-            AdventurerClass.Mage => new Color(0.5f, 0.7f, 1f),
-            AdventurerClass.Priest => new Color(1f, 0.97f, 0.7f),   // holy light
-            _ => new Color(0.95f, 0.85f, 0.55f),
+            AdventurerClass.Mage => ShotLook.Orb(new Color(0.45f, 0.6f, 1f), 0.6f),
+            AdventurerClass.Priest => ShotLook.Orb(new Color(1f, 0.9f, 0.4f), 0.5f),
+            _ => ShotLook.Arrow(Visual != null ? Visual.HeldArrow : null),
         };
 
         /// <summary>Idling on the plaza or making up its mind: free to be asked along on something.</summary>

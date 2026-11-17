@@ -98,7 +98,7 @@ namespace GuildMaster.Units
             if (!InShot(self, target) || target.Afflictions.Poisoned) return false;
             if (!Services.TryGet<ProjectileService>(out var projectiles)) return false;
             var shooter = self;
-            var spec = ProjectileSpec.Arrow(Color);
+            var spec = ProjectileSpec.Of(ProjectileService.LookOf(shooter).WithTail(Color));
             spec.OnImpact = (point, hit) =>
             {
                 if (shooter == null || hit == null || !hit.IsAlive) return;
@@ -127,7 +127,7 @@ namespace GuildMaster.Units
             if (Combat.Distance(self, target) > 5f) return false; // only once it is coming close
             if (!Services.TryGet<ProjectileService>(out var projectiles)) return false;
             var shooter = self;
-            var spec = ProjectileSpec.Arrow(Color);
+            var spec = ProjectileSpec.Of(ProjectileService.LookOf(shooter).WithTail(Color));
             spec.OnImpact = (point, hit) =>
             {
                 if (shooter == null || hit == null || !hit.IsAlive) return;
@@ -157,7 +157,7 @@ namespace GuildMaster.Units
             var shooter = self;
             for (int i = 0; i < Arrows; i++)
             {
-                var spec = ProjectileSpec.Arrow(Color);
+                var spec = ProjectileSpec.Of(ProjectileService.LookOf(shooter).WithTail(Color));
                 spec.Speed = 9f + i * 2.5f; // the later ones fly faster: they land one after another, not at once
                 spec.OnImpact = (point, hit) =>
                 {

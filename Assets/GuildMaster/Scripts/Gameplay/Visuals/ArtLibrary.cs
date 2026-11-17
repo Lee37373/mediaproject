@@ -55,6 +55,14 @@ namespace GuildMaster.Visuals
             return m != null && m.sprite != null ? m.sprite : null;
         }
 
+        /// <summary>What a monster picture shoots (an archer's arrow, P6-9), or null.</summary>
+        public static Sprite MonsterShot(string key)
+        {
+            if (string.IsNullOrEmpty(key) || Catalog == null) return null;
+            var m = Catalog.monsters.FirstOrDefault(x => x.key == key);
+            return m != null && m.shot != null ? m.shot : null;
+        }
+
         // ---- People and effects (2026-10-30, 2D Minimal-CharacterMaker / Cartoon Casual VFX Pack) ----
 
         /// <summary>The CharacterMaker rig, or null when that pack is not imported (callers keep the old art).</summary>

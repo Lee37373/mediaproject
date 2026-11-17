@@ -84,7 +84,7 @@ namespace GuildMaster.Session
             foreach (var u in UnitRegistry.All) if (u.IsAlive) _shooters.Add(u);
             if (_shooters.Count < 2) return;
             var rng = GameRandom.Shared;
-            var spec = ProjectileSpec.Arrow(new Color(1f, 0.4f, 0.9f));
+            var spec = ProjectileSpec.Of(Visuals.ShotLook.Arrow(null).WithTail(new Color(1f, 0.4f, 0.9f)));
             spec.OnImpact = (_, _) => { };
             for (int i = 0; i < missing; i++)
             {

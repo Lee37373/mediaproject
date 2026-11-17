@@ -104,6 +104,80 @@ namespace GuildMaster.Core
         }
 
         /// <summary>
+        /// A glow, 1 unit across (P6-9, magic shots): solid in the middle 40%, fading out to the edge, so it still reads on
+        /// bright grass where <see cref="SoftCircle"/> fades too early. White, tinted by the renderer colour.
+        /// </summary>
+        public static Sprite Glow(int diameterPx = 64)
+        {
+            string key = $"glow:{diameterPx}";
+            if (s_cache.TryGetValue(key, out var s) && s) return s; // unloaded sprites are made again
+            var tex = NewTexture(diameterPx, diameterPx);
+            tex.filterMode = FilterMode.Bilinear;
+            var px = new Color32[diameterPx * diameterPx];
+            float r = diameterPx / 2f;
+            for (int y = 0; y < diameterPx; y++)
+            for (int x = 0; x < diameterPx; x++)
+            {
+                float dx = x + 0.5f - r, dy = y + 0.5f - r;
+                float d = Mathf.Sqrt(dx * dx + dy * dy) / r;
+                float a = d <= 0.4f ? 1f : Mathf.Pow(Mathf.Clamp01(1f - (d - 0.4f) / 0.6f), 1.6f);
+                px[y * diameterPx + x] = new Color(1, 1, 1, a);
+            }
+            return Finish(key, tex, px, new Vector2(0.5f, 0.5f), diameterPx);
+        }
+
+        /// <summary>
+        /// An arrow pointing right (+x) in the cartoon style of the CharacterMaker pack's arrows (P6-9, the stand-in when the
+        /// pack is not imported): metal head, wooden shaft, red fletching, dark outline, drawn smooth. 1 world unit long,
+        /// pivot centered, so a shot scales it to its length and turns it to where it flies.
+        /// </summary>
+        public static Sprite Arrow(int lengthPx = 64)
+        {
+            string key = $"arrow:{lengthPx}";
+            if (s_cache.TryGetValue(key, out var s) && s) return s; // unloaded sprites are made again
+            int w = lengthPx, h = Mathf.Max(8, Mathf.RoundToInt(lengthPx * 0.36f));
+            float c = h / 2f, u = lengthPx / 64f; // u: one pixel of the 64-pixel design
+            // Part of the arrow each pixel falls in: 0 none, 1 fletching, 2 shaft, 3 head.
+            var part = new byte[w * h];
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                float px = (x + 0.5f) / u, dy = Mathf.Abs(y + 0.5f - c) / u;
+                byte p = 0;
+                if (px >= 44f && dy <= Mathf.Lerp(8f, 0f, (px - 44f) / 20f)) p = 3;
+                else if (px >= 3f && px < 46f && dy <= 2.4f) p = 2;
+                else if (px >= 2f && px <= 20f && dy > 2.4f && dy <= 8f - (px - 2f) * 0.2f && px >= 2f + (dy - 2.4f) * 1.1f) p = 1;
+                part[y * w + x] = p;
+            }
+            var tex = NewTexture(w, h);
+            tex.filterMode = FilterMode.Bilinear;
+            var px32 = new Color32[w * h];
+            int edge = Mathf.Max(1, Mathf.RoundToInt(1.6f * u));
+            var dark = new Color32(40, 28, 24, 255);
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                byte p = part[y * w + x];
+                if (p == 0) { px32[y * w + x] = new Color32(0, 0, 0, 0); continue; }
+                bool rim = false;
+                for (int oy = -edge; oy <= edge && !rim; oy++)
+                for (int ox = -edge; ox <= edge && !rim; ox++)
+                {
+                    int nx = x + ox, ny = y + oy;
+                    rim = nx < 0 || ny < 0 || nx >= w || ny >= h || part[ny * w + nx] == 0;
+                }
+                bool upper = y + 0.5f >= c;
+                px32[y * w + x] = rim ? dark : p switch
+                {
+                    3 => upper ? new Color32(232, 236, 242, 255) : new Color32(160, 168, 186, 255),
+                    2 => upper ? new Color32(196, 138, 78, 255) : new Color32(150, 98, 54, 255),
+                    _ => upper ? new Color32(236, 84, 70, 255) : new Color32(186, 56, 50, 255),
+                };
+            }
+            return Finish(key, tex, px32, new Vector2(0.5f, 0.5f), w);
+        }
+
+        /// <summary>
         /// Builds a sprite from ASCII rows (top row first). Each char maps to a palette color;
         /// '.' or ' ' is transparent. Pivot defaults to bottom-center (feet).
         /// </summary>

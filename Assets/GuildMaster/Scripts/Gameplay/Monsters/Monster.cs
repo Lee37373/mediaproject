@@ -362,7 +362,13 @@ namespace GuildMaster.Monsters
         }
         /// <summary>Drawn size: the species' scale, bigger for a boss or a rare variant.</summary>
         public float Scale => Def == null ? 1f : Def.scale * (IsBoss ? MonsterBoss.SizeMultiplier : IsRare ? RareMonster.SizeMultiplier : 1f);
-        public Color ProjectileColor => new(0.8f, 0.7f, 0.45f);
+        /// <summary>
+        /// Its shots (P6-9): an archer's own arrow from the pack (the code arrow without it); anything else that shoots
+        /// (the sand serpent) spits a small glob in its body colour.
+        /// </summary>
+        public ShotLook ShotLook => IsRangedVariant
+            ? ShotLook.Arrow(Def != null ? ArtLibrary.MonsterShot(Def.rangedArtKey) : null, ShotLook.MonsterArrowLength)
+            : ShotLook.Orb(Color.Lerp(Def != null ? Def.bodyColor : Color.white, new Color(0.6f, 0.95f, 0.2f), 0.45f), 0.45f);
 
         public Vector2 HomePosition => Home != null ? Home.WorldPosition : Roaming != null ? Roaming.Center : _spawnPosition;
 

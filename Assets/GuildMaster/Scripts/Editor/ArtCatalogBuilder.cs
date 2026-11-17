@@ -43,6 +43,14 @@ namespace GuildMaster.EditorTools
 
         const string MonsterPartPrefabs = LayerLab + "2D Characters-CasualMonsters/Prefabs/";
 
+        /// <summary>What the archers shoot (P6-9): the arrow image in each one's own PNG parts folder, by art key.</summary>
+        static readonly (string key, string file)[] MonsterShots =
+        {
+            ("goblin_archer", "Goblin/goblin/goblin_archer/arrow.png"), ("skull_archer", "Skull/skull/skull_archer/arrow.png"),
+        };
+
+        const string MonsterPartImages = LayerLab + "2D Characters-CasualMonsters/PNG/";
+
         /// <summary>Minimal EnemyMonster prefabs (P4-110): every one a rig, keyed by its name in lower case ("toad_king").</summary>
         const string RigPrefabs = LayerLab + "2D Minimal-EnemyMonster/EnemyMonster 3/Prefabs";
 
@@ -73,7 +81,9 @@ namespace GuildMaster.EditorTools
             {
                 var s = AssetDatabase.LoadAssetAtPath<Sprite>(ArtImportSettings.MonsterImages + file);
                 var p = AssetDatabase.LoadAssetAtPath<GameObject>(MonsterPartPrefabs + parts + ".prefab");
-                if (s != null) catalog.monsters.Add(new CharacterArtCatalog.MonsterArt { key = key, sprite = s, parts = p });
+                var shotFile = MonsterShots.FirstOrDefault(m => m.key == key).file;
+                var shot = shotFile != null ? AssetDatabase.LoadAssetAtPath<Sprite>(MonsterPartImages + shotFile) : null;
+                if (s != null) catalog.monsters.Add(new CharacterArtCatalog.MonsterArt { key = key, sprite = s, parts = p, shot = shot });
             }
             if (AssetDatabase.IsValidFolder(RigPrefabs))
             {

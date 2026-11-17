@@ -20,7 +20,6 @@ namespace GuildMaster.Town
     {
         /// <summary>Seconds between looks for a target when there was none.</summary>
         const float LookSeconds = 0.25f;
-        static readonly Color ArrowColor = new(0.85f, 0.75f, 0.55f);
 
         Building _building;
         VisionSource _vision;
@@ -105,7 +104,7 @@ namespace GuildMaster.Town
         {
             if (!Services.TryGet<ProjectileService>(out var projectiles)) return;
             float raw = DefenceRules.TowerDamage(_building.Level);
-            var spec = ProjectileSpec.Arrow(ArrowColor);
+            var spec = ProjectileSpec.Of(Visuals.ShotLook.TowerArrow);
             spec.TreeBlockChance = DefenceRules.TowerTreeBlock;
             spec.Launcher = _building.Footprint;
             var tower = _building;
