@@ -88,9 +88,9 @@ namespace GuildMaster.Visuals
             var user = e.User;
             if (user == null || !Seen(user.Position)) return;
             user.Visual?.PlaySkill();
-            // A circle in the skill's colour at the user's feet, and (2026-11-13, user: effects hard to see) a magic circle
-            // under it so every skill reads at a glance.
-            Play("Buff1_" + ColorName(e.Color), user.Position, 1.5f);
+            // A magic circle at the user's feet so every skill reads at a glance (2026-11-13, user: effects hard to see).
+            // 2026-11-18 (user: "스킬 쓸 때 하얀 모션 … 없어야 됨"): the Buff1 sparkle burst (white/coloured crosses flying out)
+            // that used to play with it is gone.
             Play(CircleFor(e.Color), user.Position, 1.1f);
         }
 

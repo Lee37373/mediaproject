@@ -17,6 +17,10 @@ namespace GuildMaster.UI
     public class RumourMarkLayer : MonoBehaviour
     {
         const float Size = 34f, MergePx = 30f;
+        // 2026-11-19 (user: the "!" sat on the monster's body and looked odd): a "!" is where the guild sees the thing —
+        // a rare monster, a nemesis, a traveller in trouble — so it was drawn right over them. It now floats above their
+        // head, over the name tag (NameTagLayer's head height, then a few pixels more); "?" rumours stay on their spot.
+        const float HeadOffset = 0.95f, AboveTagPx = 38f;
 
         class Mark
         {
@@ -78,7 +82,18 @@ namespace GuildMaster.UI
                     if (!Shown(q)) continue;
                     bool alert = IsAlert(q.Incident);
                     if (_dismissed.TryGetValue(q, out bool wasAlert) && (wasAlert || !alert)) continue;
-                    if (!WorldOverlay.TryWorldToLocal(_layer, q.Point, out var local)) continue;
+                    Vector3 at = q.Point;
+                    if (alert)
+                    {
+                        // Over the monster itself while the guild can see it: an untaken quest's point is where it was
+                        // first seen, so a mark left there slid off a monster that wandered on.
+                        var target = q.Incident.Target;
+                        bool seen = target != null && target.IsAlive && (!Services.TryGet<GuildMaster.Fog.FogOfWar>(out var fog) || fog.IsVisible(target.Position));
+                        if (seen) at = target.Position;
+                        at += new Vector3(0f, HeadOffset * (seen ? target.Scale : 1f));
+                    }
+                    if (!WorldOverlay.TryWorldToLocal(_layer, at, out var local)) continue;
+                    if (alert) local.y += AboveTagPx;
                     Mark m = null;
                     for (int i = 0; i < _used; i++)
                         if ((_marks[i].At - local).sqrMagnitude < MergePx * MergePx) { m = _marks[i]; break; }

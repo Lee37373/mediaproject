@@ -140,6 +140,10 @@ namespace GuildMaster.UI
         const float BilletX = 395f, BilletY = 143f, HammerX = 525f, HammerY = 176f, RaisedAngle = -34f, HitAngle = 2f;
         const float GaugeX = 150f, GaugeY = 12f, GaugeW = 480f, GaugeH = 18f; // on the floor, clear of the hammer
         static readonly Vector2 Bucket = new(720f, 128f);
+        // 2026-11-19 (user: "칼이 물로 안 들어가고 바깥에 있어서 이상함"): the quench used to stop the blade's middle at the
+        // water and draw the whole blade over the bucket's front. It now sinks this far under the surface and the part
+        // below the water is cut off (the blade fills from the hilt), so it reads as plunged into the bucket.
+        const float WaterY = 125f, DipDepth = 12f, BladeLen = 110f;
 
         void BuildForge()
         {
@@ -148,7 +152,11 @@ namespace GuildMaster.UI
             Put(_forgeRoot, "Anvil", "anvil", 310f, 40f, 150f, 115f, Vector2.zero);
             _billetGlow = Put(_forgeRoot, "BilletGlow", "glow", BilletX, BilletY, 230f, 120f, null, new Color(1f, 0.55f, 0.15f, 0.7f));
             _billet = Put(_forgeRoot, "Billet", "billet", BilletX, BilletY, 85f, 22f);
-            _blade = Put(_forgeRoot, "Blade", "blade", BilletX, BilletY + 2f, 110f, 30f);
+            _blade = Put(_forgeRoot, "Blade", "blade", BilletX, BilletY + 2f, BladeLen, 30f);
+            _blade.type = Image.Type.Filled;
+            _blade.fillMethod = Image.FillMethod.Horizontal;
+            _blade.fillOrigin = (int)Image.OriginHorizontal.Left; // the hilt end stays, the tip end goes under
+            _blade.fillAmount = 1f;
             _blade.gameObject.SetActive(false);
 
             // The timing gauge above the anvil: a dark track, the zone, its sweet middle and the needle.
@@ -277,6 +285,7 @@ namespace GuildMaster.UI
             _billet.gameObject.SetActive(true);
             _billetGlow.gameObject.SetActive(true);
             _blade.gameObject.SetActive(false);
+            _blade.fillAmount = 1f;
             _resultRoot.gameObject.SetActive(false);
             _resultT = -1f;
             service.Begin(kind, clock.TotalHours);
@@ -565,7 +574,7 @@ namespace GuildMaster.UI
                     if (_finaleT > Wait + Move)
                     {
                         float v = Mathf.Clamp01((_finaleT - Wait - Move) / Dip);
-                        p = Vector2.Lerp(top, Bucket, Ease.In(v));
+                        p = Vector2.Lerp(top, Bucket - new Vector2(0f, DipDepth), Ease.In(v));
                         rot = -80f;
                         if (!_quenchPlayed)
                         {
@@ -575,6 +584,12 @@ namespace GuildMaster.UI
                     }
                     _blade.rectTransform.anchoredPosition = p;
                     _blade.rectTransform.localRotation = Quaternion.Euler(0f, 0f, rot);
+                    // Only what is above the water shows: along the blade (hilt at -L/2, tip at +L/2) a point sits
+                    // at p.y + x·sin(rot); with the blade pointing down the cut is where that meets the surface.
+                    float down = -Mathf.Sin(rot * Mathf.Deg2Rad);
+                    _blade.fillAmount = down > 0.1f
+                        ? Mathf.Clamp01(((p.y - WaterY) / down + BladeLen * 0.5f) / BladeLen)
+                        : 1f;
                     _blade.color = Color.Lerp(new Color(1f, 0.6f, 0.3f), Color.white, Mathf.Clamp01((_finaleT - Wait - Move) / Dip));
                     _billetGlow.rectTransform.anchoredPosition = p;
                     _billetGlow.color = new Color(1f, 0.5f, 0.15f, 0.6f * (1f - Mathf.Clamp01((_finaleT - Wait - Move) / Dip)));
